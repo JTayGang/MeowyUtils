@@ -61,14 +61,20 @@ public sealed class CompassHud
         {
             // CameraManager->Camera is the normal in-game world camera (FieldOffset 0x00,
             // documented in FFXIVClientStructs as "[0] Camera (normal in-game camera)").
-            // Its DirH field is 0 = north, increasing clockwise — already the exact
-            // compass-bearing convention we want, so no sign flip is needed here.
+            //
+            // The struct's doc comment claims DirH is "0 = north, increasing clockwise"
+            // (i.e. already standard compass-bearing direction), but in-game testing
+            // showed otherwise: N/S tracked correctly while E/W came out mirrored —
+            // the exact signature of DirH actually increasing counter-clockwise relative
+            // to true compass bearing. Negating it corrects E/W without touching N/S
+            // (negation is a fixed-point identity at 0° and 180°, which is why those two
+            // were unaffected by the bug).
             var camManager = CameraManager.Instance();
             var camera     = camManager != null ? camManager->Camera : null;
 
             if (camera != null && !float.IsNaN(camera->DirH))
             {
-                headingRad = camera->DirH;
+                headingRad = -camera->DirH;
             }
             else if (!float.IsNaN(player.Rotation))
             {

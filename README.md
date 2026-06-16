@@ -5,6 +5,10 @@ your screen, giving you clean directional awareness without needing the minimap.
 
 ---
 
+DALAMUD REPO: https://raw.githubusercontent.com/JTayGang/SkyrimCompass/main/repo.json
+
+---
+
 ## Features
 
 | | |

@@ -34,6 +34,14 @@ public class Configuration : IPluginConfiguration
     /// Useful in third-person with a freely-rotating camera.
     /// </summary>
     public bool  UseCameraDirection { get; set; } = false;
+    /// <summary>
+    /// Sub-option of <see cref="UseCameraDirection"/> (has no effect unless that's also on).
+    /// When enabled, entity bearings/distances are measured from the camera's physical
+    /// position instead of the character's — useful if you play heavily zoomed out or use
+    /// a camera offset mod, so compass markers line up with what you're actually seeing
+    /// rather than where your character's body happens to be standing.
+    /// </summary>
+    public bool  UseCameraPosition { get; set; } = false;
     public float FontScale       { get; set; } = 1.0f;
     public bool  ShowHeadingText { get; set; } = true;
 

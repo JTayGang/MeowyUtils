@@ -113,6 +113,21 @@ public sealed class ConfigWindow : Window
                 "Off: the compass follows your CHARACTER's facing direction,\n" +
                 "matching how Skyrim's compass behaves (recommended for combat/navigation).");
 
+        ImGui.Indent();
+        ImGui.BeginDisabled(!cfg.UseCameraDirection);
+        bool ucp = cfg.UseCameraPosition;
+        if (ImGui.Checkbox("Also use camera location for distances##ucp", ref ucp))
+        { cfg.UseCameraPosition = ucp; changed = true; }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip(
+                "Measures entity bearings/distances from your CAMERA's position instead\n" +
+                "of your character's. Useful if you play heavily zoomed out or use a\n" +
+                "camera offset mod — keeps compass markers consistent with what you're\n" +
+                "actually seeing on screen rather than where your character is standing.\n" +
+                "Only takes effect while 'Use camera direction' above is also on.");
+        ImGui.EndDisabled();
+        ImGui.Unindent();
+
         ImGui.Spacing();
         ImGui.TextDisabled("Rotation Offset  (set to 180 if N and S are swapped)");
         v = cfg.RotationOffset;

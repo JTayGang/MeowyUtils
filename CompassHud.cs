@@ -59,6 +59,7 @@ public sealed class CompassHud
         if (player == null) return;
 
         float headingRad;
+        var   originPos = player.Position;   // default: bearings/distances from the character
 
         if (config.UseCameraDirection)
         {
@@ -78,6 +79,29 @@ public sealed class CompassHud
             if (camera != null && !float.IsNaN(camera->DirH))
             {
                 headingRad = -camera->DirH;
+
+                // First-person uses a different DirH convention than third-person —
+                // confirmed via in-game testing: entering first person flips the heading
+                // by exactly 180° with no other symptom. Likely cause: in third person,
+                // DirH appears to encode the camera's ORBITAL position angle around the
+                // character, which is 180° opposite the direction it's actually looking
+                // (an orbiting camera looks back toward its own pivot). First person has
+                // no orbit at all, so DirH becomes a direct view angle instead — a clean
+                // 180° shift in meaning. Gating this on ZoomMode keeps third person
+                // (already verified correct) completely untouched.
+                if (camera->ZoomMode == CameraZoomMode.FirstPerson)
+                    headingRad += MathF.PI;
+
+                if (config.UseCameraPosition)
+                {
+                    // LastPosition sits directly next to LastLookAtVector in the struct —
+                    // that adjacent eye/look-at pairing is the standard convention 3D camera
+                    // systems use, which is why this is the camera's actual world position
+                    // rather than some other camera-related point (e.g. its pivot/target).
+                    var camPos = camera->LastPosition;
+                    if (!float.IsNaN(camPos.X) && !float.IsNaN(camPos.Y) && !float.IsNaN(camPos.Z))
+                        originPos = camPos;
+                }
             }
             else if (!float.IsNaN(player.Rotation))
             {
@@ -107,7 +131,7 @@ public sealed class CompassHud
         float bx = (io.DisplaySize.X - bw) * 0.5f;
         float by = config.YOffset;
 
-        RenderBar(dl, bx, by, bw, bh, heading, player);
+        RenderBar(dl, bx, by, bw, bh, heading, player, originPos);
     }
 
     // ── Lens projection ───────────────────────────────────────────────────────
@@ -143,7 +167,7 @@ public sealed class CompassHud
     private void RenderBar(
         ImDrawListPtr dl,
         float bx, float by, float bw, float bh,
-        float heading, IPlayerCharacter player)
+        float heading, IPlayerCharacter player, Vector3 originPos)
     {
         float cx      = bx + bw * 0.5f;
         float cy      = by + bh * 0.5f;
@@ -237,7 +261,7 @@ public sealed class CompassHud
 
         // ── 5. Entity markers (centred, lens-projected, alpha-faded) ─────────
         if (config.ShowAnyMarkers)
-            RenderMarkers(dl, cx, cy, halfVis, barHalfW, lensStr, heading, player);
+            RenderMarkers(dl, cx, cy, halfVis, barHalfW, lensStr, heading, player, originPos);
 
         dl.PopClipRect();
 
@@ -286,14 +310,16 @@ public sealed class CompassHud
         ImDrawListPtr dl,
         float cx, float cy,
         float halfVis, float barHalfW, float lensStr,
-        float heading, IPlayerCharacter player)
+        float heading, IPlayerCharacter player, Vector3 originPos)
     {
-        var   pp        = player.Position;
+        var   pp        = originPos;   // character position, or camera position if both toggles are on
         float maxDistSq = config.MaxMarkerDistance * config.MaxMarkerDistance;
         float extHalf   = halfVis * lensStr;
 
         foreach (var obj in objectTable)
         {
+            // Identity check stays keyed on the character regardless of which origin
+            // bearings are measured from — we're still always excluding "yourself".
             if (obj == null) continue;
             if (obj.EntityId == player.EntityId) continue;
 

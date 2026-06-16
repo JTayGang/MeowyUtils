@@ -295,8 +295,14 @@ public sealed class CompassHud
             if (obj.EntityId == player.EntityId) continue;
 
             float dx  = obj.Position.X - pp.X;
+            float dy  = obj.Position.Y - pp.Y;
             float dz  = obj.Position.Z - pp.Z;
-            float dsq = dx * dx + dz * dz;
+            // Full 3D distance (drives range cutoff, dot size, and fade) so something
+            // far above/below you doesn't register as "right next to you" just because
+            // it's horizontally close. Bearing below intentionally stays 2D (dx, dz
+            // only) — height shouldn't shove a dot sideways on the compass, only affect
+            // how prominent it looks.
+            float dsq = dx * dx + dy * dy + dz * dz;
 
             if (dsq > maxDistSq || dsq < 0.25f) continue;
 

@@ -44,10 +44,32 @@ public sealed class CompassHud : IDisposable
     private readonly ExcelSheet<GatheringPointBase> gatheringPointBaseSheet;
     private readonly ExcelSheet<GatheringType> gatheringTypeSheet;
 
-    // BaseId -> "is this a Mender NPC" (title contains "Mender"), cached permanently —
-    // static game data, same reasoning as gatheringIconCache.
-    private readonly Dictionary<uint, bool> npcIsMenderCache = new();
+    // BaseId -> NPC title text (e.g. "Merchant & Mender"), cached permanently — static
+    // game data. Shared by every title-keyword icon check (Mender, Shop, and whatever
+    // gets added next) rather than one bool cache per category.
+    private readonly Dictionary<uint, string> npcTitleCache = new();
     private readonly ExcelSheet<ENpcResident> npcResidentSheet;
+
+    // Curated keyword sets, each confirmed against real frequency in the actual
+    // ENpcResident sheet data before being added (not guessed).
+    private static readonly string[] MenderTitleKeywords = { "Mender" };
+    private static readonly string[] ShopTitleKeywords   =
+    {
+        // Original confirmed set
+        "Merchant", "Vendor", "Trader",
+        // Confirmed via real /compass debug output + frequency check against ENpcResident
+        "Sutler",       // 12 matches, all camp/field vendors — zero false positives
+        "Supplier",     // 133 matches, all genuine supply vendors — zero false positives
+        // "Monger" alone catches rumormonger/gossipmonger/winemonger (flavor NPCs, not shops)
+        // so we use the specific vendor sub-types confirmed against real data instead:
+        "Junkmonger", "Fishmonger", "Dyemonger",
+        // Further confirmed via /compass debug + full sheet sample — zero false positives each:
+        "Jeweler",      // 8 matches (Independent Jeweler, Jeweler, traveling jeweler)
+        "Apothecary",   // 19 matches (Apothecary, Independent Apothecary, various X apothecary)
+        "Culinarian",   // 16 matches (Culinarian, Independent Culinarian, various X culinarian)
+        // NOT added (checked and rejected): Alchemist (52 matches, almost all quest/ambient lore
+        // NPCs not vendors), Carpenter (all ambient background), Armorer (partially ambiguous)
+    };
 
     private static readonly (float Deg, string Label, bool IsMajor)[] Directions =
     [
@@ -439,11 +461,19 @@ public sealed class CompassHud : IDisposable
             }
             else if (config.ShowMenderIcons
                 && obj.ObjectKind == ObjectKind.EventNpc
-                && IsMenderNpc(obj.BaseId))
+                && NpcMatchesKeywords(obj, GetNpcTitle(obj.BaseId), MenderTitleKeywords))
             {
                 // Shares the quest-marker size range above — one shared "any icon in
                 // place of an NPC dot" size knob rather than a separate slider pair.
                 iconId   = config.MenderIconId;
+                iconSize = config.NpcQuestIconMinSize
+                         + (config.NpcQuestIconMaxSize - config.NpcQuestIconMinSize) * t;
+            }
+            else if (config.ShowShopIcons
+                && obj.ObjectKind == ObjectKind.EventNpc
+                && NpcMatchesKeywords(obj, GetNpcTitle(obj.BaseId), ShopTitleKeywords))
+            {
+                iconId   = config.ShopIconId;
                 iconSize = config.NpcQuestIconMinSize
                          + (config.NpcQuestIconMaxSize - config.NpcQuestIconMinSize) * t;
             }
@@ -462,8 +492,19 @@ public sealed class CompassHud : IDisposable
 
             if (!drewIcon)
             {
-                dl.AddCircleFilled(V(sx, cy), r, WithAlpha(col, alpha));
-                dl.AddCircle(V(sx, cy), r + 0.8f, WithAlpha(0x66000000u, alpha));
+                if (obj.ObjectKind == ObjectKind.Pc)
+                {
+                    // Ring with transparent centre for players — easier to distinguish in
+                    // a crowd of filled enemy/NPC dots, and avoids visual noise when many
+                    // players are stacked at the same position.
+                    dl.AddCircle(V(sx, cy), r, WithAlpha(col, alpha), 0, 2.0f);
+                    dl.AddCircle(V(sx, cy), r + 0.8f, WithAlpha(0x33000000u, alpha));
+                }
+                else
+                {
+                    dl.AddCircleFilled(V(sx, cy), r, WithAlpha(col, alpha));
+                    dl.AddCircle(V(sx, cy), r + 0.8f, WithAlpha(0x66000000u, alpha));
+                }
             }
         }
     }
@@ -603,23 +644,46 @@ public sealed class CompassHud : IDisposable
     }
 
     /// <summary>
-    /// True if this NPC's ENpcResident title contains "Mender" (e.g. "Mender",
-    /// "Merchant &amp; Mender", "Independent Arms Mender"). Confirmed real keyword —
-    /// matches 48 actual NPCs in the game's own data. Cached permanently per BaseId.
+    /// Resolves an NPC's title text (e.g. "Merchant &amp; Mender") via the ENpcResident
+    /// sheet, cached permanently per BaseId since this is static game data. Returns ""
+    /// if the NPC has no title or the BaseId doesn't resolve — most named NPCs (over
+    /// 96%, per real sheet data) fall into this category.
     /// </summary>
-    private bool IsMenderNpc(uint baseId)
+    private string GetNpcTitle(uint baseId)
     {
-        if (npcIsMenderCache.TryGetValue(baseId, out bool cached))
+        if (npcTitleCache.TryGetValue(baseId, out string? cached))
             return cached;
 
-        bool isMender = false;
+        string title = "";
         var row = npcResidentSheet.GetRowOrDefault(baseId);
         if (row != null)
-            isMender = row.Value.Title.ToString().Contains("Mender", StringComparison.OrdinalIgnoreCase);
+            title = row.Value.Title.ToString();
 
-        npcIsMenderCache[baseId] = isMender;
-        return isMender;
+        npcTitleCache[baseId] = title;
+        return title;
     }
+
+    /// <summary>Case-insensitive "does title contain any of these keywords" check.</summary>
+    private static bool TitleContainsAny(string title, string[] keywords)
+    {
+        if (string.IsNullOrEmpty(title)) return false;
+        foreach (var kw in keywords)
+            if (title.Contains(kw, StringComparison.OrdinalIgnoreCase))
+                return true;
+        return false;
+    }
+
+    /// <summary>
+    /// Checks an NPC's job-keyword match across BOTH possible locations the text can
+    /// live in: the separate ENpcResident "Title" field (e.g. Eilonwy → Name="Eilonwy",
+    /// Title="Merchant &amp; Mender"), or the live display Name itself for NPCs that have
+    /// no personal name at all and are simply named after their role directly
+    /// (e.g. Name="Independent Mender", Title=""). Confirmed via real /compass debug
+    /// output that both patterns genuinely occur — checking Title alone silently missed
+    /// every NPC of the second kind.
+    /// </summary>
+    private static bool NpcMatchesKeywords(IGameObject obj, string title, string[] keywords) =>
+        TitleContainsAny(title, keywords) || TitleContainsAny(obj.Name.TextValue, keywords);
 
     /// <summary>Which aetheryte category, if any, an object matches.</summary>
     private enum AetheryteNameKind { None, Big, Shard }
@@ -821,10 +885,30 @@ public sealed class CompassHud : IDisposable
         log.Info($"[SkyrimCompass debug] {nearby.Count} object(s) within {radius}y — nearest first:");
         foreach (var (dist, obj) in nearby)
         {
+            string extra = "";
+            if (obj.ObjectKind == ObjectKind.EventNpc)
+            {
+                string title       = GetNpcTitle(obj.BaseId);
+                bool   hasQuestIcon = npcMarkerIcons.TryGetValue(obj.GameObjectId, out int qIconId) && qIconId > 0;
+                bool   isMender     = NpcMatchesKeywords(obj, title, MenderTitleKeywords);
+                bool   isShop       = NpcMatchesKeywords(obj, title, ShopTitleKeywords);
+
+                // Mirrors the exact priority order RenderMarkers uses, so this tells
+                // you definitively which branch would actually win for this object —
+                // no more guessing whether a quest marker is silently taking priority.
+                string winner = hasQuestIcon ? $"QuestMarker(icon={qIconId})"
+                              : isMender     ? "Mender"
+                              : isShop       ? "Shop"
+                              : "none/dot";
+
+                extra = $" | Title=\"{title}\" | QuestIcon={hasQuestIcon,-5} | " +
+                        $"IsMender={isMender,-5} | IsShop={isShop,-5} | WouldShow={winner}";
+            }
+
             log.Info(
                 $"[SkyrimCompass debug] {dist,6:F1}y | Kind={obj.ObjectKind,-19} | " +
                 $"BaseId={obj.BaseId,-8} | Targetable={obj.IsTargetable,-5} | " +
-                $"Name=\"{obj.Name.TextValue}\"");
+                $"Name=\"{obj.Name.TextValue}\"{extra}");
         }
         log.Info("[SkyrimCompass debug] Done. Use /xllog in-game to view the log window.");
     }

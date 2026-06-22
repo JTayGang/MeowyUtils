@@ -494,11 +494,24 @@ public sealed class CompassHud : IDisposable
             {
                 if (obj.ObjectKind == ObjectKind.Pc)
                 {
-                    // Ring with transparent centre for players — easier to distinguish in
-                    // a crowd of filled enemy/NPC dots, and avoids visual noise when many
-                    // players are stacked at the same position.
-                    dl.AddCircle(V(sx, cy), r, WithAlpha(col, alpha), 0, 2.0f);
-                    dl.AddCircle(V(sx, cy), r + 0.8f, WithAlpha(0x33000000u, alpha));
+                    // Friends on the list render as solid filled dots to stand out from
+                    // the crowd; everyone else gets the hollow ring.
+                    bool isFriend = config.SolidFriendDots
+                        && obj is ICharacter ch
+                        && (ch.StatusFlags & StatusFlags.Friend) != 0;
+
+                    if (isFriend)
+                    {
+                        dl.AddCircleFilled(V(sx, cy), r, WithAlpha(col, alpha));
+                        dl.AddCircle(V(sx, cy), r + 0.8f, WithAlpha(0x66000000u, alpha));
+                    }
+                    else
+                    {
+                        // Ring with transparent centre for non-friend players — easier to
+                        // distinguish in a crowd of filled enemy/NPC dots.
+                        dl.AddCircle(V(sx, cy), r, WithAlpha(col, alpha), 0, 2.0f);
+                        dl.AddCircle(V(sx, cy), r + 0.8f, WithAlpha(0x33000000u, alpha));
+                    }
                 }
                 else
                 {

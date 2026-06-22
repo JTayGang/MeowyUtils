@@ -249,6 +249,19 @@ public sealed class ConfigWindow : Window
         ImGui.SameLine();
         if (ImGui.ColorEdit4("Players##players_c", ref c, ColorPickerFlags)) { cfg.PlayerColor = c;    changed = true; }
 
+        ImGui.Indent();
+        ImGui.BeginDisabled(!cfg.ShowPlayers);
+        bool sfr = cfg.SolidFriendDots;
+        if (ImGui.Checkbox("Solid dot for friends##sfr", ref sfr))
+        { cfg.SolidFriendDots = sfr; changed = true; }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip(
+                "Players on your friends list render as a solid filled dot instead\n" +
+                "of the default hollow ring, making them stand out in a crowd.\n" +
+                "Uses the same friend flag the game's minimap and nameplates read from.");
+        ImGui.EndDisabled();
+        ImGui.Unindent();
+
         ImGui.EndTabItem();
         return changed;
     }
@@ -325,7 +338,18 @@ public sealed class ConfigWindow : Window
                 "identified by their \"Mender\" job title — confirmed against real\n" +
                 "game data. Shares the icon size sliders below with quest markers.");
 
-        ImGui.BeginDisabled(!qIcon && !mIcon);
+        bool sIcon = cfg.ShowShopIcons;
+        if (ImGui.Checkbox("Show real Shop/Trader icon##sicon", ref sIcon))
+        { cfg.ShowShopIcons = sIcon; changed = true; }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip(
+                "Shows the real game icon for Shop/Trader NPCs, identified by a\n" +
+                "\"Merchant\", \"Vendor\", or \"Trader\" job title — confirmed against\n" +
+                "real game data. Shares the icon size sliders below with the others.\n" +
+                "Note: the exact icon variant used couldn't be visually confirmed\n" +
+                "without a live client — let me know if it doesn't look right.");
+
+        ImGui.BeginDisabled(!qIcon && !mIcon && !sIcon);
         ImGui.Indent();
         int qMin = (int)cfg.NpcQuestIconMinSize;
         if (ImGui.SliderInt("Min icon sizes (far away)##qmin", ref qMin, 8, 50))

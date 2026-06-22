@@ -55,6 +55,13 @@ public class Configuration : IPluginConfiguration
 
     // ── Marker toggles ───────────────────────────────────────────────────────
     public bool ShowPlayers       { get; set; } = true;
+    /// <summary>
+    /// When enabled, players on your friends list render as solid filled dots instead
+    /// of the default hollow ring, making them visually distinct in a crowd.
+    /// Uses StatusFlags.Friend from the game's own IsFriend field — the same source
+    /// the minimap and nameplate system read from.
+    /// </summary>
+    public bool SolidFriendDots   { get; set; } = true;
     public bool ShowEnemies       { get; set; } = true;
     /// <summary>
     /// When enabled, only shows hostile enemies that are currently targeting the
@@ -94,6 +101,18 @@ public class Configuration : IPluginConfiguration
     // for the same reason as AetheryteIconId: round-trips cleanly in saved config files,
     // but there's no reason a player should need to change it.
     public int MenderIconId { get; set; } = 60434;
+    /// <summary>
+    /// Shows the real game icon for Shop/Trader NPCs, identified by a "Merchant",
+    /// "Vendor", or "Trader" job title. Shares <see cref="NpcQuestIconMinSize"/> and
+    /// <see cref="NpcQuestIconMaxSize"/> with the other NPC icon features.
+    /// </summary>
+    public bool ShowShopIcons { get; set; } = false;
+    // Shop icon ID — sourced from the same trusted reference table as MenderIconId, but
+    // that table actually listed THREE candidate icon IDs for "Shops" (60412/60935/60987)
+    // without indicating which is the canonical one, and there was no way to visually
+    // confirm which looks right without a live client. This is the first of those three —
+    // correct it (or try 60935 / 60987) if it doesn't look right in-game.
+    public int ShopIconId { get; set; } = 60412;
 
     public bool ShowGatheringNodes{ get; set; } = true;
     /// <summary>

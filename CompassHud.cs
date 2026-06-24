@@ -49,10 +49,35 @@ public sealed class CompassHud : IDisposable
     // gets added next) rather than one bool cache per category.
     private readonly Dictionary<uint, string> npcTitleCache = new();
     private readonly ExcelSheet<ENpcResident> npcResidentSheet;
+    private readonly ExcelSheet<ClassJob>     classJobSheet;
 
     // Curated keyword sets, each confirmed against real frequency in the actual
     // ENpcResident sheet data before being added (not guessed).
     private static readonly string[] MenderTitleKeywords = { "Mender" };
+
+    /// <summary>
+    /// Multiplier applied to NPC marker icons (quest/Mender/Shop) and the player party
+    /// role/job icon, on top of their normal size formula. Most of these game icon
+    /// textures have a fair amount of transparent padding baked in around the actual
+    /// glyph, so drawing them at the same bounding-box size as a plain dot makes the
+    /// visible icon art look noticeably smaller than the dot. A multiplier (rather than
+    /// a flat px offset) keeps that compensation proportional at every distance — a flat
+    /// offset would dominate the size at long range, where the base size shrinks toward
+    /// zero but the offset doesn't, so small/far icons stopped shrinking properly and
+    /// effectively hit a minimum size floor. Deliberately NOT applied to Gathering icons,
+    /// which weren't reported as undersized. Aetheryte icons get their own larger
+    /// multiplier below instead, since their texture padding runs heavier than the rest.
+    /// </summary>
+    private const float IconSizeMultiplier = 1.4f;
+    /// <summary>
+    /// Same idea as <see cref="IconSizeMultiplier"/>, but specifically for aetheryte
+    /// icons (both the Big and Aethernet Shard variants) — their source textures carry
+    /// noticeably more internal padding than the other icon sets, so the shared 1.4x
+    /// wasn't enough to bring them up to the equivalent dot size. Only applied to the
+    /// drawn icon itself, not the plain-dot fallback (see RenderMarkers), so the dot
+    /// stays at the true reference size for whenever icons are off.
+    /// </summary>
+    private const float AetheryteIconSizeMultiplier = 1.75f;
     private static readonly string[] ShopTitleKeywords   =
     {
         // Original confirmed set
@@ -107,6 +132,7 @@ public sealed class CompassHud : IDisposable
         gatheringPointBaseSheet = dataManager.GetExcelSheet<GatheringPointBase>();
         gatheringTypeSheet      = dataManager.GetExcelSheet<GatheringType>();
         npcResidentSheet        = dataManager.GetExcelSheet<ENpcResident>();
+        classJobSheet           = dataManager.GetExcelSheet<ClassJob>();
 
         // OnDataUpdate (not OnNamePlateUpdate) is the one that fires every frame with
         // ALL current nameplates, not just ones that changed — exactly what we need to
@@ -432,6 +458,10 @@ public sealed class CompassHud : IDisposable
 
             float dist = MathF.Sqrt(dsq);
             float t    = 1f - dist / config.MaxMarkerDistance;   // 1 = close, 0 = at max range
+            // Fallback dot radius for kinds that don't have their own page-level size
+            // slider (Gathering without icon, Treasure). Players, NPCs, Enemies, and
+            // Aetherytes compute their own size below from their page's slider
+            // instead, so each slider covers every marker on that page.
             float r    = 3f + 7f * t;
 
             // Three-zone alpha curve, shared with RenderFates — see ComputeFadeAlpha.
@@ -448,16 +478,18 @@ public sealed class CompassHud : IDisposable
             if (config.ShowAetheryteIcons && isAetheryteKind)
             {
                 iconId   = GetAetheryteIconId(obj);
-                iconSize = config.AetheryteIconMinSize
-                         + (config.AetheryteIconMaxSize - config.AetheryteIconMinSize) * t;
+                iconSize = (config.AetheryteIconMinSize
+                         + (config.AetheryteIconMaxSize - config.AetheryteIconMinSize) * t)
+                         * AetheryteIconSizeMultiplier;
             }
             else if (config.ShowNpcQuestIcons
                 && obj.ObjectKind == ObjectKind.EventNpc
                 && npcMarkerIcons.TryGetValue(obj.GameObjectId, out int npcIcon))
             {
                 iconId   = npcIcon;
-                iconSize = config.NpcQuestIconMinSize
-                         + (config.NpcQuestIconMaxSize - config.NpcQuestIconMinSize) * t;
+                iconSize = (config.NpcQuestIconMinSize
+                         + (config.NpcQuestIconMaxSize - config.NpcQuestIconMinSize) * t)
+                         * IconSizeMultiplier;
             }
             else if (config.ShowMenderIcons
                 && obj.ObjectKind == ObjectKind.EventNpc
@@ -466,16 +498,18 @@ public sealed class CompassHud : IDisposable
                 // Shares the quest-marker size range above — one shared "any icon in
                 // place of an NPC dot" size knob rather than a separate slider pair.
                 iconId   = config.MenderIconId;
-                iconSize = config.NpcQuestIconMinSize
-                         + (config.NpcQuestIconMaxSize - config.NpcQuestIconMinSize) * t;
+                iconSize = (config.NpcQuestIconMinSize
+                         + (config.NpcQuestIconMaxSize - config.NpcQuestIconMinSize) * t)
+                         * IconSizeMultiplier;
             }
             else if (config.ShowShopIcons
                 && obj.ObjectKind == ObjectKind.EventNpc
                 && NpcMatchesKeywords(obj, GetNpcTitle(obj.BaseId), ShopTitleKeywords))
             {
                 iconId   = config.ShopIconId;
-                iconSize = config.NpcQuestIconMinSize
-                         + (config.NpcQuestIconMaxSize - config.NpcQuestIconMinSize) * t;
+                iconSize = (config.NpcQuestIconMinSize
+                         + (config.NpcQuestIconMaxSize - config.NpcQuestIconMinSize) * t)
+                         * IconSizeMultiplier;
             }
             else if (config.ShowGatheringIcons && obj.ObjectKind == ObjectKind.GatheringPoint)
             {
@@ -494,24 +528,104 @@ public sealed class CompassHud : IDisposable
             {
                 if (obj.ObjectKind == ObjectKind.Pc)
                 {
-                    // Friends on the list render as solid filled dots to stand out from
-                    // the crowd; everyone else gets the hollow ring.
-                    bool isFriend = config.SolidFriendDots
-                        && obj is ICharacter ch
-                        && (ch.StatusFlags & StatusFlags.Friend) != 0;
+                    // Drives EVERY player marker below — plain ring, solid friend dot,
+                    // and the party role icon + its background dot — so the Players
+                    // page's size slider controls all of them together.
+                    float playerSize = config.PartyRoleIconMinSize
+                                      + (config.PartyRoleIconMaxSize - config.PartyRoleIconMinSize) * t;
+                    float playerR    = playerSize * 0.5f;
 
-                    if (isFriend)
+                    bool drewJobIcon = false;
+
+                    if (config.ShowPartyRoleIcons && obj is ICharacter partyChar
+                        && (partyChar.StatusFlags & StatusFlags.PartyMember) != 0)
                     {
-                        dl.AddCircleFilled(V(sx, cy), r, WithAlpha(col, alpha));
-                        dl.AddCircle(V(sx, cy), r + 0.8f, WithAlpha(0x66000000u, alpha));
+                        // Unbordered class/job icons confirmed at IDs 62001-62047 via
+                        // /xldata in-game. Formula: 62000 + ClassJob.RowId (RowId is
+                        // 1-indexed, so GLA=62001, PGL=62002, ... PIC=62042, etc.)
+                        uint jobRowId  = partyChar.ClassJob.RowId;
+                        int  jobIconId = jobRowId > 0 ? (int)(62000 + jobRowId) : 0;
+
+                        if (jobIconId > 0)
+                        {
+                            // Role-colored background dot — Tank=blue, Healer=green,
+                            // DPS=red, DoH/DoL=gray. Colors match FFXIV's own role UI.
+                            // Stays at the unpadded playerR so it still represents the
+                            // equivalent plain-dot size; only the icon glyph drawn over
+                            // it gets the padding offset below.
+                            uint roleCol = GetRoleColor(partyChar);
+                            dl.AddCircleFilled(V(sx, cy), playerR, WithAlpha(roleCol, alpha));
+
+                            // Job icon drawn on top — if the icon ID doesn't resolve
+                            // (e.g. a future job beyond the known range), the colored
+                            // dot still shows as a useful fallback.
+                            TryDrawIcon(dl, jobIconId, sx, cy, playerSize * IconSizeMultiplier, alpha);
+                            drewJobIcon = true;
+                        }
                     }
-                    else
+
+                    if (!drewJobIcon)
                     {
-                        // Ring with transparent centre for non-friend players — easier to
-                        // distinguish in a crowd of filled enemy/NPC dots.
-                        dl.AddCircle(V(sx, cy), r, WithAlpha(col, alpha), 0, 2.0f);
-                        dl.AddCircle(V(sx, cy), r + 0.8f, WithAlpha(0x33000000u, alpha));
+                        // Friends on the list render as solid filled dots to stand out
+                        // from the crowd; everyone else gets the hollow ring.
+                        bool isFriend = config.SolidFriendDots
+                            && obj is ICharacter ch
+                            && (ch.StatusFlags & StatusFlags.Friend) != 0;
+
+                        if (isFriend)
+                        {
+                            dl.AddCircleFilled(V(sx, cy), playerR, WithAlpha(col, alpha));
+                            dl.AddCircle(V(sx, cy), playerR + 0.8f, WithAlpha(0x66000000u, alpha));
+                        }
+                        else
+                        {
+                            // Ring with transparent centre for non-friend, non-party players.
+                            dl.AddCircle(V(sx, cy), playerR, WithAlpha(col, alpha), 0, 2.0f);
+                            dl.AddCircle(V(sx, cy), playerR + 0.8f, WithAlpha(0x33000000u, alpha));
+                        }
                     }
+                }
+                else if (obj.ObjectKind == ObjectKind.EventNpc && !isAetheryteKind)
+                {
+                    // Plain NPC dot fallback (no quest/Mender/Shop icon applied) — sized
+                    // from the same slider as those icons, so the NPCs page's size
+                    // slider controls every NPC marker, dot or icon alike. Excludes
+                    // aetheryte-classified EventNpcs (Firmament crystals) since those
+                    // are routed through the Aetheryte color/size logic instead,
+                    // independent of NPC settings (see MarkerColor above).
+                    float npcSize = config.NpcQuestIconMinSize
+                                  + (config.NpcQuestIconMaxSize - config.NpcQuestIconMinSize) * t;
+                    float npcR    = npcSize * 0.5f;
+
+                    dl.AddCircleFilled(V(sx, cy), npcR, WithAlpha(col, alpha));
+                    dl.AddCircle(V(sx, cy), npcR + 0.8f, WithAlpha(0x66000000u, alpha));
+                }
+                else if (obj.ObjectKind == ObjectKind.BattleNpc)
+                {
+                    // Enemy dot, sized from its own page's slider instead of the
+                    // shared global radius — same pattern as Players/NPCs above.
+                    float enemySize = config.EnemyMinSize
+                                     + (config.EnemyMaxSize - config.EnemyMinSize) * t;
+                    float enemyR    = enemySize * 0.5f;
+
+                    dl.AddCircleFilled(V(sx, cy), enemyR, WithAlpha(col, alpha));
+                    dl.AddCircle(V(sx, cy), enemyR + 0.8f, WithAlpha(0x66000000u, alpha));
+                }
+                else if (isAetheryteKind)
+                {
+                    // Plain aetheryte dot fallback (icons off, or the texture didn't
+                    // resolve this frame) — sized from the same slider as the real
+                    // icon above, so the Aetherytes page's size slider controls every
+                    // aetheryte marker, dot or icon alike. Catches every ObjectKind
+                    // ClassifyAetheryte can return Big/Shard for (Aetheryte, EventNpc
+                    // Firmament crystals, EventObj housing shards) — not just the
+                    // real ObjectKind.Aetheryte case.
+                    float aetherSize = config.AetheryteIconMinSize
+                                      + (config.AetheryteIconMaxSize - config.AetheryteIconMinSize) * t;
+                    float aetherR    = aetherSize * 0.5f;
+
+                    dl.AddCircleFilled(V(sx, cy), aetherR, WithAlpha(col, alpha));
+                    dl.AddCircle(V(sx, cy), aetherR + 0.8f, WithAlpha(0x66000000u, alpha));
                 }
                 else
                 {
@@ -654,6 +768,27 @@ public sealed class CompassHud : IDisposable
 
         gatheringIconCache[baseId] = icon;
         return icon;
+    }
+
+    // Role icon IDs confirmed against xivPartyIcons source's "Role" icon set array.
+    // Using ClassJob.Role (not a per-job index) so it works for every current and
+    // future job automatically without needing a lookup table update.
+    /// <summary>
+    /// Returns a filled-dot background color matching the FFXIV UI convention for the
+    /// character's combat role: Tank=blue, Healer=green, DPS=red, DoH/DoL=gray.
+    /// Used as the tinted background behind the unbordered job icon.
+    /// </summary>
+    private uint GetRoleColor(ICharacter character)
+    {
+        var row = classJobSheet.GetRowOrDefault(character.ClassJob.RowId);
+        if (row == null) return C(new Vector4(0.54f, 0.54f, 0.54f, 0.85f));
+        return row.Value.Role switch
+        {
+            1     => C(new Vector4(0.36f, 0.48f, 0.76f, 0.90f)),   // Tank — blue
+            2 or 3 => C(new Vector4(0.84f, 0.30f, 0.30f, 0.90f)), // DPS  — red
+            4     => C(new Vector4(0.30f, 0.69f, 0.49f, 0.90f)),   // Healer — green
+            _     => C(new Vector4(0.54f, 0.54f, 0.54f, 0.85f)),   // DoH/DoL — gray
+        };
     }
 
     /// <summary>

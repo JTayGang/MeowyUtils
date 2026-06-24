@@ -1,3 +1,4 @@
+using System;
 using System.Numerics;
 using Dalamud.Interface.Windowing;
 using Dalamud.Bindings.ImGui;
@@ -251,6 +252,20 @@ public sealed class ConfigWindow : Window
 
         ImGui.Indent();
         ImGui.BeginDisabled(!cfg.ShowPlayers);
+
+        int prMin = (int)cfg.PartyRoleIconMinSize;
+        if (ImGui.SliderInt("Min size (far away)##prmin", ref prMin, 8, 50))
+        { cfg.PartyRoleIconMinSize = prMin; changed = true; }
+        int prMax = (int)cfg.PartyRoleIconMaxSize;
+        if (ImGui.SliderInt("Max size (close up)##prmax", ref prMax, 8, 60))
+        { cfg.PartyRoleIconMaxSize = prMax; changed = true; }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip(
+                "Controls the size of EVERY player marker — the plain hollow ring,\n" +
+                "the solid friend dot, and the party role icon below — together.");
+
+        ImGui.Spacing();
+
         bool sfr = cfg.SolidFriendDots;
         if (ImGui.Checkbox("Solid dot for friends##sfr", ref sfr))
         { cfg.SolidFriendDots = sfr; changed = true; }
@@ -258,7 +273,19 @@ public sealed class ConfigWindow : Window
             ImGui.SetTooltip(
                 "Players on your friends list render as a solid filled dot instead\n" +
                 "of the default hollow ring, making them stand out in a crowd.\n" +
-                "Uses the same friend flag the game's minimap and nameplates read from.");
+                "Uses the same friend flag the game's minimap and nameplates read from.\n" +
+                "Has no effect on party members when role icons are enabled below.");
+
+        bool pri = cfg.ShowPartyRoleIcons;
+        if (ImGui.Checkbox("Show job icon for party members##pri", ref pri))
+        { cfg.ShowPartyRoleIcons = pri; changed = true; }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip(
+                "Party members show their unbordered class/job icon (IDs 62001-62047)\n" +
+                "on a role-colored background dot: Tank=blue, Healer=green, DPS=red.\n" +
+                "Takes priority over the solid friend dot above for anyone in your party.\n" +
+                "Uses the same size slider above as every other player marker.");
+
         ImGui.EndDisabled();
         ImGui.Unindent();
 
@@ -289,6 +316,16 @@ public sealed class ConfigWindow : Window
                 "Only shows hostile enemies that are targeting you, or that you're\n" +
                 "currently targeting — instead of every hostile mob in range.\n" +
                 "Great for decluttering big pulls, hunt trains, and FATEs.");
+
+        int enMin = (int)cfg.EnemyMinSize;
+        if (ImGui.SliderInt("Min size (far away)##enmin", ref enMin, 8, 50))
+        { cfg.EnemyMinSize = enMin; changed = true; }
+        int enMax = (int)cfg.EnemyMaxSize;
+        if (ImGui.SliderInt("Max size (close up)##enmax", ref enMax, 8, 60))
+        { cfg.EnemyMaxSize = enMax; changed = true; }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Controls the size of every enemy marker.");
+
         ImGui.EndDisabled();
         ImGui.Unindent();
 
@@ -336,7 +373,7 @@ public sealed class ConfigWindow : Window
             ImGui.SetTooltip(
                 "Shows the real game icon for Mender NPCs (gear repair vendors),\n" +
                 "identified by their \"Mender\" job title — confirmed against real\n" +
-                "game data. Shares the icon size sliders below with quest markers.");
+                "game data. Shares the size sliders below with every other NPC marker.");
 
         bool sIcon = cfg.ShowShopIcons;
         if (ImGui.Checkbox("Show real Shop/Trader icon##sicon", ref sIcon))
@@ -345,20 +382,20 @@ public sealed class ConfigWindow : Window
             ImGui.SetTooltip(
                 "Shows the real game icon for Shop/Trader NPCs, identified by a\n" +
                 "\"Merchant\", \"Vendor\", or \"Trader\" job title — confirmed against\n" +
-                "real game data. Shares the icon size sliders below with the others.\n" +
+                "real game data. Shares the size sliders below with every other NPC marker.\n" +
                 "Note: the exact icon variant used couldn't be visually confirmed\n" +
                 "without a live client — let me know if it doesn't look right.");
 
-        ImGui.BeginDisabled(!qIcon && !mIcon && !sIcon);
-        ImGui.Indent();
         int qMin = (int)cfg.NpcQuestIconMinSize;
-        if (ImGui.SliderInt("Min icon sizes (far away)##qmin", ref qMin, 8, 50))
+        if (ImGui.SliderInt("Min size (far away)##qmin", ref qMin, 8, 50))
         { cfg.NpcQuestIconMinSize = qMin; changed = true; }
         int qMax = (int)cfg.NpcQuestIconMaxSize;
-        if (ImGui.SliderInt("Max icon sizes (close up)##qmax", ref qMax, 8, 60))
+        if (ImGui.SliderInt("Max size (close up)##qmax", ref qMax, 8, 60))
         { cfg.NpcQuestIconMaxSize = qMax; changed = true; }
-        ImGui.Unindent();
-        ImGui.EndDisabled();
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip(
+                "Controls the size of EVERY NPC marker — the quest/Mender/Shop icons\n" +
+                "above AND the plain dot shown when none of those apply.");
 
         ImGui.EndDisabled();
         ImGui.Unindent();
@@ -467,19 +504,19 @@ public sealed class ConfigWindow : Window
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip(
                 "Icon IDs are confirmed against a reference plugin's icon table.\n" +
-                "Falls back to the colour dot above only if an icon somehow doesn't\n" +
+                "Falls back to the colour dot below only if an icon somehow doesn't\n" +
                 "resolve to a loadable texture.");
 
-        ImGui.BeginDisabled(!aIcon);
-        ImGui.Indent();
         int aMin = (int)cfg.AetheryteIconMinSize;
         if (ImGui.SliderInt("Min size (far away)##amin", ref aMin, 8, 50))
         { cfg.AetheryteIconMinSize = aMin; changed = true; }
         int aMax = (int)cfg.AetheryteIconMaxSize;
         if (ImGui.SliderInt("Max size (close up)##amax", ref aMax, 8, 60))
         { cfg.AetheryteIconMaxSize = aMax; changed = true; }
-        ImGui.Unindent();
-        ImGui.EndDisabled();
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip(
+                "Controls the size of EVERY aetheryte marker — the real icon above\n" +
+                "AND the plain dot shown when icons are off or a texture fails to load.");
 
         string shardName = cfg.AethernetShardName;
         if (ImGui.InputText("Aethernet shard name##shardname", ref shardName, 64))

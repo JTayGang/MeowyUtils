@@ -15,7 +15,7 @@ public class Configuration : IPluginConfiguration
 
     // ── Layout ───────────────────────────────────────────────────────────────
     public float CompassWidth    { get; set; } = 560f;
-    public float CompassHeight   { get; set; } = 46f;
+    public float CompassHeight   { get; set; } = 35f;
     public float YOffset         { get; set; } = 8f;
 
     // ── Behaviour ────────────────────────────────────────────────────────────
@@ -26,14 +26,14 @@ public class Configuration : IPluginConfiguration
     /// Higher values show a wider FOV at the edges while keeping the centre at normal scale.
     /// 1.5 shows ~50 % more degrees; 2.0 shows ~100 % more.
     /// </summary>
-    public float LensStrength    { get; set; } = 1.6f;
+    public float LensStrength    { get; set; } = 2.0f;
     /// <summary>Added to the computed heading (degrees). Set to 180 if N/S appear swapped.</summary>
     public float RotationOffset  { get; set; } = 0f;
     /// <summary>
     /// When true the compass tracks the camera yaw instead of the character's facing direction.
     /// Useful in third-person with a freely-rotating camera.
     /// </summary>
-    public bool  UseCameraDirection { get; set; } = false;
+    public bool  UseCameraDirection { get; set; } = true;
     /// <summary>
     /// Sub-option of <see cref="UseCameraDirection"/> (has no effect unless that's also on).
     /// When enabled, entity bearings/distances are measured from the camera's physical
@@ -41,9 +41,9 @@ public class Configuration : IPluginConfiguration
     /// a camera offset mod, so compass markers line up with what you're actually seeing
     /// rather than where your character's body happens to be standing.
     /// </summary>
-    public bool  UseCameraPosition { get; set; } = false;
+    public bool  UseCameraPosition { get; set; } = true;
     public float FontScale       { get; set; } = 1.0f;
-    public bool  ShowHeadingText { get; set; } = true;
+    public bool  ShowHeadingText { get; set; } = false;
 
     // ── Colors ───────────────────────────────────────────────────────────────
     // Brownish-dark background evokes Skyrim's leathery UI
@@ -62,6 +62,25 @@ public class Configuration : IPluginConfiguration
     /// the minimap and nameplate system read from.
     /// </summary>
     public bool SolidFriendDots   { get; set; } = true;
+    /// <summary>
+    /// When enabled, party members show their role icon (Tank/Healer/DPS) instead of
+    /// a hollow ring or friend dot. Uses ClassJob.Role from the live character data —
+    /// automatically correct for every current and future job without a lookup table.
+    /// Takes priority over SolidFriendDots for party members.
+    /// Role icon IDs confirmed against xivPartyIcons source:
+    ///   Tank=62581, Healer=62582, MeleeDPS=62584, Ranged/CasterDPS=62586.
+    /// </summary>
+    public bool ShowPartyRoleIcons  { get; set; } = true;
+    /// <summary>
+    /// Pixel diameter at maximum detection range for EVERY player marker on the compass —
+    /// the plain hollow ring, the solid friend dot, and the party role icon (plus its
+    /// role-colored background dot). One slider pair now drives all of them so the whole
+    /// Players page scales together, rather than the plain dot being a separate hardcoded
+    /// size that this slider didn't reach.
+    /// </summary>
+    public float PartyRoleIconMinSize { get; set; } = 10f;
+    /// <summary>Same as <see cref="PartyRoleIconMinSize"/> but for very close range.</summary>
+    public float PartyRoleIconMaxSize { get; set; } = 24f;
     public bool ShowEnemies       { get; set; } = true;
     /// <summary>
     /// When enabled, only shows hostile enemies that are currently targeting the
@@ -69,8 +88,17 @@ public class Configuration : IPluginConfiguration
     /// actually engaged with, rather than every hostile mob in range. Useful for
     /// decluttering big pulls, hunt trains, and FATEs.
     /// </summary>
-    public bool EnemiesOnlyIfEngaged { get; set; } = false;
-    public bool ShowNpcs          { get; set; } = false;
+    public bool EnemiesOnlyIfEngaged { get; set; } = true;
+    /// <summary>
+    /// Pixel diameter at maximum detection range for enemy markers. Defaults match the
+    /// old hardcoded dot formula (radius <c>3 + 7*t</c>, i.e. 6px diameter far away) so
+    /// behaviour is unchanged out of the box — but now it's slider-adjustable instead of
+    /// baked into the code, same as the Players/NPCs size sliders.
+    /// </summary>
+    public float EnemyMinSize { get; set; } = 6f;
+    /// <summary>Same as <see cref="EnemyMinSize"/> but for very close range.</summary>
+    public float EnemyMaxSize { get; set; } = 20f;
+    public bool ShowNpcs          { get; set; } = true;
     /// <summary>
     /// When enabled, hides EventNpc objects that aren't currently targetable.
     /// FFXIV's object table often keeps inert placeholder/anchor entries around
@@ -85,18 +113,23 @@ public class Configuration : IPluginConfiguration
     /// displays above their head — instead of a plain dot. NPCs without an active
     /// marker still fall back to the normal dot.
     /// </summary>
-    public bool ShowNpcQuestIcons { get; set; } = false;
-    /// <summary>Icon pixel diameter at maximum detection range — the farthest/smallest size.</summary>
-    public float NpcQuestIconMinSize { get; set; } = 20f;
-    /// <summary>Icon pixel diameter when very close — the nearest/largest size.</summary>
-    public float NpcQuestIconMaxSize { get; set; } = 30f;
+    public bool ShowNpcQuestIcons { get; set; } = true;
+    /// <summary>
+    /// Pixel diameter at maximum detection range for EVERY NPC marker on the compass —
+    /// the quest/Mender/Shop icons below AND the plain dot fallback used when none of
+    /// those apply. One slider pair now drives all of them so the whole NPCs page scales
+    /// together, rather than the plain dot being a separate hardcoded size outside its reach.
+    /// </summary>
+    public float NpcQuestIconMinSize { get; set; } = 8f;
+    /// <summary>Same as <see cref="NpcQuestIconMinSize"/> but for very close range.</summary>
+    public float NpcQuestIconMaxSize { get; set; } = 40f;
     /// <summary>
     /// Shows the real game icon for Mender NPCs (gear repair vendors), identified by
     /// their "Mender" job title. Shares <see cref="NpcQuestIconMinSize"/> and
     /// <see cref="NpcQuestIconMaxSize"/> with the quest-marker icon feature above —
     /// one shared size range for any icon shown in place of an NPC dot.
     /// </summary>
-    public bool ShowMenderIcons { get; set; } = false;
+    public bool ShowMenderIcons { get; set; } = true;
     // Confirmed game icon ID for Mender NPCs — kept as a property (not shown in the UI)
     // for the same reason as AetheryteIconId: round-trips cleanly in saved config files,
     // but there's no reason a player should need to change it.
@@ -106,7 +139,7 @@ public class Configuration : IPluginConfiguration
     /// "Vendor", or "Trader" job title. Shares <see cref="NpcQuestIconMinSize"/> and
     /// <see cref="NpcQuestIconMaxSize"/> with the other NPC icon features.
     /// </summary>
-    public bool ShowShopIcons { get; set; } = false;
+    public bool ShowShopIcons { get; set; } = true;
     // Shop icon ID — sourced from the same trusted reference table as MenderIconId, but
     // that table actually listed THREE candidate icon IDs for "Shops" (60412/60935/60987)
     // without indicating which is the canonical one, and there was no way to visually
@@ -162,9 +195,13 @@ public class Configuration : IPluginConfiguration
     public int AethernetShardIconId { get; set; } = 60430;
     /// <summary>Fallback dot color, used whenever the real icon isn't available.</summary>
     public Vector4 AetheryteColor { get; set; } = new(0.55f, 0.85f, 0.95f, 0.92f);
-    /// <summary>Aetheryte icon pixel diameter at maximum detection range.</summary>
+    /// <summary>
+    /// Pixel diameter at maximum detection range for EVERY aetheryte marker — the real
+    /// icon above AND the plain dot fallback (shown when icons are off, or if a texture
+    /// somehow fails to load). One slider pair now drives both, same as the NPCs page.
+    /// </summary>
     public float AetheryteIconMinSize { get; set; } = 20f;
-    /// <summary>Aetheryte icon pixel diameter when very close.</summary>
+    /// <summary>Same as <see cref="AetheryteIconMinSize"/> but for very close range.</summary>
     public float AetheryteIconMaxSize { get; set; } = 30f;
     /// <summary>
     /// Maximum detection range in yalms. This is a true 3D straight-line distance
@@ -172,7 +209,7 @@ public class Configuration : IPluginConfiguration
     /// you on a different floor/platform won't register as nearby just because it's
     /// horizontally close.
     /// </summary>
-    public float MaxMarkerDistance{ get; set; } = 60f;
+    public float MaxMarkerDistance{ get; set; } = 100f;
 
     // Dot distance-fade curve (all values are fractions of max detection range, 0–1)
     /// <summary>Dots are fully opaque when closer than this fraction of max range (e.g. 0.85 = within 15%).</summary>

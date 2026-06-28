@@ -632,13 +632,43 @@ public sealed class ConfigWindow : Window
 
         bool    lbB = cfg.ShowLimitBreakGlow;
         Vector4 lbC = cfg.LimitBreakGlowColor;
-        if (DrawEnableAndColor("lbglow", "Limit break glow", ref lbB, ref lbC))
+        if (DrawEnableAndColor("lbglow", "Limit break glow (bar 1 color)", ref lbB, ref lbC))
         { cfg.ShowLimitBreakGlow = lbB; cfg.LimitBreakGlowColor = lbC; changed = true; }
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip(
-                "Skyrim-style: glows in from each end of the border as limit\n" +
-                "break charges. 1 bar lights the outer 1/6 from each end, 2 bars\n" +
-                "the outer 1/3, and a full 3-bar break lights the whole border.");
+                "Skyrim-style: a glowing border creeps in from each end as limit\n" +
+                "break charges — one independent layer per bar, stacked on top\n" +
+                "of each other as each fills. Bar 1 alone already reaches the\n" +
+                "*whole* border once it's full (not just a fraction of it), so\n" +
+                "the number of full layers lit up tells you how many bars are\n" +
+                "charged at a glance.");
+
+        ImGui.Indent();
+        ImGui.BeginDisabled(!cfg.ShowLimitBreakGlow);
+
+        Vector4 lb2 = cfg.LimitBreakGlowColor2;
+        if (ImGui.ColorEdit4("Bar 2 color##lbc2", ref lb2))
+        { cfg.LimitBreakGlowColor2 = lb2; changed = true; }
+        Vector4 lb3 = cfg.LimitBreakGlowColor3;
+        if (ImGui.ColorEdit4("Bar 3 color##lbc3", ref lb3))
+        { cfg.LimitBreakGlowColor3 = lb3; changed = true; }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip(
+                "Each bar's layer also waves at its own speed and phase — bar 2\n" +
+                "and bar 3 are both deliberately detuned from bar 1 and from each\n" +
+                "other, so the three never ripple in lockstep. That's intentional:\n" +
+                "it's meant to look a little overflowing and chaotic at a full break.");
+
+        bool lbPct = cfg.ShowLimitBreakPercentage;
+        if (ImGui.Checkbox("Show percentage##lbpct", ref lbPct))
+        { cfg.ShowLimitBreakPercentage = lbPct; changed = true; }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip(
+                "Small text readout above the bar showing overall progress\n" +
+                "toward a full 3-bar break (0-100%) — for an exact number\n" +
+                "instead of just eyeballing the glow.");
+        ImGui.EndDisabled();
+        ImGui.Unindent();
 
         // TEMPORARY DEBUG AID — forces CompassHud's glow tier so each level can be
         // eyeballed without actually charging LB in a duty. Doesn't touch Configuration

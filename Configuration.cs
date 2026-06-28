@@ -97,11 +97,26 @@ public class Configuration : IPluginConfiguration
 
     // ── Limit break glow ─────────────────────────────────────────────────────
     /// <summary>
-    /// Glows the compass centre notch when limit break is ready, lighting the
-    /// left end-cap diamond too at 2 bars and both end-caps at a full 3-bar break.
+    /// Skyrim-style glowing border, one layer per bar: bar 1's own progress
+    /// (0-100%) creeps in from both ends in <see cref="LimitBreakGlowColor"/>,
+    /// reaching the whole border once that bar is full. Bar 2's progress layers
+    /// a second creeping ribbon on top in <see cref="LimitBreakGlowColor2"/>,
+    /// and bar 3 a third in <see cref="LimitBreakGlowColor3"/> — so the number
+    /// of full-coverage layers visible tells you how many bars are charged at
+    /// a glance, rather than needing to judge how far one shared glow has crept.
     /// </summary>
-    public bool    ShowLimitBreakGlow  { get; set; } = false;
-    public Vector4 LimitBreakGlowColor { get; set; } = new(1.00f, 0.65f, 0.10f, 0.95f);
+    public bool    ShowLimitBreakGlow   { get; set; } = false;
+    public Vector4 LimitBreakGlowColor  { get; set; } = new(1.00f, 0.65f, 0.10f, 0.95f);
+    /// <summary>Layer 2 (bar 2's own progress) — bright yellow by default.</summary>
+    public Vector4 LimitBreakGlowColor2 { get; set; } = new(1.00f, 0.95f, 0.20f, 0.95f);
+    /// <summary>Layer 3 (bar 3's own progress) — white by default.</summary>
+    public Vector4 LimitBreakGlowColor3 { get; set; } = new(1.00f, 1.00f, 1.00f, 0.95f);
+    /// <summary>
+    /// Small text readout of overall progress toward a full 3-bar break
+    /// (0–100%) — for seeing exactly where you stand instead of just watching
+    /// the glow creep.
+    /// </summary>
+    public bool ShowLimitBreakPercentage { get; set; } = true;
 
     public bool ShowNpcs          { get; set; } = true;
     /// <summary>Hides non-targetable EventNpc "ghost" placeholders (e.g. empty chocobo stable slot).</summary>

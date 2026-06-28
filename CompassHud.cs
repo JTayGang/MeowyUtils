@@ -38,12 +38,29 @@ public sealed class CompassHud : IDisposable
 
     // TEMPORARY DEBUG AID — lets the Combat tab's "Force LB1/2/3" checkboxes
     // preview each glow tier without actually charging limit break in a duty.
-    // 0 = off (read the real game state via GetLimitBreakReadyLevel as normal).
+    // 0 = off (read the real game state via GetLimitBreakProgress as normal).
     // Static + public so ConfigWindow can poke it directly without plumbing a
     // reference through Plugin. Safe to delete this field, the ConfigWindow
     // checkboxes that set it, and the one ternary in RenderBar that reads it
     // once the glow visuals are dialed in — nothing else depends on it.
     public static int DebugForceLimitBreakLevel = 0;
+
+    // Limit-break "fade out on use" animation state — persists frame-to-frame
+    // (RenderBar has no memory of its own, it's called fresh every frame). On
+    // a sudden big drop in real progress (limit break used, which resets the
+    // gauge to 0 instantly in the game's own data), the ribbons' geometry
+    // freezes right where it stood — rather than shrinking, which visibly
+    // distorts the wave shape frame to frame — while a wipe sweeps them from
+    // fully visible to fully hidden, centre (where the brackets meet) outward
+    // to the edges, over LbFadeOutDuration. Only once that wipe finishes does
+    // the tracked progress actually snap to the new (post-use) real value —
+    // invisibly, since nothing's showing by then. See UpdateLimitBreakDisplay
+    // below for the actual logic.
+    private float lbTrackedProgress   = 0f;   // last value treated as "current" outside a fade-out
+    private float lbFrozenProgress    = 0f;   // snapshot of lbTrackedProgress at the moment of a drain
+    private float lbFadeOutStartTime  = -1f;  // ImGui time the wipe started; -1 = not fading out
+    private const float LbFadeOutDuration = 2f;
+    private const float LbDropThreshold   = 0.4f;
 
     // GameObjectId -> current nameplate marker icon ID (quest/etc.), refreshed every
     // nameplate update. 0/absent = no active marker.
@@ -279,15 +296,27 @@ public sealed class CompassHud : IDisposable
         float capHW = bh * 0.44f;
         float capHH = bh * 0.64f;
 
-        // Limit break tier (0-3) + glow color — used a bit further down, once the
-        // border itself has been drawn (so the glow traces over/around it rather
-        // than sitting underneath the whole bar). DebugForceLimitBreakLevel (see
-        // field doc above) takes priority over the real read when set, so the
-        // Combat tab's debug checkboxes can preview any tier on demand.
-        int lbReady = config.ShowLimitBreakGlow
-            ? (DebugForceLimitBreakLevel > 0 ? DebugForceLimitBreakLevel : GetLimitBreakReadyLevel())
-            : 0;
-        uint lbGlowCol = C(config.LimitBreakGlowColor);
+        // Centre notch size — hoisted up here (rather than declared right where
+        // it's drawn in step 10) so the limit-break percentage text in step 3
+        // can stack itself above the notch without the two overlapping.
+        const float nH = 10f, nW = 6f;
+
+        // Limit break progress (0.0-3.0, fractional) — used a bit further down,
+        // once the border itself has been drawn (so the glow traces over/around
+        // it rather than sitting underneath the whole bar). DebugForceLimitBreakLevel
+        // (see field doc above) takes priority over the real read when set, so
+        // the Combat tab's debug checkboxes can preview a tier on demand.
+        //
+        // UpdateLimitBreakDisplay runs unconditionally — even with the glow
+        // toggle off — so its fade-out tracking always reflects real LB usage
+        // and resumes seamlessly the moment the toggle is switched back on,
+        // rather than the toggle itself ever being mistaken for a "drain".
+        float rawLbProgress = DebugForceLimitBreakLevel > 0
+            ? (float)DebugForceLimitBreakLevel
+            : GetLimitBreakProgress();
+        float displayedLbProgress = UpdateLimitBreakDisplay(rawLbProgress, (float)ImGui.GetTime(), out float lbWipeProgress);
+        float lbProgress = config.ShowLimitBreakGlow ? displayedLbProgress : 0f;
+        if (!config.ShowLimitBreakGlow) lbWipeProgress = 0f;
 
         // ── 1. Main bar background ────────────────────────────────────────────
         dl.AddRectFilled(V(bx, by), V(bx + bw, by + bh), bgCol);
@@ -313,26 +342,105 @@ public sealed class CompassHud : IDisposable
 
         // ── 3. Limit break border glow ────────────────────────────────────────
         // Skyrim-style: a glowing bracket creeps in from each end of the border
-        // toward the centre as charge builds, meeting in the middle at a full
-        // 3-bar break. 1 bar = the outer 1/6 of the border from each end, 2 bars
-        // = the outer 1/3 from each end, 3 bars = both halves meet → whole border.
-        if (lbReady >= 1)
+        // toward the centre as a bar charges. One independent layer per bar,
+        // stacked on top of each other in turn: bar 1's own 0-100% progress
+        // drives layer 1 (the configured glow color), reaching the *whole*
+        // border the instant bar 1 alone is full. Bar 2's own progress then
+        // layers a second creeping ribbon on top in yellow, and bar 3 a third
+        // in white — so at a glance, the number of full-coverage layers lit up
+        // tells you how many bars are charged, rather than needing to judge how
+        // far one shared glow has crept across a third/sixth/half of the border.
+        //
+        // lbWipeProgress (0 normally) drives the centre-to-edge fade-out after
+        // limit break is used — see UpdateLimitBreakDisplay. All three layers
+        // get the exact same value, so they fade out in lockstep.
+        if (lbProgress > 0f)
         {
-            // Intensity undulates instead of holding steady — a slow ~8s breath
-            // times a faster ~2s shimmer. Co-prime-ish frequencies (0.79/3.23)
-            // keep the combined waveform from ever quite repeating, so the pulse
-            // reads as organic rather than a metronome. Floors kept high (0.50/
-            // 0.84 lows, not lower) so the glow stays clearly visible throughout
-            // the cycle instead of dimming down near-invisible at the bottom.
-            float glowT    = (float)ImGui.GetTime();
-            float breathe  = 0.75f + 0.25f * MathF.Sin(glowT * 0.79f);
-            float shimmer  = 0.92f + 0.08f * MathF.Sin(glowT * 3.23f + 1.17f);
-            float intensity = breathe * shimmer;
+            float glowT = (float)ImGui.GetTime();
 
-            float frac = lbReady >= 3 ? 0.5f : lbReady == 2 ? 1f / 3f : 1f / 6f;
-            float segW = bw * frac;
-            DrawBorderGlowBracket(dl, bx, by, bw, bh, segW, lbGlowCol, intensity, glowT, fromLeft: true);
-            DrawBorderGlowBracket(dl, bx, by, bw, bh, segW, lbGlowCol, intensity, glowT, fromLeft: false);
+            // Each bar's own progress (0-1), independent of the others rather
+            // than cumulative — bar 2 stays at 0 until bar 1 is already full.
+            float bar1 = MathF.Min(lbProgress, 1f);
+            float bar2 = Math.Clamp(lbProgress - 1f, 0f, 1f);
+            float bar3 = Math.Clamp(lbProgress - 2f, 0f, 1f);
+
+            // Breathing intensity (see prior comment history for why these
+            // particular frequencies/floors), parameterized on a layer's own
+            // time value so each of the 3 layers below pulses on its own
+            // schedule instead of in lockstep.
+            static float Intensity(float tt)
+            {
+                float breathe = 0.75f + 0.25f * MathF.Sin(tt * 0.79f);
+                float shimmer = 0.92f + 0.08f * MathF.Sin(tt * 3.23f + 1.17f);
+                return breathe * shimmer;
+            }
+
+            // Layer 1 — bar 1's progress. Baseline timing (no speed/phase
+            // adjustment); the other two layers are deliberately detuned from
+            // this and from each other below.
+            if (bar1 > 0f)
+            {
+                float t1    = glowT;
+                float segW1 = bw * 0.5f * bar1;
+                uint  col1  = C(config.LimitBreakGlowColor);
+                float i1    = Intensity(t1);
+                DrawBorderGlowBracket(dl, bx, by, bw, bh, segW1, col1, i1, t1, lbWipeProgress, bar1, fromLeft: true);
+                DrawBorderGlowBracket(dl, bx, by, bw, bh, segW1, col1, i1, t1, lbWipeProgress, bar1, fromLeft: false);
+            }
+
+            // Layer 2 — bar 2's progress, in yellow. 1.6x speed + a +3.7 phase
+            // offset, so its ripple visibly drifts out of sync with layer 1
+            // instead of waving in the same place at the same moment.
+            if (bar2 > 0f)
+            {
+                float t2    = glowT * 1.6f + 3.7f;
+                float segW2 = bw * 0.5f * bar2;
+                uint  col2  = C(config.LimitBreakGlowColor2);
+                float i2    = Intensity(t2);
+                DrawBorderGlowBracket(dl, bx, by, bw, bh, segW2, col2, i2, t2, lbWipeProgress, bar2, fromLeft: true);
+                DrawBorderGlowBracket(dl, bx, by, bw, bh, segW2, col2, i2, t2, lbWipeProgress, bar2, fromLeft: false);
+            }
+
+            // Layer 3 — bar 3's progress, in white. 0.65x speed + a +7.1 phase
+            // offset — slower and further detuned again, so all three layers
+            // are visibly out of step with each other, reinforcing the
+            // overflowing/chaotic feel of a full break rather than three
+            // ribbons calmly waving in unison.
+            if (bar3 > 0f)
+            {
+                float t3    = glowT * 0.65f + 7.1f;
+                float segW3 = bw * 0.5f * bar3;
+                uint  col3  = C(config.LimitBreakGlowColor3);
+                float i3    = Intensity(t3);
+                DrawBorderGlowBracket(dl, bx, by, bw, bh, segW3, col3, i3, t3, lbWipeProgress, bar3, fromLeft: true);
+                DrawBorderGlowBracket(dl, bx, by, bw, bh, segW3, col3, i3, t3, lbWipeProgress, bar3, fromLeft: false);
+            }
+
+            // Percentage readout, stacked above the centre notch's own space so
+            // the two don't overlap. Overall progress toward the full 3-bar
+            // break (not just the current bar) — a "toward the next bar only"
+            // version would reset to 0% the instant any bar completes (e.g.
+            // 99% -> 0% the moment bar 2 finishes and bar 3 starts charging),
+            // which reads as broken even though it'd be technically correct.
+            // This version only ever climbs. Colored to match the highest
+            // layer currently lit, for the same "tell at a glance" reasoning
+            // as the layering itself. Fades out alongside the ribbons during a
+            // wipe (lbProgress/the number itself stays frozen meanwhile, same
+            // as the geometry, so it doesn't jump to a new number mid-fade).
+            if (config.ShowLimitBreakPercentage)
+            {
+                uint pctCol = bar3 > 0f ? C(config.LimitBreakGlowColor3)
+                            : bar2 > 0f ? C(config.LimitBreakGlowColor2)
+                                        : C(config.LimitBreakGlowColor);
+                float  pct      = lbProgress / 3f * 100f;
+                string pctTxt   = $"{(int)pct}%";
+                var    pctSz    = ImGui.CalcTextSize(pctTxt);
+                float  ptx      = cx - pctSz.X * 0.5f;
+                float  pty      = by - nH - pctSz.Y - 6f;
+                float  textA    = 1f - lbWipeProgress;
+                dl.AddText(V(ptx + 1f, pty + 1f), WithAlpha(0xCC000000u, textA), pctTxt);
+                dl.AddText(V(ptx,      pty),      WithAlpha(pctCol,      textA), pctTxt);
+            }
         }
 
         // ── 4. Clip to bar ────────────────────────────────────────────────────
@@ -427,7 +535,6 @@ public sealed class CompassHud : IDisposable
         DrawEndCapOutlines(dl, bx + bw, cy, capHW, capHH, borderCol);
 
         // ── 10. Centre notch ──────────────────────────────────────────────────
-        const float nH = 10f, nW = 6f;
         dl.AddTriangleFilled(V(cx + 1f, by + nH + 2f), V(cx - nW + 1f, by + 1f), V(cx + nW + 1f, by + 1f), 0x55000000u);
         dl.AddTriangleFilled(V(cx,      by + nH + 1f), V(cx - nW,       by),      V(cx + nW,       by),      0xF2FFFFFFu);
 
@@ -470,8 +577,28 @@ public sealed class CompassHud : IDisposable
     /// ramp runs the right way regardless of which physical point that is, and
     /// also sets which direction the ripple travels — see
     /// <see cref="DrawBorderGlowBracket"/> for why the two sides mirror.
+    ///
+    /// The leading (tip) end fades to fully transparent rather than just
+    /// stopping — so as the bracket grows, there's no crisp edge for the eye
+    /// to lock onto and track; it just dissolves. That fade zone isn't a fixed
+    /// size, though: <paramref name="fillProgress"/> (this bar's own 0-1 fill,
+    /// the same value driving <paramref name="a"/>/<paramref name="b"/>'s
+    /// length one level up) shrinks it down to nothing as the bar nears fully
+    /// charged, so the moment a tier actually becomes ready, the two
+    /// brackets meet at the centre fully opaque on both sides — solid, with no
+    /// fade gap — instead of two soft tips just barely overlapping. Early in
+    /// the fill, the fade is at its normal (~40%-of-length) size; it only
+    /// closes up as the tip approaches the centre.
+    ///
+    /// <paramref name="wipeProgress"/> (0 normally) layers a second, independent
+    /// fade on top: a band that sweeps from the tip end (u=1, the bar's centre,
+    /// where the two brackets meet) out to the anchor end (u=0) as it goes from
+    /// 0 to 1. This is what plays during the few seconds after limit break is
+    /// used — see <see cref="UpdateLimitBreakDisplay"/> — instead of shrinking
+    /// <paramref name="a"/>/<paramref name="b"/> themselves frame to frame,
+    /// which would otherwise distort the wave's shape as it shrinks.
     /// </summary>
-    private static void DrawGlowLine(ImDrawListPtr dl, Vector2 a, Vector2 b, uint col, float intensity, float t, bool fromLeft)
+    private static void DrawGlowLine(ImDrawListPtr dl, Vector2 a, Vector2 b, uint col, float intensity, float t, bool fromLeft, float wipeProgress, float fillProgress)
     {
         Vector2 delta = b - a;
         float   len   = delta.Length();
@@ -484,13 +611,29 @@ public sealed class CompassHud : IDisposable
         const float waveLenLong  = 130f;   // px/cycle right at the anchored corner — long & smooth
         const float waveLenShort = 22f;    // px/cycle at the inner, "chaotic" tip
         const float flowSpeed    = 2.0f;   // rad/s the ripple travels at
+        const float wipeBandHalfWidth = 0.18f;   // how soft the wipe's own edge is, in u-space
+
+        static float SmoothStep(float x) => x * x * (3f - 2f * x);
+
+        // u-fraction (0=anchor, 1=tip) where the leading-edge fade begins.
+        // 0.6 (the normal ~40%-of-length fade) early in the fill, closing all
+        // the way up to 1.0 (no fade at all) as fillProgress reaches 1 — i.e.
+        // right as this bar becomes fully charged and the two brackets meet.
+        float tipFadeStart = Lerp(0.6f, 1.0f, Math.Clamp(fillProgress, 0f, 1f));
 
         // Mirrors the two sides so the ripple flows toward the centre on both,
         // instead of both drifting the same way across the whole bar.
         float flowDir = fromLeft ? -1f : 1f;
 
+        // Centre of the wipe's soft transition band, in u-space: starts just
+        // past u=1 (band fully past the tip, so wipeAlpha=1 everywhere — no
+        // effect when wipeProgress=0) and ends just past u=0 (band fully past
+        // the anchor, so wipeAlpha=0 everywhere — fully hidden at wipeProgress=1).
+        float wipeBandCentre = Lerp(1f + wipeBandHalfWidth, -wipeBandHalfWidth, wipeProgress);
+
         int samples = Math.Clamp((int)(len / waveLenShort * 4f) + 2, 3, 96);
-        var pts = new Vector2[samples];
+        var pts   = new Vector2[samples];
+        var fades = new float[samples];   // per-point fade multiplier (tip fade × wipe fade), shared by every layer below
 
         float phase     = 0f;
         float prevAlong = 0f;
@@ -517,6 +660,21 @@ public sealed class CompassHud : IDisposable
             float wave  = wave1 * (1f - 0.5f * u) + wave2 * (0.5f * u);   // more chaotic as u→1
 
             pts[i] = a + dir * along + perp * (amplitude * envelope * wave);
+
+            // Smoothstepped fade-to-zero across the last (1 - tipFadeStart) of
+            // the line. The anchor end never reaches this range (u stays low
+            // there), so it's untouched — only the moving tip dissolves. (At
+            // tipFadeStart = 1.0 — fully charged — this clamp keeps fadeT in
+            // range rather than dividing by a near-zero width.)
+            float fadeT  = u <= tipFadeStart ? 0f : Math.Clamp((u - tipFadeStart) / (1f - tipFadeStart + 1e-4f), 0f, 1f);
+            float tipFade = 1f - SmoothStep(fadeT);
+
+            // Wipe fade: 1 while u is well below the band (untouched), 0 once
+            // u is well above it (already swept past), smoothstepped between.
+            float wipeX    = Math.Clamp((u - (wipeBandCentre - wipeBandHalfWidth)) / (2f * wipeBandHalfWidth), 0f, 1f);
+            float wipeFade = 1f - SmoothStep(wipeX);
+
+            fades[i] = tipFade * wipeFade;
         }
 
         ReadOnlySpan<(float alpha, float thickness)> layers =
@@ -529,9 +687,13 @@ public sealed class CompassHud : IDisposable
         ];
         foreach (var (alpha, thickness) in layers)
         {
-            uint c = WithAlpha(col, alpha * intensity);
             for (int i = 0; i < samples - 1; i++)
+            {
+                float segFade = (fades[i] + fades[i + 1]) * 0.5f;
+                if (segFade <= 0.002f) continue;   // fully faded — skip the draw call entirely
+                uint c = WithAlpha(col, alpha * intensity * segFade);
                 dl.AddLine(pts[i], pts[i + 1], c, thickness);
+            }
         }
     }
 
@@ -540,28 +702,33 @@ public sealed class CompassHud : IDisposable
     /// the top and bottom edges reaching in from one end of the bar — picture
     /// a "[" (or, mirrored, a "]"), minus its vertical stroke, since that edge
     /// sits right behind the diamond end-cap and is never actually visible.
-    /// Two of these, one per end via <paramref name="fromLeft"/>, are how all
-    /// three limit-break tiers are built: a bigger <paramref name="segW"/> just
-    /// reaches further in, and at segW = bw/2 the two brackets meet in the
-    /// middle and together trace the whole top/bottom border. <paramref
-    /// name="intensity"/>, <paramref name="t"/>, and <paramref name="fromLeft"/>
-    /// all pass straight through to <see cref="DrawGlowLine"/>.
+    /// Two of these, one per end via <paramref name="fromLeft"/>, trace one
+    /// limit-break layer: a bigger <paramref name="segW"/> just reaches further
+    /// in, and at segW = bw/2 the two brackets meet in the middle and together
+    /// trace the whole top/bottom border. Called once per bar (see the 3-layer
+    /// setup in <c>RenderBar</c>), each with its own <paramref name="col"/> and
+    /// <paramref name="t"/>. <paramref name="intensity"/>, <paramref name="t"/>,
+    /// <paramref name="wipeProgress"/>, <paramref name="fillProgress"/>, and
+    /// <paramref name="fromLeft"/> all pass straight through to
+    /// <see cref="DrawGlowLine"/>.
     /// </summary>
     private static void DrawBorderGlowBracket(
-        ImDrawListPtr dl, float bx, float by, float bw, float bh, float segW, uint col, float intensity, float t, bool fromLeft)
+        ImDrawListPtr dl, float bx, float by, float bw, float bh, float segW, uint col, float intensity, float t, float wipeProgress, float fillProgress, bool fromLeft)
     {
         float x0 = fromLeft ? bx : bx + bw - segW;
         float x1 = fromLeft ? bx + segW : bx + bw;
 
-        DrawGlowLine(dl, V(x0, by),      V(x1, by),      col, intensity, t, fromLeft);   // top edge segment
-        DrawGlowLine(dl, V(x0, by + bh), V(x1, by + bh), col, intensity, t, fromLeft);   // bottom edge segment
+        DrawGlowLine(dl, V(x0, by),      V(x1, by),      col, intensity, t, fromLeft, wipeProgress, fillProgress);   // top edge segment
+        DrawGlowLine(dl, V(x0, by + bh), V(x1, by + bh), col, intensity, t, fromLeft, wipeProgress, fillProgress);   // bottom edge segment
     }
 
     /// <summary>
-    /// How many limit-break bars are currently charged: 0 (none) – 3 (full break
-    /// ready). Reads UIState's native LimitBreakController directly — there's no
-    /// Dalamud-wrapped service for this, the same way CameraManager above is read
-    /// raw rather than through a Dalamud service.
+    /// Limit-break progress as a continuous 0.0–3.0 value — the integer part is
+    /// how many bars are fully charged, the fractional part is progress toward
+    /// the next one (e.g. 1.45 = bar 1 full, bar 2 45% charged). Reads UIState's
+    /// native LimitBreakController directly — there's no Dalamud-wrapped service
+    /// for this, the same way CameraManager above is read raw rather than
+    /// through a Dalamud service.
     ///
     /// VERIFY-BEFORE-RELYING-ON: I wrote CurrentUnits/BarUnits against my best
     /// understanding of LimitBreakController's layout, but couldn't confirm the
@@ -569,19 +736,85 @@ public sealed class CompassHud : IDisposable
     /// If this doesn't compile, or compiles but always reads 0 in a party with a
     /// visibly partial gauge, right-click LimitBreakController below → Go to
     /// Definition, check the real field names against what's used here, and
-    /// adjust. The shape of the calc (filled bars = current progress units ÷
-    /// units-per-bar, clamped to 3) should still be right even if names changed.
+    /// adjust. The shape of the calc (progress = current units ÷ units-per-bar,
+    /// clamped to 3) should still be right even if names changed.
     /// </summary>
-    private static unsafe int GetLimitBreakReadyLevel()
+    private static unsafe float GetLimitBreakProgress()
     {
         var uiState = UIState.Instance();
-        if (uiState == null) return 0;
+        if (uiState == null) return 0f;
 
         var lb = uiState->LimitBreakController;
-        if (lb.BarUnits <= 0) return 0;
+        if (lb.BarUnits <= 0) return 0f;
 
-        int barsFilled = (int)(lb.CurrentUnits / lb.BarUnits);
-        return Math.Clamp(barsFilled, 0, 3);
+        float totalBars = (float)lb.CurrentUnits / lb.BarUnits;
+        return Math.Clamp(totalBars, 0f, 3f);
+    }
+
+    /// <summary>
+    /// Feeds the raw progress reading (real or debug-forced) through the
+    /// fade-out-on-drain handling. Returns the progress value that should
+    /// actually drive this frame's bar1/2/3 split and percentage text — either
+    /// the live tracked value, or (while a fade-out plays) a frozen snapshot
+    /// from the moment the drain was detected, so the ribbons' geometry holds
+    /// perfectly still instead of shrinking and visibly distorting their wave
+    /// shape. <paramref name="wipeProgress"/> reports how far the centre-to-edge
+    /// wipe has swept (0 = not fading, fully visible; 1 = fully hidden) — the
+    /// caller applies it as an alpha sweep on top of that frozen geometry.
+    ///
+    /// A sudden drop of more than <see cref="LbDropThreshold"/> from the last
+    /// tracked value (using limit break resets the underlying gauge to 0 in a
+    /// single frame) starts the wipe. Ordinary forward progress passes straight
+    /// through untouched — only big drops trigger the fade-out.
+    /// </summary>
+    private float UpdateLimitBreakDisplay(float realProgress, float now, out float wipeProgress)
+    {
+        if (lbFadeOutStartTime < 0f)
+        {
+            if (realProgress < lbTrackedProgress - LbDropThreshold)
+            {
+                // Drain detected — freeze right here and start the wipe,
+                // rather than letting segW itself shrink frame to frame.
+                lbFrozenProgress   = lbTrackedProgress;
+                lbFadeOutStartTime = now;
+            }
+            else
+            {
+                lbTrackedProgress = realProgress;
+            }
+        }
+
+        if (lbFadeOutStartTime >= 0f)
+        {
+            // Real progress already climbed back past the frozen snapshot —
+            // e.g. limit break started charging again immediately, or a debug
+            // checkbox jumped to a higher tier mid-wipe. Nothing left to wipe
+            // out from above; just resync to live tracking.
+            if (realProgress > lbFrozenProgress)
+            {
+                lbFadeOutStartTime = -1f;
+                lbTrackedProgress  = realProgress;
+                wipeProgress = 0f;
+                return lbTrackedProgress;
+            }
+
+            float elapsed = now - lbFadeOutStartTime;
+            if (elapsed >= LbFadeOutDuration)
+            {
+                // Wipe finished — everything's already hidden, so resetting
+                // the tracked value underneath it is invisible from here.
+                lbFadeOutStartTime = -1f;
+                lbTrackedProgress  = realProgress;
+                wipeProgress = 0f;
+                return lbTrackedProgress;
+            }
+
+            wipeProgress = elapsed / LbFadeOutDuration;
+            return lbFrozenProgress;
+        }
+
+        wipeProgress = 0f;
+        return lbTrackedProgress;
     }
 
     // ── Unified marker + FATE render (single sorted pass) ────────────────────

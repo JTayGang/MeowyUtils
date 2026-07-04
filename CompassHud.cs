@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Numerics;
 using System.Reflection;
 using Dalamud.Game;
@@ -34,6 +36,9 @@ public sealed class CompassHud : IDisposable
     private readonly Configuration config;
     private readonly IPluginLog log;
     private readonly IFontHandle jupiterFont;
+    // Where /compass dumpnpcs writes its output — the plugin's own Dalamud config directory,
+    // guaranteed to exist and be writable.
+    private readonly string dumpDirectory;
 
     // Limit-break fade-out state (frame-persistent). On a big gauge drop (LB used),
     // geometry freezes at lbFrozenProgress and a centre→edge wipe plays over LbFadeOutDuration.
@@ -52,28 +57,35 @@ public sealed class CompassHud : IDisposable
     private readonly ExcelSheet<GatheringPointBase> gatheringPointBaseSheet;
     private readonly ExcelSheet<GatheringType>      gatheringTypeSheet;
 
-    // BaseId → NPC title text (always English, see npcResidentSheet below), cached permanently.
-    private readonly Dictionary<uint, string> npcTitleCache = new();
-    // BaseId → NPC "Singular" text (always English), cached permanently. Confirmed via
-    // /compass debug: named NPCs (e.g. "Alistair") carry their vocation in Title and their
-    // personal name in Singular, but generic flavor NPCs with no personal name (e.g.
-    // "Independent Tinker", "Material Supplier") have an EMPTY Title and carry the vocation
-    // word in Singular instead (stored lowercase — fine, matching below is case-insensitive).
-    private readonly Dictionary<uint, string> npcSingularCache = new();
-    // Requested in English regardless of the client's actual game language, so keyword
-    // matching below (MenderTitleKeywords/ShopTitleKeywords) is language-independent —
-    // an NPC titled "Heiler" on a German client still resolves to "Mender" here.
-    private readonly ExcelSheet<ENpcResident> npcResidentSheet;
-    // Client's actual game language, unforced — NOT used for matching, only so /compass
-    // debug can print it side-by-side with npcResidentSheet above and show whether a
-    // problem is "English-forcing isn't working" vs "this field is empty either way".
-    private readonly ExcelSheet<ENpcResident> npcResidentSheetClientLang;
+    // BaseId → English Title/Singular text, cached permanently. Named NPCs (e.g. "Alistair")
+    // carry their vocation in Title with their personal name in Singular; unnamed flavor NPCs
+    // (e.g. "Independent Tinker") have an empty Title and carry the vocation word in Singular
+    // instead. npcSheet is forced to English regardless of client language, so keyword
+    // matching below works the same on every client — an NPC titled "Heiler" on a German
+    // client still resolves to "Mender" here.
+    private readonly Dictionary<uint, string> titleCache = new();
+    private readonly Dictionary<uint, string> singularCache = new();
+    private readonly ExcelSheet<ENpcResident> npcSheet;
+    // Client's actual language, unforced — used only so /compass debug can print it beside
+    // npcSheet above and show whether a bad match is "English-forcing broke" vs "field's
+    // empty either way".
+    private readonly ExcelSheet<ENpcResident> npcSheetLocal;
     private readonly ExcelSheet<ClassJob>     classJobSheet;
 
-    // Matched against the English ENpcResident Title AND Singular (see caches above),
-    // regardless of client language. Grow these lists as new NPC vocation words turn up —
-    // use /compass debug near the NPC to read its TitleEN/SingularEN.
-    private static readonly string[] MenderTitleKeywords = { "Mender", "Tinker" };
+    // Keyword lists for npcSheet Title/Singular matching (see MatchesKeyword). Grow these as
+    // new NPC vocation words turn up — use /compass debug near the NPC to read TitleEN/SingularEN.
+    private static readonly string[] MenderKeywords = { "Mender", "Tinker" };
+    private static readonly string[] ShopKeywords =
+    {
+        "Merchant", "Vendor", "Trader", "Sutler", "Supplier", "Junkmonger",
+        "Fishmonger", "Dyemonger", "Jeweler", "Apothecary", "Culinarian",
+        "Salvager", "Exchange", "Clothier", "Outfitter",
+    };
+    // Three icon variants sharing one enable checkbox (config.ShowFastTravelIcons) — see
+    // TryGetNpcIcon for which config.*IconId each one maps to.
+    private static readonly string[] SkipperKeywords     = { "Skipper" };
+    private static readonly string[] TicketerKeywords    = { "Ticketer" };
+    private static readonly string[] ChocoboKeepKeywords = { "Chocobokeep" };
 
     // Unified candidate list (game objects + FATEs) reused every frame — no per-frame alloc.
     // Obj != null → game object; Fate != null → FATE. T is normalised distance fraction.
@@ -87,20 +99,6 @@ public sealed class CompassHud : IDisposable
     // NOT applied to Gathering (not undersized) or Aetheryte (has its own multiplier).
     private const float IconSizeMultiplier          = 1.5f;
     private const float AetheryteIconSizeMultiplier = 1.75f;
-
-    // Same English-forced matching as MenderTitleKeywords above.
-    private static readonly string[] ShopTitleKeywords =
-    {
-        "Merchant", "Vendor", "Trader", "Sutler", "Supplier", "Junkmonger",
-        "Fishmonger", "Dyemonger", "Jeweler", "Apothecary", "Culinarian",
-        "Salvager", "Exchange", "Clothier", "Outfitter",
-    };
-
-    // Same English-forced matching as MenderTitleKeywords above.
-    private static readonly string[] ChocoboKeepTitleKeywords = { "Chocobokeep" };
-
-    // Same English-forced matching as MenderTitleKeywords above.
-    private static readonly string[] FastTravelTitleKeywords = { "Skipper" };
 
     private static readonly (float Deg, string Label, bool IsMajor)[] Directions =
     [
@@ -125,7 +123,8 @@ public sealed class CompassHud : IDisposable
         IDataManager dataManager,
         Configuration config,
         IPluginLog log,
-        IFontHandle jupiterFont)
+        IFontHandle jupiterFont,
+        string dumpDirectory)
     {
         this.clientState     = clientState;
         this.objectTable     = objectTable;
@@ -137,12 +136,13 @@ public sealed class CompassHud : IDisposable
         this.config          = config;
         this.log             = log;
         this.jupiterFont     = jupiterFont;
+        this.dumpDirectory   = dumpDirectory;
 
         gatheringPointSheet     = dataManager.GetExcelSheet<GatheringPoint>();
         gatheringPointBaseSheet = dataManager.GetExcelSheet<GatheringPointBase>();
         gatheringTypeSheet      = dataManager.GetExcelSheet<GatheringType>();
-        npcResidentSheet        = dataManager.GetExcelSheet<ENpcResident>(ClientLanguage.English);
-        npcResidentSheetClientLang = dataManager.GetExcelSheet<ENpcResident>();
+        npcSheet                = dataManager.GetExcelSheet<ENpcResident>(ClientLanguage.English);
+        npcSheetLocal           = dataManager.GetExcelSheet<ENpcResident>();
         classJobSheet           = dataManager.GetExcelSheet<ClassJob>();
 
         // OnDataUpdate fires every frame with ALL current nameplates (not just deltas).
@@ -647,39 +647,9 @@ public sealed class CompassHud : IDisposable
                 iconId   = GetAetheryteIconId(obj);
                 iconSize = Lerp(config.AetheryteIconMinSize, config.AetheryteIconMaxSize, t) * AetheryteIconSizeMultiplier;
             }
-            else if (config.ShowNpcQuestIcons
-                && obj.ObjectKind == ObjectKind.EventNpc
-                && npcMarkerIcons.TryGetValue(obj.GameObjectId, out int npcIcon))
+            else if (obj.ObjectKind == ObjectKind.EventNpc && TryGetNpcIcon(obj, out int npcIcon))
             {
                 iconId   = npcIcon;
-                iconSize = npcIconSize;
-            }
-            else if (config.ShowMenderIcons
-                && obj.ObjectKind == ObjectKind.EventNpc
-                && IsMenderNpc(obj))
-            {
-                iconId   = config.MenderIconId;
-                iconSize = npcIconSize;
-            }
-            else if (config.ShowShopIcons
-                && obj.ObjectKind == ObjectKind.EventNpc
-                && IsShopNpc(obj))
-            {
-                iconId   = config.ShopIconId;
-                iconSize = npcIconSize;
-            }
-            else if (config.ShowChocoboKeepIcons
-                && obj.ObjectKind == ObjectKind.EventNpc
-                && IsChocoboKeepNpc(obj))
-            {
-                iconId   = config.ChocoboKeepIconId;
-                iconSize = npcIconSize;
-            }
-            else if (config.ShowFastTravelIcons
-                && obj.ObjectKind == ObjectKind.EventNpc
-                && IsFastTravelNpc(obj))
-            {
-                iconId   = config.FastTravelIconId;
                 iconSize = npcIconSize;
             }
             else if (config.ShowGatheringIcons && obj.ObjectKind == ObjectKind.GatheringPoint)
@@ -913,52 +883,57 @@ public sealed class CompassHud : IDisposable
         return string.Join(", ", parts);
     }
 
-    /// <summary>Resolves an NPC's English title via ENpcResident, cached permanently per BaseId. "" if none.</summary>
-    private string GetNpcTitle(uint baseId)
+    /// <summary>Resolves an NPC's English Title/Singular via ENpcResident, cached per BaseId. "" if none.</summary>
+    private string GetTitle(uint baseId)
     {
-        if (npcTitleCache.TryGetValue(baseId, out string? cached)) return cached;
-        string title = npcResidentSheet.GetRowOrDefault(baseId) is { } row ? row.Title.ToString() : "";
-        return npcTitleCache[baseId] = title;
+        if (titleCache.TryGetValue(baseId, out string? cached)) return cached;
+        string v = npcSheet.GetRowOrDefault(baseId) is { } row ? row.Title.ToString() : "";
+        return titleCache[baseId] = v;
     }
 
-    /// <summary>
-    /// Resolves an NPC's English "Singular" text via ENpcResident, cached permanently per
-    /// BaseId. "" if none. This is where generic flavor NPCs with no personal name (empty
-    /// Title) carry their vocation word instead — see npcSingularCache above.
-    /// </summary>
-    private string GetNpcSingular(uint baseId)
+    private string GetSingular(uint baseId)
     {
-        if (npcSingularCache.TryGetValue(baseId, out string? cached)) return cached;
-        string singular = npcResidentSheet.GetRowOrDefault(baseId) is { } row ? row.Singular.ToString() : "";
-        return npcSingularCache[baseId] = singular;
+        if (singularCache.TryGetValue(baseId, out string? cached)) return cached;
+        string v = npcSheet.GetRowOrDefault(baseId) is { } row ? row.Singular.ToString() : "";
+        return singularCache[baseId] = v;
     }
 
-    private static bool TitleContainsAny(string title, string[] keywords)
+    private static bool HasKeyword(string text, string[] keywords)
     {
-        if (string.IsNullOrEmpty(title)) return false;
+        if (string.IsNullOrEmpty(text)) return false;
         foreach (var kw in keywords)
-            if (title.Contains(kw, StringComparison.OrdinalIgnoreCase))
+            if (text.Contains(kw, StringComparison.OrdinalIgnoreCase))
                 return true;
         return false;
     }
 
-    // Language-independent: title/singular come from the English-forced npcResidentSheet,
-    // which doesn't depend on client language.
-    private bool IsMenderNpc(IGameObject obj) =>
-        TitleContainsAny(GetNpcTitle(obj.BaseId), MenderTitleKeywords) ||
-        TitleContainsAny(GetNpcSingular(obj.BaseId), MenderTitleKeywords);
+    // Checks both Title and Singular — see the titleCache/singularCache comment above for why.
+    private bool MatchesKeyword(uint baseId, string[] keywords) =>
+        HasKeyword(GetTitle(baseId), keywords) || HasKeyword(GetSingular(baseId), keywords);
 
-    private bool IsShopNpc(IGameObject obj) =>
-        TitleContainsAny(GetNpcTitle(obj.BaseId), ShopTitleKeywords) ||
-        TitleContainsAny(GetNpcSingular(obj.BaseId), ShopTitleKeywords);
+    private bool IsMender(IGameObject o)      => MatchesKeyword(o.BaseId, MenderKeywords);
+    private bool IsShop(IGameObject o)        => MatchesKeyword(o.BaseId, ShopKeywords);
+    private bool IsSkipper(IGameObject o)     => MatchesKeyword(o.BaseId, SkipperKeywords);
+    private bool IsTicketer(IGameObject o)    => MatchesKeyword(o.BaseId, TicketerKeywords);
+    private bool IsChocoboKeep(IGameObject o) => MatchesKeyword(o.BaseId, ChocoboKeepKeywords);
 
-    private bool IsChocoboKeepNpc(IGameObject obj) =>
-        TitleContainsAny(GetNpcTitle(obj.BaseId), ChocoboKeepTitleKeywords) ||
-        TitleContainsAny(GetNpcSingular(obj.BaseId), ChocoboKeepTitleKeywords);
+    // Combined check — used where we just need "is this a Fast Travel NPC at all", not which
+    // icon it gets (see TryGetNpcIcon below for that).
+    private bool IsFastTravel(IGameObject o) => IsSkipper(o) || IsTicketer(o);
 
-    private bool IsFastTravelNpc(IGameObject obj) =>
-        TitleContainsAny(GetNpcTitle(obj.BaseId), FastTravelTitleKeywords) ||
-        TitleContainsAny(GetNpcSingular(obj.BaseId), FastTravelTitleKeywords);
+    // Priority: live quest marker, then each keyword category in turn; first match wins.
+    // Same priority order as before, just a data walk instead of six repeated if/else branches.
+    private bool TryGetNpcIcon(IGameObject obj, out int iconId)
+    {
+        if (config.ShowNpcQuestIcons && npcMarkerIcons.TryGetValue(obj.GameObjectId, out iconId)) return true;
+        if (config.ShowMenderIcons && IsMender(obj))          { iconId = config.MenderIconId; return true; }
+        if (config.ShowShopIcons && IsShop(obj))              { iconId = config.ShopIconId; return true; }
+        if (config.ShowFastTravelIcons && IsSkipper(obj))     { iconId = config.FastTravelIconId; return true; }
+        if (config.ShowFastTravelIcons && IsTicketer(obj))    { iconId = config.FastTravelTicketerIconId; return true; }
+        if (config.ShowFastTravelIcons && IsChocoboKeep(obj)) { iconId = config.ChocoboKeepIconId; return true; }
+        iconId = 0;
+        return false;
+    }
 
     private enum AetheryteNameKind { None, Big, Shard }
 
@@ -1164,36 +1139,31 @@ public sealed class CompassHud : IDisposable
             string fieldDumpEn = "", fieldDumpLocal = "";
             if (obj.ObjectKind == ObjectKind.EventNpc)
             {
-                string title         = GetNpcTitle(obj.BaseId);
-                string singular      = GetNpcSingular(obj.BaseId);
+                string title         = GetTitle(obj.BaseId);
+                string singular      = GetSingular(obj.BaseId);
                 bool   hasQuestIcon  = npcMarkerIcons.TryGetValue(obj.GameObjectId, out int qIconId) && qIconId > 0;
-                bool   isMender      = IsMenderNpc(obj);
-                bool   isShop        = IsShopNpc(obj);
-                bool   isChocoboKeep = IsChocoboKeepNpc(obj);
-                bool   isFastTravel  = IsFastTravelNpc(obj);
+                bool   isMender      = IsMender(obj);
+                bool   isShop        = IsShop(obj);
+                bool   isChocoboKeep = IsChocoboKeep(obj);
+                bool   isFastTravel  = IsFastTravel(obj);
                 string winner        = hasQuestIcon  ? $"QuestMarker(icon={qIconId})"
                                      : isMender      ? "Mender"
                                      : isShop        ? "Shop"
                                      : isChocoboKeep ? "ChocoboKeep"
                                      : isFastTravel  ? "FastTravel"
                                      : "none/dot";
-                // TitleEN/SingularEN are always English regardless of client language — both
-                // are what MenderTitleKeywords/ShopTitleKeywords/ChocoboKeepTitleKeywords/
-                // FastTravelTitleKeywords matching actually runs against (named NPCs carry
-                // their vocation in Title; generic flavor NPCs with no personal name carry it
-                // in Singular instead, with Title empty). If the word you expect is in one of
-                // these but the matching Is* flag is still false, that word is missing from
-                // the keyword list above.
+                // TitleEN/SingularEN are always English regardless of client language — that's
+                // what the *Keywords arrays up top actually match against. Word's in one of
+                // these but the Is* flag is still false? It's missing from that keyword list.
                 extra = $" | TitleEN=\"{title}\" | SingularEN=\"{singular}\" | QuestIcon={hasQuestIcon,-5} | " +
                         $"IsMender={isMender,-5} | IsShop={isShop,-5} | IsChocoboKeep={isChocoboKeep,-5} | " +
                         $"IsFastTravel={isFastTravel,-5} | WouldShow={winner}";
 
-                // Raw ENpcResident dump, both language variants, so we can tell whether an
-                // empty/wrong match is "English-forcing broke the lookup" (dumps would differ
-                // in row-found-ness) vs "Title just isn't the field with the vendor label"
-                // (both dumps find the row fine, but Title is blank in both).
-                fieldDumpEn    = DumpAllFields(npcResidentSheet.GetRowOrDefault(obj.BaseId));
-                fieldDumpLocal = DumpAllFields(npcResidentSheetClientLang.GetRowOrDefault(obj.BaseId));
+                // Raw dump, both language variants — tells us whether a bad match is
+                // "English-forcing broke the lookup" (dumps would disagree) vs "Title just
+                // isn't the field with the vendor label" (both agree, and it's blank).
+                fieldDumpEn    = DumpAllFields(npcSheet.GetRowOrDefault(obj.BaseId));
+                fieldDumpLocal = DumpAllFields(npcSheetLocal.GetRowOrDefault(obj.BaseId));
             }
             else if (obj.ObjectKind == ObjectKind.Treasure)
             {
@@ -1211,5 +1181,74 @@ public sealed class CompassHud : IDisposable
             }
         }
         log.Info("[SkyrimCompass debug] Done. Use /xllog in-game to view the log window.");
+    }
+
+    /// <summary>
+    /// Scans every row in the ENpcResident sheet (not just nearby objects) and writes every
+    /// distinct Title, plus every distinct Singular where Title is empty, to a text file —
+    /// each already-recognized entry tagged [MATCHED]. One-shot alternative to discovering
+    /// vendor-shaped words one /compass debug encounter at a time.
+    /// </summary>
+    public void DumpAllNpcTitles()
+    {
+        log.Info("[SkyrimCompass dumpnpcs] Scanning ENpcResident, this may take a moment...");
+
+        var titleCounts = new Dictionary<string, int>();
+        var singularCounts = new Dictionary<string, int>();
+        int rowCount = 0;
+
+        foreach (var row in npcSheet)
+        {
+            rowCount++;
+            string title = row.Title.ToString();
+            if (!string.IsNullOrEmpty(title))
+            {
+                titleCounts.TryGetValue(title, out int tc);
+                titleCounts[title] = tc + 1;
+                continue; // named NPC — Singular here is a personal name, not a vocation word
+            }
+
+            string singular = row.Singular.ToString();
+            if (!string.IsNullOrEmpty(singular))
+            {
+                singularCounts.TryGetValue(singular, out int sc);
+                singularCounts[singular] = sc + 1;
+            }
+        }
+
+        bool AlreadyMatched(string text) =>
+            HasKeyword(text, MenderKeywords) || HasKeyword(text, ShopKeywords) ||
+            HasKeyword(text, SkipperKeywords) || HasKeyword(text, TicketerKeywords) ||
+            HasKeyword(text, ChocoboKeepKeywords);
+
+        var lines = new List<string>
+        {
+            $"SkyrimCompass NPC vocabulary dump — {rowCount} ENpcResident rows scanned.",
+            "[MATCHED] = already caught by an existing keyword list; everything else is a candidate.",
+            "",
+            "=== Title (NPCs with a separate personal name, e.g. \"Alistair\" titled \"Mender\") ===",
+            "count | text",
+        };
+        foreach (var kv in titleCounts.OrderByDescending(p => p.Value).ThenBy(p => p.Key))
+            lines.Add($"{kv.Value,5} | {(AlreadyMatched(kv.Key) ? "[MATCHED] " : "")}{kv.Key}");
+
+        lines.Add("");
+        lines.Add("=== Singular, only where Title is empty (unnamed flavor NPCs, e.g. \"Independent Tinker\") ===");
+        lines.Add("count | text");
+        foreach (var kv in singularCounts.OrderByDescending(p => p.Value).ThenBy(p => p.Key))
+            lines.Add($"{kv.Value,5} | {(AlreadyMatched(kv.Key) ? "[MATCHED] " : "")}{kv.Key}");
+
+        try
+        {
+            Directory.CreateDirectory(dumpDirectory);
+            string path = Path.Combine(dumpDirectory, "npc-dump.txt");
+            File.WriteAllLines(path, lines);
+            log.Info($"[SkyrimCompass dumpnpcs] Wrote {titleCounts.Count} distinct titles and " +
+                     $"{singularCounts.Count} distinct singulars to: {path}");
+        }
+        catch (Exception ex)
+        {
+            log.Error(ex, "[SkyrimCompass dumpnpcs] Failed to write dump file");
+        }
     }
 }

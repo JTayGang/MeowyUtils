@@ -47,7 +47,8 @@ public sealed class Plugin : IDalamudPlugin
 
         compassHud = new CompassHud(
             clientState, objectTable, targetManager, namePlateGui, textureProvider, fateTable,
-            condition, dataManager, Config, pluginLog, jupiterFontHandle);
+            condition, dataManager, Config, pluginLog, jupiterFontHandle,
+            pluginInterface.ConfigDirectory.FullName);
         configWindow = new ConfigWindow(this);
 
         windowSystem.AddWindow(configWindow);
@@ -56,7 +57,9 @@ public sealed class Plugin : IDalamudPlugin
         {
             HelpMessage = "Toggle the compass. '/compass on' / '/compass off' to set it " +
                           "explicitly, '/compass config' for settings, " +
-                          "'/compass debug' to log nearby objects (/xllog to view)."
+                          "'/compass debug' to log nearby objects (/xllog to view), " +
+                          "'/compass dumpnpcs' to scan every NPC in the game's data for " +
+                          "un-categorized vendor-style titles (writes a file, see log for path)."
         });
 
         pluginInterface.UiBuilder.Draw += OnDraw;
@@ -80,6 +83,8 @@ public sealed class Plugin : IDalamudPlugin
             configWindow.IsOpen = !configWindow.IsOpen;
         else if (trimmed.Equals("debug", StringComparison.OrdinalIgnoreCase))
             compassHud.DumpNearbyObjects();
+        else if (trimmed.Equals("dumpnpcs", StringComparison.OrdinalIgnoreCase))
+            compassHud.DumpAllNpcTitles();
         else if (trimmed.Equals("on", StringComparison.OrdinalIgnoreCase))
             SetEnabled(true);
         else if (trimmed.Equals("off", StringComparison.OrdinalIgnoreCase))

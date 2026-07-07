@@ -6,18 +6,21 @@ using Dalamud.Plugin;
 
 namespace SkyrimCompass;
 
-/// <summary>Per-player icon override, matched by name (case-insensitive). Falls back to a dot if the texture fails to load.</summary>
+/// <summary>
+/// Per-player icon override. Case-insensitive name match swaps that player's
+/// marker for a real game icon. Falls back to a dot if texture doesn't resolve.
+/// </summary>
 [Serializable]
 public class PlayerIconOverride
 {
     public string  PlayerName    { get; set; } = "";
-    /// <summary>Icon ID, e.g. 62007=Paladin, 60453=Aetheryte, 61802=FC emblem.</summary>
+    /// <summary>Icon ID (e.g. 62007=Paladin, 60453=Aetheryte, 61802=FC emblem).</summary>
     public int     IconBaseId    { get; set; } = 0;
     public bool    ShowBorder    { get; set; } = false;
     public Vector4 BorderColor   { get; set; } = new(1.00f, 1.00f, 1.00f, 0.90f);
     public bool    ShowFill      { get; set; } = false;
     public Vector4 FillColor     { get; set; } = new(1.00f, 1.00f, 1.00f, 0.40f);
-    /// <summary>Circular clip instead of square bounds.</summary>
+    /// <summary>Circular clip (AddImageRounded) instead of square bounds.</summary>
     public bool    ClipToCircle  { get; set; } = false;
     /// <summary>Extra scale on top of the global 1.5× IconSizeMultiplier.</summary>
     public float   SizeMultiplier { get; set; } = 1.0f;
@@ -36,7 +39,7 @@ public class Configuration : IPluginConfiguration
     public float YOffset        { get; set; } = 8f;
 
     // ── Behaviour ────────────────────────────────────────────────────────────
-    /// <summary>Degrees of the full 360° visible in the linear centre zone.</summary>
+    /// <summary>Degrees of the full 360° visible at once.</summary>
     public float VisibleDegrees     { get; set; } = 90f;
     /// <summary>Fisheye strength. 1.0 = linear; 2.0 ≈ +100% FOV at edges.</summary>
     public float LensStrength       { get; set; } = 2.0f;
@@ -44,11 +47,11 @@ public class Configuration : IPluginConfiguration
     public float RotationOffset     { get; set; } = 0f;
     /// <summary>Tracks camera yaw instead of character facing.</summary>
     public bool  UseCameraDirection { get; set; } = true;
-    /// <summary>Measure bearings/distances from camera position, not character (needs UseCameraDirection).</summary>
+    /// <summary>Sub-option: measure bearings/distances from camera position, not character.</summary>
     public bool  UseCameraPosition  { get; set; } = true;
     public float FontScale          { get; set; } = 1.0f;
     public bool  ShowHeadingText    { get; set; } = false;
-    /// <summary>Skips drawing during cutscenes.</summary>
+    /// <summary>Skips drawing during cutscenes (OccupiedInCutSceneEvent / WatchingCutscene / WatchingCutscene78).</summary>
     public bool  HideDuringCutscenes { get; set; } = true;
 
     // ── Colors ───────────────────────────────────────────────────────────────
@@ -60,9 +63,9 @@ public class Configuration : IPluginConfiguration
 
     // ── Marker toggles ───────────────────────────────────────────────────────
     public bool ShowPlayers     { get; set; } = true;
-    /// <summary>Friends render as a solid dot.</summary>
+    /// <summary>Friends render as solid dots (StatusFlags.Friend).</summary>
     public bool SolidFriendDots { get; set; } = true;
-    /// <summary>Party members show their job icon (ClassJob.RowId 62001–62047) with a role-colored ring.</summary>
+    /// <summary>Party members show job icon via ClassJob.RowId (62001–62047) with a role-colored ring.</summary>
     public bool ShowPartyRoleIcons    { get; set; } = true;
     public float PartyRoleIconMinSize { get; set; } = 10f;
     public float PartyRoleIconMaxSize { get; set; } = 24f;
@@ -77,35 +80,54 @@ public class Configuration : IPluginConfiguration
     public float EnemyMaxSize { get; set; } = 20f;
 
     // ── Limit break glow ─────────────────────────────────────────────────────
-    /// <summary>One glowing border layer per bar, creeping in from both ends as that bar's own 0–100% fills.</summary>
+    /// <summary>
+    /// One independent glowing border layer per bar: bar N's own 0–100% progress creeps
+    /// in from both ends in its configured color, reaching the whole border when full.
+    /// Stacking layers let you read charged bar count at a glance.
+    /// </summary>
     public bool    ShowLimitBreakGlow   { get; set; } = false;
     public Vector4 LimitBreakGlowColor  { get; set; } = new(1.00f, 0.65f, 0.10f, 0.95f);
-    /// <summary>Layer 2 (bar 2) — bright yellow by default.</summary>
+    /// <summary>Layer 2 (bar 2's own progress) — bright yellow by default.</summary>
     public Vector4 LimitBreakGlowColor2 { get; set; } = new(1.00f, 0.95f, 0.20f, 0.95f);
-    /// <summary>Layer 3 (bar 3) — white by default.</summary>
+    /// <summary>Layer 3 (bar 3's own progress) — white by default.</summary>
     public Vector4 LimitBreakGlowColor3 { get; set; } = new(1.00f, 1.00f, 1.00f, 0.95f);
 
     public bool ShowNpcs              { get; set; } = true;
-    /// <summary>Hides non-targetable EventNpc placeholders (e.g. an empty chocobo stable slot).</summary>
+    /// <summary>Hides non-targetable EventNpc placeholders (e.g. empty chocobo stable slot).</summary>
     public bool NpcsOnlyIfTargetable  { get; set; } = true;
     /// <summary>Shows the NPC's real active-quest icon instead of a dot.</summary>
     public bool ShowNpcQuestIcons     { get; set; } = true;
     public float NpcQuestIconMinSize  { get; set; } = 8f;
     public float NpcQuestIconMaxSize  { get; set; } = 40f;
     /// <summary>
-    /// Real icon for Mender NPCs. Matched via ENpcResident Title (named NPCs, e.g. "Alistair")
-    /// or Singular (unnamed flavor NPCs, e.g. plain "Mender" — Title is empty for those),
-    /// always read in English so this works regardless of client language.
+    /// Real icon for Mender NPCs. Detected via ENpcResident's Title (named NPCs, e.g.
+    /// "Alistair") or Singular (generic flavor NPCs with no personal name, e.g. a plain
+    /// "Mender" — Title is empty for those), always read in English regardless of client
+    /// language — so this works the same on any game language.
+    /// Shares NpcQuestIcon size range.
     /// </summary>
     public bool ShowMenderIcons { get; set; } = true;
     public int  MenderIconId    { get; set; } = 60434;
-    /// <summary>Real icon for Shop/Trader NPCs — same Title-or-Singular English matching as Mender above.</summary>
+    /// <summary>
+    /// Real icon for Shop/Trader NPCs. Detected via ENpcResident's Title (named NPCs, e.g.
+    /// "Syneyhil" titled "Fieldcraft Supplier") or Singular (generic flavor NPCs with no
+    /// personal name, e.g. "Material Supplier" — Title is empty for those), always read in
+    /// English regardless of client language — so this works the same on any game language.
+    /// Shares NpcQuestIcon size range.
+    /// </summary>
     public bool ShowShopIcons { get; set; } = true;
     public int  ShopIconId    { get; set; } = 60412;
     /// <summary>
-    /// Real icon for Fast Travel NPCs — ferry skippers, airship/other ticketers, and Chocobo
-    /// Keeps. One toggle, three icons (FastTravelIconId/FastTravelTicketerIconId/
-    /// ChocoboKeepIconId). Same Title-or-Singular English matching as Mender above.
+    /// Real icon for Fast Travel NPCs — ferry skippers (unnamed NPCs, vocation word in
+    /// Singular, Title empty), airship/other ticketers (named NPCs with Title e.g. "Airship
+    /// Ticketer"), and Chocobo Keeps/Falcon Porters (unnamed/named NPCs matched via
+    /// ChocoboKeepKeywords — Falcon Porters work identically to Chocobo Keeps, so they share
+    /// the same icon rather than getting their own).
+    /// All share this one toggle but render with different icons: skippers use
+    /// FastTravelIconId, ticketers use FastTravelTicketerIconId, Chocobo Keeps/Falcon Porters
+    /// use ChocoboKeepIconId. Always read in English regardless of client language — so this
+    /// works the same on any game language.
+    /// Shares NpcQuestIcon size range.
     /// </summary>
     public bool ShowFastTravelIcons { get; set; } = true;
     public int  FastTravelIconId         { get; set; } = 60456;
@@ -127,7 +149,7 @@ public class Configuration : IPluginConfiguration
     public float TreasureMinSize  { get; set; } = 6f;
     public float TreasureMaxSize  { get; set; } = 20f;
     public bool ShowAetherytes    { get; set; } = true;
-    /// <summary>Also shows Aethernet shards, matched via AethernetShardName.</summary>
+    /// <summary>Shows Aethernet shards too, matched via AethernetShardName.</summary>
     public bool ShowAethernetShards  { get; set; } = true;
     public bool ShowAetheryteIcons   { get; set; } = true;
     /// <summary>Substring match (case-insensitive) identifying Aethernet shards.</summary>
@@ -155,14 +177,14 @@ public class Configuration : IPluginConfiguration
     // ── FATEs ────────────────────────────────────────────────────────────────
     // Zone-wide POI, independent of ShowAnyMarkers — often wanted with all other markers off.
     public bool    ShowFates              { get; set; } = true;
-    /// <summary>Fallback color if the FATE icon texture fails to load.</summary>
+    /// <summary>Fallback color if FATE icon texture fails to load.</summary>
     public Vector4 FateColor              { get; set; } = new(0.82f, 0.35f, 0.95f, 0.95f);
     /// <summary>FATE range = MaxMarkerDistance × FateDistanceMultiplier.</summary>
     public float   FateDistanceMultiplier { get; set; } = 2.5f;
     public float   FateIconMinSize        { get; set; } = 20f;
     public float   FateIconMaxSize        { get; set; } = 32f;
 
-    /// <summary>True if any marker type is on (skips the object-table loop entirely when false).</summary>
+    /// <summary>True if any marker type is enabled (skips the object-table loop).</summary>
     public bool ShowAnyMarkers =>
         ShowPlayers || ShowEnemies || ShowNpcs || ShowGatheringNodes || ShowTreasure || ShowAetherytes;
 

@@ -601,8 +601,9 @@ public sealed class ConfigWindow : Window
         bool ftIcon = cfg.ShowFastTravelIcons;
         if (DrawToggle("Fast Travel##fticon", ref ftIcon,
             "Real icon for Fast Travel NPCs — ferry skippers, airship/other\n" +
-            "ticketers, and Chocobo Keeps (different icon per type, one toggle).\n" +
-            "Same English-regardless-of-client-language matching as Mender above."))
+            "ticketers, and Chocobo Keeps/Falcon Porters (different icon per\n" +
+            "type, one toggle). Same English-regardless-of-client-language\n" +
+            "matching as Mender above."))
         { cfg.ShowFastTravelIcons = ftIcon; changed = true; }
 
         float qMin = cfg.NpcQuestIconMinSize, qMax = cfg.NpcQuestIconMaxSize;

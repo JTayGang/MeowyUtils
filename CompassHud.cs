@@ -74,18 +74,25 @@ public sealed class CompassHud : IDisposable
 
     // Keyword lists for npcSheet Title/Singular matching (see MatchesKeyword). Grow these as
     // new NPC vocation words turn up — use /compass debug near the NPC to read TitleEN/SingularEN.
-    private static readonly string[] MenderKeywords = { "Mender", "Tinker" };
+    private static readonly string[] MenderKeywords = { "Mender", "Tinker", "Repairman" };
     private static readonly string[] ShopKeywords =
     {
         "Merchant", "Vendor", "Trader", "Sutler", "Supplier", "Junkmonger",
         "Fishmonger", "Dyemonger", "Jeweler", "Apothecary", "Culinarian",
-        "Salvager", "Exchange", "Clothier", "Outfitter",
+        "Salvager", "Exchange", "Clothier", "Outfitter", "Peddler", "Dealer", "Armorer",
+        "Shopkeep", "Stallkeeper", "Pawnbroker", "Provisioner", "Broker", "Proprietor",
+        "Proprietress", "Marketeer", "Weaponsmith", "Tailor", "Herbalist", "Craftsman",
+        "Appraiser",
     };
     // Three icon variants sharing one enable checkbox (config.ShowFastTravelIcons) — see
-    // TryGetNpcIcon for which config.*IconId each one maps to.
-    private static readonly string[] SkipperKeywords     = { "Skipper" };
-    private static readonly string[] TicketerKeywords    = { "Ticketer" };
-    private static readonly string[] ChocoboKeepKeywords = { "Chocobokeep" };
+    // TryGetNpcIcon for which config.*IconId each one maps to. Falcon Porters (Ishgard's
+    // aerial ropeway) work identically to Chocobo Keeps, so they share this keyword list
+    // and icon rather than getting their own category.
+    private static readonly string[] SkipperKeywords     = { "Skipper", "Ferryman" };
+    // Bare "Attendant" deliberately excluded — collides with unrelated titles elsewhere
+    // (Lift Attendant, Ceremony Attendant, Rival Wings Attendant) that aren't airship staff.
+    private static readonly string[] TicketerKeywords    = { "Ticketer", "Pilot", "Crewman", "Steward" };
+    private static readonly string[] ChocoboKeepKeywords = { "Chocobokeep", "Falcon Porter" };
 
     // Unified candidate list (game objects + FATEs) reused every frame — no per-frame alloc.
     // Obj != null → game object; Fate != null → FATE. T is normalised distance fraction.
@@ -918,8 +925,9 @@ public sealed class CompassHud : IDisposable
     private bool IsChocoboKeep(IGameObject o) => MatchesKeyword(o.BaseId, ChocoboKeepKeywords);
 
     // Combined check — used where we just need "is this a Fast Travel NPC at all", not which
-    // icon it gets (see TryGetNpcIcon below for that).
-    private bool IsFastTravel(IGameObject o) => IsSkipper(o) || IsTicketer(o);
+    // icon it gets (see TryGetNpcIcon below for that). Was missing ChocoboKeep before — fixed
+    // while this was already being touched for Falcon Porter.
+    private bool IsFastTravel(IGameObject o) => IsSkipper(o) || IsTicketer(o) || IsChocoboKeep(o);
 
     // Priority: live quest marker, then each keyword category in turn; first match wins.
     // Same priority order as before, just a data walk instead of six repeated if/else branches.

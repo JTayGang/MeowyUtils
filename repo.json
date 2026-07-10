@@ -1,0 +1,38 @@
+[
+  {
+    "Author": "Meowmeowmeow Cat",
+    "Name": "Skyrim Compass",
+    "Description": "Adds a Skyrim-style compass bar at the top of your screen. Shows cardinal directions, tick marks, and nearby entity markers (players, enemies, gathering nodes, and more). Use /compass to toggle and /compass config to open settings.",
+    "InternalName": "SkyrimCompass",
+    "AssemblyVersion": "1.5.0.5",
+    "TestingAssemblyVersion": null,
+    "RepoUrl": "https://github.com/JTayGang/MeowyUtils",
+    "ApplicableVersion": "any",
+    "DalamudApiLevel": 15,
+    "Punchline": "Navigate Eorzea like a Dragonborn",
+    "IsHide": false,
+    "IsTestingExclusive": false,
+    "DownloadLinkInstall": "https://github.com/JTayGang/MeowyUtils/releases/download/1.5.0.5/latest.zip",
+    "DownloadLinkTesting": "https://github.com/JTayGang/MeowyUtils/releases/download/1.5.0.5/latest.zip",
+    "DownloadLinkUpdate": "https://github.com/JTayGang/MeowyUtils/releases/download/1.5.0.5/latest.zip",
+    "LastUpdate": "1750000000"
+  },
+  {
+    "Author": "Meowmeowmeow Cat",
+    "Name": "StatusBridge",
+    "Description": "Mirrors your live Moodles and Loci statuses onto each other, so whichever sync plugin you use (Snowcloak, Sundouleia, or anything else) picks up a unified status regardless of which backend it natively reads.",
+    "InternalName": "StatusBridge",
+    "AssemblyVersion": "1.0.0.0",
+    "TestingAssemblyVersion": null,
+    "RepoUrl": "https://github.com/JTayGang/MeowyUtils",
+    "ApplicableVersion": "any",
+    "DalamudApiLevel": 15,
+    "Punchline": "One status, both backends.",
+    "IsHide": false,
+    "IsTestingExclusive": false,
+    "DownloadLinkInstall": "https://github.com/JTayGang/MeowyUtils/releases/download/StatusBridge-1.0.0.0/latest.zip",
+    "DownloadLinkTesting": "https://github.com/JTayGang/MeowyUtils/releases/download/StatusBridge-1.0.0.0/latest.zip",
+    "DownloadLinkUpdate": "https://github.com/JTayGang/MeowyUtils/releases/download/StatusBridge-1.0.0.0/latest.zip",
+    "LastUpdate": "1783720009"
+  }
+]

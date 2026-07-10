@@ -1,0 +1,11 @@
+{
+  "Author": "Meowmeowmeow Cat",
+  "Name": "StatusBridge",
+  "InternalName": "StatusBridge",
+  "Description": "Mirrors your live Moodles and Loci statuses onto each other, so whichever sync plugin you use (Snowcloak, Sundouleia, or anything else) picks up a unified status regardless of which backend it natively reads.",
+  "ApplicableVersion": "any",
+  "Punchline": "One status, both backends.",
+  "Tags": [ "Moodles", "Loci", "Status", "Sync" ],
+  "DalamudApiLevel": 15,
+  "RepoUrl": "https://github.com/JTayGang/MeowyUtils"
+}

@@ -229,7 +229,7 @@ public sealed class CompassHud : IDisposable
 
         float bw = config.CompassWidth;
         float bh = config.CompassHeight;
-        float bx = (io.DisplaySize.X - bw) * 0.5f;
+        float bx = (io.DisplaySize.X - bw) * 0.5f + config.XOffset;
         float by = config.YOffset;
 
         RenderBar(dl, bx, by, bw, bh, heading, player, originPos);

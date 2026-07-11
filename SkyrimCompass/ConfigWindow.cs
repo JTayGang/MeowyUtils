@@ -76,9 +76,23 @@ public sealed class ConfigWindow : Window
         if (ImGui.SliderInt("Height##h", ref iv, 20, 80))
         { cfg.CompassHeight = iv; changed = true; }
 
+        // Slider bounds track the live display size so the bar can be dragged
+        // anywhere on screen (and always stays fully visible) on any resolution.
+        var io = ImGui.GetIO();
+
+        int yMax = (int)MathF.Max(0f, io.DisplaySize.Y - cfg.CompassHeight);
         iv = (int)cfg.YOffset;
-        if (ImGui.SliderInt("Y Offset (from top)##yo", ref iv, 0, 300))
+        if (ImGui.SliderInt("Y Offset (from top)##yo", ref iv, 0, yMax))
         { cfg.YOffset = iv; changed = true; }
+
+        int xRange = (int)MathF.Max(0f, (io.DisplaySize.X - cfg.CompassWidth) * 0.5f);
+        iv = (int)cfg.XOffset;
+        if (ImGui.SliderInt("X Offset (from center)##xo", ref iv, -xRange, xRange))
+        { cfg.XOffset = iv; changed = true; }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip(
+                "Shifts the compass left (negative) or right (positive) of center.\n" +
+                "Range auto-adjusts to your screen width so the bar stays fully on-screen.");
 
         ImGui.Spacing();
 

@@ -37,6 +37,8 @@ public class Configuration : IPluginConfiguration
     public float CompassWidth   { get; set; } = 560f;
     public float CompassHeight  { get; set; } = 35f;
     public float YOffset        { get; set; } = 8f;
+    /// <summary>Shifts the bar left (negative) or right (positive) from horizontal center.</summary>
+    public float XOffset        { get; set; } = 0f;
 
     // ── Behaviour ────────────────────────────────────────────────────────────
     /// <summary>Degrees of the full 360° visible at once.</summary>

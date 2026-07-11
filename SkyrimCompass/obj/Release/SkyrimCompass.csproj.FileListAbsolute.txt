@@ -1,9 +1,8 @@
-C:\Users\Justi\Downloads\MeowyUtils\MeowyUtils\SkyrimCompass\bin\Release\SkyrimCompass.deps.json
-C:\Users\Justi\Downloads\MeowyUtils\MeowyUtils\SkyrimCompass\bin\Release\SkyrimCompass.dll
-C:\Users\Justi\Downloads\MeowyUtils\MeowyUtils\SkyrimCompass\obj\Release\SkyrimCompass.csproj.AssemblyReference.cache
-C:\Users\Justi\Downloads\MeowyUtils\MeowyUtils\SkyrimCompass\obj\Release\SkyrimCompass.GeneratedMSBuildEditorConfig.editorconfig
-C:\Users\Justi\Downloads\MeowyUtils\MeowyUtils\SkyrimCompass\obj\Release\SkyrimCompass.AssemblyInfoInputs.cache
-C:\Users\Justi\Downloads\MeowyUtils\MeowyUtils\SkyrimCompass\obj\Release\SkyrimCompass.AssemblyInfo.cs
-C:\Users\Justi\Downloads\MeowyUtils\MeowyUtils\SkyrimCompass\obj\Release\SkyrimCompass.csproj.CoreCompileInputs.cache
-C:\Users\Justi\Downloads\MeowyUtils\MeowyUtils\SkyrimCompass\obj\Release\SkyrimCompass.sourcelink.json
-C:\Users\Justi\Downloads\MeowyUtils\MeowyUtils\SkyrimCompass\obj\Release\SkyrimCompass.dll
+C:\Users\Justi\Downloads\SkyrimCompass(1)\SkyrimCompass\bin\Release\SkyrimCompass.deps.json
+C:\Users\Justi\Downloads\SkyrimCompass(1)\SkyrimCompass\bin\Release\SkyrimCompass.dll
+C:\Users\Justi\Downloads\SkyrimCompass(1)\SkyrimCompass\obj\Release\SkyrimCompass.csproj.AssemblyReference.cache
+C:\Users\Justi\Downloads\SkyrimCompass(1)\SkyrimCompass\obj\Release\SkyrimCompass.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\Justi\Downloads\SkyrimCompass(1)\SkyrimCompass\obj\Release\SkyrimCompass.AssemblyInfoInputs.cache
+C:\Users\Justi\Downloads\SkyrimCompass(1)\SkyrimCompass\obj\Release\SkyrimCompass.AssemblyInfo.cs
+C:\Users\Justi\Downloads\SkyrimCompass(1)\SkyrimCompass\obj\Release\SkyrimCompass.csproj.CoreCompileInputs.cache
+C:\Users\Justi\Downloads\SkyrimCompass(1)\SkyrimCompass\obj\Release\SkyrimCompass.dll

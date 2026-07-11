@@ -108,7 +108,8 @@ Open with `/compass config`.
 
 ### Layout tab
 - **Width / Height** — size of the compass bar in screen pixels
-- **Y Offset** — distance from the top of the screen
+- **Y Offset** — distance from the top of the screen (slider range auto-scales to your screen height)
+- **X Offset** — distance left (negative) or right (positive) of horizontal center (slider range auto-scales to your screen width)
 - **Visible Degrees** — how wide a slice of the compass is shown (30°–180°)
 - **Font Scale** — scale the N/NE/E… label text
 - **Show numeric heading** — shows e.g. `045°` below the bar

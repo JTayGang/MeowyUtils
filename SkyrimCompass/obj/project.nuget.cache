@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "is7JYoAjxQc=",
+  "dgSpecHash": "oRkz/+H/Ohg=",
   "success": true,
-  "projectFilePath": "C:\\Users\\Justi\\Downloads\\MeowyUtils\\MeowyUtils\\SkyrimCompass\\SkyrimCompass.csproj",
+  "projectFilePath": "C:\\Users\\Justi\\Downloads\\SkyrimCompass(1)\\SkyrimCompass\\SkyrimCompass.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\Justi\\.nuget\\packages\\dalamudpackager\\15.0.0\\dalamudpackager.15.0.0.nupkg.sha512",
     "C:\\Users\\Justi\\.nuget\\packages\\dotnet.reproduciblebuilds\\1.2.39\\dotnet.reproduciblebuilds.1.2.39.nupkg.sha512"

@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\Justi\\Downloads\\MeowyUtils\\MeowyUtils\\SkyrimCompass\\SkyrimCompass.csproj": {}
+    "C:\\Users\\Justi\\Downloads\\SkyrimCompass(1)\\SkyrimCompass\\SkyrimCompass.csproj": {}
   },
   "projects": {
-    "C:\\Users\\Justi\\Downloads\\MeowyUtils\\MeowyUtils\\SkyrimCompass\\SkyrimCompass.csproj": {
+    "C:\\Users\\Justi\\Downloads\\SkyrimCompass(1)\\SkyrimCompass\\SkyrimCompass.csproj": {
       "version": "1.5.0.5",
       "restore": {
-        "projectUniqueName": "C:\\Users\\Justi\\Downloads\\MeowyUtils\\MeowyUtils\\SkyrimCompass\\SkyrimCompass.csproj",
+        "projectUniqueName": "C:\\Users\\Justi\\Downloads\\SkyrimCompass(1)\\SkyrimCompass\\SkyrimCompass.csproj",
         "projectName": "SkyrimCompass",
-        "projectPath": "C:\\Users\\Justi\\Downloads\\MeowyUtils\\MeowyUtils\\SkyrimCompass\\SkyrimCompass.csproj",
+        "projectPath": "C:\\Users\\Justi\\Downloads\\SkyrimCompass(1)\\SkyrimCompass\\SkyrimCompass.csproj",
         "packagesPath": "C:\\Users\\Justi\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\Justi\\Downloads\\MeowyUtils\\MeowyUtils\\SkyrimCompass\\obj\\",
+        "outputPath": "C:\\Users\\Justi\\Downloads\\SkyrimCompass(1)\\SkyrimCompass\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\Justi\\AppData\\Roaming\\NuGet\\NuGet.Config"

@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\Justi\\Downloads\\MeowyUtils\\MeowyUtils\\StatusBridge\\StatusBridge.csproj": {}
+    "C:\\Users\\Justi\\Downloads\\StatusBridge\\StatusBridge\\StatusBridge\\StatusBridge.csproj": {}
   },
   "projects": {
-    "C:\\Users\\Justi\\Downloads\\MeowyUtils\\MeowyUtils\\StatusBridge\\StatusBridge.csproj": {
-      "version": "1.0.0",
+    "C:\\Users\\Justi\\Downloads\\StatusBridge\\StatusBridge\\StatusBridge\\StatusBridge.csproj": {
+      "version": "1.0.0.1",
       "restore": {
-        "projectUniqueName": "C:\\Users\\Justi\\Downloads\\MeowyUtils\\MeowyUtils\\StatusBridge\\StatusBridge.csproj",
+        "projectUniqueName": "C:\\Users\\Justi\\Downloads\\StatusBridge\\StatusBridge\\StatusBridge\\StatusBridge.csproj",
         "projectName": "StatusBridge",
-        "projectPath": "C:\\Users\\Justi\\Downloads\\MeowyUtils\\MeowyUtils\\StatusBridge\\StatusBridge.csproj",
+        "projectPath": "C:\\Users\\Justi\\Downloads\\StatusBridge\\StatusBridge\\StatusBridge\\StatusBridge.csproj",
         "packagesPath": "C:\\Users\\Justi\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\Justi\\Downloads\\MeowyUtils\\MeowyUtils\\StatusBridge\\obj\\",
+        "outputPath": "C:\\Users\\Justi\\Downloads\\StatusBridge\\StatusBridge\\StatusBridge\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\Justi\\AppData\\Roaming\\NuGet\\NuGet.Config"

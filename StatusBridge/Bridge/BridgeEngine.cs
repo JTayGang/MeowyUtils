@@ -1,4 +1,5 @@
 using Dalamud.Plugin.Services;
+using StatusBridge.Experimental;
 using StatusBridge.Interop;
 
 namespace StatusBridge.Bridge;
@@ -25,6 +26,7 @@ internal sealed class BridgeEngine : IDisposable
     private readonly Configuration _config;
     private readonly MoodlesIpc _moodles = new();
     private readonly LociIpc _loci = new();
+    private readonly MoodlesOffsetPatch _moodlesOffsetPatch = new();
 
     // Guid -> signature of the *source* status, as of the last time we pushed it.
     // Keys in _mirroredIntoLoci are GUIDs the bridge wrote into Loci (native side: Moodles).
@@ -39,6 +41,8 @@ internal sealed class BridgeEngine : IDisposable
     public bool LociAvailable => _loci.Available;
     public int MirroredIntoLociCount => _mirroredIntoLoci.Count;
     public int MirroredIntoMoodlesCount => _mirroredIntoMoodles.Count;
+    public bool MoodlesOffsetPatchApplied => _moodlesOffsetPatch.IsApplied;
+    public string MoodlesOffsetPatchStatus => _moodlesOffsetPatch.Status;
 
     public BridgeEngine(Configuration config)
     {
@@ -69,14 +73,19 @@ internal sealed class BridgeEngine : IDisposable
 
     private void Reconcile()
     {
+        // Runs before the Enabled check on purpose: availability should stay fresh for the UI
+        // even while mirroring is paused, and the offset patch is an independent concern from
+        // mirroring - someone might want the icon fix active without bidirectional sync running.
+        _moodles.RefreshAvailability();
+        _loci.RefreshAvailability();
+
+        UpdateExperimentalMoodlesOffsetPatch();
+
         if (!_config.Enabled)
             return;
 
         if (Svc.ObjectTable.LocalPlayer == null)
             return;
-
-        _moodles.RefreshAvailability();
-        _loci.RefreshAvailability();
 
         if (!_moodles.Available || !_loci.Available)
             return;
@@ -93,6 +102,22 @@ internal sealed class BridgeEngine : IDisposable
 
         if (_config.MirrorLociToMoodles)
             SyncLociToMoodles(lociList, moodleList);
+    }
+
+    private void UpdateExperimentalMoodlesOffsetPatch()
+    {
+        if (_config.EnableExperimentalMoodlesOffsetFix)
+        {
+            // Idempotent-safe and cheap (a handful of reflection field lookups on a bool), so
+            // just retrying every tick until it succeeds is simpler and more self-healing than
+            // event-driven re-application - it recovers on its own after a Moodles reload.
+            if (_moodles.Available && !_moodlesOffsetPatch.IsApplied)
+                _moodlesOffsetPatch.TryApply();
+        }
+        else if (_moodlesOffsetPatch.IsApplied)
+        {
+            _moodlesOffsetPatch.TryRevert();
+        }
     }
 
     private void SyncMoodlesToLoci(List<MoodlesStatusInfo> moodles, List<LociStatusInfo> lociExisting)
@@ -208,6 +233,10 @@ internal sealed class BridgeEngine : IDisposable
     public void Dispose()
     {
         Svc.Framework.Update -= OnFrameworkUpdate;
+
+        if (_moodlesOffsetPatch.IsApplied)
+            _moodlesOffsetPatch.TryRevert();
+
         _moodles.Dispose();
         _loci.Dispose();
     }

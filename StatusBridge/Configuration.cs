@@ -26,5 +26,14 @@ internal sealed class Configuration : IPluginConfiguration
     /// <summary>Verbose per-action logging to the Dalamud log, useful for confirming it's working.</summary>
     public bool VerboseLogging { get; set; }
 
+    /// <summary>
+    /// EXPERIMENTAL, off by default. Reaches into Moodles' loaded assembly via reflection and
+    /// flips an internal flag that fixes a Moodles-side icon-offset miscalculation whenever
+    /// Loci's icons render before Moodles' do on a given client. This touches unversioned
+    /// internals with no contract protecting it - see Experimental/MoodlesOffsetPatch.cs and
+    /// the README for the full explanation of what it does and why it's opt-in.
+    /// </summary>
+    public bool EnableExperimentalMoodlesOffsetFix { get; set; }
+
     public void Save() => Svc.PluginInterface.SavePluginConfig(this);
 }

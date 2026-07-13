@@ -13,6 +13,7 @@ internal class Svc
     [PluginService] public static IDalamudPluginInterface PluginInterface { get; set; } = null!;
     [PluginService] public static IPluginLog Log { get; set; } = null!;
     [PluginService] public static IObjectTable ObjectTable { get; set; } = null!;
+    [PluginService] public static ITargetManager TargetManager { get; set; } = null!;
     [PluginService] public static IFramework Framework { get; set; } = null!;
     [PluginService] public static ICommandManager CommandManager { get; set; } = null!;
 }

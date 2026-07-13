@@ -2,8 +2,8 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
     <PropertyGroup>
         <Authors>Meowmeowmeow Cat</Authors>
-        <Company>Meowmeowmeow Cat</Company>
-        <Version>1.0.0.0</Version>
+        <Company>Meowy Inc</Company>
+        <Version>1.0.0.1</Version>
         <Description>Mirrors live Moodles and Loci statuses on your own character so any sync plugin (Snowcloak, Sundouleia, etc.) picks them up regardless of which status backend it natively supports.</Description>
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>

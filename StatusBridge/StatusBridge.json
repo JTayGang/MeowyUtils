@@ -6,6 +6,5 @@
   "ApplicableVersion": "any",
   "Punchline": "One status, both backends.",
   "Tags": [ "Moodles", "Loci", "Status", "Sync" ],
-  "DalamudApiLevel": 15,
-  "RepoUrl": "https://github.com/JTayGang/MeowyUtils"
+  "DalamudApiLevel": 15
 }

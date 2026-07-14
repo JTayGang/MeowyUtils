@@ -3,14 +3,14 @@ using System.Reflection;
 namespace StatusBridge.Experimental;
 
 /// <summary>
-/// EXPERIMENTAL. OFF BY DEFAULT. NOT A SUPPORTED INTEGRATION.
+/// EXPERIMENTAL. ON BY DEFAULT AS OF CONFIG VERSION 2. NOT A SUPPORTED INTEGRATION.
 ///
 /// Reaches into Moodles' own loaded assembly via reflection and flips an internal flag that
 /// controls how Moodles decides where to draw its own status icons relative to the game's
 /// native ones.
 ///
 /// <para><b>Background:</b> Moodles has two ways to compute that offset (see
-/// Moodles/GameGuiProcessors/TargetInfoProcessor.cs and five sibling processor files in
+/// Moodles/GameGuiProcessors/TargetInfoProcessor.cs and four sibling processor files in
 /// Moodles' own repo). The default (<c>CommonProcessor.NewMethod = true</c>) visually scans the
 /// shared native icon UI region and counts populated slots, assuming anything visible there is
 /// a vanilla game status. That miscounts any icon another plugin has already drawn into that
@@ -22,18 +22,22 @@ namespace StatusBridge.Experimental;
 /// Moodles' own code - this patch does not add new behavior to Moodles, it just flips which of
 /// Moodles' own existing paths gets used.</para>
 ///
-/// <para><b>Why this is opt-in and not just the default behavior:</b> every step below touches
-/// Moodles' internal, unversioned implementation details - a public static self-reference, and
-/// two public instance fields - with zero contract protecting any of it. It will silently stop
-/// doing anything useful (safely - see below) the moment Moodles renames or restructures any of:
-/// the main plugin class, the "P" static field, the "CommonProcessor" field, or the "NewMethod"
-/// field. It's also broader in effect than the name suggests: flipping this changes how Moodles
-/// computes its icon offset everywhere, for every character, all the time - not just for the
-/// specific Loci-overlap case - and we don't actually know why Moodles' own developer chose
-/// <c>NewMethod = true</c> as the default. If the older path has some other limitation that
-/// motivated the switch away from it, this patch would quietly reintroduce that limitation for
-/// every user who enables it. This exists as a stopgap because Moodles' maintainer isn't
-/// currently reviewing outside changes - it is not a substitute for a real fix on their end.</para>
+/// <para><b>Why this stays labeled Experimental despite being on by default:</b> every step
+/// below touches Moodles' internal, unversioned implementation details - a public static
+/// self-reference, and two public instance fields - with zero contract protecting any of it. It
+/// will silently stop doing anything useful (safely - see below) the moment Moodles renames or
+/// restructures any of: the main plugin class, the "P" static field, the "CommonProcessor"
+/// field, or the "NewMethod" field. It's also broader in effect than the name suggests: flipping
+/// this changes how Moodles computes its icon offset everywhere, for every character, all the
+/// time - not just for the specific Loci-overlap case - and we still don't actually know why
+/// Moodles' own developer chose <c>NewMethod = true</c> as the default. If the older path has
+/// some other limitation that motivated the switch away from it, this patch quietly reintroduces
+/// that limitation for everyone now, not just people who went looking for it. It moved from
+/// opt-in to on-by-default after testers ran it for a while with consistently good results, but
+/// "no reports of the Loci-overlap fix backfiring" isn't the same claim as "we know what
+/// NewMethod=true was protecting against" - this exists as a stopgap because Moodles'
+/// maintainer isn't currently reviewing outside changes, not a substitute for a real fix on
+/// their end, and Settings -> Experimental still has a checkbox to turn it back off per-user.</para>
 ///
 /// <para><b>Failure mode by design:</b> every reflection step is individually null-checked
 /// before use, with a specific, distinguishable <see cref="Status"/> message per failure point,

@@ -20,6 +20,7 @@ public sealed class Plugin : IDalamudPlugin
         pluginInterface.Create<Svc>();
 
         _config = Svc.PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
+        _config.MigrateIfNeeded();
         _engine = new BridgeEngine(_config);
 
         _configWindow = new ConfigWindow(_config, _engine);

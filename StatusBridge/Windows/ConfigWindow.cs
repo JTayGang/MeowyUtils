@@ -124,15 +124,18 @@ internal sealed class ConfigWindow : Window, IDisposable
             "visually invisible on characters with both plugins' icons showing. This setting " +
             "makes StatusBridge reach into Moodles' running instance via reflection and flip " +
             "an internal flag Moodles already has for a StatusList-based offset calculation " +
-            "that isn't affected by this. It is not a supported integration: it depends on " +
+            "that isn't affected by this. On by default: testers ran it opt-in for a while " +
+            "with consistently good results, so it's now applied automatically - uncheck the " +
+            "box below to opt out. It's still not a supported integration: it depends on " +
             "Moodles' internal, unversioned structure and will simply stop doing anything " +
             "(safely - it won't crash or corrupt anything) if a future Moodles update changes " +
-            "that structure. It's off by default because it affects Moodles' icon placement " +
-            "globally, not just the Loci-overlap case, for reasons we can't fully verify " +
-            "without Moodles' own source history.");
+            "that structure. It also still affects Moodles' icon placement globally, not just " +
+            "the Loci-overlap case, for reasons we can't fully verify without Moodles' own " +
+            "source history - if icon positioning looks off on party members, your focus " +
+            "target, or your own status bar after updating, try disabling this first.");
 
         var offsetFix = _config.EnableExperimentalMoodlesOffsetFix;
-        if (ImGui.Checkbox("Enable reflection-based offset patch", ref offsetFix))
+        if (ImGui.Checkbox("Enable reflection-based offset patch (default: on)", ref offsetFix))
         {
             _config.EnableExperimentalMoodlesOffsetFix = offsetFix;
             _config.Save();

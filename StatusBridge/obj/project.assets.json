@@ -75,13 +75,13 @@
     "C:\\Users\\Justi\\.nuget\\packages\\": {}
   },
   "project": {
-    "version": "1.0.0.1",
+    "version": "1.0.0.2",
     "restore": {
-      "projectUniqueName": "C:\\Users\\Justi\\Downloads\\StatusBridge\\StatusBridge\\StatusBridge\\StatusBridge.csproj",
+      "projectUniqueName": "C:\\Users\\Justi\\Downloads\\StatusBridge\\StatusBridge\\StatusBridge\\StatusBridge\\StatusBridge.csproj",
       "projectName": "StatusBridge",
-      "projectPath": "C:\\Users\\Justi\\Downloads\\StatusBridge\\StatusBridge\\StatusBridge\\StatusBridge.csproj",
+      "projectPath": "C:\\Users\\Justi\\Downloads\\StatusBridge\\StatusBridge\\StatusBridge\\StatusBridge\\StatusBridge.csproj",
       "packagesPath": "C:\\Users\\Justi\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\Justi\\Downloads\\StatusBridge\\StatusBridge\\StatusBridge\\obj\\",
+      "outputPath": "C:\\Users\\Justi\\Downloads\\StatusBridge\\StatusBridge\\StatusBridge\\StatusBridge\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "C:\\Users\\Justi\\AppData\\Roaming\\NuGet\\NuGet.Config"

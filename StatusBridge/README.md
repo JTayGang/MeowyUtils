@@ -79,6 +79,149 @@ repository - you'll load it as a dev plugin:
 - Turn on "Verbose logging" in settings and watch `/xllog` if you want to confirm it's actually
   doing something.
 
+## Verifying it's actually working
+
+Layer these roughly in order - each one only matters if the layer before it checks out.
+
+**1. Plugin loads and detects both backends.** `/statusbridge` should show both Moodles and Loci
+as "detected" in green. If either shows red, nothing downstream will work - check `/xllog` for
+load errors first.
+
+**2. Core mirroring, both directions.** With Verbose logging on: apply a Loci-only status to
+yourself, confirm `/xllog` shows a "Mirrored Loci status '...' -> Moodles" line, then confirm it
+actually shows up in Moodles' own status list (not just the log line - open Moodles' UI or hover
+your own status bar). Repeat the other direction with a Moodles-only status. Then remove the
+original and confirm the mirrored copy disappears rather than being orphaned. If this layer
+doesn't work, check the Moodles setting called out under Requirements above before anything else
+- it's the single most common reason the Loci -> Moodles direction silently does nothing.
+
+**3. The experimental patch, mechanically.** It's on by default (Settings -> Experimental) -
+existing installs get migrated to this automatically the first time they load after updating,
+including anyone who'd previously opted out on purpose (see **Known issues** below for exactly
+what that migration does and why). Check the "Patch status" line: it should read `Applied
+(confirmed: NewMethod = false)` - that specific wording means the reflection write was read back
+and confirmed, not just that the call didn't throw. Anything else (an assembly/type/field-not-found
+message) tells you exactly which step failed, which is itself useful if a Moodles update ever
+breaks this.
+
+**4. The experimental patch, behaviorally.** This is the layer that actually confirms the visual
+bug is fixed, and it's the hardest to test on demand because the trigger condition - Moodles'
+render hook running after Loci's for a given character - depends on session-specific hook
+ordering between the two plugins that isn't something you can force from outside either plugin.
+Two ways to get a real answer:
+
+- Use the "Compare counts for current target" button right below the patch toggle. Target a
+  character who has both a real game buff/debuff *and* a Loci status showing at the same time,
+  and click it. It reads Moodles' own (potentially miscounted) scan result and the real vanilla
+  count from Dalamud's API side by side for that exact target. If they differ, the bug's
+  precondition is active for that target on your client right now - toggle the patch off and on
+  and click compare again; the mismatch should track the toggle. If they always match no matter
+  who you target, either you haven't found a character exhibiting it, or your client's hook
+  ordering happens to be the lucky one this session and there's nothing for the patch to fix
+  locally regardless of whether it's enabled.
+- The most reliable confirmation is going back to whoever originally reported the ghost icons
+  (or anyone else who's reproduced it reliably) and having them enable the patch specifically.
+  Their setup is a confirmed-reproducing environment; yours may not be, and "it looks fine on my
+  client" either way isn't strong evidence unless you already know which case you're in via the
+  compare tool above.
+
+## Known issues
+
+**Statuses that are hoverable (tooltip shows) but visually invisible on a character.** This
+happens on characters that have both a Moodles icon and a Loci icon showing at the same time,
+and it's not actually a StatusBridge bug - it's a pre-existing Moodles/Loci coexistence gap that
+StatusBridge's whole purpose (making both backends agree) makes much more likely to surface,
+because it multiplies the number of characters that end up with icons from *both* systems
+simultaneously.
+
+The actual mechanism, confirmed against both plugins' source: Moodles decides where to draw its
+own icons by scanning the shared native status-icon UI region and counting populated slots,
+assuming everything visible there is a vanilla game status
+(`Moodles/GameGuiProcessors/TargetInfoProcessor.cs` and four sibling processor files, all gated
+behind a field called `CommonProcessor.NewMethod`). If Loci's icons are already rendered into
+that same region by the time Moodles scans - which depends on session-specific hook/render
+ordering between the two plugins, not something either plugin's user can control - Moodles counts
+Loci's icons as vanilla too, throwing off where it positions its own. Loci does not have this
+problem: it has a dedicated watcher (`Loci/Services/MoodlesWatcher.cs`) that reads Moodles' icon
+count via IPC and correctly offsets around it regardless of render order. Moodles has no
+equivalent awareness of Loci anywhere in its code. The bug is therefore asymmetric: a
+Moodles-origin icon mirrored into Loci is safe; a Loci-origin icon mirrored into Moodles is the
+one exposed to this.
+
+Moodles' own code already contains a fix for this - `CommonProcessor.NewMethod`, when `false`,
+computes the offset from Dalamud's own `IPlayerCharacter.StatusList` (the real, authoritative
+status count) instead of visually scanning shared UI, which sidesteps the problem entirely. It's
+just hardcoded to `true`. This has been raised with Moodles' maintainer; at time of writing they
+aren't reviewing outside changes, so the fix isn't available upstream yet.
+
+Two things you can do about it:
+
+- **Disable "Mirror Loci -> Moodles"** in settings. This doesn't fix the underlying gap (someone
+  who natively applies statuses in both plugins on the same character can still hit it), but it
+  stops StatusBridge from actively creating new instances of the trigger condition.
+- **The experimental offset patch** (Settings -> Experimental) is on by default as of config
+  Version 2 - after running opt-in for a while with consistently good tester feedback, it's now
+  applied automatically instead of something you have to go turn on. It makes StatusBridge reach
+  into Moodles' running instance via reflection and flip `NewMethod` to `false` itself, using the
+  correct path Moodles already has but doesn't use by default. It's still clearly marked
+  Experimental in the UI, and still worth being able to turn back off, because it touches
+  Moodles' internal, unversioned implementation details with no compatibility contract - it will
+  stop doing anything (safely - it fails soft and reports why) the moment a future Moodles update
+  restructures the relevant fields, and it changes Moodles' icon placement globally rather than
+  just for the Loci-overlap case, for reasons we can't fully verify without Moodles' own design
+  history. Concretely: if icon positions look off on party members, your focus target, or your
+  own status bar after updating, try unchecking it before assuming something else is wrong. See
+  `Experimental/MoodlesOffsetPatch.cs` for the full writeup and exactly what it touches. The same
+  folder also has `MoodlesOffsetDiagnostics.cs`, a read-only tool (exposed as a "Compare counts
+  for current target" button in the same Experimental settings section) that reads Moodles' own
+  miscounted scan result and the real vanilla status count side by side for whatever you're
+  targeting - if they differ, the bug is actively happening for that target right now, which is
+  a much more direct check than judging by icon position.
+  
+  Existing installs updating from before this change get migrated automatically to on
+  (`Configuration.Version` 1 -> 2, handled once in `Plugin.cs` on load) - and that includes anyone
+  who had *already* explicitly turned it off themselves. A plain on/off setting can't tell "never
+  touched this" apart from "deliberately opted out" once both are saved as `false`, so the
+  migration can't be selective about it: if you're in the latter group, you'll need to
+  re-disable it once after updating.
+
+**Statuses that briefly appear then vanish from the buff bar right after a game restart, and can
+leave a permanently "stuck" ghost that only clears via manual right-click or repeated
+interaction.** Predates the experimental patch entirely - unrelated to `NewMethod`. Two separate
+things stack here: one on Moodles' side that isn't really fixable from over here, and one that
+was a genuine StatusBridge bug.
+
+The Moodles-side half, confirmed against source: removing a status (via IPC or in-game) doesn't
+delete it from `MyStatusManager.Statuses` immediately - `Cancel()` just sets `ExpiresAt = 0`, and
+the actual removal from the list happens whenever `CommonProcessor.Tick()` next notices it's
+expired. If something reapplies a full status snapshot to your own character before that `Tick()`
+pass has caught up - most plausibly your sync plugin restoring your own last-known moodle state
+on login, since moodles are entirely client-local and don't otherwise survive a relog - the
+reapplied snapshot can still include statuses that were mid-removal when it was captured, which
+briefly renders them again until Moodles prunes them a moment later. That same reapplication path
+(`SetStatusManagerByPlayerV2` and siblings, landing in `MyStatusManager.Apply`/
+`SetStatusesAsEphemeral`) also flags the character's status manager `Ephemeral` for as long as
+it's active, which - confirmed from source, every IPC-based add/remove/preset method checks it -
+silently blocks all of them on that character with no error and no log line, until something
+explicitly clears it. Native right-click removal isn't gated by this at all (`Tick()`'s
+click-off handling doesn't check `Ephemeral`), which is exactly why it always worked as a manual
+fix even when nothing else did.
+
+The StatusBridge-side half, and the actual bug: both mirror-cleanup loops in `BridgeEngine.cs`,
+and `ClearAllMirrors()`, stopped tracking a GUID as soon as a removal was *attempted*, regardless
+of whether it actually took effect - and Moodles' remove call gives zero feedback either way
+(it's a `void` IPC method), so "the call didn't throw" was never a meaningful success signal. If
+a removal landed during the window described above, StatusBridge would forget about a status
+that was still very much alive, and the next reconcile pass - with no memory it was ever a mirror
+- would treat it as newly native and mishandle it again. This is specifically what made "Clear all
+mirrored statuses" occasionally *add* statuses back instead of removing them: it cleared the
+tracking dictionaries unconditionally, and the very next reconcile against the still-real
+leftover looked identical to a brand new status that needed mirroring.
+
+Fixed: all three spots now only stop tracking a GUID once a fresh poll actually confirms it's
+gone, instead of assuming a same-tick attempt succeeded. A removal that's blocked or delayed just
+gets retried next tick instead of being silently forgotten.
+
 ## Known limitations
 
 - **Chain-trigger data isn't mirrored.** Both plugins let a status trigger another status (on
@@ -113,8 +256,13 @@ StatusBridge/
     BridgeEngine.cs           the actual mirroring/de-dup logic
   Windows/
     ConfigWindow.cs           settings UI
+  Experimental/
+    MoodlesOffsetPatch.cs    on-by-default reflection patch, see "Known issues" above
+    MoodlesOffsetDiagnostics.cs   read-only compare tool, see "Verifying it's actually working"
 ```
 
 No dependency on Moodles' or Loci's own assemblies (see the comment at the top of
 `Interop/MoodlesTypes.cs` and `Interop/LociTypes.cs` for why, and why that's actually safe) -
-just the Dalamud SDK.
+just the Dalamud SDK. `Experimental/MoodlesOffsetPatch.cs` is the one deliberate exception to
+"only talk to the official IPC surface," and it's isolated in its own folder for exactly that
+reason.

@@ -22,7 +22,7 @@
     "Name": "StatusBridge",
     "Description": "Mirrors your live Moodles and Loci statuses onto each other, so whichever sync plugin you use (Snowcloak, Sundouleia, or anything else) picks up a unified status regardless of which backend it natively reads.",
     "InternalName": "StatusBridge",
-    "AssemblyVersion": "1.0.0.1",
+    "AssemblyVersion": "1.0.0.2",
     "TestingAssemblyVersion": null,
     "RepoUrl": "https://github.com/JTayGang/MeowyUtils",
     "ApplicableVersion": "any",
@@ -30,9 +30,9 @@
     "Punchline": "One status, both backends.",
     "IsHide": false,
     "IsTestingExclusive": false,
-    "DownloadLinkInstall": "https://github.com/JTayGang/MeowyUtils/releases/download/StatusBridge1.0.0.1/latest.zip",
-    "DownloadLinkTesting": "https://github.com/JTayGang/MeowyUtils/releases/download/StatusBridge1.0.0.1/latest.zip",
-    "DownloadLinkUpdate": "https://github.com/JTayGang/MeowyUtils/releases/download/StatusBridge1.0.0.1/latest.zip",
+    "DownloadLinkInstall": "https://github.com/JTayGang/MeowyUtils/releases/download/StatusBridge1.0.0.2/latest.zip",
+    "DownloadLinkTesting": "https://github.com/JTayGang/MeowyUtils/releases/download/StatusBridge1.0.0.2/latest.zip",
+    "DownloadLinkUpdate": "https://github.com/JTayGang/MeowyUtils/releases/download/StatusBridge1.0.0.2/latest.zip",
     "LastUpdate": "1783720009"
   }
 ]

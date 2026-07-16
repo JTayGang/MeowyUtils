@@ -3,7 +3,7 @@
     <PropertyGroup>
         <Authors>Meowmeowmeow Cat</Authors>
         <Company>Meowy Inc</Company>
-        <Version>1.0.0.3</Version>
+        <Version>1.0.0.4</Version>
         <Description>Mirrors live Moodles and Loci statuses on your own character so any sync plugin (Snowcloak, Sundouleia, etc.) picks them up regardless of which status backend it natively supports.</Description>
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>

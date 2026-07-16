@@ -75,7 +75,14 @@ repository - you'll load it as a dev plugin:
   nothing to trigger manually day-to-day.
 - "Remove all mirrored statuses" in the settings window is a manual escape hatch that clears
   every status the bridge itself created, on both sides, without touching anything you made
-  natively.
+  natively. "Force-clear stuck pairs" next to it is the more aggressive version - it also removes
+  the native original for anything currently tracked as a pair, which is what you actually want
+  if the plain button seems to "toggle" (clears, then comes right back a moment later) - see
+  **Known issues** for why that happens and why the two buttons are deliberately separate.
+- If the settings window shows a count of statuses stuck because they're locked in Loci, that's
+  not this plugin failing silently - it's Loci correctly refusing a removal that doesn't supply
+  the matching lock key, which this bridge never has for a lock it didn't create itself. Unlock
+  it in Loci's own UI.
 - Turn on "Verbose logging" in settings and watch `/xllog` if you want to confirm it's actually
   doing something.
 
@@ -222,6 +229,57 @@ Fixed: all three spots now only stop tracking a GUID once a fresh poll actually 
 gone, instead of assuming a same-tick attempt succeeded. A removal that's blocked or delayed just
 gets retried next tick instead of being silently forgotten.
 
+**Second follow-up: the previous two fixes were still treating a symptom of the actual root
+cause.** Both `_mirroredIntoLoci`/`_mirroredIntoMoodles` were in-memory only, meaning every game
+restart started identity-tracking completely from scratch, with nothing to go on except whether
+both sides still happen to agree ("adopt" - see `BridgeEngine`'s class remarks) - which silently
+breaks the moment only one side survives a restart correctly, which is exactly what the Ephemeral
+window above can cause. Every ghost-related bug found across this whole section traces back to
+that one gap. Fixed properly this time: tracking state is now persisted (`Bridge/BridgeState.cs`,
+a small JSON file in the plugin's own config directory, loaded on startup and saved whenever it
+changes) instead of rebuilt by guesswork every session. The GUID-matching adopt logic is still
+there, but now purely as a fallback for a missing or corrupted state file, not the primary
+mechanism.
+
+Two smaller, related fixes landed alongside it, from checking both plugins more thoroughly per
+your ask:
+
+- **Loci lock handling.** Confirmed from source: Loci's `Cancel`/`AddOrUpdate` reject a status
+  locked with a non-zero key unless the caller supplies that exact key, and every mirror this
+  bridge creates always uses key=0 ("don't lock it"). That means a mirror that's been locked by
+  *anything else* (manually, a preset, an automation) can never be removed by this plugin's
+  normal calls - it would previously retry forever, silently, every tick. `LociIpc.TryApply`/
+  `TryRemove` now return the real `LociApiEc` instead of collapsing it to a bool, so
+  `BridgeEngine` can tell `ItemLocked` apart from every other outcome, log it once instead of
+  spamming, and surface a count in the settings window telling you exactly why something looks
+  stuck instead of leaving you to guess. "Force-clear stuck pairs" can still fail against a real
+  lock for the same reason - unlocking it in Loci's own UI is the only real fix for that specific
+  case.
+- **Reading the real expiry instead of the lossy IPC one.** Confirmed from source on both sides:
+  `MyStatus.ToStatusTuple()` (Moodles) and `LociStatus.ToTuple()` (Loci) both set the tuple's
+  `ExpireTicks` from a *static configured duration*, never from the live `ExpiresAt` timestamp
+  that actually drives removal - so the public IPC surface cannot distinguish "about to be
+  pruned" from "perfectly healthy" even in principle, on either side. `Experimental/
+  MoodlesLiveStateReader.cs` and `Experimental/LociLiveStateReader.cs` read the real, live
+  `ExpiresAt` directly via reflection (all public fields, no unsafe pointers - see each file's
+  remarks for the exact path) so `BridgeEngine` can exclude anything already Cancel()-marked
+  before ever treating it as "native, needs mirroring." This means reacting to your actual
+  clearing intent the moment it happens rather than waiting however many ticks Moodles' or Loci's
+  own next prune pass takes, instead of just cleaning up the resulting mess afterward. The
+  Moodles reader also exposes `Ephemeral` itself for the settings window, read-only, purely as a
+  diagnostic - confirmed from source that Loci's equivalent concept (`EphemeralHosts`) does NOT
+  actually gate the calls this bridge makes on your own character (only the explicit lock does),
+  so there's no matching "is this silently blocked" question to answer on that side. Both readers
+  fail soft exactly like `MoodlesOffsetPatch` - any missing type or field just means the filter
+  doesn't apply that tick, never a crash.
+
+Deliberately **not** done: forcing Moodles' `Ephemeral` flag closed via the same reflection path.
+It's just as writable as it is readable, but flipping it means overriding whatever set it -
+plausibly your sync plugin mid-restore - which is a meaningfully different kind of decision than
+reading it for a diagnostic, and one worth making deliberately (e.g. a manual button, if a locked
+mirror on the Moodles side turns out to be a recurring problem) rather than something to do
+silently on your behalf every tick.
+
 ## Known limitations
 
 - **Chain-trigger data isn't mirrored.** Both plugins let a status trigger another status (on
@@ -245,7 +303,7 @@ gets retried next tick instead of being silently forgotten.
 StatusBridge/
   Plugin.cs                 entry point
   Svc.cs                    Dalamud service locator
-  Configuration.cs          persisted settings
+  Configuration.cs          persisted user-facing settings
   Interop/
     MoodlesTypes.cs         local tuple/enum mirror for Moodles' IPC shape
     LociTypes.cs             local tuple/enum mirror for Loci's IPC shape
@@ -253,16 +311,23 @@ StatusBridge/
     LociIpc.cs                thin wrapper around Loci's IPC calls
   Bridge/
     StatusConverter.cs       field mapping between the two tuple shapes
+    BridgeState.cs            persisted mirror-tracking state, see "Known issues" below
     BridgeEngine.cs           the actual mirroring/de-dup logic
   Windows/
     ConfigWindow.cs           settings UI
   Experimental/
-    MoodlesOffsetPatch.cs    on-by-default reflection patch, see "Known issues" above
+    MoodlesOffsetPatch.cs         on-by-default reflection patch, see "Known issues" above
     MoodlesOffsetDiagnostics.cs   read-only compare tool, see "Verifying it's actually working"
+    MoodlesLiveStateReader.cs     read-only reflection, see "Known issues" above
+    LociLiveStateReader.cs         read-only reflection, see "Known issues" above
 ```
 
 No dependency on Moodles' or Loci's own assemblies (see the comment at the top of
 `Interop/MoodlesTypes.cs` and `Interop/LociTypes.cs` for why, and why that's actually safe) -
-just the Dalamud SDK. `Experimental/MoodlesOffsetPatch.cs` is the one deliberate exception to
-"only talk to the official IPC surface," and it's isolated in its own folder for exactly that
-reason.
+the `.csproj` still references only the Dalamud SDK. Four files reach into unversioned internals
+via reflection instead of talking only to the official IPC surface - everything under
+`Experimental/`, all isolated there for exactly that reason. `BridgeState.cs` uses
+`Newtonsoft.Json` directly (no explicit PackageReference - it's resolved transitively through the
+Dalamud SDK, same as every other Dalamud plugin that persists JSON without adding it themselves).
+If a build ever reports `Newtonsoft.Json` as missing, that's the one new assumption this
+introduced worth checking first.

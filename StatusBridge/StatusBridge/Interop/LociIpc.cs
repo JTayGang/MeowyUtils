@@ -16,6 +16,7 @@ internal sealed class LociIpc : IDisposable
     private readonly ICallGateSubscriber<List<LociStatusInfo>> _getManagerInfo;
     private readonly ICallGateSubscriber<LociStatusInfo, uint, int> _applyStatusInfo;
     private readonly ICallGateSubscriber<Guid, uint, int> _removeStatus;
+    private readonly ICallGateSubscriber<nint, List<string>> _getHostsByPtr;
 
     private bool _subscribedToChanges;
 
@@ -33,6 +34,7 @@ internal sealed class LociIpc : IDisposable
         _getManagerInfo = Svc.PluginInterface.GetIpcSubscriber<List<LociStatusInfo>>($"{RequiredLabel}.GetManagerInfo");
         _applyStatusInfo = Svc.PluginInterface.GetIpcSubscriber<LociStatusInfo, uint, int>($"{RequiredLabel}.ApplyStatusInfo");
         _removeStatus = Svc.PluginInterface.GetIpcSubscriber<Guid, uint, int>($"{RequiredLabel}.RemoveStatus");
+        _getHostsByPtr = Svc.PluginInterface.GetIpcSubscriber<nint, List<string>>($"{RequiredLabel}.GetHostsByPtr");
 
         TrySubscribeToChanges();
         RefreshAvailability();
@@ -107,46 +109,75 @@ internal sealed class LociIpc : IDisposable
     /// Applies or updates a single status on the local player by data. Unlike Moodles, this has
     /// no broadcast/whitelist gate to worry about - Loci applies client-targeted data directly.
     /// key=0 means "don't lock it", so the user (or us) can freely remove/replace it later.
+    /// Returns the real LociApiEc rather than collapsing to bool - Loci's error codes are honest
+    /// (unlike Moodles' void remove call, this one actually tells you why it failed), and callers
+    /// can react differently to e.g. ItemLocked (will never succeed with key=0, stop retrying)
+    /// than to a transient failure (worth retrying next tick).
     /// </summary>
-    public bool TryApply(LociStatusInfo status)
+    public LociApiEc TryApply(LociStatusInfo status)
     {
         if (!Available)
-            return false;
+            return LociApiEc.TargetInvalid;
 
         try
         {
             var ec = (LociApiEc)_applyStatusInfo.InvokeFunc(status, 0);
-            if (ec is LociApiEc.Success or LociApiEc.NoChange)
-                return true;
-
-            Svc.Log.Warning($"[StatusBridge] Loci rejected a mirrored status: {ec}");
-            return false;
+            if (ec is not (LociApiEc.Success or LociApiEc.NoChange))
+                Svc.Log.Warning($"[StatusBridge] Loci rejected a mirrored status: {ec}");
+            return ec;
         }
         catch (Exception e)
         {
             Svc.Log.Warning(e, "[StatusBridge] Failed to apply a mirrored Loci status.");
-            return false;
+            return LociApiEc.UnkError;
         }
     }
 
-    public bool TryRemove(Guid guid)
+    /// <summary>Same reasoning as TryApply: returns the real LociApiEc, not a collapsed bool.</summary>
+    public LociApiEc TryRemove(Guid guid)
     {
         if (!Available)
-            return false;
+            return LociApiEc.TargetInvalid;
 
         try
         {
             var ec = (LociApiEc)_removeStatus.InvokeFunc(guid, 0);
-            if (ec is LociApiEc.Success or LociApiEc.NoChange or LociApiEc.DataNotFound)
-                return true;
-
-            Svc.Log.Warning($"[StatusBridge] Loci rejected removing a mirrored status: {ec}");
-            return false;
+            if (ec is not (LociApiEc.Success or LociApiEc.NoChange or LociApiEc.DataNotFound))
+                Svc.Log.Warning($"[StatusBridge] Loci rejected removing a mirrored status: {ec}");
+            return ec;
         }
         catch (Exception e)
         {
             Svc.Log.Warning(e, "[StatusBridge] Failed to remove a mirrored Loci status.");
-            return false;
+            return LociApiEc.UnkError;
+        }
+    }
+
+    /// <summary>
+    /// Official (non-reflection) diagnostic: which "ephemeral hosts" - other plugins actively
+    /// claiming to drive this character's Loci data, e.g. a sync plugin - Loci currently reports
+    /// for the local player. Purely informational: confirmed from source that this doesn't
+    /// actually gate the calls above (see LociLiveStateReader's remarks), so this is for
+    /// diagnosing "why does this look stuck", not something the reconciliation logic reacts to.
+    /// Empty list on any failure or if nothing is registered.
+    /// </summary>
+    public List<string> GetHostsForLocalPlayer()
+    {
+        if (!Available)
+            return [];
+
+        var local = Svc.ObjectTable.LocalPlayer;
+        if (local == null)
+            return [];
+
+        try
+        {
+            return _getHostsByPtr.InvokeFunc(local.Address) ?? [];
+        }
+        catch (Exception e)
+        {
+            Svc.Log.Warning(e, "[StatusBridge] Failed to read Loci's ephemeral hosts for the local player.");
+            return [];
         }
     }
 

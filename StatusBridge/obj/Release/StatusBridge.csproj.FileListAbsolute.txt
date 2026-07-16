@@ -1,9 +1,0 @@
-C:\Users\Justi\Downloads\StatusBridge\StatusBridge\StatusBridge\StatusBridge\bin\Release\StatusBridge.json
-C:\Users\Justi\Downloads\StatusBridge\StatusBridge\StatusBridge\StatusBridge\bin\Release\StatusBridge.deps.json
-C:\Users\Justi\Downloads\StatusBridge\StatusBridge\StatusBridge\StatusBridge\bin\Release\StatusBridge.dll
-C:\Users\Justi\Downloads\StatusBridge\StatusBridge\StatusBridge\StatusBridge\obj\Release\StatusBridge.csproj.AssemblyReference.cache
-C:\Users\Justi\Downloads\StatusBridge\StatusBridge\StatusBridge\StatusBridge\obj\Release\StatusBridge.GeneratedMSBuildEditorConfig.editorconfig
-C:\Users\Justi\Downloads\StatusBridge\StatusBridge\StatusBridge\StatusBridge\obj\Release\StatusBridge.AssemblyInfoInputs.cache
-C:\Users\Justi\Downloads\StatusBridge\StatusBridge\StatusBridge\StatusBridge\obj\Release\StatusBridge.AssemblyInfo.cs
-C:\Users\Justi\Downloads\StatusBridge\StatusBridge\StatusBridge\StatusBridge\obj\Release\StatusBridge.csproj.CoreCompileInputs.cache
-C:\Users\Justi\Downloads\StatusBridge\StatusBridge\StatusBridge\StatusBridge\obj\Release\StatusBridge.dll

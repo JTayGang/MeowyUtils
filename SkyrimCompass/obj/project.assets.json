@@ -75,13 +75,13 @@
     "C:\\Users\\Justi\\.nuget\\packages\\": {}
   },
   "project": {
-    "version": "1.5.0.6",
+    "version": "1.5.0.7",
     "restore": {
-      "projectUniqueName": "C:\\Users\\Justi\\Downloads\\SkyrimCompass(1)\\SkyrimCompass\\SkyrimCompass.csproj",
+      "projectUniqueName": "C:\\Users\\Justi\\Downloads\\SkyrimCompass\\SkyrimCompass.csproj",
       "projectName": "SkyrimCompass",
-      "projectPath": "C:\\Users\\Justi\\Downloads\\SkyrimCompass(1)\\SkyrimCompass\\SkyrimCompass.csproj",
+      "projectPath": "C:\\Users\\Justi\\Downloads\\SkyrimCompass\\SkyrimCompass.csproj",
       "packagesPath": "C:\\Users\\Justi\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\Justi\\Downloads\\SkyrimCompass(1)\\SkyrimCompass\\obj\\",
+      "outputPath": "C:\\Users\\Justi\\Downloads\\SkyrimCompass\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "C:\\Users\\Justi\\AppData\\Roaming\\NuGet\\NuGet.Config"

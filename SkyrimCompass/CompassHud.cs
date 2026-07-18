@@ -573,6 +573,20 @@ public sealed class CompassHud : IDisposable
         return lbTrackedProgress;
     }
 
+    // True while in group content where a party member's role/class is actually useful
+    // compass info: dungeons/trials/raids/alliance raids (BoundByDuty plus the 56/95 variants —
+    // different duty types set different ones, so all three are checked, mirroring the
+    // OccupiedInCutSceneEvent/WatchingCutscene/WatchingCutscene78 trio above), deep dungeons
+    // (their own flag since BoundByDuty flickers between floors), and any PvP match (IsPvP
+    // covers the Wolves' Den too — use IsPvPExcludingDen instead if that's not wanted).
+    // Gates ShowPartyRoleIcons when PartyRoleIconsOnlyInDuty is on — see RenderAllMarkers.
+    private bool IsInDutyOrPvp() =>
+        condition[ConditionFlag.BoundByDuty]   ||
+        condition[ConditionFlag.BoundByDuty56] ||
+        condition[ConditionFlag.BoundByDuty95] ||
+        condition[ConditionFlag.InDeepDungeon] ||
+        clientState.IsPvP;
+
     // ── Unified marker + FATE render ──────────────────────────────────────────
 
     private void RenderAllMarkers(
@@ -587,6 +601,10 @@ public sealed class CompassHud : IDisposable
         float fateMaxDist   = maxDist * config.FateDistanceMultiplier;
         float fateMaxDistSq = fateMaxDist * fateMaxDist;
         float extHalf       = halfVis * lensStr;
+
+        // Computed once per frame rather than re-checked for every party-member candidate below.
+        bool showPartyRoleIcons = config.ShowPartyRoleIcons
+            && (!config.PartyRoleIconsOnlyInDuty || IsInDutyOrPvp());
 
         allCandidates.Clear();
 
@@ -683,7 +701,7 @@ public sealed class CompassHud : IDisposable
                     float playerSize  = Lerp(config.PartyRoleIconMinSize, config.PartyRoleIconMaxSize, t);
                     bool  drewJobIcon = false;
 
-                    if (config.ShowPartyRoleIcons && obj is ICharacter partyChar
+                    if (showPartyRoleIcons && obj is ICharacter partyChar
                         && (partyChar.StatusFlags & StatusFlags.PartyMember) != 0)
                     {
                         int jobIconId = partyChar.ClassJob.RowId > 0 ? (int)(62000 + partyChar.ClassJob.RowId) : 0;

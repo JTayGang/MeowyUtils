@@ -68,11 +68,22 @@ public class Configuration : IPluginConfiguration
     /// <summary>Friends render as solid dots (StatusFlags.Friend).</summary>
     public bool SolidFriendDots { get; set; } = true;
     /// <summary>Party members show job icon via ClassJob.RowId (62001–62047) with a role-colored ring.</summary>
-    public bool ShowPartyRoleIcons    { get; set; } = true;
+    public bool ShowPartyRoleIcons { get; set; } = true;
+    /// <summary>
+    /// Restricts the job icon + role ring to duty content and PvP (dungeons, trials, raids,
+    /// alliance raids, deep dungeons, Crystalline Conflict/Frontlines/etc.) — where knowing a
+    /// party member's role actually matters. Elsewhere (overworld, housing, just partied up
+    /// with friends while sightseeing) party members fall through to their named override,
+    /// then the friend/hollow dot, same as anyone else. Off restores the old always-on behaviour.
+    /// </summary>
+    public bool PartyRoleIconsOnlyInDuty { get; set; } = true;
     public float PartyRoleIconMinSize { get; set; } = 10f;
     public float PartyRoleIconMaxSize { get; set; } = 24f;
 
-    /// <summary>Named player overrides. Checked after party role icons, before friend/ring fallback.</summary>
+    /// <summary>
+    /// Named player overrides. Checked after party role icons (when those are actually shown —
+    /// see PartyRoleIconsOnlyInDuty), before friend/ring fallback.
+    /// </summary>
     public List<PlayerIconOverride> PlayerIconOverrides { get; set; } = new();
 
     public bool ShowEnemies          { get; set; } = true;

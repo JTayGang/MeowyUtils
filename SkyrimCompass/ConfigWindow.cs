@@ -442,9 +442,25 @@ public sealed class ConfigWindow : Window
         if (DrawToggle("Show job icon for party members##pri", ref pri,
             "Party members show their class/job icon on a role-colored dot:\n" +
             "Tank=blue, Healer=green, DPS=red. Takes priority over the friend\n" +
-            "dot and named overrides for anyone in your party. Uses the same\n" +
-            "size slider above as every other player marker."))
+            "dot and named overrides for anyone in your party (see the duty/PvP\n" +
+            "only option below). Uses the same size slider above as every other\n" +
+            "player marker."))
         { cfg.ShowPartyRoleIcons = pri; changed = true; }
+
+        ImGui.Indent();
+        ImGui.BeginDisabled(!cfg.ShowPartyRoleIcons);
+        bool priDuty = cfg.PartyRoleIconsOnlyInDuty;
+        if (DrawToggle("Only in duty / PvP##pridonly", ref priDuty,
+            "Limits the job icon above to content where party composition\n" +
+            "actually matters: dungeons, trials, raids, alliance raids, deep\n" +
+            "dungeons, and PvP matches. Everywhere else (overworld, housing,\n" +
+            "just partied up with friends while sightseeing) party members fall\n" +
+            "through to their named override, then the friend/hollow dot below —\n" +
+            "same as anyone else.\n" +
+            "Off restores the old behaviour: always show for any party member."))
+        { cfg.PartyRoleIconsOnlyInDuty = priDuty; changed = true; }
+        ImGui.EndDisabled();
+        ImGui.Unindent();
 
         // ── Named player icon overrides ───────────────────────────────────────
         ImGui.Spacing();
@@ -456,7 +472,9 @@ public sealed class ConfigWindow : Window
             ImGui.SetTooltip(
                 "Replace specific players' markers (by exact, case-insensitive name)\n" +
                 "with a custom game icon — browse IDs with: /xldata icons\n" +
-                "Party role icons still take priority for anyone in your party.\n" +
+                "Party role icons still take priority for anyone in your party while\n" +
+                "those are shown (see 'Only in duty / PvP' above) — otherwise your\n" +
+                "override wins.\n" +
                 "B = border ring.  F = inward-fading fill (same as party job icons).");
 
         if (cfg.PlayerIconOverrides.Count == 0)

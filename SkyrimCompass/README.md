@@ -126,14 +126,20 @@ Toggle each entity category and choose its dot colour.
 
 ### Combat tab
 - **Target Health Bar** — Skyrim-style name + HP readout for your current target,
-  docked directly beneath the compass so the two read as one HUD column. Fill
-  colour follows an enemy/friendly-player/neutral-NPC scheme; background, border,
-  and name text reuse the compass's own colours from the General tab.
+  docked directly beneath the compass so the two read as one HUD column. The bar
+  itself is an upside-down trapezoid (wide at the top, narrower at the bottom,
+  no end caps) spanning a little less than the full compass width. Fill colour
+  follows an enemy/friendly-player/neutral-NPC scheme; background, border, and
+  name text reuse the compass's own colours from the General tab.
   - **Width** — bar width as a fraction of the compass's own width
   - **Bar thickness / Name font scale**
   - **Show target level** — prefixes the name with `Lv90`-style text
   - **Show shield overlay** — light sheen over the shielded portion of the bar
     when your target has an active damage shield
+  - **Show name ribbons** — two glowing ribbons (the Limit Break glow's own
+    flowing technique, reused) linking the name's flanking ornaments up to the
+    bar. They cross: the right ornament flows to the left side of the bar and
+    the left ornament flows to the right side.
 - **Target-of-target** — a smaller tier beneath the target bar showing who or
   what your target has itself targeted (FF14's ToT, restyled). Hidden
   automatically when that's nobody, or your target itself — both are noise, not

@@ -111,13 +111,17 @@ public class Configuration : IPluginConfiguration
     // CardinalColor/IntercardinalColor above — the pair should always read as one
     // continuous HUD column, never two mismatched widgets.
     public bool  ShowTargetBar          { get; set; } = true;
-    /// <summary>Bar width as a fraction of CompassWidth — Skyrim's own health bar reads narrower than its compass.</summary>
-    public float TargetBarWidthFraction { get; set; } = 0.62f;
+    /// <summary>Bar width as a fraction of CompassWidth — spans a little less than the full compass.</summary>
+    public float TargetBarWidthFraction { get; set; } = 0.875f;
     public float TargetBarHeight        { get; set; } = 14f;
     public float TargetBarFontScale     { get; set; } = 1.0f;
     public bool  ShowTargetLevel        { get; set; } = true;
     /// <summary>Light sheen over the shielded portion of the bar (ICharacter.ShieldPercentage).</summary>
     public bool  ShowTargetBarShield    { get; set; } = true;
+    /// <summary>Two glow ribbons (the limit break glow's technique, reused) linking the name's
+    /// flanking ornaments up to the bar, crossing left-to-right.</summary>
+    public bool    ShowTargetBarRibbons { get; set; } = true;
+    public Vector4 TargetBarRibbonColor { get; set; } = new(0.85f, 0.65f, 0.25f, 0.90f);
     public Vector4 TargetBarHostileColor  { get; set; } = new(0.78f, 0.12f, 0.12f, 0.95f);
     /// <summary>Also doubles as your own HP color when the target-of-target tier below highlights "targeting YOU".</summary>
     public Vector4 TargetBarFriendlyColor { get; set; } = new(0.38f, 0.62f, 0.95f, 0.95f);

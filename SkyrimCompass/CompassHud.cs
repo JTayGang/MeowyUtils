@@ -328,9 +328,6 @@ public sealed class CompassHud : IDisposable
             float bar2  = Math.Clamp(lbProgress - 1f,  0f, 1f);
             float bar3  = Math.Clamp(lbProgress - 2f,  0f, 1f);
 
-            static float Intensity(float tt) =>
-                (0.75f + 0.25f * MathF.Sin(tt * 0.79f)) * (0.92f + 0.08f * MathF.Sin(tt * 3.23f + 1.17f));
-
             (float bar, float tMul, float tOff, Vector4 color)[] lbLayers =
             {
                 (bar1, 1.00f, 0.0f, config.LimitBreakGlowColor),
@@ -343,7 +340,7 @@ public sealed class CompassHud : IDisposable
                 float t    = glowT * tMul + tOff;
                 float segW = bw * 0.5f * bar;
                 uint  col  = C(lbColor);
-                float i    = Intensity(t);
+                float i    = PulseIntensity(t);
                 DrawBorderGlowBracket(dl, bx, by, bw, bh, segW, col, i, t, lbWipeProgress, bar, fromLeft: true);
                 DrawBorderGlowBracket(dl, bx, by, bw, bh, segW, col, i, t, lbWipeProgress, bar, fromLeft: false);
             }
@@ -456,6 +453,11 @@ public sealed class CompassHud : IDisposable
     // fromLeft mirrors flow direction so both sides drift toward the bar's centre.
     // tipFadeStart dissolves the leading edge, closing fully opaque as the bar charges.
     // wipeProgress layers a separate centre→edge fade for the LB-used animation.
+    // Shared "breathing" pulse for glow-ribbon intensity — two detuned sine waves so it never
+    // reads as a metronome. Used by the limit break glow and the target bar's name ribbons.
+    private static float PulseIntensity(float t) =>
+        (0.75f + 0.25f * MathF.Sin(t * 0.79f)) * (0.92f + 0.08f * MathF.Sin(t * 3.23f + 1.17f));
+
     private static void DrawGlowLine(
         ImDrawListPtr dl, Vector2 a, Vector2 b, uint col,
         float intensity, float t, bool fromLeft, float wipeProgress, float fillProgress)
@@ -625,6 +627,32 @@ public sealed class CompassHud : IDisposable
         return C(config.TargetBarNeutralColor);
     }
 
+    // Four corners of an upside-down trapezoid — full width `w` at the top (y), narrowed by
+    // `taper` on each side at the bottom (y+h) — representing a fill of fraction `frac`
+    // (clamped) growing from the left, or from the right when `fromRight` is set. frac=1
+    // returns the full outer shape regardless of `fromRight`, so this one helper covers the
+    // background/border (frac=1), the HP fill (fromRight=false) and the shield sheen
+    // (fromRight=true).
+    private static (Vector2 tl, Vector2 tr, Vector2 br, Vector2 bl) TrapezoidFillQuad(
+        float x, float y, float w, float h, float taper, float frac, bool fromRight = false)
+    {
+        frac = Math.Clamp(frac, 0f, 1f);
+        float botX0 = x + taper, botSpan = w - 2f * taper;
+
+        float topA, topB, botA, botB;
+        if (fromRight)
+        {
+            topA = x + w * (1f - frac);           topB = x + w;
+            botA = botX0 + botSpan * (1f - frac);  botB = botX0 + botSpan;
+        }
+        else
+        {
+            topA = x;                              topB = x + w * frac;
+            botA = botX0;                           botB = botX0 + botSpan * frac;
+        }
+        return (new Vector2(topA, y), new Vector2(topB, y), new Vector2(botB, y + h), new Vector2(botA, y + h));
+    }
+
     // Returns the Y coordinate the bar finished at, so the target-of-target tier below
     // knows where to dock — regardless of whether an HP row was drawn at all.
     private float RenderTargetBar(ImDrawListPtr dl, float compassX, float compassY, float compassW, float compassH)
@@ -649,6 +677,11 @@ public sealed class CompassHud : IDisposable
         bool  isChara = target is ICharacter;
         float tbH     = isChara ? MathF.Max(4f, config.TargetBarHeight) : 0f;
         uint  fillCol = TargetBarFillColor(target);
+
+        // Upside-down trapezoid: wide at the top, narrower at the bottom. `taper` is tied to
+        // the bar's own thickness so the slant reads the same regardless of width, capped
+        // against tbW so an extreme thickness/width combination can never invert the shape.
+        float taper = MathF.Min(tbH * 0.9f, tbW * 0.35f);
 
         if (isChara)
         {
@@ -676,36 +709,34 @@ public sealed class CompassHud : IDisposable
             }
             targetBarFlashAlpha = MathF.Max(0f, targetBarFlashAlpha - ImGui.GetIO().DeltaTime / 0.4f);
 
-            dl.AddRectFilled(V(tbX, tbY), V(tbX + tbW, tbY + tbH), bgCol);
+            var (bTl, bTr, bBr, bBl) = TrapezoidFillQuad(tbX, tbY, tbW, tbH, taper, 1f);
+            dl.AddQuadFilled(bTl, bTr, bBr, bBl, bgCol);
 
-            float fillW = (tbW - 4f) * displayedTargetHpFrac;
-            if (fillW > 0f)
-            {
-                dl.AddRectFilled(V(tbX + 2f, tbY + 2f), V(tbX + 2f + fillW, tbY + tbH - 2f), fillCol);
-                if (targetBarFlashAlpha > 0f)
-                    dl.AddRectFilled(V(tbX + 2f, tbY + 2f), V(tbX + 2f + fillW, tbY + tbH - 2f),
-                        WithAlpha(0xFFFFFFFFu, targetBarFlashAlpha * 0.5f));
-            }
+            // Fill/flash inset a couple of px inside the outer shape (same taper, smaller box)
+            // so the border below doesn't sit directly on top of the fill's own edge.
+            const float inset = 2f;
+            var (fTl, fTr, fBr, fBl) = TrapezoidFillQuad(
+                tbX + inset, tbY + inset, tbW - inset * 2f, tbH - inset * 2f, taper, displayedTargetHpFrac);
+            dl.AddQuadFilled(fTl, fTr, fBr, fBl, fillCol);
+            if (targetBarFlashAlpha > 0f)
+                dl.AddQuadFilled(fTl, fTr, fBr, fBl, WithAlpha(0xFFFFFFFFu, targetBarFlashAlpha * 0.5f));
 
             if (config.ShowTargetBarShield && chara.ShieldPercentage > 0)
             {
                 float shieldFrac = Math.Clamp(chara.ShieldPercentage / 100f, 0f, 1f);
-                float shieldW    = (tbW - 4f) * shieldFrac;
-                dl.AddRectFilled(
-                    V(tbX + tbW - 2f - shieldW, tbY + 2f), V(tbX + tbW - 2f, tbY + tbH - 2f),
-                    C(config.TargetBarShieldColor));
+                var (sTl, sTr, sBr, sBl) = TrapezoidFillQuad(
+                    tbX + inset, tbY + inset, tbW - inset * 2f, tbH - inset * 2f, taper, shieldFrac, fromRight: true);
+                dl.AddQuadFilled(sTl, sTr, sBr, sBl, C(config.TargetBarShieldColor));
             }
 
-            // Subtle top bevel, matching the compass bar's own highlight line.
+            // Subtle top bevel, matching the compass bar's own highlight line (top edge is
+            // full-width regardless of taper, since only the bottom narrows).
             dl.AddLine(V(tbX + 1f, tbY + 1f), V(tbX + tbW - 1f, tbY + 1f), 0x1AFFFFFFu, 1f);
-            dl.AddRect(V(tbX, tbY), V(tbX + tbW, tbY + tbH), borderCol, 0f, ImDrawFlags.None, 1.5f);
-
-            float capHW = tbH * 0.5f, capHH = tbH * 0.72f;
-            DrawEndCapOutlines(dl, tbX,       tbY + tbH * 0.5f, capHW, capHH, borderCol);
-            DrawEndCapOutlines(dl, tbX + tbW, tbY + tbH * 0.5f, capHW, capHH, borderCol);
+            dl.AddQuad(bTl, bTr, bBr, bBl, borderCol, 1.5f);
         }
 
         // ── Name row — flanked by small versions of the compass's own diamond ornament ──
+        // Gap widened vs. a plain rect bar so the ribbon system below has room to flow in.
         using var jupiterScope = jupiterFont.Available ? jupiterFont.Push() : null;
         float fontSize = ImGui.GetFontSize() * config.TargetBarFontScale;
         var   font     = ImGui.GetFont();
@@ -714,9 +745,10 @@ public sealed class CompassHud : IDisposable
         if (config.ShowTargetLevel && target is ICharacter lvlChar && lvlChar.Level > 0)
             label = $"Lv{lvlChar.Level}  {label}";
 
-        var   tsz   = ImGui.CalcTextSize(label) * config.TargetBarFontScale;
-        float nameY = tbY + tbH + 2f;
-        float tx    = cx - tsz.X * 0.5f;
+        var   tsz     = ImGui.CalcTextSize(label) * config.TargetBarFontScale;
+        float nameGap = MathF.Max(12f, tbH);
+        float nameY   = tbY + tbH + nameGap;
+        float tx      = cx - tsz.X * 0.5f;
 
         dl.AddText(font, fontSize, V(tx + 1f, nameY + 1f), 0xBB000000u, label);
         dl.AddText(font, fontSize, V(tx,      nameY),      nameCol,     label);
@@ -724,8 +756,48 @@ public sealed class CompassHud : IDisposable
         float ornHH  = fontSize * 0.46f, ornHW = ornHH * 0.69f;
         float ornGap = 6f;
         float textCy = nameY + tsz.Y * 0.5f;
-        DrawEndCapOutlines(dl, tx - ornGap - ornHW,         textCy, ornHW, ornHH, borderCol, ornHW * 0.28f);
-        DrawEndCapOutlines(dl, tx + tsz.X + ornGap + ornHW, textCy, ornHW, ornHH, borderCol, ornHW * 0.28f);
+        float leftOrnX  = tx - ornGap - ornHW;
+        float rightOrnX = tx + tsz.X + ornGap + ornHW;
+        DrawEndCapOutlines(dl, leftOrnX,  textCy, ornHW, ornHH, borderCol, ornHW * 0.28f);
+        DrawEndCapOutlines(dl, rightOrnX, textCy, ornHW, ornHH, borderCol, ornHW * 0.28f);
+
+        // ── Name ribbons — the limit break glow's flowing-line technique, reused. Each
+        // ornament flies straight out to its own side — left endcap to the left, right
+        // endcap to the right — at the name row's own height. Deliberately horizontal
+        // rather than reaching up to the bar: the name sits below the bar, so a line
+        // connecting the two would slope and visibly touch the bar's bottom edge, which
+        // isn't what we want. This is a flourish flanking the name, not a connector.
+        if (isChara && config.ShowTargetBarRibbons)
+        {
+            // Start from each ornament's own outer tip rather than its center, so the
+            // ribbon reads as continuing the ornament's point instead of emerging from
+            // somewhere inside it.
+            float leftEdgeX  = leftOrnX  - ornHW;
+            float rightEdgeX = rightOrnX + ornHW;
+
+            float ribbonInset  = MathF.Max(8f, tbW * 0.06f);
+            // Clamped so a long name (ornaments pushed wide) can't shrink the ribbon's
+            // outward travel to nothing or flip its direction — always at least 24px
+            // further out than the ornament edge it starts from.
+            float ribbonLeftX  = MathF.Min(tbX + ribbonInset,       leftEdgeX  - 24f);
+            float ribbonRightX = MathF.Max(tbX + tbW - ribbonInset, rightEdgeX + 24f);
+            uint  ribbonCol    = C(config.TargetBarRibbonColor);
+            float glowT        = (float)ImGui.GetTime();
+
+            // Detuned time offsets so the two ribbons don't flutter in mirrored lockstep —
+            // same philosophy as the limit break glow's own layer detuning.
+            float t1 = glowT;
+            float t2 = glowT * 1.3f + 2.4f;
+
+            // fillProgress: 0f opens DrawGlowLine's tip-fade to its widest window (fades
+            // from 60% of the way along, down to fully transparent at the far tip) instead
+            // of the LB usage's "closes to solid as the bar fills" behavior — here it's a
+            // constant fade-to-nothing at each ribbon's outer end.
+            DrawGlowLine(dl, V(leftEdgeX,  textCy), V(ribbonLeftX,  textCy),
+                ribbonCol, PulseIntensity(t1), t1, fromLeft: true, wipeProgress: 0f, fillProgress: 0f);
+            DrawGlowLine(dl, V(rightEdgeX, textCy), V(ribbonRightX, textCy),
+                ribbonCol, PulseIntensity(t2), t2, fromLeft: true, wipeProgress: 0f, fillProgress: 0f);
+        }
 
         return nameY + tsz.Y;
     }

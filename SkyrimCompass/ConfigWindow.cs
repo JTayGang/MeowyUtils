@@ -623,6 +623,13 @@ public sealed class ConfigWindow : Window
             "has an active damage shield (Sacred Soil, Reprisal-style debuffs, etc.)."))
         { cfg.ShowTargetBarShield = shd; changed = true; }
 
+        bool ribbons = cfg.ShowTargetBarRibbons;
+        if (DrawToggle("Show name ribbons##tbrib", ref ribbons,
+            "Two glowing ribbons -- the same flowing technique as the Limit Break glow,\n" +
+            "reused -- linking the name's flanking ornaments up to the bar. They cross:\n" +
+            "the right ornament flows to the left side of the bar and vice versa."))
+        { cfg.ShowTargetBarRibbons = ribbons; changed = true; }
+
         ImGui.Spacing();
         Vector4 tbhc = cfg.TargetBarHostileColor;
         if (ImGui.ColorEdit4("Hostile##tbhc", ref tbhc, ColorPickerFlags)) { cfg.TargetBarHostileColor = tbhc; changed = true; }
@@ -634,6 +641,11 @@ public sealed class ConfigWindow : Window
         ImGui.BeginDisabled(!cfg.ShowTargetBarShield);
         Vector4 tbsc = cfg.TargetBarShieldColor;
         if (ImGui.ColorEdit4("Shield overlay##tbsc", ref tbsc, ColorPickerFlags)) { cfg.TargetBarShieldColor = tbsc; changed = true; }
+        ImGui.EndDisabled();
+
+        ImGui.BeginDisabled(!cfg.ShowTargetBarRibbons);
+        Vector4 tbrc = cfg.TargetBarRibbonColor;
+        if (ImGui.ColorEdit4("Ribbon color##tbrc", ref tbrc, ColorPickerFlags)) { cfg.TargetBarRibbonColor = tbrc; changed = true; }
         ImGui.EndDisabled();
 
         ImGui.EndDisabled();

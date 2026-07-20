@@ -105,6 +105,34 @@ public class Configuration : IPluginConfiguration
     /// <summary>Layer 3 (bar 3's own progress) — white by default.</summary>
     public Vector4 LimitBreakGlowColor3 { get; set; } = new(1.00f, 1.00f, 1.00f, 0.95f);
 
+    // ── Target Health Bar (Skyrim-style name + HP for your current target) ─────
+    // Docked directly beneath the compass rather than positioned independently, so
+    // background/border/name text intentionally reuse BackgroundColor/BorderColor/
+    // CardinalColor/IntercardinalColor above — the pair should always read as one
+    // continuous HUD column, never two mismatched widgets.
+    public bool  ShowTargetBar          { get; set; } = true;
+    /// <summary>Bar width as a fraction of CompassWidth — Skyrim's own health bar reads narrower than its compass.</summary>
+    public float TargetBarWidthFraction { get; set; } = 0.62f;
+    public float TargetBarHeight        { get; set; } = 14f;
+    public float TargetBarFontScale     { get; set; } = 1.0f;
+    public bool  ShowTargetLevel        { get; set; } = true;
+    /// <summary>Light sheen over the shielded portion of the bar (ICharacter.ShieldPercentage).</summary>
+    public bool  ShowTargetBarShield    { get; set; } = true;
+    public Vector4 TargetBarHostileColor  { get; set; } = new(0.78f, 0.12f, 0.12f, 0.95f);
+    /// <summary>Also doubles as your own HP color when the target-of-target tier below highlights "targeting YOU".</summary>
+    public Vector4 TargetBarFriendlyColor { get; set; } = new(0.38f, 0.62f, 0.95f, 0.95f);
+    public Vector4 TargetBarNeutralColor  { get; set; } = new(0.82f, 0.74f, 0.36f, 0.95f);
+    public Vector4 TargetBarShieldColor   { get; set; } = new(0.80f, 0.92f, 1.00f, 0.55f);
+
+    // ── Target-of-target  (FF14's ToT, restyled to match) ──────────────────────
+    // One tier further down the same column: who/what your current target has
+    // itself targeted. Auto-hidden when that's nobody or your target itself —
+    // both are non-information. The one exception is your target targeting YOU,
+    // which is worth a dedicated warning color instead of shrinking away.
+    public bool    ShowTargetOfTargetBar  { get; set; } = true;
+    public bool    HighlightIfTargetingMe { get; set; } = true;
+    public Vector4 AggroWarningColor      { get; set; } = new(1.00f, 0.82f, 0.16f, 1.00f);
+
     public bool ShowNpcs              { get; set; } = true;
     /// <summary>Hides non-targetable EventNpc placeholders (e.g. empty chocobo stable slot).</summary>
     public bool NpcsOnlyIfTargetable  { get; set; } = true;

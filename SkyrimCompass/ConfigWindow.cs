@@ -587,6 +587,87 @@ public sealed class ConfigWindow : Window
         ImGui.EndDisabled();
         ImGui.Unindent();
 
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+
+        bool tbB = cfg.ShowTargetBar;
+        if (DrawToggle("Target Health Bar", ref tbB,
+            "Skyrim-style name + HP readout for your current target, docked directly\n" +
+            "beneath the compass. Fill color follows the enemy/player/NPC scheme below;\n" +
+            "background, border and name text reuse the compass's own colors up in the\n" +
+            "General tab so the two always match."))
+        { cfg.ShowTargetBar = tbB; changed = true; }
+
+        ImGui.Indent();
+        ImGui.BeginDisabled(!cfg.ShowTargetBar);
+
+        float twf = cfg.TargetBarWidthFraction;
+        if (ImGui.SliderFloat("Width  (fraction of compass)##tbwf", ref twf, 0.3f, 1.0f))
+        { cfg.TargetBarWidthFraction = twf; changed = true; }
+
+        int tbh = (int)cfg.TargetBarHeight;
+        if (ImGui.SliderInt("Bar thickness##tbh", ref tbh, 6, 30))
+        { cfg.TargetBarHeight = tbh; changed = true; }
+
+        float tfs = cfg.TargetBarFontScale;
+        if (ImGui.SliderFloat("Name font scale##tbfs", ref tfs, 0.5f, 2.5f))
+        { cfg.TargetBarFontScale = tfs; changed = true; }
+
+        bool lvl = cfg.ShowTargetLevel;
+        if (DrawToggle("Show target level##tblvl", ref lvl)) { cfg.ShowTargetLevel = lvl; changed = true; }
+
+        bool shd = cfg.ShowTargetBarShield;
+        if (DrawToggle("Show shield overlay##tbshd", ref shd,
+            "A light sheen over the shielded portion of the bar whenever your target\n" +
+            "has an active damage shield (Sacred Soil, Reprisal-style debuffs, etc.)."))
+        { cfg.ShowTargetBarShield = shd; changed = true; }
+
+        ImGui.Spacing();
+        Vector4 tbhc = cfg.TargetBarHostileColor;
+        if (ImGui.ColorEdit4("Hostile##tbhc", ref tbhc, ColorPickerFlags)) { cfg.TargetBarHostileColor = tbhc; changed = true; }
+        Vector4 tbfc = cfg.TargetBarFriendlyColor;
+        if (ImGui.ColorEdit4("Friendly  (players)##tbfc", ref tbfc, ColorPickerFlags)) { cfg.TargetBarFriendlyColor = tbfc; changed = true; }
+        Vector4 tbnc = cfg.TargetBarNeutralColor;
+        if (ImGui.ColorEdit4("Neutral  (NPCs)##tbnc", ref tbnc, ColorPickerFlags)) { cfg.TargetBarNeutralColor = tbnc; changed = true; }
+
+        ImGui.BeginDisabled(!cfg.ShowTargetBarShield);
+        Vector4 tbsc = cfg.TargetBarShieldColor;
+        if (ImGui.ColorEdit4("Shield overlay##tbsc", ref tbsc, ColorPickerFlags)) { cfg.TargetBarShieldColor = tbsc; changed = true; }
+        ImGui.EndDisabled();
+
+        ImGui.EndDisabled();
+        ImGui.Unindent();
+
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+
+        bool totB = cfg.ShowTargetOfTargetBar;
+        if (DrawToggle("Target-of-target", ref totB,
+            "A smaller readout beneath the target bar showing who or what YOUR target\n" +
+            "has itself targeted — FF14's target-of-target, restyled to match. Hidden\n" +
+            "automatically whenever that's nobody, or your target itself."))
+        { cfg.ShowTargetOfTargetBar = totB; changed = true; }
+
+        ImGui.Indent();
+        ImGui.BeginDisabled(!cfg.ShowTargetOfTargetBar);
+
+        bool aggro = cfg.HighlightIfTargetingMe;
+        if (DrawToggle("Highlight if targeting me##aggro", ref aggro,
+            "When your target's target is YOU, this tier lights up in a dedicated\n" +
+            "warning color instead of the usual friendly color and shows your own HP —\n" +
+            "so aggro is impossible to miss out of the corner of your eye."))
+        { cfg.HighlightIfTargetingMe = aggro; changed = true; }
+
+        ImGui.BeginDisabled(!cfg.HighlightIfTargetingMe);
+        Vector4 aw = cfg.AggroWarningColor;
+        if (ImGui.ColorEdit4("Warning color##aggroc", ref aw, ColorPickerFlags)) { cfg.AggroWarningColor = aw; changed = true; }
+        ImGui.EndDisabled();
+
+        ImGui.EndDisabled();
+        ImGui.Unindent();
+
         ImGui.EndTabItem();
         return changed;
     }

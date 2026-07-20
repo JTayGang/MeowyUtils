@@ -48,6 +48,14 @@ public sealed class CompassHud : IDisposable
     private const float LbFadeOutDuration = 2f;
     private const float LbDropThreshold   = 0.4f;
 
+    // Target health bar smoothing/flash state (frame-persistent) — same spirit as the LB
+    // fade-out above but much simpler: no freeze/wipe, just an exponential ease toward the
+    // real HP fraction, plus a quick decaying white flash whenever HP drops.
+    private ulong lastTargetBarObjectId = 0;
+    private float displayedTargetHpFrac = 1f;
+    private float lastRawTargetHpFrac   = 1f;
+    private float targetBarFlashAlpha   = 0f;
+
     // GameObjectId → nameplate marker icon ID, refreshed every nameplate update. 0/absent = none.
     private readonly Dictionary<ulong, int> npcMarkerIcons = new();
 
@@ -233,6 +241,12 @@ public sealed class CompassHud : IDisposable
         float by = config.YOffset;
 
         RenderBar(dl, bx, by, bw, bh, heading, player, originPos);
+
+        float hudBottomY = by + bh;
+        if (config.ShowTargetBar)
+            hudBottomY = RenderTargetBar(dl, bx, by, bw, bh);
+        if (config.ShowTargetOfTargetBar)
+            RenderTargetOfTargetBar(dl, bx, hudBottomY, bw, player);
     }
 
     // ── Lens projection ───────────────────────────────────────────────────────
@@ -424,7 +438,7 @@ public sealed class CompassHud : IDisposable
     // ── End-cap outline helper ────────────────────────────────────────────────
 
     private static void DrawEndCapOutlines(
-        ImDrawListPtr dl, float cx, float cy, float hw, float hh, uint color)
+        ImDrawListPtr dl, float cx, float cy, float hw, float hh, uint color, float centerDotRadius = 2.5f)
     {
         dl.AddQuad(V(cx, cy - hh), V(cx + hw, cy), V(cx, cy + hh), V(cx - hw, cy), color, 1.5f);
 
@@ -432,7 +446,7 @@ public sealed class CompassHud : IDisposable
         float s        = 0.52f;
         dl.AddQuad(V(cx, cy - hh * s), V(cx + hw * s, cy), V(cx, cy + hh * s), V(cx - hw * s, cy), innerCol, 1f);
 
-        dl.AddCircleFilled(V(cx, cy), 2.5f, color);
+        dl.AddCircleFilled(V(cx, cy), centerDotRadius, color);
     }
 
     // ── Limit break glow helpers ──────────────────────────────────────────────
@@ -586,6 +600,199 @@ public sealed class CompassHud : IDisposable
         condition[ConditionFlag.BoundByDuty95] ||
         condition[ConditionFlag.InDeepDungeon] ||
         clientState.IsPvP;
+
+    // ── Target health bar (Skyrim-style name + HP for your current target) ────
+    // Docked directly beneath the compass — same X position, a width that's a fraction
+    // of the compass's own width — so together they read as one continuous HUD column,
+    // exactly like the reference screenshot (compass, then bar, then name flanked by
+    // small ornaments). See RenderTargetOfTargetBar just below for the smaller
+    // "who is my target targeting" tier that stacks underneath THAT.
+
+    // Same hostile/friendly signal the compass dots already use for Enemies/Players
+    // (BattleNpc + Combatant sub-kind = a real hostile; Pc = a player; pets, chocobos
+    // and friendly NPCs all fall through to Neutral) so the bar's fill never disagrees
+    // with what the compass just showed you for that same entity.
+    private uint TargetBarFillColor(IGameObject obj)
+    {
+        if (obj.ObjectKind == ObjectKind.BattleNpc)
+        {
+            bool isHostile = obj is IBattleNpc bnpc && bnpc.BattleNpcKind == BattleNpcSubKind.Combatant;
+            return isHostile ? C(config.TargetBarHostileColor) : C(config.TargetBarFriendlyColor);
+        }
+        if (obj.ObjectKind == ObjectKind.Pc)
+            return C(config.TargetBarFriendlyColor);
+
+        return C(config.TargetBarNeutralColor);
+    }
+
+    // Returns the Y coordinate the bar finished at, so the target-of-target tier below
+    // knows where to dock — regardless of whether an HP row was drawn at all.
+    private float RenderTargetBar(ImDrawListPtr dl, float compassX, float compassY, float compassW, float compassH)
+    {
+        float fallbackY = compassY + compassH;
+        var   target    = targetManager.Target;
+        if (target == null) return fallbackY;
+
+        uint borderCol = C(config.BorderColor);
+        uint bgCol     = C(config.BackgroundColor);
+        uint nameCol   = C(config.CardinalColor);
+
+        float cx  = compassX + compassW * 0.5f;
+        float tbW = compassW * Math.Clamp(config.TargetBarWidthFraction, 0.1f, 1f);
+        float tbX = cx - tbW * 0.5f;
+        float gap = MathF.Max(2f, compassH * 0.12f);
+        float tbY = compassY + compassH + gap;
+
+        // Gathering nodes/treasure are targetable but have no HP concept — they still get
+        // a name row below, just no bar (tbH collapses to 0 rather than branching the
+        // whole layout in two).
+        bool  isChara = target is ICharacter;
+        float tbH     = isChara ? MathF.Max(4f, config.TargetBarHeight) : 0f;
+        uint  fillCol = TargetBarFillColor(target);
+
+        if (isChara)
+        {
+            var   chara   = (ICharacter)target;
+            float maxHp   = chara.MaxHp;
+            float curHp   = chara.CurrentHp;
+            float rawFrac = maxHp > 0f ? Math.Clamp(curHp / maxHp, 0f, 1f) : 0f;
+
+            // Snap instantly on a target switch (or first acquisition) — easing in from a
+            // completely unrelated old target's leftover HP fraction would look like a bug.
+            if (target.GameObjectId != lastTargetBarObjectId)
+            {
+                lastTargetBarObjectId = target.GameObjectId;
+                displayedTargetHpFrac = rawFrac;
+                lastRawTargetHpFrac   = rawFrac;
+                targetBarFlashAlpha   = 0f;
+            }
+            else
+            {
+                if (rawFrac < lastRawTargetHpFrac - 0.001f) targetBarFlashAlpha = 1f;
+                lastRawTargetHpFrac = rawFrac;
+
+                float dt = ImGui.GetIO().DeltaTime;
+                displayedTargetHpFrac += (rawFrac - displayedTargetHpFrac) * (1f - MathF.Exp(-dt * 14f));
+            }
+            targetBarFlashAlpha = MathF.Max(0f, targetBarFlashAlpha - ImGui.GetIO().DeltaTime / 0.4f);
+
+            dl.AddRectFilled(V(tbX, tbY), V(tbX + tbW, tbY + tbH), bgCol);
+
+            float fillW = (tbW - 4f) * displayedTargetHpFrac;
+            if (fillW > 0f)
+            {
+                dl.AddRectFilled(V(tbX + 2f, tbY + 2f), V(tbX + 2f + fillW, tbY + tbH - 2f), fillCol);
+                if (targetBarFlashAlpha > 0f)
+                    dl.AddRectFilled(V(tbX + 2f, tbY + 2f), V(tbX + 2f + fillW, tbY + tbH - 2f),
+                        WithAlpha(0xFFFFFFFFu, targetBarFlashAlpha * 0.5f));
+            }
+
+            if (config.ShowTargetBarShield && chara.ShieldPercentage > 0)
+            {
+                float shieldFrac = Math.Clamp(chara.ShieldPercentage / 100f, 0f, 1f);
+                float shieldW    = (tbW - 4f) * shieldFrac;
+                dl.AddRectFilled(
+                    V(tbX + tbW - 2f - shieldW, tbY + 2f), V(tbX + tbW - 2f, tbY + tbH - 2f),
+                    C(config.TargetBarShieldColor));
+            }
+
+            // Subtle top bevel, matching the compass bar's own highlight line.
+            dl.AddLine(V(tbX + 1f, tbY + 1f), V(tbX + tbW - 1f, tbY + 1f), 0x1AFFFFFFu, 1f);
+            dl.AddRect(V(tbX, tbY), V(tbX + tbW, tbY + tbH), borderCol, 0f, ImDrawFlags.None, 1.5f);
+
+            float capHW = tbH * 0.5f, capHH = tbH * 0.72f;
+            DrawEndCapOutlines(dl, tbX,       tbY + tbH * 0.5f, capHW, capHH, borderCol);
+            DrawEndCapOutlines(dl, tbX + tbW, tbY + tbH * 0.5f, capHW, capHH, borderCol);
+        }
+
+        // ── Name row — flanked by small versions of the compass's own diamond ornament ──
+        using var jupiterScope = jupiterFont.Available ? jupiterFont.Push() : null;
+        float fontSize = ImGui.GetFontSize() * config.TargetBarFontScale;
+        var   font     = ImGui.GetFont();
+
+        string label = target.Name.TextValue;
+        if (config.ShowTargetLevel && target is ICharacter lvlChar && lvlChar.Level > 0)
+            label = $"Lv{lvlChar.Level}  {label}";
+
+        var   tsz   = ImGui.CalcTextSize(label) * config.TargetBarFontScale;
+        float nameY = tbY + tbH + 2f;
+        float tx    = cx - tsz.X * 0.5f;
+
+        dl.AddText(font, fontSize, V(tx + 1f, nameY + 1f), 0xBB000000u, label);
+        dl.AddText(font, fontSize, V(tx,      nameY),      nameCol,     label);
+
+        float ornHH  = fontSize * 0.46f, ornHW = ornHH * 0.69f;
+        float ornGap = 6f;
+        float textCy = nameY + tsz.Y * 0.5f;
+        DrawEndCapOutlines(dl, tx - ornGap - ornHW,         textCy, ornHW, ornHH, borderCol, ornHW * 0.28f);
+        DrawEndCapOutlines(dl, tx + tsz.X + ornGap + ornHW, textCy, ornHW, ornHH, borderCol, ornHW * 0.28f);
+
+        return nameY + tsz.Y;
+    }
+
+    // ── Target-of-target — FF14's ToT, restyled ────────────────────────────────
+    // One more tier down the same column: who/what your target has itself targeted.
+    // Hidden outright when that's nobody, or your target itself (an idle mob usually
+    // just targets itself — echoing that back to you is noise, not information, and
+    // this whole plugin exists to cut noise). The one case worth calling out loudly
+    // instead of shrinking away is your target targeting YOU — that swaps this tier
+    // to a dedicated warning color with a slow pulse, since noticing aggro at a glance
+    // is exactly the kind of thing a HUD should be good at.
+    private void RenderTargetOfTargetBar(
+        ImDrawListPtr dl, float compassX, float anchorY, float compassW, IPlayerCharacter player)
+    {
+        var target = targetManager.Target;
+        var tot    = target?.TargetObject;
+        if (target == null || tot == null || tot.GameObjectId == target.GameObjectId) return;
+
+        bool targetingMe = config.HighlightIfTargetingMe && target.TargetObjectId == player.GameObjectId;
+
+        const float scale = 0.62f;
+        float cx  = compassX + compassW * 0.5f;
+        float tbW = compassW * Math.Clamp(config.TargetBarWidthFraction, 0.1f, 1f) * scale;
+        float tbX = cx - tbW * 0.5f;
+        float tbY = anchorY + 4f;
+        float tbH = MathF.Max(3f, config.TargetBarHeight * scale);
+
+        uint borderCol = C(config.BorderColor);
+        uint bgCol     = C(config.BackgroundColor);
+        uint fillCol   = targetingMe ? C(config.AggroWarningColor) : TargetBarFillColor(tot);
+
+        // Same HP-bar treatment as the main bar above — including, deliberately, when
+        // targetingMe: tot IS the local player in that case, so this doubles as a
+        // "here's your own HP" readout right where you're already looking.
+        if (tot is ICharacter chara)
+        {
+            float maxHp = chara.MaxHp;
+            float curHp = chara.CurrentHp;
+            float frac  = maxHp > 0f ? Math.Clamp(curHp / maxHp, 0f, 1f) : 0f;
+
+            dl.AddRectFilled(V(tbX, tbY), V(tbX + tbW, tbY + tbH), bgCol);
+
+            float fillW = (tbW - 3f) * frac;
+            if (fillW > 0f)
+            {
+                float pulse = targetingMe ? 0.82f + 0.18f * MathF.Sin((float)ImGui.GetTime() * 5f) : 1f;
+                dl.AddRectFilled(V(tbX + 1.5f, tbY + 1.5f), V(tbX + 1.5f + fillW, tbY + tbH - 1.5f),
+                    WithAlpha(fillCol, pulse));
+            }
+            dl.AddRect(V(tbX, tbY), V(tbX + tbW, tbY + tbH), borderCol, 0f, ImDrawFlags.None, 1.2f);
+        }
+
+        using var jupiterScope = jupiterFont.Available ? jupiterFont.Push() : null;
+        float combinedScale = config.TargetBarFontScale * scale;
+        float fontSize      = ImGui.GetFontSize() * combinedScale;
+        var   font          = ImGui.GetFont();
+
+        string label = targetingMe ? "Targeting YOU" : tot.Name.TextValue;
+        var    tsz   = ImGui.CalcTextSize(label) * combinedScale;
+        float  tx    = cx - tsz.X * 0.5f;
+        float  textY = tbY + tbH + 1f;
+
+        uint textCol = targetingMe ? C(config.AggroWarningColor) : WithAlpha(C(config.IntercardinalColor), 0.9f);
+        dl.AddText(font, fontSize, V(tx + 1f, textY + 1f), 0x99000000u, label);
+        dl.AddText(font, fontSize, V(tx,      textY),      textCol,     label);
+    }
 
     // ── Unified marker + FATE render ──────────────────────────────────────────
 

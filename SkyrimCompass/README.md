@@ -21,6 +21,8 @@ https://raw.githubusercontent.com/JTayGang/MeowyUtils/main/repo.json
 | 🔵 | Players, Friends, Party members with role/class, **Can also use any vanilla icons!** |
 | 🟢 | Gathering node markers (Mining / Botany) |
 | 🟡 | Treasure coffer markers |
+| 🩸 | Skyrim-style target health bar + name, docked right beneath the compass |
+| 🎯 | Target-of-target tier underneath that — FF14's ToT, restyled, with a dedicated warning color if it's targeting YOU |
 | ⚙️ | Fully configurable size, position, colours, visible arc, marker range, and more! |
 
 ---
@@ -121,6 +123,23 @@ Individually tune background, border, cardinal/intercardinal labels, and tick ma
 ### Markers tab
 Toggle each entity category and choose its dot colour.  
 **Max distance** controls how far out (in yalms) entities are detected.
+
+### Combat tab
+- **Target Health Bar** — Skyrim-style name + HP readout for your current target,
+  docked directly beneath the compass so the two read as one HUD column. Fill
+  colour follows an enemy/friendly-player/neutral-NPC scheme; background, border,
+  and name text reuse the compass's own colours from the General tab.
+  - **Width** — bar width as a fraction of the compass's own width
+  - **Bar thickness / Name font scale**
+  - **Show target level** — prefixes the name with `Lv90`-style text
+  - **Show shield overlay** — light sheen over the shielded portion of the bar
+    when your target has an active damage shield
+- **Target-of-target** — a smaller tier beneath the target bar showing who or
+  what your target has itself targeted (FF14's ToT, restyled). Hidden
+  automatically when that's nobody, or your target itself — both are noise, not
+  information. If your target is targeting **you**, this tier swaps to a
+  dedicated warning colour and shows your own HP instead, so aggro is
+  impossible to miss out of the corner of your eye.
 
 ---
 

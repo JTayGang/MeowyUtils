@@ -594,7 +594,7 @@ public sealed class ConfigWindow : Window
         bool tbB = cfg.ShowTargetBar;
         if (DrawToggle("Target Health Bar", ref tbB,
             "Skyrim-style name + HP readout for your current target, docked directly\n" +
-            "beneath the compass. Fill color follows the enemy/player/NPC scheme below;\n" +
+            "beneath the compass. Fill color follows the hostile/friendly scheme below;\n" +
             "background, border and name text reuse the compass's own colors up in the\n" +
             "General tab so the two always match."))
         { cfg.ShowTargetBar = tbB; changed = true; }
@@ -626,26 +626,19 @@ public sealed class ConfigWindow : Window
         bool ribbons = cfg.ShowTargetBarRibbons;
         if (DrawToggle("Show name ribbons##tbrib", ref ribbons,
             "Two glowing ribbons -- the same flowing technique as the Limit Break glow,\n" +
-            "reused -- linking the name's flanking ornaments up to the bar. They cross:\n" +
-            "the right ornament flows to the left side of the bar and vice versa."))
+            "reused -- flying outward from the name's flanking ornaments (left endcap to\n" +
+            "the left, right endcap to the right). Colored to match the border above."))
         { cfg.ShowTargetBarRibbons = ribbons; changed = true; }
 
         ImGui.Spacing();
         Vector4 tbhc = cfg.TargetBarHostileColor;
         if (ImGui.ColorEdit4("Hostile##tbhc", ref tbhc, ColorPickerFlags)) { cfg.TargetBarHostileColor = tbhc; changed = true; }
         Vector4 tbfc = cfg.TargetBarFriendlyColor;
-        if (ImGui.ColorEdit4("Friendly  (players)##tbfc", ref tbfc, ColorPickerFlags)) { cfg.TargetBarFriendlyColor = tbfc; changed = true; }
-        Vector4 tbnc = cfg.TargetBarNeutralColor;
-        if (ImGui.ColorEdit4("Neutral  (NPCs)##tbnc", ref tbnc, ColorPickerFlags)) { cfg.TargetBarNeutralColor = tbnc; changed = true; }
+        if (ImGui.ColorEdit4("Friendly##tbfc", ref tbfc, ColorPickerFlags)) { cfg.TargetBarFriendlyColor = tbfc; changed = true; }
 
         ImGui.BeginDisabled(!cfg.ShowTargetBarShield);
         Vector4 tbsc = cfg.TargetBarShieldColor;
         if (ImGui.ColorEdit4("Shield overlay##tbsc", ref tbsc, ColorPickerFlags)) { cfg.TargetBarShieldColor = tbsc; changed = true; }
-        ImGui.EndDisabled();
-
-        ImGui.BeginDisabled(!cfg.ShowTargetBarRibbons);
-        Vector4 tbrc = cfg.TargetBarRibbonColor;
-        if (ImGui.ColorEdit4("Ribbon color##tbrc", ref tbrc, ColorPickerFlags)) { cfg.TargetBarRibbonColor = tbrc; changed = true; }
         ImGui.EndDisabled();
 
         ImGui.EndDisabled();

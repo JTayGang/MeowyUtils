@@ -446,6 +446,11 @@ public sealed class CompassHud : IDisposable
         dl.AddCircleFilled(V(cx, cy), centerDotRadius, color);
     }
 
+    // Same diamond footprint as DrawEndCapOutlines' outer quad, but filled solid — used as a
+    // backing so the ornament's interior isn't hollow/see-through to whatever's behind it.
+    private static void DrawFilledDiamond(ImDrawListPtr dl, float cx, float cy, float hw, float hh, uint color) =>
+        dl.AddQuadFilled(V(cx, cy - hh), V(cx + hw, cy), V(cx, cy + hh), V(cx - hw, cy), color);
+
     // ── Limit break glow helpers ──────────────────────────────────────────────
 
     // Sine-wave rippling ribbon along a segment.
@@ -610,21 +615,14 @@ public sealed class CompassHud : IDisposable
     // small ornaments). See RenderTargetOfTargetBar just below for the smaller
     // "who is my target targeting" tier that stacks underneath THAT.
 
-    // Same hostile/friendly signal the compass dots already use for Enemies/Players
-    // (BattleNpc + Combatant sub-kind = a real hostile; Pc = a player; pets, chocobos
-    // and friendly NPCs all fall through to Neutral) so the bar's fill never disagrees
-    // with what the compass just showed you for that same entity.
+    // Only one distinction actually matters on a health bar: is it trying to kill you or not.
+    // A real hostile is a BattleNpc in the Combatant sub-kind; everything else — players,
+    // NPCs, pets, chocobos — reads as Friendly. This also matches how the compass already
+    // colors dots (Enemies vs. everyone else), so the bar never disagrees with the compass.
     private uint TargetBarFillColor(IGameObject obj)
     {
-        if (obj.ObjectKind == ObjectKind.BattleNpc)
-        {
-            bool isHostile = obj is IBattleNpc bnpc && bnpc.BattleNpcKind == BattleNpcSubKind.Combatant;
-            return isHostile ? C(config.TargetBarHostileColor) : C(config.TargetBarFriendlyColor);
-        }
-        if (obj.ObjectKind == ObjectKind.Pc)
-            return C(config.TargetBarFriendlyColor);
-
-        return C(config.TargetBarNeutralColor);
+        bool isHostile = obj is IBattleNpc bnpc && bnpc.BattleNpcKind == BattleNpcSubKind.Combatant;
+        return isHostile ? C(config.TargetBarHostileColor) : C(config.TargetBarFriendlyColor);
     }
 
     // Four corners of an upside-down trapezoid — full width `w` at the top (y), narrowed by
@@ -632,24 +630,29 @@ public sealed class CompassHud : IDisposable
     // (clamped) growing from the left, or from the right when `fromRight` is set. frac=1
     // returns the full outer shape regardless of `fromRight`, so this one helper covers the
     // background/border (frac=1), the HP fill (fromRight=false) and the shield sheen
-    // (fromRight=true).
+    // (fromRight=true). Implemented as the [0, frac] / [1-frac, 1] edge cases of
+    // TrapezoidSliceQuad just below.
     private static (Vector2 tl, Vector2 tr, Vector2 br, Vector2 bl) TrapezoidFillQuad(
         float x, float y, float w, float h, float taper, float frac, bool fromRight = false)
     {
         frac = Math.Clamp(frac, 0f, 1f);
-        float botX0 = x + taper, botSpan = w - 2f * taper;
+        return fromRight
+            ? TrapezoidSliceQuad(x, y, w, h, taper, 1f - frac, 1f)
+            : TrapezoidSliceQuad(x, y, w, h, taper, 0f, frac);
+    }
 
-        float topA, topB, botA, botB;
-        if (fromRight)
-        {
-            topA = x + w * (1f - frac);           topB = x + w;
-            botA = botX0 + botSpan * (1f - frac);  botB = botX0 + botSpan;
-        }
-        else
-        {
-            topA = x;                              topB = x + w * frac;
-            botA = botX0;                           botB = botX0 + botSpan * frac;
-        }
+    // Same upside-down trapezoid, but returns an arbitrary middle slice between two
+    // width-fractions [lo, hi] (each 0..1, lo<=hi) instead of a fill that has to start
+    // growing from an edge. Used for the damage-flash sliver, which sits wherever the
+    // health that was just lost happens to be — not necessarily against either end.
+    private static (Vector2 tl, Vector2 tr, Vector2 br, Vector2 bl) TrapezoidSliceQuad(
+        float x, float y, float w, float h, float taper, float lo, float hi)
+    {
+        lo = Math.Clamp(lo, 0f, 1f);
+        hi = Math.Clamp(hi, 0f, 1f);
+        float botX0 = x + taper, botSpan = w - 2f * taper;
+        float topA = x + w * lo,           topB = x + w * hi;
+        float botA = botX0 + botSpan * lo, botB = botX0 + botSpan * hi;
         return (new Vector2(topA, y), new Vector2(topB, y), new Vector2(botB, y + h), new Vector2(botA, y + h));
     }
 
@@ -712,20 +715,43 @@ public sealed class CompassHud : IDisposable
             var (bTl, bTr, bBr, bBl) = TrapezoidFillQuad(tbX, tbY, tbW, tbH, taper, 1f);
             dl.AddQuadFilled(bTl, bTr, bBr, bBl, bgCol);
 
-            // Fill/flash inset a couple of px inside the outer shape (same taper, smaller box)
-            // so the border below doesn't sit directly on top of the fill's own edge.
-            const float inset = 2f;
+            // Fill/flash/shield inset a couple of px inside the outer shape so the border
+            // below doesn't sit directly on top of the fill's own edge. The inset box's
+            // taper is scaled down to match its own (shorter) height rather than reusing
+            // the outer taper as-is — the same absolute taper carved into a shorter box
+            // is a steeper slant, so the inner-vs-outer gap used to shrink to ~0 at the
+            // top and visibly widen by the bottom instead of staying even all the way
+            // around (the taper term cancels out of the top/bottom edges, which stay a
+            // flat `inset` apart regardless — it's only the slanted sides this affects).
+            const float inset      = 2f;
+            float       innerH     = tbH - inset * 2f;
+            float       innerTaper = taper * (innerH / tbH);
             var (fTl, fTr, fBr, fBl) = TrapezoidFillQuad(
-                tbX + inset, tbY + inset, tbW - inset * 2f, tbH - inset * 2f, taper, displayedTargetHpFrac);
+                tbX + inset, tbY + inset, tbW - inset * 2f, innerH, innerTaper, displayedTargetHpFrac);
             dl.AddQuadFilled(fTl, fTr, fBr, fBl, fillCol);
+
+            // Flash only the sliver of HP that was just lost — between the true current
+            // fraction (rawFrac, already dropped) and the still-easing displayed fraction
+            // (yet to catch down to it) — instead of tinting the whole remaining bar white.
+            // The two converge as displayedTargetHpFrac eases down, so the sliver narrows
+            // to nothing on its own, independently of the alpha fade below.
             if (targetBarFlashAlpha > 0f)
-                dl.AddQuadFilled(fTl, fTr, fBr, fBl, WithAlpha(0xFFFFFFFFu, targetBarFlashAlpha * 0.5f));
+            {
+                float flashLo = MathF.Min(rawFrac, displayedTargetHpFrac);
+                float flashHi = MathF.Max(rawFrac, displayedTargetHpFrac);
+                if (flashHi > flashLo)
+                {
+                    var (hTl, hTr, hBr, hBl) = TrapezoidSliceQuad(
+                        tbX + inset, tbY + inset, tbW - inset * 2f, innerH, innerTaper, flashLo, flashHi);
+                    dl.AddQuadFilled(hTl, hTr, hBr, hBl, WithAlpha(0xFFFFFFFFu, targetBarFlashAlpha * 0.5f));
+                }
+            }
 
             if (config.ShowTargetBarShield && chara.ShieldPercentage > 0)
             {
                 float shieldFrac = Math.Clamp(chara.ShieldPercentage / 100f, 0f, 1f);
                 var (sTl, sTr, sBr, sBl) = TrapezoidFillQuad(
-                    tbX + inset, tbY + inset, tbW - inset * 2f, tbH - inset * 2f, taper, shieldFrac, fromRight: true);
+                    tbX + inset, tbY + inset, tbW - inset * 2f, innerH, innerTaper, shieldFrac, fromRight: true);
                 dl.AddQuadFilled(sTl, sTr, sBr, sBl, C(config.TargetBarShieldColor));
             }
 
@@ -736,7 +762,6 @@ public sealed class CompassHud : IDisposable
         }
 
         // ── Name row — flanked by small versions of the compass's own diamond ornament ──
-        // Gap widened vs. a plain rect bar so the ribbon system below has room to flow in.
         using var jupiterScope = jupiterFont.Available ? jupiterFont.Push() : null;
         float fontSize = ImGui.GetFontSize() * config.TargetBarFontScale;
         var   font     = ImGui.GetFont();
@@ -746,18 +771,37 @@ public sealed class CompassHud : IDisposable
             label = $"Lv{lvlChar.Level}  {label}";
 
         var   tsz     = ImGui.CalcTextSize(label) * config.TargetBarFontScale;
-        float nameGap = MathF.Max(12f, tbH);
+        float nameGap = MathF.Max(6f, tbH * 0.5f);
         float nameY   = tbY + tbH + nameGap;
         float tx      = cx - tsz.X * 0.5f;
 
-        dl.AddText(font, fontSize, V(tx + 1f, nameY + 1f), 0xBB000000u, label);
-        dl.AddText(font, fontSize, V(tx,      nameY),      nameCol,     label);
+        // Uniform black shadow/backing shared by the name, the endcaps, and (further below)
+        // the ribbons — grounds all three against whatever's behind them in the game world,
+        // the same way the compass's own background panel grounds its contents.
+        uint shadowCol = 0xCC000000u;
+
+        ReadOnlySpan<(float dx, float dy)> textOutline =
+        [
+            (-1f, -1f), (0f, -1f), (1f, -1f),
+            (-1f,  0f),            (1f,  0f),
+            (-1f,  1f), (0f,  1f), (1f,  1f),
+        ];
+        foreach (var (dx, dy) in textOutline)
+            dl.AddText(font, fontSize, V(tx + dx, nameY + dy), shadowCol, label);
+        dl.AddText(font, fontSize, V(tx, nameY), nameCol, label);
 
         float ornHH  = fontSize * 0.46f, ornHW = ornHH * 0.69f;
         float ornGap = 6f;
         float textCy = nameY + tsz.Y * 0.5f;
         float leftOrnX  = tx - ornGap - ornHW;
         float rightOrnX = tx + tsz.X + ornGap + ornHW;
+
+        // Solid black backing filling the whole diamond footprint — a couple px larger than
+        // the real ornament so it also peeks out as a border — rather than just an outline,
+        // which left the diamond's interior hollow and see-through to whatever's behind it.
+        float shHW = ornHW + 2f, shHH = ornHH + 2f;
+        DrawFilledDiamond(dl, leftOrnX,  textCy, shHW, shHH, shadowCol);
+        DrawFilledDiamond(dl, rightOrnX, textCy, shHW, shHH, shadowCol);
         DrawEndCapOutlines(dl, leftOrnX,  textCy, ornHW, ornHH, borderCol, ornHW * 0.28f);
         DrawEndCapOutlines(dl, rightOrnX, textCy, ornHW, ornHH, borderCol, ornHW * 0.28f);
 
@@ -781,22 +825,34 @@ public sealed class CompassHud : IDisposable
             // further out than the ornament edge it starts from.
             float ribbonLeftX  = MathF.Min(tbX + ribbonInset,       leftEdgeX  - 24f);
             float ribbonRightX = MathF.Max(tbX + tbW - ribbonInset, rightEdgeX + 24f);
-            uint  ribbonCol    = C(config.TargetBarRibbonColor);
             float glowT        = (float)ImGui.GetTime();
 
-            // Detuned time offsets so the two ribbons don't flutter in mirrored lockstep —
-            // same philosophy as the limit break glow's own layer detuning.
-            float t1 = glowT;
-            float t2 = glowT * 1.3f + 2.4f;
+            // Each ribbon is two layers — a black backing, then the real one (borderCol,
+            // same gold/bronze as the compass's own border and these ornaments — no separate
+            // ribbon color setting) — and each layer gets its own tMul/tOff, exactly like the
+            // limit break glow's three bars above (three of these four pairs are literally
+            // the same values). Four independently-timed waves total, so backing vs. real and
+            // left vs. right never ripple in lockstep with one another.
+            (float edgeX, float targetX, uint col, float tMul, float tOff)[] ribbonLayers =
+            {
+                (leftEdgeX,  ribbonLeftX,  shadowCol,  0.65f, 7.1f),
+                (leftEdgeX,  ribbonLeftX,  borderCol,  1.00f, 0.0f),
+                (rightEdgeX, ribbonRightX, shadowCol,  1.15f, 5.3f),
+                (rightEdgeX, ribbonRightX, borderCol,  1.60f, 3.7f),
+            };
 
             // fillProgress: 0f opens DrawGlowLine's tip-fade to its widest window (fades
             // from 60% of the way along, down to fully transparent at the far tip) instead
             // of the LB usage's "closes to solid as the bar fills" behavior — here it's a
-            // constant fade-to-nothing at each ribbon's outer end.
-            DrawGlowLine(dl, V(leftEdgeX,  textCy), V(ribbonLeftX,  textCy),
-                ribbonCol, PulseIntensity(t1), t1, fromLeft: true, wipeProgress: 0f, fillProgress: 0f);
-            DrawGlowLine(dl, V(rightEdgeX, textCy), V(ribbonRightX, textCy),
-                ribbonCol, PulseIntensity(t2), t2, fromLeft: true, wipeProgress: 0f, fillProgress: 0f);
+            // constant fade-to-nothing at each ribbon's outer end. Intensity is a flat 1f
+            // rather than PulseIntensity(t) — the limit break glow keeps its breathing
+            // pulse, but these ribbons hold a steady brightness.
+            foreach (var (edgeX, targetX, col, tMul, tOff) in ribbonLayers)
+            {
+                float t = glowT * tMul + tOff;
+                DrawGlowLine(dl, V(edgeX, textCy), V(targetX, textCy),
+                    col, 1f, t, fromLeft: true, wipeProgress: 0f, fillProgress: 0f);
+            }
         }
 
         return nameY + tsz.Y;

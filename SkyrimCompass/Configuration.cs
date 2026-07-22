@@ -101,7 +101,7 @@ public class Configuration : IPluginConfiguration
 
     public bool  ShowNpcs             { get; set; } = true;
     public bool  NpcsOnlyIfTargetable { get; set; } = true;   // hides non-targetable placeholders (e.g. empty stable slot)
-    public bool  ShowNpcQuestIcons    { get; set; } = true;   // real active-quest icon instead of a dot
+    public bool  ShowNpcQuestIcons    { get; set; } = true;   // active-quest icon instead of a dot
     public float NpcQuestIconMinSize  { get; set; } = 8f;
     public float NpcQuestIconMaxSize  { get; set; } = 40f;
 
@@ -122,7 +122,7 @@ public class Configuration : IPluginConfiguration
 
     public bool  ShowGatheringNodes        { get; set; } = true;
     public bool  GatheringOnlyIfTargetable { get; set; } = true;   // hides non-targetable placeholders
-    public bool  ShowGatheringIcons        { get; set; } = false;  // real Mining/Botany/Quarrying/Logging icon
+    public bool  ShowGatheringIcons        { get; set; } = false;  // Mining/Botany/Quarrying/Logging icon
     public float GatheringIconMinSize      { get; set; } = 20f;
     public float GatheringIconMaxSize      { get; set; } = 30f;
     public bool  ShowTreasure              { get; set; } = true;

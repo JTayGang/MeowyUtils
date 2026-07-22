@@ -222,21 +222,22 @@ public sealed class CompassHud : IDisposable
 
         float heading = Normalize(headingRad * (180f / MathF.PI) + config.RotationOffset);
 
-        var io = ImGui.GetIO();
-        var dl = ImGui.GetForegroundDrawList();
+        var io  = ImGui.GetIO();
+        var dl  = ImGui.GetForegroundDrawList();
+        float now = (float)ImGui.GetTime();   // one shared timestamp for every animation this frame
 
         float bw = config.CompassWidth;
         float bh = config.CompassHeight;
         float bx = (io.DisplaySize.X - bw) * 0.5f + config.XOffset;
         float by = config.YOffset;
 
-        RenderBar(dl, bx, by, bw, bh, heading, player, originPos);
+        RenderBar(dl, bx, by, bw, bh, heading, player, originPos, now);
 
         float hudBottomY = by + bh;
         if (config.ShowTargetBar)
-            hudBottomY = RenderTargetBar(dl, bx, by, bw, bh);
+            hudBottomY = RenderTargetBar(dl, bx, by, bw, bh, now);
         if (config.ShowTargetOfTargetBar)
-            RenderTargetOfTargetBar(dl, bx, hudBottomY, bw, player);
+            RenderTargetOfTargetBar(dl, bx, hudBottomY, bw, player, now);
     }
 
     // ── Lens projection ──
@@ -257,7 +258,7 @@ public sealed class CompassHud : IDisposable
     private void RenderBar(
         ImDrawListPtr dl,
         float bx, float by, float bw, float bh,
-        float heading, IPlayerCharacter player, Vector3 originPos)
+        float heading, IPlayerCharacter player, Vector3 originPos, float now)
     {
         float cx       = bx + bw * 0.5f;
         float cy       = by + bh * 0.5f;
@@ -282,7 +283,7 @@ public sealed class CompassHud : IDisposable
 
         // Run unconditionally so fade-out tracks real LB usage even when glow is toggled off.
         float rawLbProgress       = GetLimitBreakProgress();
-        float displayedLbProgress = UpdateLimitBreakDisplay(rawLbProgress, (float)ImGui.GetTime(), out float lbWipeProgress);
+        float displayedLbProgress = UpdateLimitBreakDisplay(rawLbProgress, now, out float lbWipeProgress);
         float lbProgress          = config.ShowLimitBreakGlow ? displayedLbProgress : 0f;
         if (!config.ShowLimitBreakGlow) lbWipeProgress = 0f;
 
@@ -308,7 +309,7 @@ public sealed class CompassHud : IDisposable
         // 3. Limit break glow — one layer per bar, each bar's own 0–1 progress, detuned to avoid lockstep waves
         if (lbProgress > 0f)
         {
-            float glowT = (float)ImGui.GetTime();
+            float glowT = now;
             float bar1  = Math.Clamp(lbProgress,       0f, 1f);
             float bar2  = Math.Clamp(lbProgress - 1f,  0f, 1f);
             float bar3  = Math.Clamp(lbProgress - 2f,  0f, 1f);
@@ -345,8 +346,7 @@ public sealed class CompassHud : IDisposable
         float labelHeight = ImGui.CalcTextSize("N").Y * config.FontScale;
         float labelBottom = labelTop + labelHeight;
 
-        const float tickLabelGap = 0f;
-        float maxTickHeight = MathF.Max(2f, (by + bh - 1f) - (labelBottom + tickLabelGap));
+        float maxTickHeight = MathF.Max(2f, (by + bh - 1f) - labelBottom);
 
         // 5. Tick marks
         for (int d = 0; d < 360; d += 5)
@@ -636,7 +636,7 @@ public sealed class CompassHud : IDisposable
 
     // Returns the Y coordinate the bar finished at, so the target-of-target tier below
     // knows where to dock — regardless of whether an HP row was drawn at all.
-    private float RenderTargetBar(ImDrawListPtr dl, float compassX, float compassY, float compassW, float compassH)
+    private float RenderTargetBar(ImDrawListPtr dl, float compassX, float compassY, float compassW, float compassH, float now)
     {
         float fallbackY = compassY + compassH;
         var   target    = targetManager.Target;
@@ -673,6 +673,7 @@ public sealed class CompassHud : IDisposable
 
             // Snap instantly on a target switch (or first acquisition) — easing in from a
             // completely unrelated old target's leftover HP fraction would look like a bug.
+            float dt = ImGui.GetIO().DeltaTime;
             if (target.GameObjectId != lastTargetBarObjectId)
             {
                 lastTargetBarObjectId = target.GameObjectId;
@@ -684,11 +685,9 @@ public sealed class CompassHud : IDisposable
             {
                 if (rawFrac < lastRawTargetHpFrac - 0.001f) targetBarFlashAlpha = 1f;
                 lastRawTargetHpFrac = rawFrac;
-
-                float dt = ImGui.GetIO().DeltaTime;
                 displayedTargetHpFrac += (rawFrac - displayedTargetHpFrac) * (1f - MathF.Exp(-dt * 14f));
             }
-            targetBarFlashAlpha = MathF.Max(0f, targetBarFlashAlpha - ImGui.GetIO().DeltaTime / 0.4f);
+            targetBarFlashAlpha = MathF.Max(0f, targetBarFlashAlpha - dt / 0.4f);
 
             var (bTl, bTr, bBr, bBl) = TrapezoidFillQuad(tbX, tbY, tbW, tbH, taper, 1f);
             dl.AddQuadFilled(bTl, bTr, bBr, bBl, bgCol);
@@ -797,7 +796,7 @@ public sealed class CompassHud : IDisposable
             // outward travel — always at least 24px past the ornament edge it starts from.
             float ribbonLeftX  = MathF.Min(tbX + ribbonInset,       leftEdgeX  - 24f);
             float ribbonRightX = MathF.Max(tbX + tbW - ribbonInset, rightEdgeX + 24f);
-            float glowT        = (float)ImGui.GetTime();
+            float glowT        = now;
 
             // Each ribbon is two layers (black backing, then borderCol — no separate ribbon
             // color), each with its own tMul/tOff like the limit break glow's three bars above
@@ -835,7 +834,7 @@ public sealed class CompassHud : IDisposable
     // to a dedicated warning color with a slow pulse, since noticing aggro at a glance
     // is exactly the kind of thing a HUD should be good at.
     private void RenderTargetOfTargetBar(
-        ImDrawListPtr dl, float compassX, float anchorY, float compassW, IPlayerCharacter player)
+        ImDrawListPtr dl, float compassX, float anchorY, float compassW, IPlayerCharacter player, float now)
     {
         var target = targetManager.Target;
         var tot    = target?.TargetObject;
@@ -868,7 +867,7 @@ public sealed class CompassHud : IDisposable
             float fillW = (tbW - 3f) * frac;
             if (fillW > 0f)
             {
-                float pulse = targetingMe ? 0.82f + 0.18f * MathF.Sin((float)ImGui.GetTime() * 5f) : 1f;
+                float pulse = targetingMe ? 0.82f + 0.18f * MathF.Sin(now * 5f) : 1f;
                 dl.AddRectFilled(V(tbX + 1.5f, tbY + 1.5f), V(tbX + 1.5f + fillW, tbY + tbH - 1.5f),
                     WithAlpha(fillCol, pulse));
             }
@@ -1460,13 +1459,20 @@ public sealed class CompassHud : IDisposable
                 bool   hasQuestIcon  = npcMarkerIcons.TryGetValue(obj.GameObjectId, out int qIconId) && qIconId > 0;
                 bool   isMender      = IsMender(obj);
                 bool   isShop        = IsShop(obj);
+                bool   isSkipper     = IsSkipper(obj);
+                bool   isTicketer    = IsTicketer(obj);
                 bool   isChocoboKeep = IsChocoboKeep(obj);
-                bool   isFastTravel  = IsFastTravel(obj);
+                bool   isFastTravel  = isSkipper || isTicketer || isChocoboKeep;
+                // Mirrors TryGetNpcIcon's exact order/specificity — Skipper and Ticketer both
+                // outrank ChocoboKeep there, and each renders its own distinct icon, so this
+                // names the specific sub-type rather than a generic "FastTravel" that would
+                // hide which of the three icons actually shows.
                 string winner        = hasQuestIcon  ? $"QuestMarker(icon={qIconId})"
                                      : isMender      ? "Mender"
                                      : isShop        ? "Shop"
+                                     : isSkipper     ? "Skipper"
+                                     : isTicketer    ? "Ticketer"
                                      : isChocoboKeep ? "ChocoboKeep"
-                                     : isFastTravel  ? "FastTravel"
                                      : "none/dot";
                 // TitleEN/SingularEN are always English regardless of client language — what the
                 // *Keywords arrays up top actually match against. Word's in one of these but the

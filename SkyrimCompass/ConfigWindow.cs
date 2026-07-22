@@ -609,26 +609,26 @@ public sealed class ConfigWindow : Window
         { cfg.NpcsOnlyIfTargetable = tgt; changed = true; }
 
         bool qIcon = cfg.ShowNpcQuestIcons;
-        if (DrawToggle("Show real quest marker icons##qicon", ref qIcon,
+        if (DrawToggle("Show quest marker icons##qicon", ref qIcon,
             "NPCs with an active quest marker (MSQ, side quest \"!\", in-progress \"?\", etc.)\n" +
             "show that exact icon instead of a plain dot."))
         { cfg.ShowNpcQuestIcons = qIcon; changed = true; }
 
         bool mIcon = cfg.ShowMenderIcons;
-        if (DrawToggle("Show real Mender icon##micon", ref mIcon,
-            "Real icon for Mender NPCs (gear repair vendors), matched in English\n" +
+        if (DrawToggle("Show Mender icon##micon", ref mIcon,
+            "Icon for Mender NPCs (gear repair vendors), matched in English\n" +
             "regardless of client language. Shares the size sliders below."))
         { cfg.ShowMenderIcons = mIcon; changed = true; }
 
         bool sIcon = cfg.ShowShopIcons;
-        if (DrawToggle("Show real Shop/Trader icon##sicon", ref sIcon,
-            "Real icon for Shop/Trader NPCs (\"Merchant\", \"Vendor\", etc), matched the same\n" +
+        if (DrawToggle("Show Shop/Trader icon##sicon", ref sIcon,
+            "Icon for Shop/Trader NPCs (\"Merchant\", \"Vendor\", etc), matched the same\n" +
             "way as Mender above and sharing its size sliders."))
         { cfg.ShowShopIcons = sIcon; changed = true; }
 
         bool ftIcon = cfg.ShowFastTravelIcons;
-        if (DrawToggle("Fast Travel##fticon", ref ftIcon,
-            "Real icon for ferry skippers, airship/other ticketers, and Chocobo\n" +
+        if (DrawToggle("Show Fast Travel icons##fticon", ref ftIcon,
+            "Icon for ferry skippers, airship/other ticketers, and Chocobo\n" +
             "Keeps/Falcon Porters (different icon per type, one toggle). Matched\n" +
             "the same way as Mender above."))
         { cfg.ShowFastTravelIcons = ftIcon; changed = true; }
@@ -665,8 +665,8 @@ public sealed class ConfigWindow : Window
         { cfg.GatheringOnlyIfTargetable = gTgt; changed = true; }
 
         bool gIcon = cfg.ShowGatheringIcons;
-        if (DrawToggle("Show real Mining/Botany icons##gicon", ref gIcon,
-            "Shows the node's actual Mining/Quarrying/Logging/Botany icon instead of a plain dot."))
+        if (DrawToggle("Show Mining/Botany icons##gicon", ref gIcon,
+            "Shows the node's Mining/Quarrying/Logging/Botany icon instead of a plain dot."))
         { cfg.ShowGatheringIcons = gIcon; changed = true; }
 
         ImGui.BeginDisabled(!gIcon);
@@ -706,7 +706,7 @@ public sealed class ConfigWindow : Window
         ImGui.Spacing();
 
         bool trIcon = cfg.ShowTreasureIcons;
-        if (DrawToggle("Show real chest icon##tricon", ref trIcon,
+        if (DrawToggle("Show chest icon##tricon", ref trIcon,
             "No game-data sheet exposes a chest's visual type from its BaseId, so every\n" +
             "coffer shows the same icon (below)."))
         { cfg.ShowTreasureIcons = trIcon; changed = true; }
@@ -752,7 +752,7 @@ public sealed class ConfigWindow : Window
         { cfg.ShowAethernetShards = showShards; changed = true; }
 
         bool aIcon = cfg.ShowAetheryteIcons;
-        if (DrawToggle("Show real aetheryte icon##aicon", ref aIcon,
+        if (DrawToggle("Show aetheryte icon##aicon", ref aIcon,
             "Falls back to the colour dot only if an icon doesn't resolve."))
         { cfg.ShowAetheryteIcons = aIcon; changed = true; }
 
@@ -789,7 +789,7 @@ public sealed class ConfigWindow : Window
         ImGui.Spacing();
 
         bool changed = DrawEnableAndColor("fates", "Show FATEs", ref fateB, ref fateC,
-            "Shows active/about-to-start FATEs with their real icon, sorted in the same\n" +
+            "Shows active/about-to-start FATEs with their icon, sorted in the same\n" +
             "pass as every marker (closer paints on top). Range = General tab's range ×\n" +
             "the multiplier below. Works even with everything else off.");
         cfg.ShowFates = fateB; cfg.FateColor = fateC;

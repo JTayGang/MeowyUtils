@@ -6,229 +6,161 @@ using Dalamud.Plugin;
 
 namespace SkyrimCompass;
 
-/// <summary>
-/// Per-player icon override. Case-insensitive name match swaps that player's
-/// marker for a real game icon. Falls back to a dot if texture doesn't resolve.
-/// </summary>
+// Per-player icon override. Case-insensitive name match swaps that player's marker for a
+// real game icon, falling back to a dot if the texture doesn't resolve.
 [Serializable]
 public class PlayerIconOverride
 {
-    public string  PlayerName    { get; set; } = "";
-    /// <summary>Icon ID (e.g. 62007=Paladin, 60453=Aetheryte, 61802=FC emblem).</summary>
-    public int     IconBaseId    { get; set; } = 0;
-    public bool    ShowBorder    { get; set; } = false;
-    public Vector4 BorderColor   { get; set; } = new(1.00f, 1.00f, 1.00f, 0.90f);
-    public bool    ShowFill      { get; set; } = false;
-    public Vector4 FillColor     { get; set; } = new(1.00f, 1.00f, 1.00f, 0.40f);
-    /// <summary>Circular clip (AddImageRounded) instead of square bounds.</summary>
-    public bool    ClipToCircle  { get; set; } = false;
-    /// <summary>Extra scale on top of the global 1.5× IconSizeMultiplier.</summary>
-    public float   SizeMultiplier { get; set; } = 1.0f;
+    public string  PlayerName     { get; set; } = "";
+    public int     IconBaseId     { get; set; } = 0;      // e.g. 62007=Paladin, 60453=Aetheryte, 61802=FC emblem
+    public bool    ShowBorder     { get; set; } = false;
+    public Vector4 BorderColor    { get; set; } = new(1.00f, 1.00f, 1.00f, 0.90f);
+    public bool    ShowFill       { get; set; } = false;
+    public Vector4 FillColor      { get; set; } = new(1.00f, 1.00f, 1.00f, 0.40f);
+    public bool    ClipToCircle   { get; set; } = false;   // circular clip (AddImageRounded) vs square bounds
+    public float   SizeMultiplier { get; set; } = 1.0f;    // extra scale on top of the global IconSizeMultiplier
 }
 
 [Serializable]
 public class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 1;
-
+    public int  Version { get; set; } = 1;
     public bool Enabled { get; set; } = true;
 
-    // ── Layout ───────────────────────────────────────────────────────────────
-    public float CompassWidth   { get; set; } = 560f;
-    public float CompassHeight  { get; set; } = 35f;
-    public float YOffset        { get; set; } = 8f;
-    /// <summary>Shifts the bar left (negative) or right (positive) from horizontal center.</summary>
-    public float XOffset        { get; set; } = 0f;
+    // Layout
+    public float CompassWidth  { get; set; } = 560f;
+    public float CompassHeight { get; set; } = 35f;
+    public float YOffset       { get; set; } = 8f;
+    public float XOffset       { get; set; } = 0f;   // shifts bar left(-)/right(+) of horizontal center
 
-    // ── Behaviour ────────────────────────────────────────────────────────────
-    /// <summary>Degrees of the full 360° visible at once.</summary>
-    public float VisibleDegrees     { get; set; } = 90f;
-    /// <summary>Fisheye strength. 1.0 = linear; 2.0 ≈ +100% FOV at edges.</summary>
-    public float LensStrength       { get; set; } = 2.0f;
-    /// <summary>Added to computed heading. Set 180 if N/S are swapped.</summary>
-    public float RotationOffset     { get; set; } = 0f;
-    /// <summary>Tracks camera yaw instead of character facing.</summary>
-    public bool  UseCameraDirection { get; set; } = true;
-    /// <summary>Sub-option: measure bearings/distances from camera position, not character.</summary>
-    public bool  UseCameraPosition  { get; set; } = true;
-    public float FontScale          { get; set; } = 1.0f;
-    public bool  ShowHeadingText    { get; set; } = false;
-    /// <summary>Skips drawing during cutscenes (OccupiedInCutSceneEvent / WatchingCutscene / WatchingCutscene78).</summary>
-    public bool  HideDuringCutscenes { get; set; } = true;
+    // Behaviour
+    public float VisibleDegrees      { get; set; } = 90f;    // degrees of the full 360° visible at once
+    public float LensStrength        { get; set; } = 2.0f;   // fisheye strength; 1.0=linear, 2.0≈+100% FOV at edges
+    public float RotationOffset      { get; set; } = 0f;     // added to computed heading; set 180 if N/S swapped
+    public bool  UseCameraDirection  { get; set; } = true;   // track camera yaw instead of character facing
+    public bool  UseCameraPosition   { get; set; } = true;   // sub-option: bearings/distances from camera, not character
+    public float FontScale           { get; set; } = 1.0f;
+    public bool  ShowHeadingText     { get; set; } = false;
+    public bool  HideDuringCutscenes { get; set; } = true;   // skips drawing during story/group-pose cutscenes
 
-    // ── Colors ───────────────────────────────────────────────────────────────
+    // Colors
     public Vector4 BackgroundColor    { get; set; } = new(0.05f, 0.04f, 0.03f, 0.82f);
     public Vector4 BorderColor        { get; set; } = new(0.48f, 0.42f, 0.27f, 0.92f);
     public Vector4 CardinalColor      { get; set; } = new(1.00f, 0.97f, 0.88f, 1.00f);
     public Vector4 IntercardinalColor { get; set; } = new(0.72f, 0.70f, 0.65f, 0.88f);
     public Vector4 TickColor          { get; set; } = new(0.58f, 0.56f, 0.52f, 0.72f);
 
-    // ── Marker toggles ───────────────────────────────────────────────────────
-    public bool ShowPlayers     { get; set; } = true;
-    /// <summary>Friends render as solid dots (StatusFlags.Friend).</summary>
-    public bool SolidFriendDots { get; set; } = true;
-    /// <summary>Party members show job icon via ClassJob.RowId (62001–62047) with a role-colored ring.</summary>
-    public bool ShowPartyRoleIcons { get; set; } = true;
-    /// <summary>
-    /// Restricts the job icon + role ring to duty content and PvP (dungeons, trials, raids,
-    /// alliance raids, deep dungeons, Crystalline Conflict/Frontlines/etc.) — where knowing a
-    /// party member's role actually matters. Elsewhere (overworld, housing, just partied up
-    /// with friends while sightseeing) party members fall through to their named override,
-    /// then the friend/hollow dot, same as anyone else. Off restores the old always-on behaviour.
-    /// </summary>
-    public bool PartyRoleIconsOnlyInDuty { get; set; } = true;
-    public float PartyRoleIconMinSize { get; set; } = 10f;
-    public float PartyRoleIconMaxSize { get; set; } = 24f;
+    // Marker toggles
+    public bool  ShowPlayers        { get; set; } = true;
+    public bool  SolidFriendDots    { get; set; } = true;   // friends render as solid dots (StatusFlags.Friend)
+    public bool  ShowPartyRoleIcons { get; set; } = true;   // party job icon (ClassJob.RowId) + role-colored ring
+    // Restricts the job icon/role ring above to duty content + PvP, where role actually matters;
+    // elsewhere party members fall through to their named override, then the friend/hollow dot,
+    // same as anyone else. Off restores the old always-on behaviour.
+    public bool  PartyRoleIconsOnlyInDuty { get; set; } = true;
+    public float PartyRoleIconMinSize     { get; set; } = 10f;
+    public float PartyRoleIconMaxSize     { get; set; } = 24f;
 
-    /// <summary>
-    /// Named player overrides. Checked after party role icons (when those are actually shown —
-    /// see PartyRoleIconsOnlyInDuty), before friend/ring fallback.
-    /// </summary>
+    // Named player overrides — checked after party role icons (when shown, see
+    // PartyRoleIconsOnlyInDuty), before the friend/ring fallback.
     public List<PlayerIconOverride> PlayerIconOverrides { get; set; } = new();
 
-    public bool ShowEnemies          { get; set; } = true;
-    /// <summary>Only show enemies you're targeting or being targeted by.</summary>
-    public bool EnemiesOnlyIfEngaged { get; set; } = true;
-    public float EnemyMinSize { get; set; } = 6f;
-    public float EnemyMaxSize { get; set; } = 20f;
+    public bool  ShowEnemies          { get; set; } = true;
+    public bool  EnemiesOnlyIfEngaged { get; set; } = true;   // only enemies targeting you or you're targeting
+    public float EnemyMinSize         { get; set; } = 6f;
+    public float EnemyMaxSize         { get; set; } = 20f;
 
-    // ── Limit break glow ─────────────────────────────────────────────────────
-    /// <summary>
-    /// One independent glowing border layer per bar: bar N's own 0–100% progress creeps
-    /// in from both ends in its configured color, reaching the whole border when full.
-    /// Stacking layers let you read charged bar count at a glance.
-    /// </summary>
+    // Limit break glow — one glowing border layer per bar, each bar's own 0–100% progress
+    // creeping in from both ends, reaching the whole border once full. Stacked layers show
+    // charged bar count at a glance.
     public bool    ShowLimitBreakGlow   { get; set; } = false;
     public Vector4 LimitBreakGlowColor  { get; set; } = new(1.00f, 0.65f, 0.10f, 0.95f);
-    /// <summary>Layer 2 (bar 2's own progress) — bright yellow by default.</summary>
-    public Vector4 LimitBreakGlowColor2 { get; set; } = new(1.00f, 0.95f, 0.20f, 0.95f);
-    /// <summary>Layer 3 (bar 3's own progress) — white by default.</summary>
-    public Vector4 LimitBreakGlowColor3 { get; set; } = new(1.00f, 1.00f, 1.00f, 0.95f);
+    public Vector4 LimitBreakGlowColor2 { get; set; } = new(1.00f, 0.95f, 0.20f, 0.95f);   // bar 2, yellow by default
+    public Vector4 LimitBreakGlowColor3 { get; set; } = new(1.00f, 1.00f, 1.00f, 0.95f);   // bar 3, white by default
 
-    // ── Target Health Bar (Skyrim-style name + HP for your current target) ─────
-    // Docked directly beneath the compass rather than positioned independently, so
-    // background/border/name text intentionally reuse BackgroundColor/BorderColor/
-    // CardinalColor/IntercardinalColor above — the pair should always read as one
-    // continuous HUD column, never two mismatched widgets. The name ribbons reuse
-    // BorderColor too, for the same reason.
-    public bool  ShowTargetBar          { get; set; } = true;
-    /// <summary>Bar width as a fraction of CompassWidth — spans a little less than the full compass.</summary>
-    public float TargetBarWidthFraction { get; set; } = 0.875f;
-    public float TargetBarHeight        { get; set; } = 14f;
-    public float TargetBarFontScale     { get; set; } = 1.0f;
-    public bool  ShowTargetLevel        { get; set; } = true;
-    /// <summary>Light sheen over the shielded portion of the bar (ICharacter.ShieldPercentage).</summary>
-    public bool  ShowTargetBarShield    { get; set; } = true;
-    /// <summary>Two glow ribbons (the limit break glow's technique, reused) flying outward from
-    /// the name's flanking ornaments — left endcap to the left, right endcap to the right.</summary>
-    public bool    ShowTargetBarRibbons   { get; set; } = true;
+    // Target health bar (Skyrim-style name+HP for your current target) — docked directly
+    // beneath the compass, intentionally reusing Background/Border/Cardinal/IntercardinalColor
+    // above (ribbons reuse BorderColor too) so the pair always reads as one continuous HUD column.
+    public bool    ShowTargetBar          { get; set; } = true;
+    public float   TargetBarWidthFraction { get; set; } = 0.875f;   // fraction of CompassWidth
+    public float   TargetBarHeight        { get; set; } = 14f;
+    public float   TargetBarFontScale     { get; set; } = 1.0f;
+    public bool    ShowTargetLevel        { get; set; } = true;
+    public bool    ShowTargetBarShield    { get; set; } = true;   // sheen over ICharacter.ShieldPercentage
+    public bool    ShowTargetBarRibbons   { get; set; } = true;   // glow ribbons flying out from the name's ornaments
     public Vector4 TargetBarHostileColor  { get; set; } = new(0.78f, 0.12f, 0.12f, 0.95f);
-    /// <summary>Everyone else — players and NPCs alike; no need to tell them apart on a health bar.</summary>
-    public Vector4 TargetBarFriendlyColor { get; set; } = new(0.30f, 0.75f, 0.35f, 0.95f);
+    public Vector4 TargetBarFriendlyColor { get; set; } = new(0.30f, 0.75f, 0.35f, 0.95f);   // everyone else, players+NPCs alike
     public Vector4 TargetBarShieldColor   { get; set; } = new(0.80f, 0.92f, 1.00f, 0.55f);
 
-    // ── Target-of-target  (FF14's ToT, restyled to match) ──────────────────────
-    // One tier further down the same column: who/what your current target has
-    // itself targeted. Auto-hidden when that's nobody or your target itself —
-    // both are non-information. The one exception is your target targeting YOU,
-    // which is worth a dedicated warning color instead of shrinking away.
+    // Target-of-target (FF14's ToT, restyled) — one tier further down: who/what your target
+    // has itself targeted. Auto-hidden when that's nobody or your target itself; the exception
+    // is your target targeting YOU, which gets a dedicated warning color instead of hiding.
     public bool    ShowTargetOfTargetBar  { get; set; } = true;
     public bool    HighlightIfTargetingMe { get; set; } = true;
     public Vector4 AggroWarningColor      { get; set; } = new(1.00f, 0.82f, 0.16f, 1.00f);
 
-    public bool ShowNpcs              { get; set; } = true;
-    /// <summary>Hides non-targetable EventNpc placeholders (e.g. empty chocobo stable slot).</summary>
-    public bool NpcsOnlyIfTargetable  { get; set; } = true;
-    /// <summary>Shows the NPC's real active-quest icon instead of a dot.</summary>
-    public bool ShowNpcQuestIcons     { get; set; } = true;
+    public bool  ShowNpcs             { get; set; } = true;
+    public bool  NpcsOnlyIfTargetable { get; set; } = true;   // hides non-targetable placeholders (e.g. empty stable slot)
+    public bool  ShowNpcQuestIcons    { get; set; } = true;   // real active-quest icon instead of a dot
     public float NpcQuestIconMinSize  { get; set; } = 8f;
     public float NpcQuestIconMaxSize  { get; set; } = 40f;
-    /// <summary>
-    /// Real icon for Mender NPCs. Detected via ENpcResident's Title (named NPCs, e.g.
-    /// "Alistair") or Singular (generic flavor NPCs with no personal name, e.g. a plain
-    /// "Mender" — Title is empty for those), always read in English regardless of client
-    /// language — so this works the same on any game language.
-    /// Shares NpcQuestIcon size range.
-    /// </summary>
+
+    // Mender/Shop/Fast-Travel icons below all detect via ENpcResident's Title (named NPCs,
+    // vocation word in Title) or Singular (unnamed flavor NPCs, vocation word in Singular
+    // instead) — always read in English regardless of client language, so matching works the
+    // same on any game language. All three share the NpcQuestIcon size range above.
     public bool ShowMenderIcons { get; set; } = true;
     public int  MenderIconId    { get; set; } = 60434;
-    /// <summary>
-    /// Real icon for Shop/Trader NPCs. Detected via ENpcResident's Title (named NPCs, e.g.
-    /// "Syneyhil" titled "Fieldcraft Supplier") or Singular (generic flavor NPCs with no
-    /// personal name, e.g. "Material Supplier" — Title is empty for those), always read in
-    /// English regardless of client language — so this works the same on any game language.
-    /// Shares NpcQuestIcon size range.
-    /// </summary>
-    public bool ShowShopIcons { get; set; } = true;
-    public int  ShopIconId    { get; set; } = 60412;
-    /// <summary>
-    /// Real icon for Fast Travel NPCs — ferry skippers (unnamed NPCs, vocation word in
-    /// Singular, Title empty), airship/other ticketers (named NPCs with Title e.g. "Airship
-    /// Ticketer"), and Chocobo Keeps/Falcon Porters (unnamed/named NPCs matched via
-    /// ChocoboKeepKeywords — Falcon Porters work identically to Chocobo Keeps, so they share
-    /// the same icon rather than getting their own).
-    /// All share this one toggle but render with different icons: skippers use
-    /// FastTravelIconId, ticketers use FastTravelTicketerIconId, Chocobo Keeps/Falcon Porters
-    /// use ChocoboKeepIconId. Always read in English regardless of client language — so this
-    /// works the same on any game language.
-    /// Shares NpcQuestIcon size range.
-    /// </summary>
-    public bool ShowFastTravelIcons { get; set; } = true;
-    public int  FastTravelIconId         { get; set; } = 60456;
-    public int  FastTravelTicketerIconId { get; set; } = 60352;
-    public int  ChocoboKeepIconId        { get; set; } = 60311;
+    public bool ShowShopIcons   { get; set; } = true;
+    public int  ShopIconId      { get; set; } = 60412;
+    // Ferry skippers, airship/other ticketers, and Chocobo Keeps/Falcon Porters (Falcon
+    // Porters share Chocobo Keep's keywords and icon) — one toggle, three icons.
+    public bool ShowFastTravelIcons      { get; set; } = true;
+    public int  FastTravelIconId         { get; set; } = 60456;   // skippers
+    public int  FastTravelTicketerIconId { get; set; } = 60352;   // ticketers
+    public int  ChocoboKeepIconId        { get; set; } = 60311;   // Chocobo Keeps / Falcon Porters
 
-    public bool ShowGatheringNodes          { get; set; } = true;
-    /// <summary>Hides non-targetable gathering node placeholders.</summary>
-    public bool GatheringOnlyIfTargetable   { get; set; } = true;
-    /// <summary>Real Mining/Botany/Quarrying/Logging icon instead of a dot.</summary>
-    public bool ShowGatheringIcons          { get; set; } = false;
-    public float GatheringIconMinSize       { get; set; } = 20f;
-    public float GatheringIconMaxSize       { get; set; } = 30f;
-    public bool ShowTreasure                { get; set; } = true;
-    /// <summary>All coffers show the same icon — no sheet maps BaseId to visual type.</summary>
-    public bool ShowTreasureIcons { get; set; } = true;
-    /// <summary>Icon for every coffer. 60354/60355/60356 are known variants — swap if wrong.</summary>
-    public int  TreasureIconId    { get; set; } = 60354;
-    public float TreasureMinSize  { get; set; } = 6f;
-    public float TreasureMaxSize  { get; set; } = 20f;
-    public bool ShowAetherytes    { get; set; } = true;
-    /// <summary>Shows Aethernet shards too, matched via AethernetShardName.</summary>
-    public bool ShowAethernetShards  { get; set; } = true;
-    public bool ShowAetheryteIcons   { get; set; } = true;
-    /// <summary>Substring match (case-insensitive) identifying Aethernet shards.</summary>
-    public string AethernetShardName  { get; set; } = "Aethernet";
-    public int    AetheryteIconId     { get; set; } = 60453;
-    public int    AethernetShardIconId { get; set; } = 60430;
-    public Vector4 AetheryteColor     { get; set; } = new(0.55f, 0.85f, 0.95f, 0.92f);
-    public float AetheryteIconMinSize { get; set; } = 20f;
-    public float AetheryteIconMaxSize { get; set; } = 30f;
-    /// <summary>Max detection range in yalms (true 3D distance).</summary>
-    public float MaxMarkerDistance    { get; set; } = 100f;
+    public bool  ShowGatheringNodes        { get; set; } = true;
+    public bool  GatheringOnlyIfTargetable { get; set; } = true;   // hides non-targetable placeholders
+    public bool  ShowGatheringIcons        { get; set; } = false;  // real Mining/Botany/Quarrying/Logging icon
+    public float GatheringIconMinSize      { get; set; } = 20f;
+    public float GatheringIconMaxSize      { get; set; } = 30f;
+    public bool  ShowTreasure              { get; set; } = true;
+    public bool  ShowTreasureIcons         { get; set; } = true;   // no sheet maps BaseId->visual type, so one icon fits all
+    public int   TreasureIconId            { get; set; } = 60354;  // 60354/60355/60356 are known variants — swap if wrong
+    public float TreasureMinSize           { get; set; } = 6f;
+    public float TreasureMaxSize           { get; set; } = 20f;
+    public bool  ShowAetherytes            { get; set; } = true;
+    public bool  ShowAethernetShards       { get; set; } = true;   // smaller waypoints, matched via AethernetShardName
+    public bool  ShowAetheryteIcons        { get; set; } = true;
+    public string  AethernetShardName   { get; set; } = "Aethernet";   // substring match, case-insensitive
+    public int     AetheryteIconId      { get; set; } = 60453;
+    public int     AethernetShardIconId { get; set; } = 60430;
+    public Vector4 AetheryteColor       { get; set; } = new(0.55f, 0.85f, 0.95f, 0.92f);
+    public float   AetheryteIconMinSize { get; set; } = 20f;
+    public float   AetheryteIconMaxSize { get; set; } = 30f;
+    public float   MaxMarkerDistance    { get; set; } = 100f;   // max detection range in yalms (true 3D distance)
 
-    // Distance-fade curve (fractions of max range, 0–1)
-    public float DotNearZone  { get; set; } = 0.85f;
-    public float DotFarZone   { get; set; } = 0.25f;
-    public float DotMidAlpha  { get; set; } = 0.50f;
+    // Dot distance-fade curve (fractions of max range, 0–1)
+    public float DotNearZone { get; set; } = 0.85f;
+    public float DotFarZone  { get; set; } = 0.25f;
+    public float DotMidAlpha { get; set; } = 0.50f;
 
-    // ── Marker colors ────────────────────────────────────────────────────────
+    // Marker colors
     public Vector4 PlayerColor    { get; set; } = new(0.40f, 0.65f, 1.00f, 0.92f);
     public Vector4 EnemyColor     { get; set; } = new(1.00f, 0.25f, 0.25f, 0.92f);
     public Vector4 NpcColor       { get; set; } = new(0.95f, 0.88f, 0.35f, 0.92f);
     public Vector4 GatheringColor { get; set; } = new(0.30f, 0.92f, 0.40f, 0.92f);
     public Vector4 TreasureColor  { get; set; } = new(1.00f, 0.80f, 0.15f, 0.95f);
 
-    // ── FATEs ────────────────────────────────────────────────────────────────
-    // Zone-wide POI, independent of ShowAnyMarkers — often wanted with all other markers off.
+    // FATEs — zone-wide POI, independent of ShowAnyMarkers (often wanted with everything else off)
     public bool    ShowFates              { get; set; } = true;
-    /// <summary>Fallback color if FATE icon texture fails to load.</summary>
-    public Vector4 FateColor              { get; set; } = new(0.82f, 0.35f, 0.95f, 0.95f);
-    /// <summary>FATE range = MaxMarkerDistance × FateDistanceMultiplier.</summary>
-    public float   FateDistanceMultiplier { get; set; } = 2.5f;
+    public Vector4 FateColor              { get; set; } = new(0.82f, 0.35f, 0.95f, 0.95f);   // fallback if icon fails to load
+    public float   FateDistanceMultiplier { get; set; } = 2.5f;   // FATE range = MaxMarkerDistance × this
     public float   FateIconMinSize        { get; set; } = 20f;
     public float   FateIconMaxSize        { get; set; } = 32f;
 
-    /// <summary>True if any marker type is enabled (skips the object-table loop).</summary>
+    // True if any marker type is enabled — skips the object-table loop entirely otherwise.
     public bool ShowAnyMarkers =>
         ShowPlayers || ShowEnemies || ShowNpcs || ShowGatheringNodes || ShowTreasure || ShowAetherytes;
 

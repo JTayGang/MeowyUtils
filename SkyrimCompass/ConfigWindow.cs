@@ -8,12 +8,8 @@ namespace SkyrimCompass;
 public sealed class ConfigWindow : Window
 {
     private readonly Plugin plugin;
-
-    // "Add new override" form state — not persisted, resets on commit.
-    private PlayerIconOverride _newOverride = new();
-
-    // Dropdown selection — not persisted (applied colors themselves are).
-    private int _selectedThemeIndex = 0;
+    private PlayerIconOverride _newOverride = new();   // "add new override" form state — not persisted
+    private int _selectedThemeIndex = 0;               // theme dropdown selection — not persisted
 
     public ConfigWindow(Plugin plugin)
         : base("Skyrim Compass Settings##skyrimcompasscfg",
@@ -66,55 +62,33 @@ public sealed class ConfigWindow : Window
     {
         if (!ImGui.BeginTabItem("Layout")) return false;
         bool changed = false;
-        float v; int iv;
 
-        iv = (int)cfg.CompassWidth;
-        if (ImGui.SliderInt("Width##w", ref iv, 200, 1400))
-        { cfg.CompassWidth = iv; changed = true; }
+        changed |= DrawSliderInt("Width##w",  200, 1400, () => (int)cfg.CompassWidth,  v => cfg.CompassWidth  = v);
+        changed |= DrawSliderInt("Height##h", 20,  80,   () => (int)cfg.CompassHeight, v => cfg.CompassHeight = v);
 
-        iv = (int)cfg.CompassHeight;
-        if (ImGui.SliderInt("Height##h", ref iv, 20, 80))
-        { cfg.CompassHeight = iv; changed = true; }
-
-        // Slider bounds track the live display size so the bar can be dragged
-        // anywhere on screen (and always stays fully visible) on any resolution.
-        var io = ImGui.GetIO();
-
+        // Y/X offset bounds track the live display size so the bar can be dragged anywhere
+        // on screen (and always stays fully visible) at any resolution.
+        var io   = ImGui.GetIO();
         int yMax = (int)MathF.Max(0f, io.DisplaySize.Y - cfg.CompassHeight);
-        iv = (int)cfg.YOffset;
-        if (ImGui.SliderInt("Y Offset (from top)##yo", ref iv, 0, yMax))
-        { cfg.YOffset = iv; changed = true; }
+        changed |= DrawSliderInt("Y Offset (from top)##yo", 0, yMax, () => (int)cfg.YOffset, v => cfg.YOffset = v);
 
         int xRange = (int)MathF.Max(0f, (io.DisplaySize.X - cfg.CompassWidth) * 0.5f);
-        iv = (int)cfg.XOffset;
-        if (ImGui.SliderInt("X Offset (from center)##xo", ref iv, -xRange, xRange))
-        { cfg.XOffset = iv; changed = true; }
+        changed |= DrawSliderInt("X Offset (from center)##xo", -xRange, xRange, () => (int)cfg.XOffset, v => cfg.XOffset = v);
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip(
-                "Shifts the compass left (negative) or right (positive) of center.\n" +
-                "Range auto-adjusts to your screen width so the bar stays fully on-screen.");
+            ImGui.SetTooltip("Shifts the compass left(-)/right(+) of center; range auto-adjusts\n" +
+                              "to your screen width so the bar stays fully on-screen.");
 
         ImGui.Spacing();
 
-        iv = (int)cfg.VisibleDegrees;
-        if (ImGui.SliderInt("Visible Degrees##vd", ref iv, 30, 180))
-        { cfg.VisibleDegrees = iv; changed = true; }
+        changed |= DrawSliderInt("Visible Degrees##vd", 30, 180, () => (int)cfg.VisibleDegrees, v => cfg.VisibleDegrees = v);
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip(
-                "How many degrees are visible in the LINEAR centre zone.\n" +
-                "The lens effect extends additional degrees beyond this at the edges.");
+            ImGui.SetTooltip("Degrees visible in the linear center zone. The lens effect adds more at the edges.");
 
-        v = cfg.LensStrength;
-        if (ImGui.SliderFloat("Lens Strength##ls", ref v, 1.0f, 3.0f))
-        { cfg.LensStrength = v; changed = true; }
+        changed |= DrawSliderFloat("Lens Strength##ls", 1.0f, 3.0f, () => cfg.LensStrength, v => cfg.LensStrength = v);
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip(
-                "Fisheye/lens distortion at the edges. 1.0 = linear (no effect).\n" +
-                "1.6 ≈ 60%% more degrees at the edges, compressed. 2.0 ≈ double.");
+            ImGui.SetTooltip("Fisheye distortion at the edges. 1.0 = linear (off). 2.0 ≈ double the edge degrees.");
 
-        v = cfg.FontScale;
-        if (ImGui.SliderFloat("Font Scale##fs", ref v, 0.5f, 2.5f))
-        { cfg.FontScale = v; changed = true; }
+        changed |= DrawSliderFloat("Font Scale##fs", 0.5f, 2.5f, () => cfg.FontScale, v => cfg.FontScale = v);
 
         ImGui.Spacing();
 
@@ -123,8 +97,7 @@ public sealed class ConfigWindow : Window
 
         bool hdc = cfg.HideDuringCutscenes;
         if (DrawToggle("Hide during cutscenes", ref hdc,
-            "Skips drawing the compass entirely while the camera is locked to a\n" +
-            "cutscene (story cutscenes, skippable cinematics, and group pose) —\n" +
+            "Skips drawing during story cutscenes, skippable cinematics, and group pose —\n" +
             "there's nothing to navigate to while the camera isn't yours anyway."))
         { cfg.HideDuringCutscenes = hdc; changed = true; }
 
@@ -134,29 +107,23 @@ public sealed class ConfigWindow : Window
 
         bool ucd = cfg.UseCameraDirection;
         if (DrawToggle("Use camera direction instead of character facing", ref ucd,
-            "On: the compass follows where your CAMERA is looking (third-person\n" +
-            "free camera, screenshots, sightseeing).\n" +
-            "Off: the compass follows your CHARACTER's facing, matching how\n" +
-            "Skyrim's compass behaves (recommended for combat/navigation)."))
+            "On: follows where your CAMERA looks (free camera, screenshots, sightseeing).\n" +
+            "Off: follows your CHARACTER's facing, like Skyrim's compass (recommended for combat)."))
         { cfg.UseCameraDirection = ucd; changed = true; }
 
         ImGui.Indent();
         ImGui.BeginDisabled(!cfg.UseCameraDirection);
         bool ucp = cfg.UseCameraPosition;
         if (DrawToggle("Also use camera location for distances##ucp", ref ucp,
-            "Measures entity bearings/distances from your CAMERA's position instead\n" +
-            "of your character's. Useful if you play heavily zoomed out or use a\n" +
-            "camera offset mod. Only takes effect while 'Use camera direction' above\n" +
-            "is also on."))
+            "Measures bearings/distances from your CAMERA's position instead of your character's.\n" +
+            "Useful zoomed way out or with a camera offset mod. Needs 'Use camera direction' above."))
         { cfg.UseCameraPosition = ucp; changed = true; }
         ImGui.EndDisabled();
         ImGui.Unindent();
 
         ImGui.Spacing();
         ImGui.TextDisabled("Rotation Offset  (set to 180 if N and S are swapped)");
-        iv = (int)cfg.RotationOffset;
-        if (ImGui.SliderInt("##rotoff", ref iv, -180, 180))
-        { cfg.RotationOffset = iv; changed = true; }
+        changed |= DrawSliderInt("##rotoff", -180, 180, () => (int)cfg.RotationOffset, v => cfg.RotationOffset = v);
 
         ImGui.EndTabItem();
         return changed;
@@ -274,27 +241,21 @@ public sealed class ConfigWindow : Window
         cfg.FateColor          = t.Fate;
     }
 
-    // ── General tab (bar colors + theme presets + detection range/fade curve — merged:
-    // both are cross-cutting settings that apply to every marker category rather than
-    // belonging to any one of them, and neither filled a full tab on its own) ─────────
+    // ── General tab (bar colors + theme presets + shared detection range/fade curve —
+    // cross-cutting settings that apply to every marker category, so they don't belong to
+    // any one tab, and neither filled a whole tab alone) ───────────────────────
 
     private bool DrawGeneralTab(Configuration cfg)
     {
         if (!ImGui.BeginTabItem("General")) return false;
         bool changed = false;
 
-        // Local helper avoids 5× repeated temp-variable pattern (properties can't be passed by ref).
-        void CE(string label, Vector4 val, Action<Vector4> set)
-        {
-            if (ImGui.ColorEdit4(label, ref val)) { set(val); changed = true; }
-        }
-
         ImGui.TextDisabled("Bar colors");
-        CE("Background##bgc",                        cfg.BackgroundColor,    v => cfg.BackgroundColor    = v);
-        CE("Border##bdc",                             cfg.BorderColor,        v => cfg.BorderColor        = v);
-        CE("Cardinal labels  (N / S / E / W)##cdc",  cfg.CardinalColor,      v => cfg.CardinalColor      = v);
-        CE("Intercardinal labels  (NE / SW …)##icc", cfg.IntercardinalColor, v => cfg.IntercardinalColor = v);
-        CE("Tick marks##tkc",                        cfg.TickColor,          v => cfg.TickColor          = v);
+        changed |= DrawColorEdit("Background##bgc",                        cfg.BackgroundColor,    v => cfg.BackgroundColor    = v);
+        changed |= DrawColorEdit("Border##bdc",                            cfg.BorderColor,        v => cfg.BorderColor        = v);
+        changed |= DrawColorEdit("Cardinal labels  (N / S / E / W)##cdc",  cfg.CardinalColor,      v => cfg.CardinalColor      = v);
+        changed |= DrawColorEdit("Intercardinal labels  (NE / SW …)##icc", cfg.IntercardinalColor, v => cfg.IntercardinalColor = v);
+        changed |= DrawColorEdit("Tick marks##tkc",                        cfg.TickColor,          v => cfg.TickColor          = v);
 
         ImGui.SetNextItemWidth(180);
         if (ImGui.Combo("Theme preset##colortheme", ref _selectedThemeIndex, ColorThemeNames, ColorThemeNames.Length))
@@ -303,44 +264,32 @@ public sealed class ConfigWindow : Window
             changed = true;
         }
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip(
-                "Overwrites every compass color in one click — the bar colors above,\n" +
-                "AND every marker category's color over in its own tab. Pick\n" +
-                "\"Original\" to restore defaults. Anything can still be hand-tweaked\n" +
-                "afterward — a theme is a starting point, not a locked-in mode.");
+            ImGui.SetTooltip("Overwrites every compass/marker color in one click. Pick \"Original\" to restore\n" +
+                              "defaults — colors can still be hand-tweaked after; a theme is a starting point.");
 
         ImGui.Spacing();
         ImGui.Separator();
         ImGui.Spacing();
 
         ImGui.TextDisabled("Detection range  (shared by every marker category, incl. FATEs — see FATEs tab for its multiplier)");
-        int md = (int)cfg.MaxMarkerDistance;
-        if (ImGui.SliderInt("yalms##maxd", ref md, 10, 200)) { cfg.MaxMarkerDistance = md; changed = true; }
+        changed |= DrawSliderInt("yalms##maxd", 10, 200, () => (int)cfg.MaxMarkerDistance, v => cfg.MaxMarkerDistance = v);
 
         ImGui.Spacing();
         ImGui.TextDisabled("Dot distance-fade curve");
 
-        float nz = cfg.DotNearZone;
-        if (ImGui.SliderFloat("Full opacity zone##nz", ref nz, 0.5f, 1.0f))
-        { cfg.DotNearZone = nz; changed = true; }
+        changed |= DrawSliderFloat("Full opacity zone##nz", 0.5f, 1.0f, () => cfg.DotNearZone, v => cfg.DotNearZone = v);
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip(
-                "Dots are fully opaque closer than this fraction of max range.\n" +
-                "1.00 = always opaque (disables distance fade).");
+            ImGui.SetTooltip("Dots are fully opaque closer than this fraction of max range;\n" +
+                              "1.00 = always opaque (disables the fade).");
 
-        float fz = cfg.DotFarZone;
-        if (ImGui.SliderFloat("Fade-to-zero zone##fz", ref fz, 0.0f, 0.5f))
-        { cfg.DotFarZone = fz; changed = true; }
+        changed |= DrawSliderFloat("Fade-to-zero zone##fz", 0.0f, 0.5f, () => cfg.DotFarZone, v => cfg.DotFarZone = v);
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip(
-                "Dots fade to invisible below this fraction of max range.\n" +
-                "0.00 = no fade-to-zero (dots stay at mid opacity until max range).");
+            ImGui.SetTooltip("Dots fade to invisible below this fraction of max range; 0.00 = no fade-to-zero\n" +
+                              "(dots stay at mid opacity until max range).");
 
-        float ma = cfg.DotMidAlpha;
-        if (ImGui.SliderFloat("Mid-range opacity##ma", ref ma, 0.0f, 1.0f))
-        { cfg.DotMidAlpha = ma; changed = true; }
+        changed |= DrawSliderFloat("Mid-range opacity##ma", 0.0f, 1.0f, () => cfg.DotMidAlpha, v => cfg.DotMidAlpha = v);
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Opacity of dots in the middle distance band. 0 = invisible, 1 = fully opaque.");
+            ImGui.SetTooltip("Opacity of dots in the middle distance band. 0 = invisible, 1 = opaque.");
 
         ImGui.EndTabItem();
         return changed;
@@ -364,7 +313,8 @@ public sealed class ConfigWindow : Window
         ImGui.SetNextItemWidth(68f);
         if (ImGui.InputInt($"##{idSuffix}id", ref iconId, 0, 0)) { ov.IconBaseId = Math.Max(0, iconId); changed = true; }
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Game icon base ID\n(e.g. 62007 Paladin, 60453 Aetheryte, 61802 FC emblem)\nBrowse all icons with: /xldata icons");
+            ImGui.SetTooltip("Game icon base ID (e.g. 62007 Paladin, 60453 Aetheryte, 61802 FC emblem).\n" +
+                              "Browse all icons with: /xldata icons");
         ImGui.SameLine();
 
         bool border = ov.ShowBorder;
@@ -372,8 +322,7 @@ public sealed class ConfigWindow : Window
         if (ImGui.IsItemHovered()) ImGui.SetTooltip("Draw a solid outer ring around the icon");
         ImGui.SameLine();
         ImGui.BeginDisabled(!ov.ShowBorder);
-        Vector4 bc = ov.BorderColor;
-        if (ImGui.ColorEdit4($"##{idSuffix}bc", ref bc, ColorPickerFlags)) { ov.BorderColor = bc; changed = true; }
+        changed |= DrawColorEdit($"##{idSuffix}bc", ov.BorderColor, v => ov.BorderColor = v, ColorPickerFlags);
         if (ImGui.IsItemHovered()) ImGui.SetTooltip("Border ring color");
         ImGui.EndDisabled();
         ImGui.SameLine();
@@ -381,11 +330,10 @@ public sealed class ConfigWindow : Window
         bool fill = ov.ShowFill;
         if (ImGui.Checkbox($"F##{idSuffix}f", ref fill)) { ov.ShowFill = fill; changed = true; }
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Draw an inward-fading fill behind the icon\n(same bloom effect as party role icon backgrounds)");
+            ImGui.SetTooltip("Inward-fading fill behind the icon (same effect as party role icon backgrounds)");
         ImGui.SameLine();
         ImGui.BeginDisabled(!ov.ShowFill);
-        Vector4 fc = ov.FillColor;
-        if (ImGui.ColorEdit4($"##{idSuffix}fc", ref fc, ColorPickerFlags)) { ov.FillColor = fc; changed = true; }
+        changed |= DrawColorEdit($"##{idSuffix}fc", ov.FillColor, v => ov.FillColor = v, ColorPickerFlags);
         if (ImGui.IsItemHovered()) ImGui.SetTooltip("Fill color");
         ImGui.EndDisabled();
         ImGui.SameLine();
@@ -393,10 +341,8 @@ public sealed class ConfigWindow : Window
         bool clip = ov.ClipToCircle;
         if (ImGui.Checkbox($"○##{idSuffix}circ", ref clip)) { ov.ClipToCircle = clip; changed = true; }
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip(
-                "Clip icon to a circle\n" +
-                "Rounds square icon textures to fit neatly inside the border ring.\n" +
-                "Uses ImGui's built-in rounded image rendering — no extra cost.");
+            ImGui.SetTooltip("Clips the icon to a circle so square textures fit neatly inside the border ring\n" +
+                              "(built-in rounded rendering — no extra cost).");
         ImGui.SameLine();
 
         float mul = ov.SizeMultiplier;
@@ -404,11 +350,9 @@ public sealed class ConfigWindow : Window
         if (ImGui.DragFloat($"##{idSuffix}mul", ref mul, 0.05f, 0.5f, 3.0f, "%.2fx"))
         { ov.SizeMultiplier = Math.Clamp(mul, 0.5f, 3.0f); changed = true; }
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip(
-                "Per-icon size multiplier (stacks on top of the global 1.5× padding compensation).\n" +
-                "1.0 = same apparent size as a party role icon.\n" +
-                "Drag right for icons with heavy transparent padding,\n" +
-                "drag left for icons with minimal padding that look oversized.");
+            ImGui.SetTooltip("Per-icon size multiplier on top of the global 1.5× padding compensation. 1.0 =\n" +
+                              "same apparent size as a party role icon; drag right for icons with heavy padding,\n" +
+                              "left for icons that look oversized.");
 
         return changed;
     }
@@ -426,38 +370,32 @@ public sealed class ConfigWindow : Window
 
         float prMin = cfg.PartyRoleIconMinSize, prMax = cfg.PartyRoleIconMaxSize;
         if (DrawSizeSliders(ref prMin, ref prMax, 50, 60, "pr", tooltip:
-            "Controls the size of EVERY player marker — hollow ring, solid friend\n" +
-            "dot, and party role icon below — together."))
+            "Controls the size of every player marker — hollow ring, solid friend dot, and\n" +
+            "party role icon below — together."))
         { cfg.PartyRoleIconMinSize = prMin; cfg.PartyRoleIconMaxSize = prMax; changed = true; }
 
         ImGui.Spacing();
 
         bool sfr = cfg.SolidFriendDots;
         if (DrawToggle("Solid dot for friends##sfr", ref sfr,
-            "Friends render as a solid filled dot instead of a hollow ring.\n" +
-            "Overridden by party role icons and named overrides below."))
+            "Friends render as a solid dot instead of a hollow ring — overridden by party\n" +
+            "role icons and named overrides below."))
         { cfg.SolidFriendDots = sfr; changed = true; }
 
         bool pri = cfg.ShowPartyRoleIcons;
         if (DrawToggle("Show job icon for party members##pri", ref pri,
-            "Party members show their class/job icon on a role-colored dot:\n" +
-            "Tank=blue, Healer=green, DPS=red. Takes priority over the friend\n" +
-            "dot and named overrides for anyone in your party (see the duty/PvP\n" +
-            "only option below). Uses the same size slider above as every other\n" +
-            "player marker."))
+            "Party members show their class/job icon on a role-colored dot (Tank=blue,\n" +
+            "Healer=green, DPS=red), taking priority over the friend dot and named\n" +
+            "overrides (see 'duty/PvP only' below). Shares the size slider above."))
         { cfg.ShowPartyRoleIcons = pri; changed = true; }
 
         ImGui.Indent();
         ImGui.BeginDisabled(!cfg.ShowPartyRoleIcons);
         bool priDuty = cfg.PartyRoleIconsOnlyInDuty;
         if (DrawToggle("Only in duty / PvP##pridonly", ref priDuty,
-            "Limits the job icon above to content where party composition\n" +
-            "actually matters: dungeons, trials, raids, alliance raids, deep\n" +
-            "dungeons, and PvP matches. Everywhere else (overworld, housing,\n" +
-            "just partied up with friends while sightseeing) party members fall\n" +
-            "through to their named override, then the friend/hollow dot below —\n" +
-            "same as anyone else.\n" +
-            "Off restores the old behaviour: always show for any party member."))
+            "Limits the job icon above to duty content and PvP, where party role actually\n" +
+            "matters. Elsewhere, party members fall through to their named override, then\n" +
+            "the friend/hollow dot below. Off = always show for any party member."))
         { cfg.PartyRoleIconsOnlyInDuty = priDuty; changed = true; }
         ImGui.EndDisabled();
         ImGui.Unindent();
@@ -469,13 +407,10 @@ public sealed class ConfigWindow : Window
 
         ImGui.TextDisabled("Named player overrides");
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip(
-                "Replace specific players' markers (by exact, case-insensitive name)\n" +
-                "with a custom game icon — browse IDs with: /xldata icons\n" +
-                "Party role icons still take priority for anyone in your party while\n" +
-                "those are shown (see 'Only in duty / PvP' above) — otherwise your\n" +
-                "override wins.\n" +
-                "B = border ring.  F = inward-fading fill (same as party job icons).");
+            ImGui.SetTooltip("Replace specific players' markers (exact, case-insensitive name) with a custom\n" +
+                              "icon — browse IDs with /xldata icons. Party role icons still win priority while\n" +
+                              "shown (see 'Only in duty / PvP' above); otherwise your override wins.\n" +
+                              "B = border ring.  F = inward-fading fill.");
 
         if (cfg.PlayerIconOverrides.Count == 0)
             ImGui.TextDisabled("  (no overrides — add one below)");
@@ -545,8 +480,8 @@ public sealed class ConfigWindow : Window
         ImGui.BeginDisabled(!cfg.ShowEnemies);
         bool eng = cfg.EnemiesOnlyIfEngaged;
         if (DrawToggle("Only show enemies I'm engaged with##eng", ref eng,
-            "Only shows hostiles that are targeting you or that you're targeting,\n" +
-            "instead of every hostile in range. Great for big pulls and hunt trains."))
+            "Only shows hostiles targeting you or that you're targeting, instead of every\n" +
+            "hostile in range — handy for big pulls and hunt trains."))
         { cfg.EnemiesOnlyIfEngaged = eng; changed = true; }
 
         float enMin = cfg.EnemyMinSize, enMax = cfg.EnemyMaxSize;
@@ -563,26 +498,18 @@ public sealed class ConfigWindow : Window
         bool    lbB = cfg.ShowLimitBreakGlow;
         Vector4 lbC = cfg.LimitBreakGlowColor;
         if (DrawEnableAndColor("lbglow", "Limit break glow (bar 1 color)", ref lbB, ref lbC,
-            "Skyrim-style: a glowing border creeps in from each end as limit break\n" +
-            "charges — one layer per bar, stacked as each fills. Bar 1 alone already\n" +
-            "reaches the whole border once full, so the number of full layers lit\n" +
-            "up tells you how many bars are charged at a glance."))
+            "A glowing border creeps in from each end as limit break charges — one layer\n" +
+            "per bar, stacked as each fills. Full layers lit = bars charged, at a glance."))
         { cfg.ShowLimitBreakGlow = lbB; cfg.LimitBreakGlowColor = lbC; changed = true; }
 
         ImGui.Indent();
         ImGui.BeginDisabled(!cfg.ShowLimitBreakGlow);
 
-        Vector4 lb2 = cfg.LimitBreakGlowColor2;
-        if (ImGui.ColorEdit4("Bar 2 color##lbc2", ref lb2))
-        { cfg.LimitBreakGlowColor2 = lb2; changed = true; }
-        Vector4 lb3 = cfg.LimitBreakGlowColor3;
-        if (ImGui.ColorEdit4("Bar 3 color##lbc3", ref lb3))
-        { cfg.LimitBreakGlowColor3 = lb3; changed = true; }
+        changed |= DrawColorEdit("Bar 2 color##lbc2", cfg.LimitBreakGlowColor2, v => cfg.LimitBreakGlowColor2 = v);
+        changed |= DrawColorEdit("Bar 3 color##lbc3", cfg.LimitBreakGlowColor3, v => cfg.LimitBreakGlowColor3 = v);
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip(
-                "Each layer waves at its own speed/phase — bars 2 and 3 are\n" +
-                "deliberately detuned from bar 1 and each other so the three\n" +
-                "never ripple in lockstep. Meant to look chaotic at a full break.");
+            ImGui.SetTooltip("Each layer waves at its own speed so bars 2/3 never ripple in lockstep with\n" +
+                              "bar 1 or each other — meant to look chaotic at a full break.");
 
         ImGui.EndDisabled();
         ImGui.Unindent();
@@ -593,52 +520,41 @@ public sealed class ConfigWindow : Window
 
         bool tbB = cfg.ShowTargetBar;
         if (DrawToggle("Target Health Bar", ref tbB,
-            "Skyrim-style name + HP readout for your current target, docked directly\n" +
-            "beneath the compass. Fill color follows the hostile/friendly scheme below;\n" +
-            "background, border and name text reuse the compass's own colors up in the\n" +
-            "General tab so the two always match."))
+            "Name + HP readout for your target, docked beneath the compass. Fill follows\n" +
+            "the hostile/friendly scheme below; background/border/text reuse the compass's\n" +
+            "own General-tab colors so the two always match."))
         { cfg.ShowTargetBar = tbB; changed = true; }
 
         ImGui.Indent();
         ImGui.BeginDisabled(!cfg.ShowTargetBar);
 
-        float twf = cfg.TargetBarWidthFraction;
-        if (ImGui.SliderFloat("Width  (fraction of compass)##tbwf", ref twf, 0.3f, 1.0f))
-        { cfg.TargetBarWidthFraction = twf; changed = true; }
-
-        int tbh = (int)cfg.TargetBarHeight;
-        if (ImGui.SliderInt("Bar thickness##tbh", ref tbh, 6, 30))
-        { cfg.TargetBarHeight = tbh; changed = true; }
-
-        float tfs = cfg.TargetBarFontScale;
-        if (ImGui.SliderFloat("Name font scale##tbfs", ref tfs, 0.5f, 2.5f))
-        { cfg.TargetBarFontScale = tfs; changed = true; }
+        changed |= DrawSliderFloat("Width  (fraction of compass)##tbwf", 0.3f, 1.0f,
+            () => cfg.TargetBarWidthFraction, v => cfg.TargetBarWidthFraction = v);
+        changed |= DrawSliderInt("Bar thickness##tbh", 6, 30, () => (int)cfg.TargetBarHeight, v => cfg.TargetBarHeight = v);
+        changed |= DrawSliderFloat("Name font scale##tbfs", 0.5f, 2.5f,
+            () => cfg.TargetBarFontScale, v => cfg.TargetBarFontScale = v);
 
         bool lvl = cfg.ShowTargetLevel;
         if (DrawToggle("Show target level##tblvl", ref lvl)) { cfg.ShowTargetLevel = lvl; changed = true; }
 
         bool shd = cfg.ShowTargetBarShield;
         if (DrawToggle("Show shield overlay##tbshd", ref shd,
-            "A light sheen over the shielded portion of the bar whenever your target\n" +
-            "has an active damage shield (Sacred Soil, Reprisal-style debuffs, etc.)."))
+            "A light sheen over the shielded portion of the bar when your target has an\n" +
+            "active damage shield (Sacred Soil, etc.)."))
         { cfg.ShowTargetBarShield = shd; changed = true; }
 
         bool ribbons = cfg.ShowTargetBarRibbons;
         if (DrawToggle("Show name ribbons##tbrib", ref ribbons,
-            "Two glowing ribbons -- the same flowing technique as the Limit Break glow,\n" +
-            "reused -- flying outward from the name's flanking ornaments (left endcap to\n" +
-            "the left, right endcap to the right). Colored to match the border above."))
+            "Two glowing ribbons (reusing the Limit Break glow technique) flying outward\n" +
+            "from the name's flanking ornaments, colored to match the border above."))
         { cfg.ShowTargetBarRibbons = ribbons; changed = true; }
 
         ImGui.Spacing();
-        Vector4 tbhc = cfg.TargetBarHostileColor;
-        if (ImGui.ColorEdit4("Hostile##tbhc", ref tbhc, ColorPickerFlags)) { cfg.TargetBarHostileColor = tbhc; changed = true; }
-        Vector4 tbfc = cfg.TargetBarFriendlyColor;
-        if (ImGui.ColorEdit4("Friendly##tbfc", ref tbfc, ColorPickerFlags)) { cfg.TargetBarFriendlyColor = tbfc; changed = true; }
+        changed |= DrawColorEdit("Hostile##tbhc", cfg.TargetBarHostileColor, v => cfg.TargetBarHostileColor = v, ColorPickerFlags);
+        changed |= DrawColorEdit("Friendly##tbfc", cfg.TargetBarFriendlyColor, v => cfg.TargetBarFriendlyColor = v, ColorPickerFlags);
 
         ImGui.BeginDisabled(!cfg.ShowTargetBarShield);
-        Vector4 tbsc = cfg.TargetBarShieldColor;
-        if (ImGui.ColorEdit4("Shield overlay##tbsc", ref tbsc, ColorPickerFlags)) { cfg.TargetBarShieldColor = tbsc; changed = true; }
+        changed |= DrawColorEdit("Shield overlay##tbsc", cfg.TargetBarShieldColor, v => cfg.TargetBarShieldColor = v, ColorPickerFlags);
         ImGui.EndDisabled();
 
         ImGui.EndDisabled();
@@ -650,9 +566,8 @@ public sealed class ConfigWindow : Window
 
         bool totB = cfg.ShowTargetOfTargetBar;
         if (DrawToggle("Target-of-target", ref totB,
-            "A smaller readout beneath the target bar showing who or what YOUR target\n" +
-            "has itself targeted — FF14's target-of-target, restyled to match. Hidden\n" +
-            "automatically whenever that's nobody, or your target itself."))
+            "Shows who/what YOUR target has itself targeted — FF14's target-of-target,\n" +
+            "restyled. Hidden when that's nobody, or your target itself."))
         { cfg.ShowTargetOfTargetBar = totB; changed = true; }
 
         ImGui.Indent();
@@ -660,14 +575,12 @@ public sealed class ConfigWindow : Window
 
         bool aggro = cfg.HighlightIfTargetingMe;
         if (DrawToggle("Highlight if targeting me##aggro", ref aggro,
-            "When your target's target is YOU, this tier lights up in a dedicated\n" +
-            "warning color instead of the usual friendly color and shows your own HP —\n" +
-            "so aggro is impossible to miss out of the corner of your eye."))
+            "When your target's target is YOU, this tier lights up in a warning color\n" +
+            "and shows your own HP — so aggro is hard to miss out of the corner of your eye."))
         { cfg.HighlightIfTargetingMe = aggro; changed = true; }
 
         ImGui.BeginDisabled(!cfg.HighlightIfTargetingMe);
-        Vector4 aw = cfg.AggroWarningColor;
-        if (ImGui.ColorEdit4("Warning color##aggroc", ref aw, ColorPickerFlags)) { cfg.AggroWarningColor = aw; changed = true; }
+        changed |= DrawColorEdit("Warning color##aggroc", cfg.AggroWarningColor, v => cfg.AggroWarningColor = v, ColorPickerFlags);
         ImGui.EndDisabled();
 
         ImGui.EndDisabled();
@@ -691,43 +604,39 @@ public sealed class ConfigWindow : Window
         ImGui.BeginDisabled(!cfg.ShowNpcs);
         bool tgt = cfg.NpcsOnlyIfTargetable;
         if (DrawToggle("Hide non-targetable \"ghost\" NPCs##tgt", ref tgt,
-            "Filters out inert placeholder NPCs the game keeps in its object table\n" +
-            "even when nothing's actually there — e.g. an empty chocobo stable slot\n" +
-            "in housing. Recommended to leave this on."))
+            "Filters out placeholder NPCs the game tracks even when nothing's there\n" +
+            "(e.g. an empty chocobo stable slot). Recommended to leave on."))
         { cfg.NpcsOnlyIfTargetable = tgt; changed = true; }
 
         bool qIcon = cfg.ShowNpcQuestIcons;
         if (DrawToggle("Show real quest marker icons##qicon", ref qIcon,
-            "NPCs with an active quest marker (MSQ, side quest \"!\", blue quest,\n" +
-            "in-progress \"?\", etc.) show that exact icon instead of a plain dot."))
+            "NPCs with an active quest marker (MSQ, side quest \"!\", in-progress \"?\", etc.)\n" +
+            "show that exact icon instead of a plain dot."))
         { cfg.ShowNpcQuestIcons = qIcon; changed = true; }
 
         bool mIcon = cfg.ShowMenderIcons;
         if (DrawToggle("Show real Mender icon##micon", ref mIcon,
-            "Real icon for Mender NPCs (gear repair vendors). Detected by job\n" +
-            "title, checked in English regardless of your client's language —\n" +
-            "works the same on EN/DE/FR/JA. Shares the size sliders below."))
+            "Real icon for Mender NPCs (gear repair vendors), matched in English\n" +
+            "regardless of client language. Shares the size sliders below."))
         { cfg.ShowMenderIcons = mIcon; changed = true; }
 
         bool sIcon = cfg.ShowShopIcons;
         if (DrawToggle("Show real Shop/Trader icon##sicon", ref sIcon,
-            "Real icon for Shop/Trader NPCs (\"Merchant\", \"Vendor\", \"Trader\",\n" +
-            "etc). Same English-regardless-of-client-language matching as\n" +
-            "Mender above, and shares the same size sliders."))
+            "Real icon for Shop/Trader NPCs (\"Merchant\", \"Vendor\", etc), matched the same\n" +
+            "way as Mender above and sharing its size sliders."))
         { cfg.ShowShopIcons = sIcon; changed = true; }
 
         bool ftIcon = cfg.ShowFastTravelIcons;
         if (DrawToggle("Fast Travel##fticon", ref ftIcon,
-            "Real icon for Fast Travel NPCs — ferry skippers, airship/other\n" +
-            "ticketers, and Chocobo Keeps/Falcon Porters (different icon per\n" +
-            "type, one toggle). Same English-regardless-of-client-language\n" +
-            "matching as Mender above."))
+            "Real icon for ferry skippers, airship/other ticketers, and Chocobo\n" +
+            "Keeps/Falcon Porters (different icon per type, one toggle). Matched\n" +
+            "the same way as Mender above."))
         { cfg.ShowFastTravelIcons = ftIcon; changed = true; }
 
         float qMin = cfg.NpcQuestIconMinSize, qMax = cfg.NpcQuestIconMaxSize;
         if (DrawSizeSliders(ref qMin, ref qMax, 50, 60, "q", tooltip:
-            "Controls the size of EVERY NPC marker — all icons above AND the\n" +
-            "plain dot shown when none of those apply."))
+            "Controls the size of every NPC marker — all icons above and the plain dot\n" +
+            "shown when none apply."))
         { cfg.NpcQuestIconMinSize = qMin; cfg.NpcQuestIconMaxSize = qMax; changed = true; }
 
         ImGui.EndDisabled();
@@ -751,8 +660,8 @@ public sealed class ConfigWindow : Window
         ImGui.BeginDisabled(!cfg.ShowGatheringNodes);
         bool gTgt = cfg.GatheringOnlyIfTargetable;
         if (DrawToggle("Hide non-targetable \"ghost\" nodes##gtgt", ref gTgt,
-            "Filters out depleted or not-yet-spawned nodes the game keeps in its\n" +
-            "object table even when nothing's currently interactable there."))
+            "Filters out depleted or not-yet-spawned nodes the game still tracks even\n" +
+            "when nothing's interactable there."))
         { cfg.GatheringOnlyIfTargetable = gTgt; changed = true; }
 
         bool gIcon = cfg.ShowGatheringIcons;
@@ -790,16 +699,16 @@ public sealed class ConfigWindow : Window
 
         float trMin = cfg.TreasureMinSize, trMax = cfg.TreasureMaxSize;
         if (DrawSizeSliders(ref trMin, ref trMax, 50, 60, "tr", tooltip:
-            "Controls the size of EVERY treasure marker — the chest icon below\n" +
-            "AND the plain dot fallback."))
+            "Controls the size of every treasure marker — the chest icon below and the\n" +
+            "plain dot fallback."))
         { cfg.TreasureMinSize = trMin; cfg.TreasureMaxSize = trMax; changed = true; }
 
         ImGui.Spacing();
 
         bool trIcon = cfg.ShowTreasureIcons;
         if (DrawToggle("Show real chest icon##tricon", ref trIcon,
-            "No game-data sheet exposes a chest's visual type from its BaseId,\n" +
-            "so every coffer currently shows the same icon (below)."))
+            "No game-data sheet exposes a chest's visual type from its BaseId, so every\n" +
+            "coffer shows the same icon (below)."))
         { cfg.ShowTreasureIcons = trIcon; changed = true; }
 
         ImGui.Indent();
@@ -810,9 +719,8 @@ public sealed class ConfigWindow : Window
         if (ImGui.InputInt("Icon ID##triconid", ref trIconId, 0, 0))
         { cfg.TreasureIconId = Math.Max(0, trIconId); changed = true; }
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip(
-                "Game icon ID shown for every treasure coffer — 60354 / 60355 / 60356\n" +
-                "are three known treasure-chest icon variants.");
+            ImGui.SetTooltip("Game icon ID for every treasure coffer — 60354/60355/60356 are known\n" +
+                              "chest-icon variants.");
 
         ImGui.EndDisabled();
         ImGui.Unindent();
@@ -839,9 +747,8 @@ public sealed class ConfigWindow : Window
 
         bool showShards = cfg.ShowAethernetShards;
         if (DrawToggle("Show Aethernet shards##aethshards", ref showShards,
-            "Aethernet shards are the smaller waypoints in housing wards, the\n" +
-            "Firmament, etc, as opposed to a city's one main aetheryte. Off\n" +
-            "shows only main aetherytes."))
+            "Aethernet shards are the smaller waypoints in housing wards, the Firmament,\n" +
+            "etc — as opposed to a city's one main aetheryte. Off shows only main ones."))
         { cfg.ShowAethernetShards = showShards; changed = true; }
 
         bool aIcon = cfg.ShowAetheryteIcons;
@@ -851,19 +758,17 @@ public sealed class ConfigWindow : Window
 
         float aMin = cfg.AetheryteIconMinSize, aMax = cfg.AetheryteIconMaxSize;
         if (DrawSizeSliders(ref aMin, ref aMax, 50, 60, "a", tooltip:
-            "Controls the size of EVERY aetheryte marker — the real icon above\n" +
-            "AND the plain dot shown when icons are off or a texture fails to load."))
+            "Controls the size of every aetheryte marker — the icon above and the plain\n" +
+            "dot shown when icons are off or fail to load."))
         { cfg.AetheryteIconMinSize = aMin; cfg.AetheryteIconMaxSize = aMax; changed = true; }
 
         string shardName = cfg.AethernetShardName;
         if (ImGui.InputText("Aethernet shard name##shardname", ref shardName, 64))
         { cfg.AethernetShardName = shardName; changed = true; }
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip(
-                "A word in every Aethernet shard's name, in your game's language.\n" +
-                "Matched as a substring, so \"Aethernet\" catches \"Ul'dah Aethernet\n" +
-                "Shard\", \"Limsa Lominsa Aethernet Shard\", etc. all at once. A real\n" +
-                "aetheryte that doesn't match is assumed to be a main aetheryte.");
+            ImGui.SetTooltip("A word in every Aethernet shard's name, in your game's language — matched\n" +
+                              "as a substring, so \"Aethernet\" catches all shard names at once. Non-matching\n" +
+                              "aetherytes are assumed to be main ones.");
 
         ImGui.EndDisabled();
         ImGui.Unindent();
@@ -884,23 +789,19 @@ public sealed class ConfigWindow : Window
         ImGui.Spacing();
 
         bool changed = DrawEnableAndColor("fates", "Show FATEs", ref fateB, ref fateC,
-            "Shows active or about-to-start FATEs using their real game icon.\n" +
-            "Sorts in the same pass as every other marker, so closer items\n" +
-            "always paint on top. Range = General tab's detection range ×\n" +
-            "the multiplier below. Works even with all other markers off.");
+            "Shows active/about-to-start FATEs with their real icon, sorted in the same\n" +
+            "pass as every marker (closer paints on top). Range = General tab's range ×\n" +
+            "the multiplier below. Works even with everything else off.");
         cfg.ShowFates = fateB; cfg.FateColor = fateC;
 
         ImGui.Indent();
         ImGui.BeginDisabled(!fateB);
 
-        float fateMul = cfg.FateDistanceMultiplier;
-        if (ImGui.SliderFloat("Distance multiplier##fatemul", ref fateMul, 0.5f, 5.0f, "%.1f×"))
-        { cfg.FateDistanceMultiplier = Math.Max(0.5f, fateMul); changed = true; }
+        changed |= DrawSliderFloat("Distance multiplier##fatemul", 0.5f, 5.0f,
+            () => cfg.FateDistanceMultiplier, v => cfg.FateDistanceMultiplier = MathF.Max(0.5f, v), "%.1f×");
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip(
-                "FATEs are detected up to (General tab's range × this value) yalms.\n" +
-                "At 2.5× with the default 100y range, FATEs appear up to 250y away —\n" +
-                "zone-wide, discoverable long before you're near them.");
+            ImGui.SetTooltip("FATEs are detected up to (General tab's range × this) yalms — at 2.5× with\n" +
+                              "the default 100y range, that's 250y: zone-wide, long before you're near them.");
         ImGui.TextDisabled($"Effective FATE range: {cfg.MaxMarkerDistance * cfg.FateDistanceMultiplier:F0} yalms");
 
         float fateMin = cfg.FateIconMinSize, fateMax = cfg.FateIconMaxSize;
@@ -952,5 +853,28 @@ public sealed class ConfigWindow : Window
         if (ImGui.SliderInt($"{maxLabel}##{idPrefix}max", ref mx, lo, maxHi)) { max = mx; changed = true; }
         if (tooltip != null && ImGui.IsItemHovered()) ImGui.SetTooltip(tooltip);
         return changed;
+    }
+
+    // Single-value slider bound to a property via getter/setter — avoids the temp-variable
+    // dance every call site would otherwise need (properties can't be passed by ref).
+    private static bool DrawSliderInt(string label, int lo, int hi, Func<int> get, Action<int> set)
+    {
+        int v = get();
+        if (ImGui.SliderInt(label, ref v, lo, hi)) { set(v); return true; }
+        return false;
+    }
+
+    private static bool DrawSliderFloat(string label, float lo, float hi, Func<float> get, Action<float> set, string? fmt = null)
+    {
+        float v = get();
+        bool changed = fmt is null ? ImGui.SliderFloat(label, ref v, lo, hi) : ImGui.SliderFloat(label, ref v, lo, hi, fmt);
+        if (changed) set(v);
+        return changed;
+    }
+
+    private static bool DrawColorEdit(string label, Vector4 val, Action<Vector4> set, ImGuiColorEditFlags flags = ImGuiColorEditFlags.None)
+    {
+        if (ImGui.ColorEdit4(label, ref val, flags)) { set(val); return true; }
+        return false;
     }
 }

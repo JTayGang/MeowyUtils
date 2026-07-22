@@ -23,22 +23,14 @@ public sealed class Plugin : IDalamudPlugin
     private readonly IFontHandle jupiterFontHandle;
 
     public Plugin(
-        IDalamudPluginInterface pluginInterface,
-        ICommandManager commandManager,
-        IClientState clientState,
-        IObjectTable objectTable,
-        ITargetManager targetManager,
-        INamePlateGui namePlateGui,
-        ITextureProvider textureProvider,
-        IFateTable fateTable,
-        ICondition condition,
-        IDataManager dataManager,
-        IPluginLog pluginLog)
+        IDalamudPluginInterface pluginInterface, ICommandManager commandManager,
+        IClientState clientState, IObjectTable objectTable, ITargetManager targetManager,
+        INamePlateGui namePlateGui, ITextureProvider textureProvider, IFateTable fateTable,
+        ICondition condition, IDataManager dataManager, IPluginLog pluginLog)
     {
         PluginInterface = pluginInterface;
         this.commandManager = commandManager;
         this.pluginLog = pluginLog;
-
         Config = pluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
 
         // FFXIV's ornate serif font — loaded once, shared with CompassHud.
@@ -50,16 +42,13 @@ public sealed class Plugin : IDalamudPlugin
             condition, dataManager, Config, pluginLog, jupiterFontHandle,
             pluginInterface.ConfigDirectory.FullName);
         configWindow = new ConfigWindow(this);
-
         windowSystem.AddWindow(configWindow);
 
         commandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Toggle the compass. '/compass on' / '/compass off' to set it " +
-                          "explicitly, '/compass config' for settings, " +
-                          "'/compass debug' to log nearby objects (/xllog to view), " +
-                          "'/compass dumpnpcs' to scan every NPC in the game's data for " +
-                          "un-categorized vendor-style titles (writes a file, see log for path)."
+            HelpMessage = "'/compass on'/'off' to set explicitly, 'config' for settings, 'debug' " +
+                          "to log nearby objects (/xllog to view), 'dumpnpcs' to scan all NPC data " +
+                          "for uncategorized vendor titles (writes a file, path noted in log)."
         });
 
         pluginInterface.UiBuilder.Draw += OnDraw;
@@ -78,19 +67,15 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnCommand(string command, string args)
     {
-        var trimmed = args.Trim();
-        if (trimmed.Equals("config", StringComparison.OrdinalIgnoreCase))
-            configWindow.IsOpen = !configWindow.IsOpen;
-        else if (trimmed.Equals("debug", StringComparison.OrdinalIgnoreCase))
-            compassHud.DumpNearbyObjects();
-        else if (trimmed.Equals("dumpnpcs", StringComparison.OrdinalIgnoreCase))
-            compassHud.DumpAllNpcTitles();
-        else if (trimmed.Equals("on", StringComparison.OrdinalIgnoreCase))
-            SetEnabled(true);
-        else if (trimmed.Equals("off", StringComparison.OrdinalIgnoreCase))
-            SetEnabled(false);
-        else
-            SetEnabled(!Config.Enabled);
+        switch (args.Trim().ToLowerInvariant())
+        {
+            case "config":   configWindow.IsOpen = !configWindow.IsOpen; break;
+            case "debug":    compassHud.DumpNearbyObjects(); break;
+            case "dumpnpcs": compassHud.DumpAllNpcTitles(); break;
+            case "on":       SetEnabled(true); break;
+            case "off":      SetEnabled(false); break;
+            default:         SetEnabled(!Config.Enabled); break;
+        }
     }
 
     // Idempotent: "on"/"on" twice in a row doesn't flip it back (unlike bare toggle).

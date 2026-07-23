@@ -1,188 +1,88 @@
-# Skyrim Compass — Dalamud Plugin for FFXIV
+# Skyrim Compass
 
-Renders a **Skyrim-style** horizontal compass at the top of
-your screen, aiming to replace and combine the minimap and various other hud elements into one while being aesthetic.
+A Dalamud plugin that replaces FFXIV's minimap, limit break bars, and target health bars with an immersive, Skyrim style compass strip.
 
----
+<p align="center">
+  <img src="images/hero.png" alt="Skyrim Compass in action" width="720">
+</p>
 
-DALAMUD REPO (same URL for every plugin in this repo — see the [repo root](../) for the full list):
+## Install
+
+Add this URL as a custom plugin repository in Dalamud (Settings > Experimental > Custom Plugin Repositories), then install **Skyrim Compass** from the plugin list.
+
 ```
 https://raw.githubusercontent.com/JTayGang/MeowyUtils/main/repo.json
-``` 
+```
+
+Same URL for every plugin in this repo. See the [repo root](../) for the full list.
 
 ---
 
 ## Features
 
-| | |
-|---|---|
-| 🧭 | Scrolling N / NE / E / SE / S / SW / W / NW labels with degree tick marks |
-| 🔴 | Enemy markers (with in-combat only option) |
-| 🔵 | Players, Friends, Party members with role/class, **Can also use any vanilla icons!** |
-| 🟢 | Gathering node markers (Mining / Botany) |
-| 🟡 | Treasure coffer markers |
-| 🩸 | Skyrim-style target health bar + name, docked right beneath the compass |
-| 🎯 | Target-of-target tier underneath that — FF14's ToT, restyled, with a dedicated warning color if it's targeting YOU |
-| ⚙️ | Fully configurable size, position, colours, visible arc, marker range, and more! |
+- Scrolling N / NE / E / SE / S / SW / W / NW compass with degree tick marks
+- Markers for players, enemies, NPCs, gathering nodes, treasure, aetherytes, and FATEs, using real game icons where available
+- Party role icons and per player named overrides
+- Skyrim style target health bar: name, level, shield overlay, and a damage flash on just the HP you lost
+- Target of target tier with its own warning color when it's targeting you
+- Limit break glow that creeps around the border as your gauge charges
+- 5 built in color themes, or customize every color yourself
 
----
-
-## Requirements
-
-- [XIVLauncher](https://goatcorp.github.io/) with Dalamud enabled (v14+)
-- **.NET 10 SDK 10.0.101 or later** — [download here](https://dotnet.microsoft.com/download/dotnet/10.0)
-- FFXIV installed and launched with Dalamud at least once
-
-> **Note:** Dalamud v14+ requires .NET 10. If `dotnet --version` prints `8.x` or `9.x`
-> you must install the .NET 10 SDK before building.
-
----
-
-## Building from Source
-
-### 1 — Install .NET 10 SDK
-
-Download **SDK 10.0.101** (or newer) from:
-<https://dotnet.microsoft.com/download/dotnet/10.0>
-
-Verify after installing:
-```cmd
-dotnet --version   # should print 10.x.x
-```
-
-### 2 — Set the `DALAMUD_HOME` environment variable
-
-Point it at the Dalamud *dev* directory (the folder that contains `Dalamud.dll`).
-The default XIVLauncher path is:
-
-```
-%APPDATA%\XIVLauncher\addon\Hooks\dev
-```
-
-Set it permanently (run once in a command prompt):
-
-```cmd
-setx DALAMUD_HOME "%APPDATA%\XIVLauncher\addon\Hooks\dev"
-```
-
-Restart your terminal or IDE after setting it.
-
-### 3 — Build
-
-```sh
-dotnet build -c Release
-```
-
-The `Dalamud.NET.Sdk` NuGet package is fetched automatically on first build — no
-manual DLL references needed.
-
-Output lands in `bin\Release\net10.0-windows\`.
-
-### 4 — Load in Dalamud
-
-**Option A — Dev plugin (recommended for testing)**
-
-1. Open XIVLauncher → ⚙ Dalamud Settings → *Experimental* tab.
-2. Add the full path to `bin\Release\net10.0-windows\` as a dev-plugin folder.
-3. Re-open the plugin installer and enable **Skyrim Compass**.
-
-**Option B — Manual copy**
-
-Copy `SkyrimCompass.dll` and `SkyrimCompass.json` into your Dalamud
-`devPlugins` folder (same *Experimental* tab lets you open it).
-
----
-
-## In-Game Usage
-
-| Command | Effect |
-|---|---|
-| `/compass` | Toggle compass on / off |
-| `/compass config` | Open the settings window |
-
-The settings window is also reachable from the Dalamud plugin list → ⚙ button.
+<p align="center">
+  <img src="images/markers.png" alt="Compass marker icons" width="47%">
+  <img src="images/target-bar.png" alt="Target and target-of-target bars" width="47%">
+</p>
 
 ---
 
 ## Configuration
 
-Open with `/compass config`.
+Open with `/compass config`. Settings are split across tabs (Layout, General, Players, Combat, NPCs, Gathering, Treasure, Aetherytes, FATEs), and every option has a hover tooltip explaining what it does.
 
-### Layout tab
-- **Width / Height** — size of the compass bar in screen pixels
-- **Y Offset** — distance from the top of the screen (slider range auto-scales to your screen height)
-- **X Offset** — distance left (negative) or right (positive) of horizontal center (slider range auto-scales to your screen width)
-- **Visible Degrees** — how wide a slice of the compass is shown (30°–180°)
-- **Font Scale** — scale the N/NE/E… label text
-- **Show numeric heading** — shows e.g. `045°` below the bar
-- **Rotation Offset** — fudge factor; set to **180** if North and South appear swapped
+<p align="center">
+  <img src="images/config.png" alt="Settings window" width="480">
+</p>
 
-### Colors tab
-Individually tune background, border, cardinal/intercardinal labels, and tick marks.
+---
 
-### Markers tab
-Toggle each entity category and choose its dot colour.  
-**Max distance** controls how far out (in yalms) entities are detected.
+## Commands
 
-### Combat tab
-- **Target Health Bar** — Skyrim-style name + HP readout for your current target,
-  docked directly beneath the compass so the two read as one HUD column. The bar
-  itself is an upside-down trapezoid (wide at the top, narrower at the bottom,
-  no end caps) spanning a little less than the full compass width. Fill colour
-  is just hostile vs. friendly (players and NPCs alike, colour-coded green —
-  no need to tell them apart on a health bar); background, border, and name
-  text reuse the compass's own colours from the General tab.
-  - **Width** — bar width as a fraction of the compass's own width
-  - **Bar thickness / Name font scale**
-  - **Show target level** — prefixes the name with `Lv90`-style text
-  - **Show shield overlay** — light sheen over the shielded portion of the bar
-    when your target has an active damage shield
-  - **Show name ribbons** — two glowing ribbons (the Limit Break glow's own
-    flowing technique, reused, including its per-layer timing) flying outward
-    from the name's flanking ornaments — left endcap to the left, right endcap
-    to the right — colour-matched to the border above rather than their own
-    separate setting.
-- **Target-of-target** — a smaller tier beneath the target bar showing who or
-  what your target has itself targeted (FF14's ToT, restyled). Hidden
-  automatically when that's nobody, or your target itself — both are noise, not
-  information. If your target is targeting **you**, this tier swaps to a
-  dedicated warning colour and shows your own HP instead, so aggro is
-  impossible to miss out of the corner of your eye.
+| Command | Effect |
+|---|---|
+| `/compass` | Toggle the compass on/off |
+| `/compass config` | Open settings |
+
+The settings window is also reachable from the Dalamud plugin list's gear icon.
+
+---
+
+## Building from source
+
+Needs the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) (10.0.101+) and XIVLauncher with Dalamud v15+ run at least once.
+
+1. Point `DALAMUD_HOME` at your Dalamud dev folder:
+   ```cmd
+   setx DALAMUD_HOME "%APPDATA%\XIVLauncher\addon\Hooks\dev"
+   ```
+2. Build:
+   ```sh
+   dotnet build -c Release
+   ```
+   Output lands in `bin\Release\net10.0-windows\`. The `Dalamud.NET.Sdk` package is fetched automatically, no manual DLL references needed.
+3. In XIVLauncher, open Dalamud Settings > Experimental, add that output folder as a dev plugin folder, then enable **Skyrim Compass** from the plugin installer.
 
 ---
 
 ## Troubleshooting
 
-**`System.Runtime` version mismatch error** → Install .NET SDK 10.0.101+.
-
-**`ImGuiNET not found`** → Make sure you're using the current `.csproj` (`Dalamud.NET.Sdk/15.0.0`, using
-the `Dalamud.Bindings.ImGui` namespace), not an old one with manual `<Reference>` tags or `using ImGuiNET;`.
-
-**N and S are swapped** → Layout tab → set *Rotation Offset* to `180`.
-
-**Compass doesn't appear** → Make sure the plugin is enabled (type `/compass`).
-
-**Build error: cannot find Dalamud.dll** → Confirm `DALAMUD_HOME` is set correctly
-and that XIVLauncher has been run at least once (so the `dev` folder is populated).
-
-**API level mismatch** → If Dalamud has updated since this was written, bump
-`Dalamud.NET.Sdk` to the latest version on NuGet and update `DalamudApiLevel`
-in `SkyrimCompass.json` to match.
-
----
-
-## How it works (briefly)
-
-- `IClientState.LocalPlayer.Rotation` gives the character's facing angle in radians
-  (0 = south, π = north in FFXIV's coordinate system).
-  We convert this to a standard compass bearing (0 = N, 90 = E).
-- `IObjectTable` supplies nearby entities; we compute each one's bearing from the
-  player via `atan2(dx, −dz)` and place a coloured dot on the compass.
-- Everything is drawn with `ImGui.GetForegroundDrawList()` so it sits above all
-  other UI without needing a dedicated window.
+- **N and S swapped**: Layout tab, set Rotation Offset to `180`.
+- **Compass not showing**: make sure it's enabled, run `/compass`.
+- **Build error, can't find Dalamud.dll**: confirm `DALAMUD_HOME` is set and XIVLauncher has been run at least once.
+- **`System.Runtime` version mismatch**: install .NET SDK 10.0.101 or later.
+- **API level mismatch after a Dalamud update**: bump `Dalamud.NET.Sdk` to the latest version and update `DalamudApiLevel` in `SkyrimCompass.json` to match.
 
 ---
 
 ## License
 
-MIT — do whatever you like with it.
+MIT. Do whatever you like with it.

@@ -33,6 +33,7 @@ public sealed class CompassHud : IDisposable
     private readonly ITextureProvider textureProvider;
     private readonly IFateTable fateTable;
     private readonly ICondition condition;
+    private readonly IGameGui gameGui;
     private readonly Configuration config;
     private readonly IPluginLog log;
     private readonly IFontHandle jupiterFont;
@@ -52,6 +53,17 @@ public sealed class CompassHud : IDisposable
     private float displayedTargetHpFrac = 1f;
     private float lastRawTargetHpFrac   = 1f;
     private float targetBarFlashAlpha   = 0f;
+
+    // Context-menu fade (frame-persistent): the game's own right-click menu is a native addon
+    // that always renders on top of anything ImGui draws — there's no way to put our bar
+    // "behind" it in the usual z-order sense. Rather than hard-cutting the bar away while the
+    // menu is open, we ease its alpha down (and back up on close), so it dims instead of
+    // vanishing outright. Same eased-lerp technique as the LB fade-out, just alpha instead of
+    // geometry.
+    private bool  contextMenuWasOpen;
+    private float contextMenuFadeChangeTime = -1000f;  // "now" when open/closed last flipped
+    private const float ContextMenuFadeSeconds = 0.15f;
+    private const float ContextMenuDimmedAlpha = 0.33f; // floor alpha while a menu is open
 
     // GameObjectId → nameplate marker icon ID, refreshed every nameplate update. 0/absent = none.
     private readonly Dictionary<ulong, int> npcMarkerIcons = new();
@@ -127,6 +139,7 @@ public sealed class CompassHud : IDisposable
         ITextureProvider textureProvider,
         IFateTable fateTable,
         ICondition condition,
+        IGameGui gameGui,
         IDataManager dataManager,
         Configuration config,
         IPluginLog log,
@@ -140,6 +153,7 @@ public sealed class CompassHud : IDisposable
         this.textureProvider = textureProvider;
         this.fateTable       = fateTable;
         this.condition       = condition;
+        this.gameGui         = gameGui;
         this.config          = config;
         this.log             = log;
         this.jupiterFont     = jupiterFont;
@@ -233,12 +247,51 @@ public sealed class CompassHud : IDisposable
 
         RenderBar(dl, bx, by, bw, bh, heading, player, originPos, now);
 
+        // The context menu opened from a right click is a native game addon, rendered by the
+        // game itself — completely separate from this ImGui overlay. Everything this plugin
+        // draws goes through the ABSOLUTE foreground draw list, which the game always
+        // composites on top of its own UI, menu included. There's no z-order knob that puts an
+        // ImGui draw-list call "behind" a native addon, so instead of hard-hiding the bar while
+        // the menu is open, we ease its alpha down toward ContextMenuDimmedAlpha (and back up
+        // on close) — it dims rather than vanishing outright.
+        float barAlpha = UpdateContextMenuFadeAlpha(now);
+
         float hudBottomY = by + bh;
         if (config.ShowTargetBar)
-            hudBottomY = RenderTargetBar(dl, bx, by, bw, bh, now);
+            hudBottomY = RenderTargetBar(dl, bx, by, bw, bh, now, barAlpha);
         if (config.ShowTargetOfTargetBar)
-            RenderTargetOfTargetBar(dl, bx, hudBottomY, bw, player, now);
+            RenderTargetOfTargetBar(dl, bx, hudBottomY, bw, player, now, barAlpha);
     }
+
+    // Eases the target/ToT bar alpha toward ContextMenuDimmedAlpha while a native context menu
+    // is open, and back to 1 once it closes. Call once per frame — updates the persisted
+    // transition-start time whenever the open/closed state flips, then returns the current
+    // point along that transition (SmoothStep-eased, matching the LB fade-out's technique).
+    private float UpdateContextMenuFadeAlpha(float now)
+    {
+        bool menuOpenNow = IsVanillaContextMenuOpen();
+        if (menuOpenNow != contextMenuWasOpen)
+        {
+            contextMenuFadeChangeTime = now;
+            contextMenuWasOpen        = menuOpenNow;
+        }
+
+        float t = ContextMenuFadeSeconds > 0f
+            ? Math.Clamp((now - contextMenuFadeChangeTime) / ContextMenuFadeSeconds, 0f, 1f)
+            : 1f;
+
+        float fromAlpha = menuOpenNow ? 1f : ContextMenuDimmedAlpha;
+        float toAlpha   = menuOpenNow ? ContextMenuDimmedAlpha : 1f;
+        return Lerp(fromAlpha, toAlpha, SmoothStep(t));
+    }
+
+    // True while the game's own right-click context menu — or its submenu, e.g. hovering
+    // "Emote >" — is open. Checked once per frame so both bars fade together; we can't tell
+    // from the addon alone which of them a given menu belongs to, and only one menu can be
+    // open at a time anyway, so treating "a menu is open" as one shared flag is both simpler
+    // and safer than guessing.
+    private bool IsVanillaContextMenuOpen() =>
+        gameGui.GetAddonByName("ContextMenu").IsVisible || gameGui.GetAddonByName("AddonContextSub").IsVisible;
 
     // ── Lens projection ──
 
@@ -636,15 +689,15 @@ public sealed class CompassHud : IDisposable
 
     // Returns the Y coordinate the bar finished at, so the target-of-target tier below
     // knows where to dock — regardless of whether an HP row was drawn at all.
-    private float RenderTargetBar(ImDrawListPtr dl, float compassX, float compassY, float compassW, float compassH, float now)
+    private float RenderTargetBar(ImDrawListPtr dl, float compassX, float compassY, float compassW, float compassH, float now, float barAlpha)
     {
         float fallbackY = compassY + compassH;
         var   target    = targetManager.Target;
         if (target == null) return fallbackY;
 
-        uint borderCol = C(config.BorderColor);
-        uint bgCol     = C(config.BackgroundColor);
-        uint nameCol   = C(config.CardinalColor);
+        uint borderCol = WithAlpha(C(config.BorderColor),    barAlpha);
+        uint bgCol     = WithAlpha(C(config.BackgroundColor), barAlpha);
+        uint nameCol   = WithAlpha(C(config.CardinalColor),   barAlpha);
 
         float cx  = compassX + compassW * 0.5f;
         float tbW = compassW * Math.Clamp(config.TargetBarWidthFraction, 0.1f, 1f);
@@ -657,7 +710,7 @@ public sealed class CompassHud : IDisposable
         // whole layout in two).
         bool  isChara = target is ICharacter;
         float tbH     = isChara ? MathF.Max(4f, config.TargetBarHeight) : 0f;
-        uint  fillCol = TargetBarFillColor(target);
+        uint  fillCol = WithAlpha(TargetBarFillColor(target), barAlpha);
 
         // Upside-down trapezoid: wide at the top, narrower at the bottom. `taper` is tied to
         // the bar's own thickness so the slant reads the same regardless of width, capped
@@ -720,7 +773,7 @@ public sealed class CompassHud : IDisposable
                 {
                     var (hTl, hTr, hBr, hBl) = TrapezoidSliceQuad(
                         tbX + inset, tbY + inset, tbW - inset * 2f, innerH, innerTaper, flashLo, flashHi);
-                    dl.AddQuadFilled(hTl, hTr, hBr, hBl, WithAlpha(0xFFFFFFFFu, targetBarFlashAlpha * 0.5f));
+                    dl.AddQuadFilled(hTl, hTr, hBr, hBl, WithAlpha(0xFFFFFFFFu, targetBarFlashAlpha * 0.5f * barAlpha));
                 }
             }
 
@@ -729,12 +782,12 @@ public sealed class CompassHud : IDisposable
                 float shieldFrac = Math.Clamp(chara.ShieldPercentage / 100f, 0f, 1f);
                 var (sTl, sTr, sBr, sBl) = TrapezoidFillQuad(
                     tbX + inset, tbY + inset, tbW - inset * 2f, innerH, innerTaper, shieldFrac, fromRight: true);
-                dl.AddQuadFilled(sTl, sTr, sBr, sBl, C(config.TargetBarShieldColor));
+                dl.AddQuadFilled(sTl, sTr, sBr, sBl, WithAlpha(C(config.TargetBarShieldColor), barAlpha));
             }
 
             // Subtle top bevel, matching the compass bar's own highlight line (top edge is
             // full-width regardless of taper, since only the bottom narrows).
-            dl.AddLine(V(tbX + 1f, tbY + 1f), V(tbX + tbW - 1f, tbY + 1f), 0x1AFFFFFFu, 1f);
+            dl.AddLine(V(tbX + 1f, tbY + 1f), V(tbX + tbW - 1f, tbY + 1f), WithAlpha(0x1AFFFFFFu, barAlpha), 1f);
             dl.AddQuad(bTl, bTr, bBr, bBl, borderCol, 1.5f);
         }
 
@@ -754,7 +807,7 @@ public sealed class CompassHud : IDisposable
 
         // Shared black shadow/backing for the name, endcaps, and ribbons below — grounds all
         // three against the game world, like the compass's own background panel does.
-        uint shadowCol = 0xCC000000u;
+        uint shadowCol = WithAlpha(0xCC000000u, barAlpha);
 
         ReadOnlySpan<(float dx, float dy)> textOutline =
         [
@@ -822,6 +875,17 @@ public sealed class CompassHud : IDisposable
             }
         }
 
+        // ── Right click → vanilla target context menu (Attack, Trade, Mark, Focus Target...) ──
+        // Everything above is drawn straight to the foreground draw list, which has no ImGui
+        // item behind it and therefore no hover/click state of its own — this is what actually
+        // wires the bar up to input. Region covers the HP trapezoid, the name row, and the
+        // flanking ornaments (which can sit outside the trapezoid's own width).
+        float clickTop    = tbY;
+        float clickBottom = nameY + tsz.Y;
+        float clickLeft   = MathF.Min(tbX, leftOrnX - shHW);
+        float clickRight  = MathF.Max(tbX + tbW, rightOrnX + shHW);
+        HandleTargetFrameRightClick(V(clickLeft, clickTop), V(clickRight, clickBottom), target);
+
         return nameY + tsz.Y;
     }
 
@@ -834,7 +898,7 @@ public sealed class CompassHud : IDisposable
     // to a dedicated warning color with a slow pulse, since noticing aggro at a glance
     // is exactly the kind of thing a HUD should be good at.
     private void RenderTargetOfTargetBar(
-        ImDrawListPtr dl, float compassX, float anchorY, float compassW, IPlayerCharacter player, float now)
+        ImDrawListPtr dl, float compassX, float anchorY, float compassW, IPlayerCharacter player, float now, float barAlpha)
     {
         var target = targetManager.Target;
         var tot    = target?.TargetObject;
@@ -849,8 +913,8 @@ public sealed class CompassHud : IDisposable
         float tbY = anchorY + 4f;
         float tbH = MathF.Max(3f, config.TargetBarHeight * scale);
 
-        uint borderCol = C(config.BorderColor);
-        uint bgCol     = C(config.BackgroundColor);
+        uint borderCol = WithAlpha(C(config.BorderColor),     barAlpha);
+        uint bgCol     = WithAlpha(C(config.BackgroundColor), barAlpha);
         uint fillCol   = targetingMe ? C(config.AggroWarningColor) : TargetBarFillColor(tot);
 
         // Same HP-bar treatment as the main bar above — including, deliberately, when
@@ -869,7 +933,7 @@ public sealed class CompassHud : IDisposable
             {
                 float pulse = targetingMe ? 0.82f + 0.18f * MathF.Sin(now * 5f) : 1f;
                 dl.AddRectFilled(V(tbX + 1.5f, tbY + 1.5f), V(tbX + 1.5f + fillW, tbY + tbH - 1.5f),
-                    WithAlpha(fillCol, pulse));
+                    WithAlpha(fillCol, pulse * barAlpha));
             }
             dl.AddRect(V(tbX, tbY), V(tbX + tbW, tbY + tbH), borderCol, 0f, ImDrawFlags.None, 1.2f);
         }
@@ -884,9 +948,89 @@ public sealed class CompassHud : IDisposable
         float  tx    = cx - tsz.X * 0.5f;
         float  textY = tbY + tbH + 1f;
 
-        uint textCol = targetingMe ? C(config.AggroWarningColor) : WithAlpha(C(config.IntercardinalColor), 0.9f);
-        dl.AddText(font, fontSize, V(tx + 1f, textY + 1f), 0x99000000u, label);
+        uint textCol = WithAlpha(targetingMe ? C(config.AggroWarningColor) : WithAlpha(C(config.IntercardinalColor), 0.9f), barAlpha);
+        dl.AddText(font, fontSize, V(tx + 1f, textY + 1f), WithAlpha(0x99000000u, barAlpha), label);
         dl.AddText(font, fontSize, V(tx,      textY),      textCol,     label);
+
+        // Same right-click → vanilla context menu handling as the main target bar above,
+        // for whatever your target has itself targeted (or, in the targetingMe case, for
+        // yourself — right-clicking your own portrait/frame is valid in vanilla too).
+        float totLeft  = MathF.Min(tbX, tx);
+        float totRight = MathF.Max(tbX + tbW, tx + tsz.X);
+        HandleTargetFrameRightClick(V(totLeft, tbY), V(totRight, textY + tsz.Y), tot);
+    }
+
+    // ── Target frame input — the piece the draw-list rendering above never had ──
+    // Everything in RenderTargetBar/RenderTargetOfTargetBar draws straight to the foreground
+    // draw list (dl.AddQuadFilled/AddText/etc.), which is pure pixels as far as ImGui is
+    // concerned — no window, no item, so no hover or click state is ever generated for it.
+    // That's the entire reason right-click did nothing: there was nothing listening.
+
+    /// <summary>
+    /// Treats [rectMin, rectMax] as the target frame's hit region for this frame.
+    ///
+    /// The `false` passed to IsMouseHoveringRect is load-bearing, not cosmetic: its default
+    /// (`clip: true`) clips the tested rect against ImGui's *current window*, and "current
+    /// window" only means something inside an active Begin()/End() pair. This file never opens
+    /// one — everything renders straight to the foreground draw list — so with clipping left on,
+    /// the hit-test was being clipped against whatever window last happened to be active
+    /// elsewhere in the frame (Dalamud's own UI, another plugin, anything), which has nothing to
+    /// do with where this bar actually sits on screen. That's why the first pass at this
+    /// compiled fine and even looked right on read-through, but never actually fired: the rect
+    /// was being silently clipped away before the mouse-position check ever ran.
+    /// </summary>
+    private void HandleTargetFrameRightClick(Vector2 rectMin, Vector2 rectMax, IGameObject obj)
+    {
+        if (!ImGui.IsMouseHoveringRect(rectMin, rectMax, false)) return;
+
+        // Keep the click here rather than letting it also fall through to the game world
+        // underneath (open-world right-click-drag rotates the camera). Stored to a local
+        // first (matching how Draw() itself already uses GetIO()) rather than chained
+        // directly off GetIO() — ImGuiIOPtr is a struct, and mutating a property straight off
+        // a struct-returning method call isn't guaranteed to write back to anything real.
+        var io = ImGui.GetIO();
+        io.WantCaptureMouse = true;
+        if (!ImGui.IsMouseClicked(ImGuiMouseButton.Right)) return;
+
+        log.Info($"[SkyrimCompass debug] Target frame right-clicked ({obj.Name.TextValue}) — opening context menu.");
+        TryOpenVanillaTargetContextMenu(obj);
+    }
+
+    /// <summary>
+    /// Opens the same context menu a right click on a vanilla target/ToT frame would (Attack,
+    /// Trade, Mark, Focus Target, and whatever else the game decides fits this object) — this
+    /// native call is what actually builds and shows that menu; the game does the rest. Fully
+    /// qualified throughout because Dalamud.Game.ClientState.Objects.Types (already imported in
+    /// this file for IGameObject/ICharacter/etc.) has its own internal class also named
+    /// GameObject, which would collide with FFXIVClientStructs' GameObject if both were `using`.
+    /// Logs (rather than silently returning) on each failure case below — if the click-detected
+    /// line above ever shows in /xllog but the menu still doesn't appear, whichever of these
+    /// fires next tells us exactly which native call came back null.
+    /// </summary>
+    private unsafe void TryOpenVanillaTargetContextMenu(IGameObject obj)
+    {
+        if (obj.Address == IntPtr.Zero)
+        {
+            log.Info("[SkyrimCompass debug] Target's Address was zero — can't open context menu.");
+            return;
+        }
+
+        var agentModule = FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentModule.Instance();
+        if (agentModule == null)
+        {
+            log.Info("[SkyrimCompass debug] AgentModule.Instance() was null — can't open context menu.");
+            return;
+        }
+
+        var hudAgent = (FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentHUD*)
+            agentModule->GetAgentByInternalId(FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentId.Hud);
+        if (hudAgent == null)
+        {
+            log.Info("[SkyrimCompass debug] AgentHUD agent was null — can't open context menu.");
+            return;
+        }
+
+        hudAgent->OpenContextMenuFromTarget((FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)obj.Address);
     }
 
     // ── Unified marker + FATE render ──

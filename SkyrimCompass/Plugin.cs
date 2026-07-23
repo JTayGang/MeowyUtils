@@ -26,7 +26,7 @@ public sealed class Plugin : IDalamudPlugin
         IDalamudPluginInterface pluginInterface, ICommandManager commandManager,
         IClientState clientState, IObjectTable objectTable, ITargetManager targetManager,
         INamePlateGui namePlateGui, ITextureProvider textureProvider, IFateTable fateTable,
-        ICondition condition, IDataManager dataManager, IPluginLog pluginLog)
+        ICondition condition, IGameGui gameGui, IDataManager dataManager, IPluginLog pluginLog)
     {
         PluginInterface = pluginInterface;
         this.commandManager = commandManager;
@@ -39,7 +39,7 @@ public sealed class Plugin : IDalamudPlugin
 
         compassHud = new CompassHud(
             clientState, objectTable, targetManager, namePlateGui, textureProvider, fateTable,
-            condition, dataManager, Config, pluginLog, jupiterFontHandle,
+            condition, gameGui, dataManager, Config, pluginLog, jupiterFontHandle,
             pluginInterface.ConfigDirectory.FullName);
         configWindow = new ConfigWindow(this);
         windowSystem.AddWindow(configWindow);

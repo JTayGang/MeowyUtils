@@ -1,88 +1,58 @@
-# Skyrim Compass
+# MeowyUtils
 
-A Dalamud plugin that replaces FFXIV's minimap, limit break bars, and target health bars with an immersive, Skyrim style compass strip.
+A small collection of [Dalamud](https://github.com/goatcorp/Dalamud) plugins for FFXIV, formerly
+published as separate repos and now merged into one so there's a single place to grab any of
+them from.
 
-<p align="center">
-  <img src="images/hero.png" alt="Skyrim Compass in action" width="720">
-</p>
+| Plugin | What it does |
+|---|---|
+| [**Skyrim Compass**](./SkyrimCompass) | A Skyrim-style horizontal compass bar with cardinal directions, tick marks, and nearby entity markers (players, enemies, gathering nodes, treasure). |
+| [**StatusBridge**](./StatusBridge) | Mirrors your live Moodles and Loci statuses onto each other, so whichever sync plugin you use picks up a unified status regardless of which backend it natively reads. |
 
-## Install
+Each plugin has its own README (linked above) with full feature lists, requirements, and
+build/usage instructions specific to that plugin.
 
-Add this URL as a custom plugin repository in Dalamud (Settings > Experimental > Custom Plugin Repositories), then install **Skyrim Compass** from the plugin list.
+## Installing
+
+Add this repo to Dalamud's plugin installer.
 
 ```
 https://raw.githubusercontent.com/JTayGang/MeowyUtils/main/repo.json
 ```
 
-Same URL for every plugin in this repo. See the [repo root](../) for the full list.
-
----
-
-## Features
-
-- Scrolling N / NE / E / SE / S / SW / W / NW compass with degree tick marks
-- Markers for players, enemies, NPCs, gathering nodes, treasure, aetherytes, and FATEs, using real game icons where available
-- Party role icons and per player named overrides
-- Skyrim style target health bar: name, level, shield overlay, and a damage flash on just the HP you lost
-- Target of target tier with its own warning color when it's targeting you
-- Limit break glow that creeps around the border as your gauge charges
-- 5 built in color themes, or customize every color yourself
-
-<p align="center">
-  <img src="images/markers.png" alt="Compass marker icons" width="47%">
-  <img src="images/target-bar.png" alt="Target and target-of-target bars" width="47%">
-</p>
-
----
-
-## Configuration
-
-Open with `/compass config`. Settings are split across tabs (Layout, General, Players, Combat, NPCs, Gathering, Treasure, Aetherytes, FATEs), and every option has a hover tooltip explaining what it does.
-
-<p align="center">
-  <img src="images/config.png" alt="Settings window" width="480">
-</p>
-
----
-
-## Commands
-
-| Command | Effect |
-|---|---|
-| `/compass` | Toggle the compass on/off |
-| `/compass config` | Open settings |
-
-The settings window is also reachable from the Dalamud plugin list's gear icon.
-
----
+In-game: `/xlsettings` → **Experimental** → **Custom Plugin Repositories** → paste the URL above
+→ restart or reload the plugin installer. Both plugins will then show up in `/xlplugins.
 
 ## Building from source
 
-Needs the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) (10.0.101+) and XIVLauncher with Dalamud v15+ run at least once.
+Each plugin is a self-contained project, so building one doesn't require the other:
 
-1. Point `DALAMUD_HOME` at your Dalamud dev folder:
-   ```cmd
-   setx DALAMUD_HOME "%APPDATA%\XIVLauncher\addon\Hooks\dev"
-   ```
-2. Build:
-   ```sh
-   dotnet build -c Release
-   ```
-   Output lands in `bin\Release\net10.0-windows\`. The `Dalamud.NET.Sdk` package is fetched automatically, no manual DLL references needed.
-3. In XIVLauncher, open Dalamud Settings > Experimental, add that output folder as a dev plugin folder, then enable **Skyrim Compass** from the plugin installer.
+```
+dotnet build SkyrimCompass/SkyrimCompass.csproj -c Release
+dotnet build StatusBridge/StatusBridge.csproj -c Release
+```
 
----
+Or open `MeowyUtils.sln` in Visual Studio / Rider to work on both at once.
 
-## Troubleshooting
+## Repo layout
 
-- **N and S swapped**: Layout tab, set Rotation Offset to `180`.
-- **Compass not showing**: make sure it's enabled, run `/compass`.
-- **Build error, can't find Dalamud.dll**: confirm `DALAMUD_HOME` is set and XIVLauncher has been run at least once.
-- **`System.Runtime` version mismatch**: install .NET SDK 10.0.101 or later.
-- **API level mismatch after a Dalamud update**: bump `Dalamud.NET.Sdk` to the latest version and update `DalamudApiLevel` in `SkyrimCompass.json` to match.
-
----
+```
+MeowyUtils/
+├── repo.json              master list read by Dalamud — one entry per plugin
+├── MeowyUtils.sln         solution referencing both plugin projects
+├── SkyrimCompass/         plugin source + its own README
+└── StatusBridge/          plugin source + its own README
+```
 
 ## License
 
-MIT. Do whatever you like with it.
+MIT — see [LICENSE](./LICENSE). Applies to everything in this repo unless a subfolder says
+otherwise.
+
+---
+
+*This repo was previously named `SkyrimCompass` and held only that one plugin. GitHub
+automatically redirects the old URL (including raw file links) to this one, so existing
+installs of Skyrim Compass keep updating without any action needed — but if you're on the old
+custom-repo URL, switching to the one above is a good idea since it's the one that'll actually
+show StatusBridge too.*

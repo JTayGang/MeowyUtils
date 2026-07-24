@@ -66,8 +66,7 @@ public sealed class ConfigWindow : Window
         changed |= DrawSliderInt("Width##w",  200, 1400, () => (int)cfg.CompassWidth,  v => cfg.CompassWidth  = v);
         changed |= DrawSliderInt("Height##h", 20,  80,   () => (int)cfg.CompassHeight, v => cfg.CompassHeight = v);
 
-        // Y/X offset bounds track the live display size so the bar can be dragged anywhere
-        // on screen (and always stays fully visible) at any resolution.
+        // Y/X bounds track live display size so the bar stays fully on-screen at any resolution.
         var io   = ImGui.GetIO();
         int yMax = (int)MathF.Max(0f, io.DisplaySize.Y - cfg.CompassHeight);
         changed |= DrawSliderInt("Y Offset (from top)##yo", 0, yMax, () => (int)cfg.YOffset, v => cfg.YOffset = v);
@@ -241,9 +240,7 @@ public sealed class ConfigWindow : Window
         cfg.FateColor          = t.Fate;
     }
 
-    // ── General tab (bar colors + theme presets + shared detection range/fade curve —
-    // cross-cutting settings that apply to every marker category, so they don't belong to
-    // any one tab, and neither filled a whole tab alone) ───────────────────────
+    // ── General tab (bar colors, theme presets, shared detection range/fade — cross-cutting, doesn't belong to one tab) ──
 
     private bool DrawGeneralTab(Configuration cfg)
     {
@@ -297,8 +294,7 @@ public sealed class ConfigWindow : Window
 
     // ── Players tab ──────────────────────────────────────────────────────────
 
-    // One editable override row: name, icon ID, border/fill/clip/multiplier.
-    // Shared by existing entries and the pending "add new" form.
+    // One editable override row (name/icon/border/fill/clip/multiplier); shared by existing entries and the "add new" form.
     private static bool DrawOverrideRow(PlayerIconOverride ov, string idSuffix, float nameWidth)
     {
         bool changed = false;
@@ -855,8 +851,7 @@ public sealed class ConfigWindow : Window
         return changed;
     }
 
-    // Single-value slider bound to a property via getter/setter — avoids the temp-variable
-    // dance every call site would otherwise need (properties can't be passed by ref).
+    // Slider bound to a getter/setter pair — avoids the temp-variable dance a property (can't pass by ref) would need.
     private static bool DrawSliderInt(string label, int lo, int hi, Func<int> get, Action<int> set)
     {
         int v = get();

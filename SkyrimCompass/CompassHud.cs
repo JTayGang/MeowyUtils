@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Numerics;
 using System.Reflection;
@@ -37,7 +36,6 @@ public sealed class CompassHud : IDisposable
     private readonly Configuration config;
     private readonly IPluginLog log;
     private readonly IFontHandle jupiterFont;
-    private readonly string dumpDirectory;   // /compass dumpnpcs output — plugin's own Dalamud config dir
 
     // Limit-break fade-out (frame-persistent): on a big gauge drop (LB used), geometry freezes
     // at lbFrozenProgress and a centre→edge wipe plays over LbFadeOutDuration.
@@ -54,12 +52,8 @@ public sealed class CompassHud : IDisposable
     private float lastRawTargetHpFrac   = 1f;
     private float targetBarFlashAlpha   = 0f;
 
-    // Context-menu fade (frame-persistent): the game's own right-click menu is a native addon
-    // that always renders on top of anything ImGui draws — there's no way to put our bar
-    // "behind" it in the usual z-order sense. Rather than hard-cutting the bar away while the
-    // menu is open, we ease its alpha down (and back up on close), so it dims instead of
-    // vanishing outright. Same eased-lerp technique as the LB fade-out, just alpha instead of
-    // geometry.
+    // Context-menu fade (frame-persistent): native menus always render on top of anything ImGui
+    // draws, so instead of hiding the bar while one's open, we ease alpha down/up around it.
     private bool  contextMenuWasOpen;
     private float contextMenuFadeChangeTime = -1000f;  // "now" when open/closed last flipped
     private const float ContextMenuFadeSeconds = 0.15f;
@@ -73,11 +67,9 @@ public sealed class CompassHud : IDisposable
     private readonly ExcelSheet<GatheringPointBase> gatheringPointBaseSheet;
     private readonly ExcelSheet<GatheringType>      gatheringTypeSheet;
 
-    // BaseId → English Title/Singular, cached permanently. Named NPCs (e.g. "Alistair") carry
-    // their vocation in Title with the personal name in Singular; unnamed flavor NPCs (e.g.
-    // "Independent Tinker") have an empty Title and the vocation word in Singular instead.
-    // npcSheet forces English regardless of client language, so keyword matching below works
-    // the same on every client — an NPC titled "Heiler" on German still resolves to "Mender".
+    // BaseId → English Title/Singular, cached permanently. Named NPCs carry vocation in Title
+    // with the personal name in Singular; unnamed flavor NPCs have empty Title, vocation in
+    // Singular instead. npcSheet forces English so keyword matching works on any client language.
     private readonly Dictionary<uint, string> titleCache = new();
     private readonly Dictionary<uint, string> singularCache = new();
     private readonly ExcelSheet<ENpcResident> npcSheet;
@@ -97,9 +89,8 @@ public sealed class CompassHud : IDisposable
         "Appraiser",
     };
     // Three icon variants share one enable checkbox (config.ShowFastTravelIcons) — see
-    // TryGetNpcIcon for which config.*IconId each maps to. Falcon Porters (Ishgard's aerial
-    // ropeway) work identically to Chocobo Keeps, sharing this keyword list/icon instead of
-    // getting their own category.
+    // TryGetNpcIcon for which config.*IconId each maps to. Falcon Porters share Chocobo Keep's
+    // keyword list/icon rather than getting their own category.
     private static readonly string[] SkipperKeywords  = { "Skipper", "Ferryman" };
     // Bare "Attendant" excluded — collides with unrelated titles (Lift/Ceremony/Rival Wings
     // Attendant) that aren't airship staff.
@@ -143,8 +134,7 @@ public sealed class CompassHud : IDisposable
         IDataManager dataManager,
         Configuration config,
         IPluginLog log,
-        IFontHandle jupiterFont,
-        string dumpDirectory)
+        IFontHandle jupiterFont)
     {
         this.clientState     = clientState;
         this.objectTable     = objectTable;
@@ -157,7 +147,6 @@ public sealed class CompassHud : IDisposable
         this.config          = config;
         this.log             = log;
         this.jupiterFont     = jupiterFont;
-        this.dumpDirectory   = dumpDirectory;
 
         gatheringPointSheet     = dataManager.GetExcelSheet<GatheringPoint>();
         gatheringPointBaseSheet = dataManager.GetExcelSheet<GatheringPointBase>();
@@ -247,13 +236,7 @@ public sealed class CompassHud : IDisposable
 
         RenderBar(dl, bx, by, bw, bh, heading, player, originPos, now);
 
-        // The context menu opened from a right click is a native game addon, rendered by the
-        // game itself — completely separate from this ImGui overlay. Everything this plugin
-        // draws goes through the ABSOLUTE foreground draw list, which the game always
-        // composites on top of its own UI, menu included. There's no z-order knob that puts an
-        // ImGui draw-list call "behind" a native addon, so instead of hard-hiding the bar while
-        // the menu is open, we ease its alpha down toward ContextMenuDimmedAlpha (and back up
-        // on close) — it dims rather than vanishing outright.
+        // See UpdateContextMenuFadeAlpha: native menus always render on top of ImGui, so we fade rather than hide.
         float barAlpha = UpdateContextMenuFadeAlpha(now);
 
         float hudBottomY = by + bh;
@@ -263,10 +246,8 @@ public sealed class CompassHud : IDisposable
             RenderTargetOfTargetBar(dl, bx, hudBottomY, bw, player, now, barAlpha);
     }
 
-    // Eases the target/ToT bar alpha toward ContextMenuDimmedAlpha while a native context menu
-    // is open, and back to 1 once it closes. Call once per frame — updates the persisted
-    // transition-start time whenever the open/closed state flips, then returns the current
-    // point along that transition (SmoothStep-eased, matching the LB fade-out's technique).
+    // Eases bar alpha toward ContextMenuDimmedAlpha while a native context menu is open, back to
+    // 1 on close. Call once/frame; SmoothStep-eased over ContextMenuFadeSeconds either direction.
     private float UpdateContextMenuFadeAlpha(float now)
     {
         bool menuOpenNow = IsVanillaContextMenuOpen();
@@ -285,11 +266,8 @@ public sealed class CompassHud : IDisposable
         return Lerp(fromAlpha, toAlpha, SmoothStep(t));
     }
 
-    // True while the game's own right-click context menu — or its submenu, e.g. hovering
-    // "Emote >" — is open. Checked once per frame so both bars fade together; we can't tell
-    // from the addon alone which of them a given menu belongs to, and only one menu can be
-    // open at a time anyway, so treating "a menu is open" as one shared flag is both simpler
-    // and safer than guessing.
+    // True while the native right-click menu or its submenu (e.g. hovering "Emote >") is open.
+    // Both bars fade together — only one menu can be open at a time, and we can't tell which bar it's for anyway.
     private bool IsVanillaContextMenuOpen() =>
         gameGui.GetAddonByName("ContextMenu").IsVisible || gameGui.GetAddonByName("AddonContextSub").IsVisible;
 
@@ -631,10 +609,9 @@ public sealed class CompassHud : IDisposable
         return lbTrackedProgress;
     }
 
-    // True in group content where party role actually matters: dungeons/trials/raids/alliance
-    // raids (BoundByDuty + its 56/95 duty-type variants, all three checked), deep dungeons
-    // (own flag since BoundByDuty flickers between floors), and any PvP match (IsPvP covers
-    // the Wolves' Den too). Gates ShowPartyRoleIcons when PartyRoleIconsOnlyInDuty is on.
+    // True in duty content where party role matters: dungeons/trials/raids (BoundByDuty + its
+    // 56/95 variants), deep dungeons (own flag — BoundByDuty flickers between floors), or PvP.
+    // Gates ShowPartyRoleIcons when PartyRoleIconsOnlyInDuty is on.
     private bool IsInDutyOrPvp() =>
         condition[ConditionFlag.BoundByDuty]   ||
         condition[ConditionFlag.BoundByDuty56] ||
@@ -643,26 +620,22 @@ public sealed class CompassHud : IDisposable
         clientState.IsPvP;
 
     // ── Target health bar (Skyrim-style name + HP for the current target) ──
-    // Docked directly beneath the compass, sharing its X position and a fractional width, so
-    // the two read as one continuous HUD column. See RenderTargetOfTargetBar below for the
-    // smaller "who is my target targeting" tier stacked underneath that.
+    // Docked beneath the compass, sharing its X position and a fractional width, so the two
+    // read as one HUD column. See RenderTargetOfTargetBar below for the ToT tier underneath.
 
-    // Only one distinction matters on a health bar: is it trying to kill you or not. A real
-    // hostile is a BattleNpc in the Combatant sub-kind; everyone else reads as Friendly —
-    // matching how the compass colors dots, so the bar never disagrees with the compass.
+    // Only one distinction matters here: hostile or not. Hostile = BattleNpc in the Combatant
+    // sub-kind; everyone else reads Friendly — matches how the compass colors dots.
     private uint TargetBarFillColor(IGameObject obj)
     {
         bool isHostile = obj is IBattleNpc bnpc && bnpc.BattleNpcKind == BattleNpcSubKind.Combatant;
         return isHostile ? C(config.TargetBarHostileColor) : C(config.TargetBarFriendlyColor);
     }
 
-    // Four corners of an upside-down trapezoid — full width `w` at the top (y), narrowed by
-    // `taper` on each side at the bottom (y+h) — representing a fill of fraction `frac`
-    // (clamped) growing from the left, or from the right when `fromRight` is set. frac=1
-    // returns the full outer shape regardless of `fromRight`, so this one helper covers the
-    // background/border (frac=1), the HP fill (fromRight=false) and the shield sheen
-    // (fromRight=true). Implemented as the [0, frac] / [1-frac, 1] edge cases of
-    // TrapezoidSliceQuad just below.
+    // Four corners of an upside-down trapezoid — full width `w` at top, narrowed by `taper` at
+    // bottom — for a fill of fraction `frac` growing from the left, or right if `fromRight`.
+    // frac=1 gives the full outer shape either way, so one helper covers background/border
+    // (frac=1), HP fill (fromRight=false), and shield sheen (fromRight=true). Just the
+    // [0,frac]/[1-frac,1] edge cases of TrapezoidSliceQuad below.
     private static (Vector2 tl, Vector2 tr, Vector2 br, Vector2 bl) TrapezoidFillQuad(
         float x, float y, float w, float h, float taper, float frac, bool fromRight = false)
     {
@@ -745,14 +718,12 @@ public sealed class CompassHud : IDisposable
             var (bTl, bTr, bBr, bBl) = TrapezoidFillQuad(tbX, tbY, tbW, tbH, taper, 1f);
             dl.AddQuadFilled(bTl, bTr, bBr, bBl, bgCol);
 
-            // Fill/flash/shield inset a couple of px inside the outer shape so the border
-            // below doesn't sit directly on top of the fill's own edge. The inset box's
-            // taper is scaled down to match its own (shorter) height rather than reusing
-            // the outer taper as-is — the same absolute taper carved into a shorter box
-            // is a steeper slant, so the inner-vs-outer gap used to shrink to ~0 at the
-            // top and visibly widen by the bottom instead of staying even all the way
-            // around (the taper term cancels out of the top/bottom edges, which stay a
-            // flat `inset` apart regardless — it's only the slanted sides this affects).
+            // Fill/flash/shield inset a couple px inside the outer shape so the border doesn't
+            // sit on the fill's own edge. Inner taper is scaled to the inset box's own (shorter)
+            // height, not reused as-is — reusing the outer taper is a steeper slant on a shorter
+            // box, so the inner/outer gap would shrink to ~0 at top and widen at bottom instead
+            // of staying even (top/bottom edges stay a flat `inset` apart either way — only the
+            // slanted sides are affected).
             const float inset      = 2f;
             float       innerH     = tbH - inset * 2f;
             float       innerTaper = taper * (innerH / tbH);
@@ -760,11 +731,9 @@ public sealed class CompassHud : IDisposable
                 tbX + inset, tbY + inset, tbW - inset * 2f, innerH, innerTaper, displayedTargetHpFrac);
             dl.AddQuadFilled(fTl, fTr, fBr, fBl, fillCol);
 
-            // Flash only the sliver of HP that was just lost — between the true current
-            // fraction (rawFrac, already dropped) and the still-easing displayed fraction
-            // (yet to catch down to it) — instead of tinting the whole remaining bar white.
-            // The two converge as displayedTargetHpFrac eases down, so the sliver narrows
-            // to nothing on its own, independently of the alpha fade below.
+            // Flash only the sliver of HP just lost — between rawFrac (already dropped) and the
+            // still-easing displayedTargetHpFrac — not the whole remaining bar. The two converge
+            // as displayedTargetHpFrac eases down, so the sliver self-narrows to nothing.
             if (targetBarFlashAlpha > 0f)
             {
                 float flashLo = MathF.Min(rawFrac, displayedTargetHpFrac);
@@ -833,28 +802,24 @@ public sealed class CompassHud : IDisposable
         DrawEndCapOutlines(dl, leftOrnX,  textCy, ornHW, ornHH, borderCol, ornHW * 0.28f);
         DrawEndCapOutlines(dl, rightOrnX, textCy, ornHW, ornHH, borderCol, ornHW * 0.28f);
 
-        // Name ribbons — the limit break glow's flowing-line technique, reused. Each ornament
-        // flies straight out to its own side at the name row's height (horizontal, not angled
-        // up to the bar — that would visibly touch the bar's bottom edge). A flourish flanking
-        // the name, not a connector.
+        // Name ribbons — limit break glow's flowing-line technique, reused. Each ornament flies
+        // horizontally out to its own side at the name row's height (angling up to the bar would
+        // visibly touch its bottom edge) — a flourish flanking the name, not a connector.
         if (isChara && config.ShowTargetBarRibbons)
         {
-            // Start from each ornament's outer tip, not its centre, so the ribbon reads as
-            // continuing the ornament's point rather than emerging from inside it.
+            // From each ornament's outer tip (not centre), so it reads as continuing the point.
             float leftEdgeX  = leftOrnX  - ornHW;
             float rightEdgeX = rightOrnX + ornHW;
 
             float ribbonInset  = MathF.Max(8f, tbW * 0.06f);
-            // Clamped so a long name (ornaments pushed wide) can't shrink or flip the ribbon's
-            // outward travel — always at least 24px past the ornament edge it starts from.
+            // Clamped so a long name (ornaments pushed wide) can't shrink/flip the outward travel.
             float ribbonLeftX  = MathF.Min(tbX + ribbonInset,       leftEdgeX  - 24f);
             float ribbonRightX = MathF.Max(tbX + tbW - ribbonInset, rightEdgeX + 24f);
             float glowT        = now;
 
-            // Each ribbon is two layers (black backing, then borderCol — no separate ribbon
-            // color), each with its own tMul/tOff like the limit break glow's three bars above
-            // (three of these four pairs reuse those exact values) — four independently-timed
-            // waves so backing/real and left/right never ripple in lockstep.
+            // Two layers per ribbon (black backing, then borderCol), each timed like the LB
+            // glow's three bars above (three of these four pairs reuse those exact tMul/tOff) —
+            // four independently-timed waves so backing/real and left/right never lockstep.
             (float edgeX, float targetX, uint col, float tMul, float tOff)[] ribbonLayers =
             {
                 (leftEdgeX,  ribbonLeftX,  shadowCol,  0.65f, 7.1f),
@@ -863,10 +828,8 @@ public sealed class CompassHud : IDisposable
                 (rightEdgeX, ribbonRightX, borderCol,  1.60f, 3.7f),
             };
 
-            // fillProgress=0 opens DrawGlowLine's tip-fade to its widest window (a constant
-            // fade-to-nothing at each ribbon's outer end) rather than the LB usage's "closes
-            // solid as the bar fills". Intensity is a flat 1f — no breathing pulse, unlike the
-            // limit break glow — so the ribbons hold a steady brightness.
+            // fillProgress=0: constant fade-to-nothing at each ribbon's outer end (not the LB
+            // usage's "closes solid as the bar fills"). Intensity flat 1f — steady, no pulse.
             foreach (var (edgeX, targetX, col, tMul, tOff) in ribbonLayers)
             {
                 float t = glowT * tMul + tOff;
@@ -875,11 +838,8 @@ public sealed class CompassHud : IDisposable
             }
         }
 
-        // ── Right click → vanilla target context menu (Attack, Trade, Mark, Focus Target...) ──
-        // Everything above is drawn straight to the foreground draw list, which has no ImGui
-        // item behind it and therefore no hover/click state of its own — this is what actually
-        // wires the bar up to input. Region covers the HP trapezoid, the name row, and the
-        // flanking ornaments (which can sit outside the trapezoid's own width).
+        // Right click → vanilla context menu (see HandleTargetFrameRightClick). Region covers
+        // the HP trapezoid, name row, and flanking ornaments (can sit outside the trapezoid's width).
         float clickTop    = tbY;
         float clickBottom = nameY + tsz.Y;
         float clickLeft   = MathF.Min(tbX, leftOrnX - shHW);
@@ -890,13 +850,8 @@ public sealed class CompassHud : IDisposable
     }
 
     // ── Target-of-target — FF14's ToT, restyled ──
-    // One more tier down the same column: who/what your target has itself targeted.
-    // Hidden outright when that's nobody, or your target itself (an idle mob usually
-    // just targets itself — echoing that back to you is noise, not information, and
-    // this whole plugin exists to cut noise). The one case worth calling out loudly
-    // instead of shrinking away is your target targeting YOU — that swaps this tier
-    // to a dedicated warning color with a slow pulse, since noticing aggro at a glance
-    // is exactly the kind of thing a HUD should be good at.
+    // Hidden when your target's target is nobody or itself (an idle mob targeting itself is
+    // noise). Exception: target targeting YOU swaps this tier to a warning color with a pulse.
     private void RenderTargetOfTargetBar(
         ImDrawListPtr dl, float compassX, float anchorY, float compassW, IPlayerCharacter player, float now, float barAlpha)
     {
@@ -960,36 +915,23 @@ public sealed class CompassHud : IDisposable
         HandleTargetFrameRightClick(V(totLeft, tbY), V(totRight, textY + tsz.Y), tot);
     }
 
-    // ── Target frame input — the piece the draw-list rendering above never had ──
-    // Everything in RenderTargetBar/RenderTargetOfTargetBar draws straight to the foreground
-    // draw list (dl.AddQuadFilled/AddText/etc.), which is pure pixels as far as ImGui is
-    // concerned — no window, no item, so no hover or click state is ever generated for it.
-    // That's the entire reason right-click did nothing: there was nothing listening.
+    // ── Target frame input — draw-list rendering above has no ImGui item, so no hover/click
+    // state generates on its own; this is what actually wires the bar up to input. ──
 
     /// <summary>
     /// Treats [rectMin, rectMax] as the target frame's hit region for this frame.
-    ///
-    /// The `false` passed to IsMouseHoveringRect is load-bearing, not cosmetic: its default
-    /// (`clip: true`) clips the tested rect against ImGui's *current window*, and "current
-    /// window" only means something inside an active Begin()/End() pair. This file never opens
-    /// one — everything renders straight to the foreground draw list — so with clipping left on,
-    /// the hit-test was being clipped against whatever window last happened to be active
-    /// elsewhere in the frame (Dalamud's own UI, another plugin, anything), which has nothing to
-    /// do with where this bar actually sits on screen. That's why the first pass at this
-    /// compiled fine and even looked right on read-through, but never actually fired: the rect
-    /// was being silently clipped away before the mouse-position check ever ran.
+    /// The `false` for IsMouseHoveringRect's clip param matters: its default (true) clips
+    /// against ImGui's *current window*, meaningless here since this file never opens one
+    /// (Begin/End) — left true, the rect silently clips to nothing and the click never fires.
     /// </summary>
     private void HandleTargetFrameRightClick(Vector2 rectMin, Vector2 rectMax, IGameObject obj)
     {
         if (!ImGui.IsMouseHoveringRect(rectMin, rectMax, false)) return;
 
-        // Keep the click here rather than letting it also fall through to the game world
-        // underneath (open-world right-click-drag rotates the camera). Stored to a local
-        // first (matching how Draw() itself already uses GetIO()) rather than chained
-        // directly off GetIO() — ImGuiIOPtr is a struct, and mutating a property straight off
-        // a struct-returning method call isn't guaranteed to write back to anything real.
+        // Local var, not chained off GetIO(): ImGuiIOPtr is a struct, and mutating a property
+        // straight off a struct-returning call isn't guaranteed to write back to anything real.
         var io = ImGui.GetIO();
-        io.WantCaptureMouse = true;
+        io.WantCaptureMouse = true;   // keep the click here, not the game world underneath (camera drag)
         if (!ImGui.IsMouseClicked(ImGuiMouseButton.Right)) return;
 
         log.Info($"[SkyrimCompass debug] Target frame right-clicked ({obj.Name.TextValue}) — opening context menu.");
@@ -997,15 +939,11 @@ public sealed class CompassHud : IDisposable
     }
 
     /// <summary>
-    /// Opens the same context menu a right click on a vanilla target/ToT frame would (Attack,
-    /// Trade, Mark, Focus Target, and whatever else the game decides fits this object) — this
-    /// native call is what actually builds and shows that menu; the game does the rest. Fully
-    /// qualified throughout because Dalamud.Game.ClientState.Objects.Types (already imported in
-    /// this file for IGameObject/ICharacter/etc.) has its own internal class also named
-    /// GameObject, which would collide with FFXIVClientStructs' GameObject if both were `using`.
-    /// Logs (rather than silently returning) on each failure case below — if the click-detected
-    /// line above ever shows in /xllog but the menu still doesn't appear, whichever of these
-    /// fires next tells us exactly which native call came back null.
+    /// Opens the same context menu a vanilla target/ToT frame's right click would (Attack,
+    /// Trade, Mark, Focus Target, etc.) — the game builds the actual menu from this. Fully
+    /// qualified rather than `using`: Dalamud.Game.ClientState.Objects.Types (imported here for
+    /// IGameObject etc.) has its own internal GameObject class that collides with
+    /// FFXIVClientStructs' GameObject. Each failure below logs which native call came back null.
     /// </summary>
     private unsafe void TryOpenVanillaTargetContextMenu(IGameObject obj)
     {
@@ -1156,10 +1094,7 @@ public sealed class CompassHud : IDisposable
                             float iconDrawSize = playerSize * IconSizeMultiplier;
                             float iconHalf     = iconDrawSize * 0.5f;
                             uint  roleCol      = GetRoleColor(partyChar);
-                            PushUnclip(dl);
-                            DrawOuterRing(dl, sx, cy, iconHalf, roleCol, alpha);
-                            DrawInwardShadow(dl, sx, cy, iconHalf, roleCol, alpha);
-                            PopUnclip(dl);
+                            DrawIconRingAndShadow(dl, sx, cy, iconHalf, roleCol, roleCol, alpha);
                             TryDrawIcon(dl, jobIconId, sx, cy, iconDrawSize, alpha);
                             drewJobIcon = true;
                         }
@@ -1187,15 +1122,10 @@ public sealed class CompassHud : IDisposable
                             float overrideSize = playerSize * IconSizeMultiplier;
                             float overrideHalf = overrideSize * 0.5f;
 
-                            if (nameOverride.ShowFill || nameOverride.ShowBorder)
-                            {
-                                PushUnclip(dl);
-                                if (nameOverride.ShowFill)
-                                    DrawInwardShadow(dl, sx, cy, overrideHalf, C(nameOverride.FillColor), alpha);
-                                if (nameOverride.ShowBorder)
-                                    DrawOuterRing(dl, sx, cy, overrideHalf, C(nameOverride.BorderColor), alpha);
-                                PopUnclip(dl);
-                            }
+                            DrawIconRingAndShadow(dl, sx, cy, overrideHalf,
+                                nameOverride.ShowBorder ? C(nameOverride.BorderColor) : null,
+                                nameOverride.ShowFill   ? C(nameOverride.FillColor)   : null,
+                                alpha);
 
                             bool drewOverrideIcon = nameOverride.IconBaseId > 0
                                 && TryDrawIcon(dl, nameOverride.IconBaseId, sx, cy, overrideSize,
@@ -1544,6 +1474,20 @@ public sealed class CompassHud : IDisposable
     private static void DrawOuterRing(ImDrawListPtr dl, float sx, float cy, float half, uint col, float alpha) =>
         dl.AddCircle(V(sx, cy), half + 1.0f, WithAlpha(col, alpha), 0, 3.0f);
 
+    // Optional ring + inward shadow around an icon position (role icon / override), bracketed
+    // by Push/PopUnclip so both can render past the bar's own clip edge. Null skips that layer.
+    // Ring and shadow occupy disjoint radii and never overlap, so draw order between them
+    // (unlike most layered draws in this file) doesn't affect the result.
+    private static void DrawIconRingAndShadow(
+        ImDrawListPtr dl, float sx, float cy, float half, uint? ringCol, uint? shadowCol, float alpha)
+    {
+        if (ringCol is null && shadowCol is null) return;
+        PushUnclip(dl);
+        if (shadowCol is { } sc) DrawInwardShadow(dl, sx, cy, half, sc, alpha);
+        if (ringCol   is { } rc) DrawOuterRing(dl, sx, cy, half, rc, alpha);
+        PopUnclip(dl);
+    }
+
     // 1.0 inside linearHalf, smoothsteps to 0 at extHalf. linearHalf lets labels fade earlier than ticks.
     private static float LensEdgeAlpha(float delta, float linearHalf, float extHalf)
     {
@@ -1607,10 +1551,8 @@ public sealed class CompassHud : IDisposable
                 bool   isTicketer    = IsTicketer(obj);
                 bool   isChocoboKeep = IsChocoboKeep(obj);
                 bool   isFastTravel  = isSkipper || isTicketer || isChocoboKeep;
-                // Mirrors TryGetNpcIcon's exact order/specificity — Skipper and Ticketer both
-                // outrank ChocoboKeep there, and each renders its own distinct icon, so this
-                // names the specific sub-type rather than a generic "FastTravel" that would
-                // hide which of the three icons actually shows.
+                // Mirrors TryGetNpcIcon's order (Skipper/Ticketer outrank ChocoboKeep there) —
+                // names the specific sub-type since each renders its own distinct icon.
                 string winner        = hasQuestIcon  ? $"QuestMarker(icon={qIconId})"
                                      : isMender      ? "Mender"
                                      : isShop        ? "Shop"
@@ -1646,72 +1588,5 @@ public sealed class CompassHud : IDisposable
             }
         }
         log.Info("[SkyrimCompass debug] Done. Use /xllog in-game to view the log window.");
-    }
-
-    // Scans every row in the ENpcResident sheet (not just nearby objects) and writes every
-    // distinct Title, plus every distinct Singular where Title is empty, to a text file, each
-    // already-recognized entry tagged [MATCHED] — a one-shot alternative to discovering
-    // vendor-shaped words one /compass debug encounter at a time.
-    public void DumpAllNpcTitles()
-    {
-        log.Info("[SkyrimCompass dumpnpcs] Scanning ENpcResident, this may take a moment...");
-
-        var titleCounts = new Dictionary<string, int>();
-        var singularCounts = new Dictionary<string, int>();
-        int rowCount = 0;
-
-        foreach (var row in npcSheet)
-        {
-            rowCount++;
-            string title = row.Title.ToString();
-            if (!string.IsNullOrEmpty(title))
-            {
-                titleCounts.TryGetValue(title, out int tc);
-                titleCounts[title] = tc + 1;
-                continue; // named NPC — Singular here is a personal name, not a vocation word
-            }
-
-            string singular = row.Singular.ToString();
-            if (!string.IsNullOrEmpty(singular))
-            {
-                singularCounts.TryGetValue(singular, out int sc);
-                singularCounts[singular] = sc + 1;
-            }
-        }
-
-        bool AlreadyMatched(string text) =>
-            HasKeyword(text, MenderKeywords) || HasKeyword(text, ShopKeywords) ||
-            HasKeyword(text, SkipperKeywords) || HasKeyword(text, TicketerKeywords) ||
-            HasKeyword(text, ChocoboKeepKeywords);
-
-        var lines = new List<string>
-        {
-            $"SkyrimCompass NPC vocabulary dump — {rowCount} ENpcResident rows scanned.",
-            "[MATCHED] = already caught by an existing keyword list; everything else is a candidate.",
-            "",
-            "=== Title (NPCs with a separate personal name, e.g. \"Alistair\" titled \"Mender\") ===",
-            "count | text",
-        };
-        foreach (var kv in titleCounts.OrderByDescending(p => p.Value).ThenBy(p => p.Key))
-            lines.Add($"{kv.Value,5} | {(AlreadyMatched(kv.Key) ? "[MATCHED] " : "")}{kv.Key}");
-
-        lines.Add("");
-        lines.Add("=== Singular, only where Title is empty (unnamed flavor NPCs, e.g. \"Independent Tinker\") ===");
-        lines.Add("count | text");
-        foreach (var kv in singularCounts.OrderByDescending(p => p.Value).ThenBy(p => p.Key))
-            lines.Add($"{kv.Value,5} | {(AlreadyMatched(kv.Key) ? "[MATCHED] " : "")}{kv.Key}");
-
-        try
-        {
-            Directory.CreateDirectory(dumpDirectory);
-            string path = Path.Combine(dumpDirectory, "npc-dump.txt");
-            File.WriteAllLines(path, lines);
-            log.Info($"[SkyrimCompass dumpnpcs] Wrote {titleCounts.Count} distinct titles and " +
-                     $"{singularCounts.Count} distinct singulars to: {path}");
-        }
-        catch (Exception ex)
-        {
-            log.Error(ex, "[SkyrimCompass dumpnpcs] Failed to write dump file");
-        }
     }
 }

@@ -6,8 +6,7 @@ using Dalamud.Plugin;
 
 namespace SkyrimCompass;
 
-// Per-player icon override. Case-insensitive name match swaps that player's marker for a
-// real game icon, falling back to a dot if the texture doesn't resolve.
+// Per-player icon override — case-insensitive name match; falls back to a dot if the texture doesn't resolve.
 [Serializable]
 public class PlayerIconOverride
 {
@@ -54,9 +53,8 @@ public class Configuration : IPluginConfiguration
     public bool  ShowPlayers        { get; set; } = true;
     public bool  SolidFriendDots    { get; set; } = true;   // friends render as solid dots (StatusFlags.Friend)
     public bool  ShowPartyRoleIcons { get; set; } = true;   // party job icon (ClassJob.RowId) + role-colored ring
-    // Restricts the job icon/role ring above to duty content + PvP, where role actually matters;
-    // elsewhere party members fall through to their named override, then the friend/hollow dot,
-    // same as anyone else. Off restores the old always-on behaviour.
+    // Restricts the job icon/ring above to duty content + PvP (where role matters); elsewhere
+    // members fall through to their named override, then the friend/hollow dot. Off = always-on.
     public bool  PartyRoleIconsOnlyInDuty { get; set; } = true;
     public float PartyRoleIconMinSize     { get; set; } = 10f;
     public float PartyRoleIconMaxSize     { get; set; } = 24f;
@@ -70,17 +68,15 @@ public class Configuration : IPluginConfiguration
     public float EnemyMinSize         { get; set; } = 6f;
     public float EnemyMaxSize         { get; set; } = 20f;
 
-    // Limit break glow — one glowing border layer per bar, each bar's own 0–100% progress
-    // creeping in from both ends, reaching the whole border once full. Stacked layers show
-    // charged bar count at a glance.
+    // Limit break glow — border glows in from both ends per bar's 0-100% progress; stacked
+    // layers show charged bar count at a glance.
     public bool    ShowLimitBreakGlow   { get; set; } = false;
     public Vector4 LimitBreakGlowColor  { get; set; } = new(1.00f, 0.65f, 0.10f, 0.95f);
     public Vector4 LimitBreakGlowColor2 { get; set; } = new(1.00f, 0.95f, 0.20f, 0.95f);   // bar 2, yellow by default
     public Vector4 LimitBreakGlowColor3 { get; set; } = new(1.00f, 1.00f, 1.00f, 0.95f);   // bar 3, white by default
 
-    // Target health bar (Skyrim-style name+HP for your current target) — docked directly
-    // beneath the compass, intentionally reusing Background/Border/Cardinal/IntercardinalColor
-    // above (ribbons reuse BorderColor too) so the pair always reads as one continuous HUD column.
+    // Target health bar (Skyrim-style name+HP) — docked beneath the compass, reusing
+    // Background/Border/Cardinal/IntercardinalColor above so the pair reads as one HUD column.
     public bool    ShowTargetBar          { get; set; } = true;
     public float   TargetBarWidthFraction { get; set; } = 0.875f;   // fraction of CompassWidth
     public float   TargetBarHeight        { get; set; } = 14f;
@@ -92,9 +88,8 @@ public class Configuration : IPluginConfiguration
     public Vector4 TargetBarFriendlyColor { get; set; } = new(0.30f, 0.75f, 0.35f, 0.95f);   // everyone else, players+NPCs alike
     public Vector4 TargetBarShieldColor   { get; set; } = new(0.80f, 0.92f, 1.00f, 0.55f);
 
-    // Target-of-target (FF14's ToT, restyled) — one tier further down: who/what your target
-    // has itself targeted. Auto-hidden when that's nobody or your target itself; the exception
-    // is your target targeting YOU, which gets a dedicated warning color instead of hiding.
+    // Target-of-target (FF14's ToT, restyled): auto-hidden if nobody/self, except targeting
+    // YOU, which gets a dedicated warning color instead of hiding.
     public bool    ShowTargetOfTargetBar  { get; set; } = true;
     public bool    HighlightIfTargetingMe { get; set; } = true;
     public Vector4 AggroWarningColor      { get; set; } = new(1.00f, 0.82f, 0.16f, 1.00f);
@@ -105,10 +100,8 @@ public class Configuration : IPluginConfiguration
     public float NpcQuestIconMinSize  { get; set; } = 8f;
     public float NpcQuestIconMaxSize  { get; set; } = 40f;
 
-    // Mender/Shop/Fast-Travel icons below all detect via ENpcResident's Title (named NPCs,
-    // vocation word in Title) or Singular (unnamed flavor NPCs, vocation word in Singular
-    // instead) — always read in English regardless of client language, so matching works the
-    // same on any game language. All three share the NpcQuestIcon size range above.
+    // Mender/Shop/Fast-Travel below detect via ENpcResident's Title or Singular (vocation word),
+    // always read in English regardless of client language. Share the NpcQuestIcon size range.
     public bool ShowMenderIcons { get; set; } = true;
     public int  MenderIconId    { get; set; } = 60434;
     public bool ShowShopIcons   { get; set; } = true;

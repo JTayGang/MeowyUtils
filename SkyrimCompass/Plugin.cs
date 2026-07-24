@@ -33,7 +33,7 @@ public sealed class Plugin : IDalamudPlugin
         this.pluginLog = pluginLog;
         Config = pluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
 
-        // FFXIV's ornate serif font — loaded once, shared with CompassHud.
+        // FFXIV's ornate serif font — loaded once, shared with CompassHud
         jupiterFontHandle = pluginInterface.UiBuilder.FontAtlas.NewGameFontHandle(
             new GameFontStyle(GameFontFamily.Jupiter, 18));
 
@@ -75,7 +75,7 @@ public sealed class Plugin : IDalamudPlugin
         }
     }
 
-    // Idempotent: "on"/"on" twice in a row doesn't flip it back (unlike bare toggle).
+    // Idempotent: "on"/"on" twice in a row doesnt flip it back (unlike bare toggle)
     private void SetEnabled(bool enabled)
     {
         Config.Enabled = enabled;

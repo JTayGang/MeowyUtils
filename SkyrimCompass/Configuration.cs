@@ -6,7 +6,7 @@ using Dalamud.Plugin;
 
 namespace SkyrimCompass;
 
-// Per-player icon override — case-insensitive name match; falls back to a dot if the texture doesn't resolve.
+// Per-player icon override — case-insensitive name match; falls back to a dot if the texture doesnt resolve
 [Serializable]
 public class PlayerIconOverride
 {
@@ -54,13 +54,13 @@ public class Configuration : IPluginConfiguration
     public bool  SolidFriendDots    { get; set; } = true;   // friends render as solid dots (StatusFlags.Friend)
     public bool  ShowPartyRoleIcons { get; set; } = true;   // party job icon (ClassJob.RowId) + role-colored ring
     // Restricts the job icon/ring above to duty content + PvP (where role matters); elsewhere
-    // members fall through to their named override, then the friend/hollow dot. Off = always-on.
+    // members fall through to their named override, then the friend/hollow dot. Off = always-on
     public bool  PartyRoleIconsOnlyInDuty { get; set; } = true;
     public float PartyRoleIconMinSize     { get; set; } = 10f;
     public float PartyRoleIconMaxSize     { get; set; } = 24f;
 
     // Named player overrides — checked after party role icons (when shown, see
-    // PartyRoleIconsOnlyInDuty), before the friend/ring fallback.
+    // PartyRoleIconsOnlyInDuty), before the friend/ring fallback
     public List<PlayerIconOverride> PlayerIconOverrides { get; set; } = new();
 
     public bool  ShowEnemies          { get; set; } = true;
@@ -69,14 +69,14 @@ public class Configuration : IPluginConfiguration
     public float EnemyMaxSize         { get; set; } = 20f;
 
     // Limit break glow — border glows in from both ends per bar's 0-100% progress; stacked
-    // layers show charged bar count at a glance.
+    // layers show charged bar count at a glance
     public bool    ShowLimitBreakGlow   { get; set; } = false;
     public Vector4 LimitBreakGlowColor  { get; set; } = new(1.00f, 0.65f, 0.10f, 0.95f);
     public Vector4 LimitBreakGlowColor2 { get; set; } = new(1.00f, 0.95f, 0.20f, 0.95f);   // bar 2, yellow by default
     public Vector4 LimitBreakGlowColor3 { get; set; } = new(1.00f, 1.00f, 1.00f, 0.95f);   // bar 3, white by default
 
     // Target health bar (Skyrim-style name+HP) — docked beneath the compass, reusing
-    // Background/Border/Cardinal/IntercardinalColor above so the pair reads as one HUD column.
+    // Background/Border/Cardinal/IntercardinalColor above so the pair reads as one HUD column
     public bool    ShowTargetBar          { get; set; } = true;
     public float   TargetBarWidthFraction { get; set; } = 0.875f;   // fraction of CompassWidth
     public float   TargetBarHeight        { get; set; } = 14f;
@@ -89,7 +89,7 @@ public class Configuration : IPluginConfiguration
     public Vector4 TargetBarShieldColor   { get; set; } = new(0.80f, 0.92f, 1.00f, 0.55f);
 
     // Target-of-target (FF14's ToT, restyled): auto-hidden if nobody/self, except targeting
-    // YOU, which gets a dedicated warning color instead of hiding.
+    // YOU, which gets a dedicated warning color instead of hiding
     public bool    ShowTargetOfTargetBar  { get; set; } = true;
     public bool    HighlightIfTargetingMe { get; set; } = true;
     public Vector4 AggroWarningColor      { get; set; } = new(1.00f, 0.82f, 0.16f, 1.00f);
@@ -101,13 +101,13 @@ public class Configuration : IPluginConfiguration
     public float NpcQuestIconMaxSize  { get; set; } = 40f;
 
     // Mender/Shop/Fast-Travel below detect via ENpcResident's Title or Singular (vocation word),
-    // always read in English regardless of client language. Share the NpcQuestIcon size range.
+    // always read in English regardless of client language. Share the NpcQuestIcon size range
     public bool ShowMenderIcons { get; set; } = true;
     public int  MenderIconId    { get; set; } = 60434;
     public bool ShowShopIcons   { get; set; } = true;
     public int  ShopIconId      { get; set; } = 60412;
     // Ferry skippers, airship/other ticketers, and Chocobo Keeps/Falcon Porters (Falcon
-    // Porters share Chocobo Keep's keywords and icon) — one toggle, three icons.
+    // Porters share Chocobo Keep's keywords and icon) — one toggle, three icons
     public bool ShowFastTravelIcons      { get; set; } = true;
     public int  FastTravelIconId         { get; set; } = 60456;   // skippers
     public int  FastTravelTicketerIconId { get; set; } = 60352;   // ticketers
@@ -153,7 +153,7 @@ public class Configuration : IPluginConfiguration
     public float   FateIconMinSize        { get; set; } = 20f;
     public float   FateIconMaxSize        { get; set; } = 32f;
 
-    // True if any marker type is enabled — skips the object-table loop entirely otherwise.
+    // True if any marker type is enabled — skips the object-table loop entirely otherwise
     public bool ShowAnyMarkers =>
         ShowPlayers || ShowEnemies || ShowNpcs || ShowGatheringNodes || ShowTreasure || ShowAetherytes;
 

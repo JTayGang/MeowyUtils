@@ -66,7 +66,7 @@ public sealed class ConfigWindow : Window
         changed |= DrawSliderInt("Width##w",  200, 1400, () => (int)cfg.CompassWidth,  v => cfg.CompassWidth  = v);
         changed |= DrawSliderInt("Height##h", 20,  80,   () => (int)cfg.CompassHeight, v => cfg.CompassHeight = v);
 
-        // Y/X bounds track live display size so the bar stays fully on-screen at any resolution.
+        // Y/X bounds track live display size so the bar stays fully on-screen at any resolution
         var io   = ImGui.GetIO();
         int yMax = (int)MathF.Max(0f, io.DisplaySize.Y - cfg.CompassHeight);
         changed |= DrawSliderInt("Y Offset (from top)##yo", 0, yMax, () => (int)cfg.YOffset, v => cfg.YOffset = v);
@@ -137,7 +137,7 @@ public sealed class ConfigWindow : Window
         public Vector4 Player, Enemy, Npc, Gathering, Treasure, Aetheryte, Fate;
     }
 
-    // "Original" mirrors Configuration's defaults exactly — picking it restores the out-of-box look.
+    // "Original" mirrors Configuration's defaults exactly — picking it restores the out-of-box look
     private static readonly ColorTheme[] ColorThemes =
     {
         new ColorTheme
@@ -240,7 +240,7 @@ public sealed class ConfigWindow : Window
         cfg.FateColor          = t.Fate;
     }
 
-    // ── General tab (bar colors, theme presets, shared detection range/fade — cross-cutting, doesn't belong to one tab) ──
+    // ── General tab (bar colors, theme presets, shared detection range/fade — cross-cutting, doesnt belong to one tab) ──
 
     private bool DrawGeneralTab(Configuration cfg)
     {
@@ -294,7 +294,7 @@ public sealed class ConfigWindow : Window
 
     // ── Players tab ──────────────────────────────────────────────────────────
 
-    // One editable override row (name/icon/border/fill/clip/multiplier); shared by existing entries and the "add new" form.
+    // One editable override row (name/icon/border/fill/clip/multiplier); shared by existing entries and the "add new" form
     private static bool DrawOverrideRow(PlayerIconOverride ov, string idSuffix, float nameWidth)
     {
         bool changed = false;
@@ -439,7 +439,7 @@ public sealed class ConfigWindow : Window
         {
             _newOverride.PlayerName = _newOverride.PlayerName.Trim();
             cfg.PlayerIconOverrides.Add(_newOverride);
-            // Carry over border/fill/clip/multiplier; reset name/icon for the next entry.
+            // Carry over border/fill/clip/multiplier; reset name/icon for the next entry
             _newOverride = new PlayerIconOverride
             {
                 ShowBorder     = _newOverride.ShowBorder,
@@ -812,13 +812,13 @@ public sealed class ConfigWindow : Window
         return changed;
     }
 
-    // Compact colour-edit flags: show only the small swatch, not text inputs.
+    // Compact colour-edit flags: show only the small swatch, not text inputs
     private static readonly ImGuiColorEditFlags ColorPickerFlags =
         ImGuiColorEditFlags.NoInputs | ImGuiColorEditFlags.AlphaBar;
 
     // ── Shared tab building blocks ────────────────────────────────────────────
 
-    // Checkbox + optional hover tooltip in one call — the shape behind most toggles below.
+    // Checkbox + optional hover tooltip in one call — the shape behind most toggles below
     private static bool DrawToggle(string label, ref bool value, string? tooltip = null)
     {
         bool changed = ImGui.Checkbox(label, ref value);
@@ -851,7 +851,7 @@ public sealed class ConfigWindow : Window
         return changed;
     }
 
-    // Slider bound to a getter/setter pair — avoids the temp-variable dance a property (can't pass by ref) would need.
+    // Slider bound to a getter/setter pair — avoids the temp-variable dance a property (cant pass by ref) would need
     private static bool DrawSliderInt(string label, int lo, int hi, Func<int> get, Action<int> set)
     {
         int v = get();

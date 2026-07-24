@@ -22,7 +22,7 @@ using Lumina.Excel.Sheets;
 
 namespace SkyrimCompass;
 
-// Renders a Skyrim-style compass bar via ImGui foreground draw list with fisheye/lens projection.
+// Renders a Skyrim-style compass bar via ImGui foreground draw list with fisheye/lens projection
 public sealed class CompassHud : IDisposable
 {
     private readonly IClientState clientState;
@@ -38,7 +38,7 @@ public sealed class CompassHud : IDisposable
     private readonly IFontHandle jupiterFont;
 
     // Limit-break fade-out (frame-persistent): on a big gauge drop (LB used), geometry freezes
-    // at lbFrozenProgress and a centre→edge wipe plays over LbFadeOutDuration.
+    // at lbFrozenProgress and a centre→edge wipe plays over LbFadeOutDuration
     private float lbTrackedProgress  = 0f;    // last value outside a fade-out
     private float lbFrozenProgress   = 0f;    // snapshot when drain detected
     private float lbFadeOutStartTime = -1f;   // ImGui time wipe started; -1 = inactive
@@ -46,20 +46,20 @@ public sealed class CompassHud : IDisposable
     private const float LbDropThreshold   = 0.4f;
 
     // Target bar smoothing/flash state (frame-persistent) — same spirit as the LB fade-out
-    // above but simpler: an exponential ease toward real HP, plus a decaying flash on damage.
+    // above but simpler: an exponential ease toward real HP, plus a decaying flash on damage
     private ulong lastTargetBarObjectId = 0;
     private float displayedTargetHpFrac = 1f;
     private float lastRawTargetHpFrac   = 1f;
     private float targetBarFlashAlpha   = 0f;
 
     // Context-menu fade (frame-persistent): native menus always render on top of anything ImGui
-    // draws, so instead of hiding the bar while one's open, we ease alpha down/up around it.
+    // draws, so instead of hiding the bar while one's open, we ease alpha down/up around it
     private bool  contextMenuWasOpen;
     private float contextMenuFadeChangeTime = -1000f;  // "now" when open/closed last flipped
     private const float ContextMenuFadeSeconds = 0.15f;
     private const float ContextMenuDimmedAlpha = 0.33f; // floor alpha while a menu is open
 
-    // GameObjectId → nameplate marker icon ID, refreshed every nameplate update. 0/absent = none.
+    // GameObjectId → nameplate marker icon ID, refreshed every nameplate update. 0/absent = none
     private readonly Dictionary<ulong, int> npcMarkerIcons = new();
 
     private readonly Dictionary<uint, int> gatheringIconCache = new();   // BaseId → resolved icon ID (static game data)
@@ -69,7 +69,7 @@ public sealed class CompassHud : IDisposable
 
     // BaseId → English Title/Singular, cached permanently. Named NPCs carry vocation in Title
     // with the personal name in Singular; unnamed flavor NPCs have empty Title, vocation in
-    // Singular instead. npcSheet forces English so keyword matching works on any client language.
+    // Singular instead. npcSheet forces English so keyword matching works on any client language
     private readonly Dictionary<uint, string> titleCache = new();
     private readonly Dictionary<uint, string> singularCache = new();
     private readonly ExcelSheet<ENpcResident> npcSheet;
@@ -77,7 +77,7 @@ public sealed class CompassHud : IDisposable
     private readonly ExcelSheet<ClassJob>     classJobSheet;
 
     // Keyword lists for npcSheet Title/Singular matching (see MatchesKeyword). Grow these as
-    // new NPC vocation words turn up — use /compass debug near the NPC to read TitleEN/SingularEN.
+    // new NPC vocation words turn up — use /compass debug near the NPC to read TitleEN/SingularEN
     private static readonly string[] MenderKeywords = { "Mender", "Tinker", "Repairman" };
     private static readonly string[] ShopKeywords =
     {
@@ -90,23 +90,23 @@ public sealed class CompassHud : IDisposable
     };
     // Three icon variants share one enable checkbox (config.ShowFastTravelIcons) — see
     // TryGetNpcIcon for which config.*IconId each maps to. Falcon Porters share Chocobo Keep's
-    // keyword list/icon rather than getting their own category.
+    // keyword list/icon rather than getting their own category
     private static readonly string[] SkipperKeywords  = { "Skipper", "Ferryman" };
     // Bare "Attendant" excluded — collides with unrelated titles (Lift/Ceremony/Rival Wings
-    // Attendant) that aren't airship staff.
+    // Attendant) that arent airship staff
     private static readonly string[] TicketerKeywords = { "Ticketer", "Pilot", "Crewman", "Steward" };
     private static readonly string[] ChocoboKeepKeywords = { "Chocobokeep", "Falcon Porter" };
 
     // Unified candidate list (game objects + FATEs) reused every frame — no per-frame alloc.
-    // Obj != null → game object; Fate != null → FATE. T is normalised distance fraction.
+    // Obj != null → game object; Fate != null → FATE. T is normalised distance fraction
     private readonly List<(IGameObject? Obj, IFate? Fate, float Dist, float Delta, float T, uint Col)> allCandidates = new();
 
-    // Static delegate avoids allocating a new Comparison<> object every frame on Sort.
+    // Static delegate avoids allocating a new Comparison<> object every frame on Sort
     private static readonly Comparison<(IGameObject? Obj, IFate? Fate, float Dist, float Delta, float T, uint Col)>
         DistFarFirst = (a, b) => b.Dist.CompareTo(a.Dist);
 
     // Extra scale for icons with transparent padding (quest/Mender/Shop/job/override icons).
-    // NOT applied to Gathering (not undersized) or Aetheryte (has its own multiplier).
+    // NOT applied to Gathering (not undersized) or Aetheryte (has its own multiplier)
     private const float IconSizeMultiplier          = 1.5f;
     private const float AetheryteIconSizeMultiplier = 1.75f;
 
@@ -155,7 +155,7 @@ public sealed class CompassHud : IDisposable
         npcSheetLocal           = dataManager.GetExcelSheet<ENpcResident>();
         classJobSheet           = dataManager.GetExcelSheet<ClassJob>();
 
-        // OnDataUpdate fires every frame with ALL current nameplates (not just deltas).
+        // OnDataUpdate fires every frame with ALL current nameplates (not just deltas)
         this.namePlateGui.OnDataUpdate += OnNamePlateDataUpdate;
     }
 
@@ -179,7 +179,7 @@ public sealed class CompassHud : IDisposable
     {
         if (!config.Enabled) return;
 
-        // OccupiedInCutSceneEvent/WatchingCutscene/WatchingCutscene78 cover all cutscene types.
+        // OccupiedInCutSceneEvent/WatchingCutscene/WatchingCutscene78 cover all cutscene types
         if (config.HideDuringCutscenes && (
             condition[ConditionFlag.OccupiedInCutSceneEvent] ||
             condition[ConditionFlag.WatchingCutscene] ||
@@ -195,14 +195,14 @@ public sealed class CompassHud : IDisposable
 
         if (config.UseCameraDirection)
         {
-            // DirH increases counter-clockwise (tested in-game) — negate to fix.
+            // DirH increases counter-clockwise (tested in-game) — negate to fix
             var cm     = CameraManager.Instance();
             var camera = cm != null ? cm->Camera : null;
             if (camera != null && !float.IsNaN(camera->DirH))
             {
                 headingRad = -camera->DirH;
 
-                // First-person: DirH is a direct view angle (not orbital), so exactly 180° off.
+                // First-person: DirH is a direct view angle (not orbital), so exactly 180° off
                 if (camera->ZoomMode == CameraZoomMode.FirstPerson)
                     headingRad += MathF.PI;
 
@@ -216,7 +216,7 @@ public sealed class CompassHud : IDisposable
             }
         }
 
-        // Fallback: character facing (also covers UseCameraDirection=false or unavailable camera).
+        // Fallback: character facing (also covers UseCameraDirection=false or unavailable camera)
         if (!gotHeading)
         {
             if (float.IsNaN(player.Rotation)) return;
@@ -236,7 +236,7 @@ public sealed class CompassHud : IDisposable
 
         RenderBar(dl, bx, by, bw, bh, heading, player, originPos, now);
 
-        // See UpdateContextMenuFadeAlpha: native menus always render on top of ImGui, so we fade rather than hide.
+        // See UpdateContextMenuFadeAlpha: native menus always render on top of ImGui, so we fade rather than hide
         float barAlpha = UpdateContextMenuFadeAlpha(now);
 
         float hudBottomY = by + bh;
@@ -247,7 +247,7 @@ public sealed class CompassHud : IDisposable
     }
 
     // Eases bar alpha toward ContextMenuDimmedAlpha while a native context menu is open, back to
-    // 1 on close. Call once/frame; SmoothStep-eased over ContextMenuFadeSeconds either direction.
+    // 1 on close. Call once/frame; SmoothStep-eased over ContextMenuFadeSeconds either direction
     private float UpdateContextMenuFadeAlpha(float now)
     {
         bool menuOpenNow = IsVanillaContextMenuOpen();
@@ -267,14 +267,14 @@ public sealed class CompassHud : IDisposable
     }
 
     // True while the native right-click menu or its submenu (e.g. hovering "Emote >") is open.
-    // Both bars fade together — only one menu can be open at a time, and we can't tell which bar it's for anyway.
+    // Both bars fade together — only one menu can be open at a time, and we cant tell which bar its for anyway
     private bool IsVanillaContextMenuOpen() =>
         gameGui.GetAddonByName("ContextMenu").IsVisible || gameGui.GetAddonByName("AddonContextSub").IsVisible;
 
     // ── Lens projection ──
 
     // Maps a bearing offset (degrees) to a signed pixel offset from bar centre.
-    // f(u) = 1-(1-u)^k, k = lensStrength. Linear at centre, compressed at edges. 1.0 = pure linear.
+    // f(u) = 1-(1-u)^k, k = lensStrength. Linear at centre, compressed at edges. 1.0 = pure linear
     private static float Project(float delta, float halfVis, float barHalfW, float lensStr)
     {
         float extHalf = halfVis * lensStr;
@@ -305,14 +305,14 @@ public sealed class CompassHud : IDisposable
         uint cardCol   = C(config.CardinalColor);
         uint ixCol     = C(config.IntercardinalColor);
 
-        // Fully-opaque background for the masking cap fills.
+        // Fully-opaque background for the masking cap fills
         uint solidBgCol = (bgCol & 0x00FFFFFFu) | 0xFF000000u;
 
-        // Diamond end-cap dimensions.
+        // Diamond end-cap dimensions
         float capHW = bh * 0.44f;
         float capHH = bh * 0.64f;
 
-        // Run unconditionally so fade-out tracks real LB usage even when glow is toggled off.
+        // Run unconditionally so fade-out tracks real LB usage even when glow is toggled off
         float rawLbProgress       = GetLimitBreakProgress();
         float displayedLbProgress = UpdateLimitBreakDisplay(rawLbProgress, now, out float lbWipeProgress);
         float lbProgress          = config.ShowLimitBreakGlow ? displayedLbProgress : 0f;
@@ -367,7 +367,7 @@ public sealed class CompassHud : IDisposable
         dl.PushClipRect(V(bx + 1f, by), V(bx + bw - 1f, by + bh), true);
 
         // Push Jupiter before the tick loop — its height clamp needs Jupiter's real metrics.
-        // Push() returns null if not yet built, which just means no push/pop, default font used.
+        // Push() returns null if not yet built, which just means no push/pop, default font used
         using var jupiterScope = jupiterFont.Available ? jupiterFont.Push() : null;
 
         float fontSize = ImGui.GetFontSize() * config.FontScale;
@@ -411,7 +411,7 @@ public sealed class CompassHud : IDisposable
             var   tsz = ImGui.CalcTextSize(label) * config.FontScale;
             float tx  = sx - tsz.X * 0.5f;
 
-            // Labels start fading earlier than ticks (compressed text is hard to read).
+            // Labels start fading earlier than ticks (compressed text is hard to read)
             float lensA     = LensEdgeAlpha(delta, halfVis * 0.88f, extHalf);
             uint  labelCol  = WithAlpha(isMajor ? cardCol : ixCol, lensA);
             uint  shadowCol = WithAlpha(0xBB000000u, lensA);
@@ -463,21 +463,21 @@ public sealed class CompassHud : IDisposable
     }
 
     // Same diamond footprint as DrawEndCapOutlines' outer quad, but filled solid — used as a
-    // backing so the ornament's interior isn't hollow/see-through to whatever's behind it.
+    // backing so the ornament's interior isnt hollow/see-through to whatever's behind it
     private static void DrawFilledDiamond(ImDrawListPtr dl, float cx, float cy, float hw, float hh, uint color) =>
         dl.AddQuadFilled(V(cx, cy - hh), V(cx + hw, cy), V(cx, cy + hh), V(cx - hw, cy), color);
 
     // ── Limit break glow helpers ──
 
     // Shared "breathing" pulse for glow-ribbon intensity — two detuned sine waves so it never
-    // reads as a metronome. Used by the limit break glow and the target bar's name ribbons.
+    // reads as a metronome. Used by the limit break glow and the target bar's name ribbons
     private static float PulseIntensity(float t) =>
         (0.75f + 0.25f * MathF.Sin(t * 0.79f)) * (0.92f + 0.08f * MathF.Sin(t * 3.23f + 1.17f));
 
     // Sine-wave rippling ribbon along a segment: anchored flat at the corner end (u=0),
     // ramping to chaotic at the tip (u=1). fromLeft mirrors flow direction so both sides drift
     // toward centre; tipFadeStart dissolves the leading edge (closing solid as the bar
-    // charges); wipeProgress layers a separate centre→edge fade for the LB-used animation.
+    // charges); wipeProgress layers a separate centre→edge fade for the LB-used animation
     private static void DrawGlowLine(
         ImDrawListPtr dl, Vector2 a, Vector2 b, uint col,
         float intensity, float t, bool fromLeft, float wipeProgress, float fillProgress)
@@ -495,14 +495,14 @@ public sealed class CompassHud : IDisposable
         const float flowSpeed         = 2.0f;
         const float wipeBandHalfWidth = 0.18f;
 
-        // Fade zone closes to 0 width (fully opaque) as bar reaches 1.0 — solid "ready" cue.
+        // Fade zone closes to 0 width (fully opaque) as bar reaches 1.0 — solid "ready" cue
         float tipFadeStart   = Lerp(0.6f, 1.0f, Math.Clamp(fillProgress, 0f, 1f));
         float flowDir        = fromLeft ? -1f : 1f;
         float wipeBandCentre = Lerp(1f + wipeBandHalfWidth, -wipeBandHalfWidth, wipeProgress);
 
         int samples = Math.Clamp((int)(len / waveLenShort * 4f) + 2, 3, 96);
 
-        // stackalloc avoids per-call heap allocation (called up to 6× per frame).
+        // stackalloc avoids per-call heap allocation (called up to 6× per frame)
         Span<Vector2> pts   = stackalloc Vector2[96];
         Span<float>   fades = stackalloc float[96];
 
@@ -512,7 +512,7 @@ public sealed class CompassHud : IDisposable
             float along = len * i / (samples - 1);
             float u     = fromLeft ? along / len : 1f - along / len;
 
-            // Integrate frequency step-by-step so phase stays continuous as freq shortens.
+            // Integrate frequency step-by-step so phase stays continuous as freq shortens
             float freq = Lerp(2f * MathF.PI / waveLenLong, 2f * MathF.PI / waveLenShort, u);
             phase     += freq * (along - prevAlong);
             prevAlong  = along;
@@ -551,7 +551,7 @@ public sealed class CompassHud : IDisposable
     }
 
     // Top + bottom edge segments, segW wide from one end (fromLeft selects which).
-    // Two calls (true/false) trace both sides of the bar when segW = bw/2.
+    // Two calls (true/false) trace both sides of the bar when segW = bw/2
     private static void DrawBorderGlowBracket(
         ImDrawListPtr dl, float bx, float by, float bw, float bh,
         float segW, uint col, float intensity, float t,
@@ -563,7 +563,7 @@ public sealed class CompassHud : IDisposable
         DrawGlowLine(dl, V(x0, by + bh), V(x1, by + bh), col, intensity, t, fromLeft, wipeProgress, fillProgress);
     }
 
-    // Returns LB progress as 0.0–3.0 (integer = bars full, fraction = next bar's progress).
+    // Returns LB progress as 0.0–3.0 (integer = bars full, fraction = next bar's progress)
     private static unsafe float GetLimitBreakProgress()
     {
         var uiState = UIState.Instance();
@@ -574,7 +574,7 @@ public sealed class CompassHud : IDisposable
 
     // Feeds raw LB progress through fade-out logic. On a sudden big drop (gauge reset),
     // freezes display at lbFrozenProgress and sweeps wipeProgress 0→1 over LbFadeOutDuration.
-    // Returns the progress value driving bar1/2/3 geometry this frame.
+    // Returns the progress value driving bar1/2/3 geometry this frame
     private float UpdateLimitBreakDisplay(float realProgress, float now, out float wipeProgress)
     {
         if (lbFadeOutStartTime < 0f)
@@ -593,7 +593,7 @@ public sealed class CompassHud : IDisposable
         if (lbFadeOutStartTime >= 0f)
         {
             float elapsed = now - lbFadeOutStartTime;
-            // Resync if progress climbed back above the frozen snapshot, or wipe has finished.
+            // Resync if progress climbed back above the frozen snapshot, or wipe has finished
             if (realProgress > lbFrozenProgress || elapsed >= LbFadeOutDuration)
             {
                 lbFadeOutStartTime = -1f;
@@ -611,7 +611,7 @@ public sealed class CompassHud : IDisposable
 
     // True in duty content where party role matters: dungeons/trials/raids (BoundByDuty + its
     // 56/95 variants), deep dungeons (own flag — BoundByDuty flickers between floors), or PvP.
-    // Gates ShowPartyRoleIcons when PartyRoleIconsOnlyInDuty is on.
+    // Gates ShowPartyRoleIcons when PartyRoleIconsOnlyInDuty is on
     private bool IsInDutyOrPvp() =>
         condition[ConditionFlag.BoundByDuty]   ||
         condition[ConditionFlag.BoundByDuty56] ||
@@ -621,10 +621,10 @@ public sealed class CompassHud : IDisposable
 
     // ── Target health bar (Skyrim-style name + HP for the current target) ──
     // Docked beneath the compass, sharing its X position and a fractional width, so the two
-    // read as one HUD column. See RenderTargetOfTargetBar below for the ToT tier underneath.
+    // read as one HUD column. See RenderTargetOfTargetBar below for the ToT tier underneath
 
     // Only one distinction matters here: hostile or not. Hostile = BattleNpc in the Combatant
-    // sub-kind; everyone else reads Friendly — matches how the compass colors dots.
+    // sub-kind; everyone else reads Friendly — matches how the compass colors dots
     private uint TargetBarFillColor(IGameObject obj)
     {
         bool isHostile = obj is IBattleNpc bnpc && bnpc.BattleNpcKind == BattleNpcSubKind.Combatant;
@@ -635,7 +635,7 @@ public sealed class CompassHud : IDisposable
     // bottom — for a fill of fraction `frac` growing from the left, or right if `fromRight`.
     // frac=1 gives the full outer shape either way, so one helper covers background/border
     // (frac=1), HP fill (fromRight=false), and shield sheen (fromRight=true). Just the
-    // [0,frac]/[1-frac,1] edge cases of TrapezoidSliceQuad below.
+    // [0,frac]/[1-frac,1] edge cases of TrapezoidSliceQuad below
     private static (Vector2 tl, Vector2 tr, Vector2 br, Vector2 bl) TrapezoidFillQuad(
         float x, float y, float w, float h, float taper, float frac, bool fromRight = false)
     {
@@ -648,7 +648,7 @@ public sealed class CompassHud : IDisposable
     // Same upside-down trapezoid, but returns an arbitrary middle slice between two
     // width-fractions [lo, hi] (each 0..1, lo<=hi) instead of a fill that has to start
     // growing from an edge. Used for the damage-flash sliver, which sits wherever the
-    // health that was just lost happens to be — not necessarily against either end.
+    // health that was just lost happens to be — not necessarily against either end
     private static (Vector2 tl, Vector2 tr, Vector2 br, Vector2 bl) TrapezoidSliceQuad(
         float x, float y, float w, float h, float taper, float lo, float hi)
     {
@@ -661,7 +661,7 @@ public sealed class CompassHud : IDisposable
     }
 
     // Returns the Y coordinate the bar finished at, so the target-of-target tier below
-    // knows where to dock — regardless of whether an HP row was drawn at all.
+    // knows where to dock — regardless of whether an HP row was drawn at all
     private float RenderTargetBar(ImDrawListPtr dl, float compassX, float compassY, float compassW, float compassH, float now, float barAlpha)
     {
         float fallbackY = compassY + compassH;
@@ -680,14 +680,14 @@ public sealed class CompassHud : IDisposable
 
         // Gathering nodes/treasure are targetable but have no HP concept — they still get
         // a name row below, just no bar (tbH collapses to 0 rather than branching the
-        // whole layout in two).
+        // whole layout in two)
         bool  isChara = target is ICharacter;
         float tbH     = isChara ? MathF.Max(4f, config.TargetBarHeight) : 0f;
         uint  fillCol = WithAlpha(TargetBarFillColor(target), barAlpha);
 
         // Upside-down trapezoid: wide at the top, narrower at the bottom. `taper` is tied to
         // the bar's own thickness so the slant reads the same regardless of width, capped
-        // against tbW so an extreme thickness/width combination can never invert the shape.
+        // against tbW so an extreme thickness/width combination can never invert the shape
         float taper = MathF.Min(tbH * 0.9f, tbW * 0.35f);
 
         if (isChara)
@@ -698,7 +698,7 @@ public sealed class CompassHud : IDisposable
             float rawFrac = maxHp > 0f ? Math.Clamp(curHp / maxHp, 0f, 1f) : 0f;
 
             // Snap instantly on a target switch (or first acquisition) — easing in from a
-            // completely unrelated old target's leftover HP fraction would look like a bug.
+            // completely unrelated old target's leftover HP fraction would look like a bug
             float dt = ImGui.GetIO().DeltaTime;
             if (target.GameObjectId != lastTargetBarObjectId)
             {
@@ -718,12 +718,12 @@ public sealed class CompassHud : IDisposable
             var (bTl, bTr, bBr, bBl) = TrapezoidFillQuad(tbX, tbY, tbW, tbH, taper, 1f);
             dl.AddQuadFilled(bTl, bTr, bBr, bBl, bgCol);
 
-            // Fill/flash/shield inset a couple px inside the outer shape so the border doesn't
+            // Fill/flash/shield inset a couple px inside the outer shape so the border doesnt
             // sit on the fill's own edge. Inner taper is scaled to the inset box's own (shorter)
             // height, not reused as-is — reusing the outer taper is a steeper slant on a shorter
             // box, so the inner/outer gap would shrink to ~0 at top and widen at bottom instead
             // of staying even (top/bottom edges stay a flat `inset` apart either way — only the
-            // slanted sides are affected).
+            // slanted sides are affected)
             const float inset      = 2f;
             float       innerH     = tbH - inset * 2f;
             float       innerTaper = taper * (innerH / tbH);
@@ -733,7 +733,7 @@ public sealed class CompassHud : IDisposable
 
             // Flash only the sliver of HP just lost — between rawFrac (already dropped) and the
             // still-easing displayedTargetHpFrac — not the whole remaining bar. The two converge
-            // as displayedTargetHpFrac eases down, so the sliver self-narrows to nothing.
+            // as displayedTargetHpFrac eases down, so the sliver self-narrows to nothing
             if (targetBarFlashAlpha > 0f)
             {
                 float flashLo = MathF.Min(rawFrac, displayedTargetHpFrac);
@@ -755,7 +755,7 @@ public sealed class CompassHud : IDisposable
             }
 
             // Subtle top bevel, matching the compass bar's own highlight line (top edge is
-            // full-width regardless of taper, since only the bottom narrows).
+            // full-width regardless of taper, since only the bottom narrows)
             dl.AddLine(V(tbX + 1f, tbY + 1f), V(tbX + tbW - 1f, tbY + 1f), WithAlpha(0x1AFFFFFFu, barAlpha), 1f);
             dl.AddQuad(bTl, bTr, bBr, bBl, borderCol, 1.5f);
         }
@@ -775,7 +775,7 @@ public sealed class CompassHud : IDisposable
         float tx      = cx - tsz.X * 0.5f;
 
         // Shared black shadow/backing for the name, endcaps, and ribbons below — grounds all
-        // three against the game world, like the compass's own background panel does.
+        // three against the game world, like the compass's own background panel does
         uint shadowCol = WithAlpha(0xCC000000u, barAlpha);
 
         ReadOnlySpan<(float dx, float dy)> textOutline =
@@ -795,7 +795,7 @@ public sealed class CompassHud : IDisposable
         float rightOrnX = tx + tsz.X + ornGap + ornHW;
 
         // Solid backing filling the whole diamond, a couple px larger than the real ornament
-        // so it peeks out as a border too — an outline alone left the interior see-through.
+        // so it peeks out as a border too — an outline alone left the interior see-through
         float shHW = ornHW + 2f, shHH = ornHH + 2f;
         DrawFilledDiamond(dl, leftOrnX,  textCy, shHW, shHH, shadowCol);
         DrawFilledDiamond(dl, rightOrnX, textCy, shHW, shHH, shadowCol);
@@ -804,22 +804,22 @@ public sealed class CompassHud : IDisposable
 
         // Name ribbons — limit break glow's flowing-line technique, reused. Each ornament flies
         // horizontally out to its own side at the name row's height (angling up to the bar would
-        // visibly touch its bottom edge) — a flourish flanking the name, not a connector.
+        // visibly touch its bottom edge) — a flourish flanking the name, not a connector
         if (isChara && config.ShowTargetBarRibbons)
         {
-            // From each ornament's outer tip (not centre), so it reads as continuing the point.
+            // From each ornament's outer tip (not centre), so it reads as continuing the point
             float leftEdgeX  = leftOrnX  - ornHW;
             float rightEdgeX = rightOrnX + ornHW;
 
             float ribbonInset  = MathF.Max(8f, tbW * 0.06f);
-            // Clamped so a long name (ornaments pushed wide) can't shrink/flip the outward travel.
+            // Clamped so a long name (ornaments pushed wide) cant shrink/flip the outward travel
             float ribbonLeftX  = MathF.Min(tbX + ribbonInset,       leftEdgeX  - 24f);
             float ribbonRightX = MathF.Max(tbX + tbW - ribbonInset, rightEdgeX + 24f);
             float glowT        = now;
 
             // Two layers per ribbon (black backing, then borderCol), each timed like the LB
             // glow's three bars above (three of these four pairs reuse those exact tMul/tOff) —
-            // four independently-timed waves so backing/real and left/right never lockstep.
+            // four independently-timed waves so backing/real and left/right never lockstep
             (float edgeX, float targetX, uint col, float tMul, float tOff)[] ribbonLayers =
             {
                 (leftEdgeX,  ribbonLeftX,  shadowCol,  0.65f, 7.1f),
@@ -829,7 +829,7 @@ public sealed class CompassHud : IDisposable
             };
 
             // fillProgress=0: constant fade-to-nothing at each ribbon's outer end (not the LB
-            // usage's "closes solid as the bar fills"). Intensity flat 1f — steady, no pulse.
+            // usage's "closes solid as the bar fills"). Intensity flat 1f — steady, no pulse
             foreach (var (edgeX, targetX, col, tMul, tOff) in ribbonLayers)
             {
                 float t = glowT * tMul + tOff;
@@ -839,7 +839,7 @@ public sealed class CompassHud : IDisposable
         }
 
         // Right click → vanilla context menu (see HandleTargetFrameRightClick). Region covers
-        // the HP trapezoid, name row, and flanking ornaments (can sit outside the trapezoid's width).
+        // the HP trapezoid, name row, and flanking ornaments (can sit outside the trapezoid's width)
         float clickTop    = tbY;
         float clickBottom = nameY + tsz.Y;
         float clickLeft   = MathF.Min(tbX, leftOrnX - shHW);
@@ -851,7 +851,7 @@ public sealed class CompassHud : IDisposable
 
     // ── Target-of-target — FF14's ToT, restyled ──
     // Hidden when your target's target is nobody or itself (an idle mob targeting itself is
-    // noise). Exception: target targeting YOU swaps this tier to a warning color with a pulse.
+    // noise). Exception: target targeting YOU swaps this tier to a warning color with a pulse
     private void RenderTargetOfTargetBar(
         ImDrawListPtr dl, float compassX, float anchorY, float compassW, IPlayerCharacter player, float now, float barAlpha)
     {
@@ -874,7 +874,7 @@ public sealed class CompassHud : IDisposable
 
         // Same HP-bar treatment as the main bar above — including, deliberately, when
         // targetingMe: tot IS the local player then, doubling as a "your own HP" readout
-        // right where you're already looking.
+        // right where youre already looking
         if (tot is ICharacter chara)
         {
             float maxHp = chara.MaxHp;
@@ -909,7 +909,7 @@ public sealed class CompassHud : IDisposable
 
         // Same right-click → vanilla context menu handling as the main target bar above,
         // for whatever your target has itself targeted (or, in the targetingMe case, for
-        // yourself — right-clicking your own portrait/frame is valid in vanilla too).
+        // yourself — right-clicking your own portrait/frame is valid in vanilla too)
         float totLeft  = MathF.Min(tbX, tx);
         float totRight = MathF.Max(tbX + tbW, tx + tsz.X);
         HandleTargetFrameRightClick(V(totLeft, tbY), V(totRight, textY + tsz.Y), tot);
@@ -929,7 +929,7 @@ public sealed class CompassHud : IDisposable
         if (!ImGui.IsMouseHoveringRect(rectMin, rectMax, false)) return;
 
         // Local var, not chained off GetIO(): ImGuiIOPtr is a struct, and mutating a property
-        // straight off a struct-returning call isn't guaranteed to write back to anything real.
+        // straight off a struct-returning call isnt guaranteed to write back to anything real
         var io = ImGui.GetIO();
         io.WantCaptureMouse = true;   // keep the click here, not the game world underneath (camera drag)
         if (!ImGui.IsMouseClicked(ImGuiMouseButton.Right)) return;
@@ -986,7 +986,7 @@ public sealed class CompassHud : IDisposable
         float fateMaxDistSq = fateMaxDist * fateMaxDist;
         float extHalf       = halfVis * lensStr;
 
-        // Computed once per frame rather than re-checked for every party-member candidate below.
+        // Computed once per frame rather than re-checked for every party-member candidate below
         bool showPartyRoleIcons = config.ShowPartyRoleIcons
             && (!config.PartyRoleIconsOnlyInDuty || IsInDutyOrPvp());
 
@@ -1149,7 +1149,7 @@ public sealed class CompassHud : IDisposable
                     }
                 }
                 else if (obj.ObjectKind == ObjectKind.EventNpc && !isAetheryteKind)
-                    // Excludes aetheryte-classified (Firmament crystals) — styled separately below.
+                    // Excludes aetheryte-classified (Firmament crystals) — styled separately below
                     DrawHollowDot(dl, sx, cy, Lerp(config.NpcQuestIconMinSize, config.NpcQuestIconMaxSize, t), col, alpha);
                 else if (obj.ObjectKind == ObjectKind.BattleNpc)
                     DrawFilledDot(dl, sx, cy, Lerp(config.EnemyMinSize, config.EnemyMaxSize, t), col, alpha);
@@ -1164,7 +1164,7 @@ public sealed class CompassHud : IDisposable
     }
 
     // Three-zone distance fade: opaque inside DotNearZone, smoothstep to DotMidAlpha in the
-    // middle band, smoothstep to 0 below DotFarZone. t=1 at zero distance, 0 at max range.
+    // middle band, smoothstep to 0 below DotFarZone. t=1 at zero distance, 0 at max range
     private float ComputeFadeAlpha(float t)
     {
         float nearZone = config.DotNearZone;
@@ -1179,7 +1179,7 @@ public sealed class CompassHud : IDisposable
 
     // Draws a game icon centred at (sx, cy). Returns false if texture not yet loaded.
     // clipToCircle=true: quad stays at `size`, uvZoom crops the texture (fits a border ring).
-    // clipToCircle=false: uvZoom scales the quad itself. uvZoom=1.0 → no zoom either way.
+    // clipToCircle=false: uvZoom scales the quad itself. uvZoom=1.0 → no zoom either way
     private bool TryDrawIcon(
         ImDrawListPtr dl, int iconId, float sx, float cy, float size, float alpha,
         bool clipToCircle = false, float uvZoom = 1.0f)
@@ -1220,7 +1220,7 @@ public sealed class CompassHud : IDisposable
     }
 
     // GatheringPoint(BaseId) → GatheringPointBase → GatheringType → IconMain.
-    // Cached permanently per BaseId; returns 0 if any link in the chain doesn't resolve.
+    // Cached permanently per BaseId; returns 0 if any link in the chain doesnt resolve
     private int GetGatheringIconId(uint baseId)
     {
         if (gatheringIconCache.TryGetValue(baseId, out int cached)) return cached;
@@ -1235,7 +1235,7 @@ public sealed class CompassHud : IDisposable
     }
 
     // Uses ClassJob.Role (not a per-job index) so future jobs work automatically.
-    // Tank=blue, Healer=green, DPS=red, DoH/DoL=gray — matches FFXIV's role UI.
+    // Tank=blue, Healer=green, DPS=red, DoH/DoL=gray — matches FFXIV's role UI
     private uint GetRoleColor(ICharacter character)
     {
         if (classJobSheet.GetRowOrDefault(character.ClassJob.RowId) is not { } row)
@@ -1251,7 +1251,7 @@ public sealed class CompassHud : IDisposable
 
     // Reflects over every public property on a Lumina row struct and prints Name=Value
     // for each. Used by /compass debug to inspect raw sheet data directly when a specific
-    // field (e.g. Title) isn't behaving as expected, instead of guessing field names blind.
+    // field (e.g. Title) isnt behaving as expected, instead of guessing field names blind
     private static string DumpAllFields<T>(T? row) where T : struct
     {
         if (row is not { } r) return "<no row for this BaseId>";
@@ -1271,7 +1271,7 @@ public sealed class CompassHud : IDisposable
         return string.Join(", ", parts);
     }
 
-    // Resolves an NPC's English Title via ENpcResident, cached per BaseId. "" if none.
+    // Resolves an NPC's English Title via ENpcResident, cached per BaseId. "" if none
     private string GetTitle(uint baseId)
     {
         if (titleCache.TryGetValue(baseId, out string? cached)) return cached;
@@ -1295,7 +1295,7 @@ public sealed class CompassHud : IDisposable
         return false;
     }
 
-    // Checks both Title and Singular — see the titleCache/singularCache comment above for why.
+    // Checks both Title and Singular — see the titleCache/singularCache comment above for why
     private bool MatchesKeyword(uint baseId, string[] keywords) =>
         HasKeyword(GetTitle(baseId), keywords) || HasKeyword(GetSingular(baseId), keywords);
 
@@ -1307,11 +1307,11 @@ public sealed class CompassHud : IDisposable
 
     // Combined check — used where we just need "is this a Fast Travel NPC at all", not which
     // icon it gets (see TryGetNpcIcon below for that). Was missing ChocoboKeep before — fixed
-    // while this was already being touched for Falcon Porter.
+    // while this was already being touched for Falcon Porter
     private bool IsFastTravel(IGameObject o) => IsSkipper(o) || IsTicketer(o) || IsChocoboKeep(o);
 
     // Priority: live quest marker, then each keyword category in turn; first match wins.
-    // Same priority order as before, just a data walk instead of six repeated if/else branches.
+    // Same priority order as before, just a data walk instead of six repeated if/else branches
     private bool TryGetNpcIcon(IGameObject obj, out int iconId)
     {
         if (config.ShowNpcQuestIcons && npcMarkerIcons.TryGetValue(obj.GameObjectId, out iconId)) return true;
@@ -1328,7 +1328,7 @@ public sealed class CompassHud : IDisposable
 
     // ObjectKind.Aetheryte → always Big or Shard (Shard if name matches AethernetShardName).
     // EventNpc/EventObj → Shard only on match; None otherwise.
-    // Single source of truth for both icon selection and visibility.
+    // Single source of truth for both icon selection and visibility
     private AetheryteNameKind ClassifyAetheryte(IGameObject obj)
     {
         bool looksLikeShard = !string.IsNullOrEmpty(config.AethernetShardName)
@@ -1345,7 +1345,7 @@ public sealed class CompassHud : IDisposable
             ? config.AethernetShardIconId
             : config.AetheryteIconId;
 
-    // Returns true if obj is any aetheryte kind. color=0 if hidden by config.
+    // Returns true if obj is any aetheryte kind. color=0 if hidden by config
     private bool TryGetAetheryteMarkerColor(IGameObject obj, out uint color)
     {
         var kind = ClassifyAetheryte(obj);
@@ -1366,7 +1366,7 @@ public sealed class CompassHud : IDisposable
             case ObjectKind.BattleNpc:
                 if (!config.ShowEnemies) return 0u;
                 if (obj is not IBattleNpc bnpc || bnpc.BattleNpcKind != BattleNpcSubKind.Combatant) return 0u;
-                // GameObjectId (ulong) and EntityId (uint) are distinct ID spaces; TargetObjectId is ulong.
+                // GameObjectId (ulong) and EntityId (uint) are distinct ID spaces; TargetObjectId is ulong
                 if (config.EnemiesOnlyIfEngaged
                     && obj.TargetObjectId != player.GameObjectId
                     && targetManager.Target?.GameObjectId != obj.GameObjectId)
@@ -1374,14 +1374,14 @@ public sealed class CompassHud : IDisposable
                 return C(config.EnemyColor);
 
             case ObjectKind.EventNpc:
-                // Firmament crystals are EventNpcs — route through aetheryte path, not NPC color.
+                // Firmament crystals are EventNpcs — route through aetheryte path, not NPC color
                 if (TryGetAetheryteMarkerColor(obj, out uint eventNpcAetherCol)) return eventNpcAetherCol;
                 if (!config.ShowNpcs) return 0u;
                 if (config.NpcsOnlyIfTargetable && !obj.IsTargetable) return 0u;
                 return C(config.NpcColor);
 
             case ObjectKind.EventObj:
-                // Housing-ward Aethernet shards are EventObj (not EventNpc).
+                // Housing-ward Aethernet shards are EventObj (not EventNpc)
                 return TryGetAetheryteMarkerColor(obj, out uint eventObjAetherCol)
                     ? eventObjAetherCol : 0u;
 
@@ -1420,8 +1420,8 @@ public sealed class CompassHud : IDisposable
         return d;
     }
 
-    // 3D distance for range/fade; 2D bearing (no Y) so height doesn't shift dots sideways.
-    // Returns false if out of range or outside the visible FOV.
+    // 3D distance for range/fade; 2D bearing (no Y) so height doesnt shift dots sideways.
+    // Returns false if out of range or outside the visible FOV
     private static bool TryComputeBearing(
         Vector3 targetPos, Vector3 originPos, float heading, float maxDistSq, float extHalf,
         out float dist, out float delta)
@@ -1445,7 +1445,7 @@ public sealed class CompassHud : IDisposable
     private static Vector2 V(float x, float y) => new(x, y);
     private static uint     C(Vector4 v)        => ImGui.ColorConvertFloat4ToU32(v);
 
-    // t=1 → max, t=0 → min.
+    // t=1 → max, t=0 → min
     private static float Lerp(float min, float max, float t) => min + (max - min) * t;
 
     private static void DrawFilledDot(ImDrawListPtr dl, float sx, float cy, float size, uint col, float alpha)
@@ -1462,7 +1462,7 @@ public sealed class CompassHud : IDisposable
         dl.AddCircle(V(sx, cy), r + 0.8f, WithAlpha(0x33000000u, alpha));
     }
 
-    // 3 inward-fading circles faking a soft shadow behind an icon (role icon / override fill).
+    // 3 inward-fading circles faking a soft shadow behind an icon (role icon / override fill)
     private static void DrawInwardShadow(ImDrawListPtr dl, float sx, float cy, float half, uint col, float alpha)
     {
         dl.AddCircleFilled(V(sx, cy), half * 0.85f, WithAlpha(col, alpha * 0.6f));
@@ -1470,14 +1470,14 @@ public sealed class CompassHud : IDisposable
         dl.AddCircleFilled(V(sx, cy), half * 0.45f, WithAlpha(col, alpha * 0.2f));
     }
 
-    // Solid ring just outside an icon's bounding box (role icon / override border).
+    // Solid ring just outside an icon's bounding box (role icon / override border)
     private static void DrawOuterRing(ImDrawListPtr dl, float sx, float cy, float half, uint col, float alpha) =>
         dl.AddCircle(V(sx, cy), half + 1.0f, WithAlpha(col, alpha), 0, 3.0f);
 
     // Optional ring + inward shadow around an icon position (role icon / override), bracketed
     // by Push/PopUnclip so both can render past the bar's own clip edge. Null skips that layer.
     // Ring and shadow occupy disjoint radii and never overlap, so draw order between them
-    // (unlike most layered draws in this file) doesn't affect the result.
+    // (unlike most layered draws in this file) doesnt affect the result
     private static void DrawIconRingAndShadow(
         ImDrawListPtr dl, float sx, float cy, float half, uint? ringCol, uint? shadowCol, float alpha)
     {
@@ -1488,7 +1488,7 @@ public sealed class CompassHud : IDisposable
         PopUnclip(dl);
     }
 
-    // 1.0 inside linearHalf, smoothsteps to 0 at extHalf. linearHalf lets labels fade earlier than ticks.
+    // 1.0 inside linearHalf, smoothsteps to 0 at extHalf. linearHalf lets labels fade earlier than ticks
     private static float LensEdgeAlpha(float delta, float linearHalf, float extHalf)
     {
         float absD = MathF.Abs(delta);
@@ -1503,13 +1503,13 @@ public sealed class CompassHud : IDisposable
     }
 
     // Temporarily overrides bar-sized clip so icons/rings can render past the bar edge.
-    // Icons and their rings must escape together or they visually disagree at the edge.
+    // Icons and their rings must escape together or they visually disagree at the edge
     private static void PushUnclip(ImDrawListPtr dl) =>
         dl.PushClipRect(Vector2.Zero, ImGui.GetIO().DisplaySize, false);
 
     private static void PopUnclip(ImDrawListPtr dl) => dl.PopClipRect();
 
-    // Logs nearby objects for diagnostics. View via /xllog.
+    // Logs nearby objects for diagnostics. View via /xllog
     public void DumpNearbyObjects(float radius = 50f)
     {
         var player = objectTable.LocalPlayer;
@@ -1552,7 +1552,7 @@ public sealed class CompassHud : IDisposable
                 bool   isChocoboKeep = IsChocoboKeep(obj);
                 bool   isFastTravel  = isSkipper || isTicketer || isChocoboKeep;
                 // Mirrors TryGetNpcIcon's order (Skipper/Ticketer outrank ChocoboKeep there) —
-                // names the specific sub-type since each renders its own distinct icon.
+                // names the specific sub-type since each renders its own distinct icon
                 string winner        = hasQuestIcon  ? $"QuestMarker(icon={qIconId})"
                                      : isMender      ? "Mender"
                                      : isShop        ? "Shop"
@@ -1562,13 +1562,13 @@ public sealed class CompassHud : IDisposable
                                      : "none/dot";
                 // TitleEN/SingularEN are always English regardless of client language — what the
                 // *Keywords arrays up top actually match against. Word's in one of these but the
-                // Is* flag is still false? It's missing from that keyword list.
+                // Is* flag is still false? Its missing from that keyword list
                 extra = $" | TitleEN=\"{title}\" | SingularEN=\"{singular}\" | QuestIcon={hasQuestIcon,-5} | " +
                         $"IsMender={isMender,-5} | IsShop={isShop,-5} | IsChocoboKeep={isChocoboKeep,-5} | " +
                         $"IsFastTravel={isFastTravel,-5} | WouldShow={winner}";
 
                 // Raw dump, both language variants — shows whether a bad match is "English-forcing
-                // broke the lookup" (dumps disagree) vs "Title isn't the vendor-label field" (both agree, blank).
+                // broke the lookup" (dumps disagree) vs "Title isnt the vendor-label field" (both agree, blank)
                 fieldDumpEn    = DumpAllFields(npcSheet.GetRowOrDefault(obj.BaseId));
                 fieldDumpLocal = DumpAllFields(npcSheetLocal.GetRowOrDefault(obj.BaseId));
             }

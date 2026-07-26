@@ -64,7 +64,7 @@ public class Configuration : IPluginConfiguration
     public List<PlayerIconOverride> PlayerIconOverrides { get; set; } = new();
 
     public bool  ShowEnemies          { get; set; } = true;
-    public bool  EnemiesOnlyIfEngaged { get; set; } = true;   // only enemies targeting you or you're targeting
+    public bool  EnemiesOnlyIfEngaged { get; set; } = true;   // only enemies in combat (with you or your party)
     public float EnemyMinSize         { get; set; } = 6f;
     public float EnemyMaxSize         { get; set; } = 20f;
 
@@ -78,14 +78,12 @@ public class Configuration : IPluginConfiguration
     // Target health bar (Skyrim-style name+HP) — docked beneath the compass, reusing
     // Background/Border/Cardinal/IntercardinalColor above so the pair reads as one HUD column
     public bool    ShowTargetBar          { get; set; } = true;
-    public float   TargetBarWidthFraction { get; set; } = 0.875f;   // fraction of CompassWidth
-    public float   TargetBarHeight        { get; set; } = 14f;
+    public float   TargetBarWidthFraction { get; set; } = 0.925f;   // fraction of CompassWidth
+    public float   TargetBarHeight        { get; set; } = 12f;
     public float   TargetBarFontScale     { get; set; } = 1.0f;
     public bool    ShowTargetLevel        { get; set; } = true;
     public bool    ShowTargetBarShield    { get; set; } = true;   // sheen over ICharacter.ShieldPercentage
     public bool    ShowTargetBarRibbons   { get; set; } = true;   // glow ribbons flying out from the name's ornaments
-    public Vector4 TargetBarHostileColor  { get; set; } = new(0.78f, 0.12f, 0.12f, 0.95f);
-    public Vector4 TargetBarFriendlyColor { get; set; } = new(0.30f, 0.75f, 0.35f, 0.95f);   // everyone else, players+NPCs alike
     public Vector4 TargetBarShieldColor   { get; set; } = new(0.80f, 0.92f, 1.00f, 0.55f);
 
     // Target-of-target (FF14's ToT, restyled): auto-hidden if nobody/self, except targeting

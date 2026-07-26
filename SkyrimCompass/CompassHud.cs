@@ -239,11 +239,28 @@ public sealed class CompassHud : IDisposable
         // See UpdateContextMenuFadeAlpha: native menus always render on top of ImGui, so we fade rather than hide
         float barAlpha = UpdateContextMenuFadeAlpha(now);
 
-        float hudBottomY = by + bh;
+        // Whether a ToT bar will actually be drawn this frame — decided up front so the main bar
+        // can claim the whole row when it won't be (same span as before this feature existed),
+        // rather than always leaving room for a bar that may never appear. Also requires the ToT
+        // to actually be a Character — a summoning bell or the marketboard is a perfectly valid
+        // target-of-target but has no health bar to show, so splitting the row for it would just
+        // leave a blank gap where ToT's slice would have been.
+        var  curTarget = targetManager.Target;
+        var  curTot    = curTarget?.TargetObject;
+        bool hasTot    = config.ShowTargetOfTargetBar
+            && curTarget != null && curTot != null && curTot.GameObjectId != curTarget.GameObjectId
+            && curTot is ICharacter;
+
+        var (mainX, mainW, totX, totW, rowW) = SplitTargetBarRow(bx, bw, hasTot);
+        float rowGap = MathF.Max(2f, bh * 0.12f);
+        float tbRowY = by + bh + rowGap;
+        float nameCx = bx + bw * 0.5f;   // always the compass's own center, not the (possibly-narrowed) trapezoid's
+
+        float hudBottomY = tbRowY;
         if (config.ShowTargetBar)
-            hudBottomY = RenderTargetBar(dl, bx, by, bw, bh, now, barAlpha);
-        if (config.ShowTargetOfTargetBar)
-            RenderTargetOfTargetBar(dl, bx, hudBottomY, bw, player, now, barAlpha);
+            hudBottomY = RenderTargetBar(dl, mainX, mainW, tbRowY, nameCx, rowW, now, barAlpha);
+        if (hasTot)
+            RenderTargetOfTargetBar(dl, totX, totW, tbRowY, player, now, barAlpha);
     }
 
     // Eases bar alpha toward ContextMenuDimmedAlpha while a native context menu is open, back to
@@ -623,12 +640,22 @@ public sealed class CompassHud : IDisposable
     // Docked beneath the compass, sharing its X position and a fractional width, so the two
     // read as one HUD column. See RenderTargetOfTargetBar below for the ToT tier underneath
 
-    // Only one distinction matters here: hostile or not. Hostile = BattleNpc in the Combatant
-    // sub-kind; everyone else reads Friendly — matches how the compass colors dots
+    // Same color a compass dot/ring would show for this object: role color for a party member
+    // when role icons would show on the compass too (identical gating to showPartyRoleIcons in
+    // RenderAllMarkers), else MarkerBaseColor's plain per-kind mapping (enemy=EnemyColor,
+    // player=PlayerColor, etc). Falls back to NpcColor for anything with no dot-color equivalent
+    // (allied/non-combat BattleNpcs like chocobos/trusts, EventObj, unknown kinds) — all
+    // friendly-adjacent by nature, and not worth a dedicated color just for these edge cases.
     private uint TargetBarFillColor(IGameObject obj)
     {
-        bool isHostile = obj is IBattleNpc bnpc && bnpc.BattleNpcKind == BattleNpcSubKind.Combatant;
-        return isHostile ? C(config.TargetBarHostileColor) : C(config.TargetBarFriendlyColor);
+        if (obj is ICharacter character
+            && (character.StatusFlags & StatusFlags.PartyMember) != 0
+            && config.ShowPartyRoleIcons
+            && (!config.PartyRoleIconsOnlyInDuty || IsInDutyOrPvp()))
+            return GetRoleColor(character);
+
+        uint baseColor = MarkerBaseColor(obj);
+        return baseColor != 0u ? baseColor : C(config.NpcColor);
     }
 
     // Four corners of an upside-down trapezoid — full width `w` at top, narrowed by `taper` at
@@ -660,23 +687,49 @@ public sealed class CompassHud : IDisposable
         return (new Vector2(topA, y), new Vector2(topB, y), new Vector2(botB, y + h), new Vector2(botA, y + h));
     }
 
-    // Returns the Y coordinate the bar finished at, so the target-of-target tier below
-    // knows where to dock — regardless of whether an HP row was drawn at all
-    private float RenderTargetBar(ImDrawListPtr dl, float compassX, float compassY, float compassW, float compassH, float now, float barAlpha)
+    // Fraction of the shared row the main bar keeps when a ToT bar is also being drawn beside
+    // it (the rest, minus TargetBarRowGap, goes to ToT) — the only two numbers to change if the
+    // split ever needs retuning.
+    private const float MainBarShareWithTot = 0.65f;
+    private const float TargetBarRowGapFraction = 0.03f;
+
+    // Single source of truth for splitting the target-bar row between the main bar and ToT, so
+    // both always agree exactly on where the boundary falls — computed once in Draw() and handed
+    // to each renderer, rather than each recomputing it (and risking drifting apart). With no ToT
+    // to make room for, the main bar keeps the whole row — same span as before this feature, not
+    // just "happens to look the same".
+    private (float mainX, float mainW, float totX, float totW, float rowW) SplitTargetBarRow(
+        float compassX, float compassW, bool hasTot)
     {
-        float fallbackY = compassY + compassH;
-        var   target    = targetManager.Target;
-        if (target == null) return fallbackY;
+        float cx       = compassX + compassW * 0.5f;
+        float rowW     = compassW * Math.Clamp(config.TargetBarWidthFraction, 0.1f, 1f);
+        float rowX     = cx - rowW * 0.5f;
+
+        if (!hasTot) return (rowX, rowW, 0f, 0f, rowW);
+
+        float mainW = rowW * MainBarShareWithTot;
+        float gap   = MathF.Max(10f, rowW * TargetBarRowGapFraction);
+        float totW  = rowW - mainW - gap;
+        float totX  = rowX + mainW + gap;
+        return (rowX, mainW, totX, totW, rowW);
+    }
+
+    // Returns the Y coordinate the bar finished at, so the target-of-target tier beside it
+    // knows the shared row height — regardless of whether an HP row was drawn at all
+    private float RenderTargetBar(ImDrawListPtr dl, float tbX, float tbW, float tbY, float nameCx, float nameRowW, float now, float barAlpha)
+    {
+        var target = targetManager.Target;
+        if (target == null) return tbY;
 
         uint borderCol = WithAlpha(C(config.BorderColor),    barAlpha);
         uint bgCol     = WithAlpha(C(config.BackgroundColor), barAlpha);
         uint nameCol   = WithAlpha(C(config.CardinalColor),   barAlpha);
 
-        float cx  = compassX + compassW * 0.5f;
-        float tbW = compassW * Math.Clamp(config.TargetBarWidthFraction, 0.1f, 1f);
-        float tbX = cx - tbW * 0.5f;
-        float gap = MathF.Max(2f, compassH * 0.12f);
-        float tbY = compassY + compassH + gap;
+        // Name/ornaments/ribbons always center on the full row (nameCx), independent of tbW —
+        // the trapezoid narrows to make room for ToT beside it, but the name below it doesn't
+        // need to shift over just because its bar got a neighbor.
+
+        float cx = nameCx;
 
         // Gathering nodes/treasure are targetable but have no HP concept — they still get
         // a name row below, just no bar (tbH collapses to 0 rather than branching the
@@ -811,10 +864,15 @@ public sealed class CompassHud : IDisposable
             float leftEdgeX  = leftOrnX  - ornHW;
             float rightEdgeX = rightOrnX + ornHW;
 
-            float ribbonInset  = MathF.Max(8f, tbW * 0.06f);
+            // Reach toward the full row's edges, not tbX/tbW's — those are the trapezoid's own
+            // (possibly narrower, when a ToT bar is sharing the row) bounds, but the name row
+            // these ribbons flank stays full width regardless (see nameCx above)
+            float nameRowLeft  = nameCx - nameRowW * 0.5f;
+            float nameRowRight = nameCx + nameRowW * 0.5f;
+            float ribbonInset  = MathF.Max(8f, nameRowW * 0.06f);
             // Clamped so a long name (ornaments pushed wide) cant shrink/flip the outward travel
-            float ribbonLeftX  = MathF.Min(tbX + ribbonInset,       leftEdgeX  - 24f);
-            float ribbonRightX = MathF.Max(tbX + tbW - ribbonInset, rightEdgeX + 24f);
+            float ribbonLeftX  = MathF.Min(nameRowLeft  + ribbonInset, leftEdgeX  - 24f);
+            float ribbonRightX = MathF.Max(nameRowRight - ribbonInset, rightEdgeX + 24f);
             float glowT        = now;
 
             // Two layers per ribbon (black backing, then borderCol), each timed like the LB
@@ -850,69 +908,56 @@ public sealed class CompassHud : IDisposable
     }
 
     // ── Target-of-target — FF14's ToT, restyled ──
-    // Hidden when your target's target is nobody or itself (an idle mob targeting itself is
-    // noise). Exception: target targeting YOU swaps this tier to a warning color with a pulse
+    // Hidden when your target's target is nobody, itself (an idle mob targeting itself is
+    // noise), or not a Character (a summoning bell/marketboard/etc has no health bar to show),
+    // or when Draw() already decided not to show it (ShowTargetOfTargetBar off — see hasTot
+    // there, which now covers all of the above). Exception: target targeting YOU swaps this
+    // tier to a warning color with a pulse. Same trapezoid construction and height as the main
+    // bar (just narrower to fit beside
+    // it) — no name row for now, that's slated for the next pass.
     private void RenderTargetOfTargetBar(
-        ImDrawListPtr dl, float compassX, float anchorY, float compassW, IPlayerCharacter player, float now, float barAlpha)
+        ImDrawListPtr dl, float tbX, float tbW, float tbY, IPlayerCharacter player, float now, float barAlpha)
     {
         var target = targetManager.Target;
         var tot    = target?.TargetObject;
         if (target == null || tot == null || tot.GameObjectId == target.GameObjectId) return;
+        if (tot is not ICharacter chara) return;
 
         bool targetingMe = config.HighlightIfTargetingMe && target.TargetObjectId == player.GameObjectId;
 
-        const float scale = 0.62f;
-        float cx  = compassX + compassW * 0.5f;
-        float tbW = compassW * Math.Clamp(config.TargetBarWidthFraction, 0.1f, 1f) * scale;
-        float tbX = cx - tbW * 0.5f;
-        float tbY = anchorY + 4f;
-        float tbH = MathF.Max(3f, config.TargetBarHeight * scale);
+        float tbH = MathF.Max(4f, config.TargetBarHeight);
 
         uint borderCol = WithAlpha(C(config.BorderColor),     barAlpha);
         uint bgCol     = WithAlpha(C(config.BackgroundColor), barAlpha);
         uint fillCol   = targetingMe ? C(config.AggroWarningColor) : TargetBarFillColor(tot);
 
-        // Same HP-bar treatment as the main bar above — including, deliberately, when
-        // targetingMe: tot IS the local player then, doubling as a "your own HP" readout
-        // right where youre already looking
-        if (tot is ICharacter chara)
+        float maxHp = chara.MaxHp;
+        float curHp = chara.CurrentHp;
+        float frac  = maxHp > 0f ? Math.Clamp(curHp / maxHp, 0f, 1f) : 0f;
+
+        // Same trapezoid + inset-fill construction as the main bar (see its taper/inset comment)
+        float taper = MathF.Min(tbH * 0.9f, tbW * 0.35f);
+        var (bTl, bTr, bBr, bBl) = TrapezoidFillQuad(tbX, tbY, tbW, tbH, taper, 1f);
+        dl.AddQuadFilled(bTl, bTr, bBr, bBl, bgCol);
+
+        const float inset      = 2f;
+        float       innerH     = tbH - inset * 2f;
+        float       innerTaper = taper * (innerH / tbH);
+        if (frac > 0f)
         {
-            float maxHp = chara.MaxHp;
-            float curHp = chara.CurrentHp;
-            float frac  = maxHp > 0f ? Math.Clamp(curHp / maxHp, 0f, 1f) : 0f;
-
-            dl.AddRectFilled(V(tbX, tbY), V(tbX + tbW, tbY + tbH), bgCol);
-
-            float fillW = (tbW - 3f) * frac;
-            if (fillW > 0f)
-            {
-                float pulse = targetingMe ? 0.82f + 0.18f * MathF.Sin(now * 5f) : 1f;
-                dl.AddRectFilled(V(tbX + 1.5f, tbY + 1.5f), V(tbX + 1.5f + fillW, tbY + tbH - 1.5f),
-                    WithAlpha(fillCol, pulse * barAlpha));
-            }
-            dl.AddRect(V(tbX, tbY), V(tbX + tbW, tbY + tbH), borderCol, 0f, ImDrawFlags.None, 1.2f);
+            float pulse = targetingMe ? 0.82f + 0.18f * MathF.Sin(now * 5f) : 1f;
+            var (fTl, fTr, fBr, fBl) = TrapezoidFillQuad(
+                tbX + inset, tbY + inset, tbW - inset * 2f, innerH, innerTaper, frac);
+            dl.AddQuadFilled(fTl, fTr, fBr, fBl, WithAlpha(fillCol, pulse * barAlpha));
         }
 
-        using var jupiterScope = jupiterFont.Available ? jupiterFont.Push() : null;
-        float combinedScale = config.TargetBarFontScale * scale;
-        float fontSize      = ImGui.GetFontSize() * combinedScale;
-        var   font          = ImGui.GetFont();
+        dl.AddLine(V(tbX + 1f, tbY + 1f), V(tbX + tbW - 1f, tbY + 1f), WithAlpha(0x1AFFFFFFu, barAlpha), 1f);
+        dl.AddQuad(bTl, bTr, bBr, bBl, borderCol, 1.5f);
 
-        string label = targetingMe ? "Targeting YOU" : tot.Name.TextValue;
-        var    tsz   = ImGui.CalcTextSize(label) * combinedScale;
-        float  tx    = cx - tsz.X * 0.5f;
-        float  textY = tbY + tbH + 1f;
-
-        uint textCol = WithAlpha(targetingMe ? C(config.AggroWarningColor) : WithAlpha(C(config.IntercardinalColor), 0.9f), barAlpha);
-        dl.AddText(font, fontSize, V(tx + 1f, textY + 1f), WithAlpha(0x99000000u, barAlpha), label);
-        dl.AddText(font, fontSize, V(tx,      textY),      textCol,     label);
-
-        // Same right-click → vanilla context menu handling as the main target bar above,
-        // for whatever your target has itself targeted (or, in the targetingMe case, for
-        // yourself — right-clicking your own portrait/frame is valid in vanilla too)
-        float totLeft  = MathF.Min(tbX, tx);
-        float totRight = MathF.Max(tbX + tbW, tx + tsz.X);
-        HandleTargetFrameRightClick(V(totLeft, tbY), V(totRight, textY + tsz.Y), tot);
+        // Same right-click → vanilla context menu handling as the main target bar above, for
+        // whatever your target has itself targeted (or, in the targetingMe case, for yourself —
+        // right-clicking your own portrait/frame is valid in vanilla too)
+        HandleTargetFrameRightClick(V(tbX, tbY), V(tbX + tbW, tbY + tbH), tot);
     }
 
     // ── Target frame input — draw-list rendering above has no ImGui item, so no hover/click
@@ -1361,24 +1406,29 @@ public sealed class CompassHud : IDisposable
         switch (obj.ObjectKind)
         {
             case ObjectKind.Pc:
-                return config.ShowPlayers ? C(config.PlayerColor) : 0u;
+                return config.ShowPlayers ? MarkerBaseColor(obj) : 0u;
 
             case ObjectKind.BattleNpc:
                 if (!config.ShowEnemies) return 0u;
                 if (obj is not IBattleNpc bnpc || bnpc.BattleNpcKind != BattleNpcSubKind.Combatant) return 0u;
-                // GameObjectId (ulong) and EntityId (uint) are distinct ID spaces; TargetObjectId is ulong
+                // "Engaged" = this enemy is actually in combat, and so is the player — not "is
+                // targeting me / is my target", which missed enemies focusing the tank, a healer,
+                // or anyone else in the party. A pull puts the whole party's StatusFlags into
+                // InCombat together, so this covers the whole fight, not just the player's own
+                // targeting relationship. Requiring the player's own flag too (rather than just
+                // the enemy's) keeps this to encounters the player is actually part of, not some
+                // unrelated fight elsewhere in an open zone.
                 if (config.EnemiesOnlyIfEngaged
-                    && obj.TargetObjectId != player.GameObjectId
-                    && targetManager.Target?.GameObjectId != obj.GameObjectId)
+                    && !(bnpc.StatusFlags.HasFlag(StatusFlags.InCombat) && player.StatusFlags.HasFlag(StatusFlags.InCombat)))
                     return 0u;
-                return C(config.EnemyColor);
+                return MarkerBaseColor(obj);
 
             case ObjectKind.EventNpc:
                 // Firmament crystals are EventNpcs — route through aetheryte path, not NPC color
                 if (TryGetAetheryteMarkerColor(obj, out uint eventNpcAetherCol)) return eventNpcAetherCol;
                 if (!config.ShowNpcs) return 0u;
                 if (config.NpcsOnlyIfTargetable && !obj.IsTargetable) return 0u;
-                return C(config.NpcColor);
+                return MarkerBaseColor(obj);
 
             case ObjectKind.EventObj:
                 // Housing-ward Aethernet shards are EventObj (not EventNpc)
@@ -1388,10 +1438,10 @@ public sealed class CompassHud : IDisposable
             case ObjectKind.GatheringPoint:
                 if (!config.ShowGatheringNodes) return 0u;
                 if (config.GatheringOnlyIfTargetable && !obj.IsTargetable) return 0u;
-                return C(config.GatheringColor);
+                return MarkerBaseColor(obj);
 
             case ObjectKind.Treasure:
-                return config.ShowTreasure ? C(config.TreasureColor) : 0u;
+                return config.ShowTreasure ? MarkerBaseColor(obj) : 0u;
 
             case ObjectKind.Aetheryte:
                 TryGetAetheryteMarkerColor(obj, out uint realAetherCol); // always Big/Shard, never None
@@ -1401,6 +1451,23 @@ public sealed class CompassHud : IDisposable
                 return 0u;
         }
     }
+
+    // The plain "what color represents this kind of thing" mapping behind MarkerColor above,
+    // pulled out on its own (no Show*/OnlyIfTargetable/OnlyIfEngaged gating) so the target bar
+    // can reuse the exact same colors without inheriting compass decluttering rules that make no
+    // sense for a health bar (a selected target shouldn't go invisible because dots are hidden).
+    // Self-contained rather than assuming a caller already filtered BattleNpcKind, etc., so it's
+    // safe to call from anywhere. 0u for anything with no obvious dot-color equivalent.
+    private uint MarkerBaseColor(IGameObject obj) => obj.ObjectKind switch
+    {
+        ObjectKind.Pc                                                  => C(config.PlayerColor),
+        ObjectKind.BattleNpc when obj is IBattleNpc b
+            && b.BattleNpcKind == BattleNpcSubKind.Combatant            => C(config.EnemyColor),
+        ObjectKind.EventNpc                                            => C(config.NpcColor),
+        ObjectKind.GatheringPoint                                      => C(config.GatheringColor),
+        ObjectKind.Treasure                                            => C(config.TreasureColor),
+        _                                                               => 0u,
+    };
 
     // ── Helpers ──
 

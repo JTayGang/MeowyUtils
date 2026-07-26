@@ -476,7 +476,7 @@ public sealed class ConfigWindow : Window
         ImGui.BeginDisabled(!cfg.ShowEnemies);
         bool eng = cfg.EnemiesOnlyIfEngaged;
         if (DrawToggle("Only show enemies I'm engaged with##eng", ref eng,
-            "Only shows hostiles targeting you or that you're targeting, instead of every\n" +
+            "Only shows hostiles actually in combat with you or your party, instead of every\n" +
             "hostile in range — handy for big pulls and hunt trains."))
         { cfg.EnemiesOnlyIfEngaged = eng; changed = true; }
 
@@ -546,9 +546,6 @@ public sealed class ConfigWindow : Window
         { cfg.ShowTargetBarRibbons = ribbons; changed = true; }
 
         ImGui.Spacing();
-        changed |= DrawColorEdit("Hostile##tbhc", cfg.TargetBarHostileColor, v => cfg.TargetBarHostileColor = v, ColorPickerFlags);
-        changed |= DrawColorEdit("Friendly##tbfc", cfg.TargetBarFriendlyColor, v => cfg.TargetBarFriendlyColor = v, ColorPickerFlags);
-
         ImGui.BeginDisabled(!cfg.ShowTargetBarShield);
         changed |= DrawColorEdit("Shield overlay##tbsc", cfg.TargetBarShieldColor, v => cfg.TargetBarShieldColor = v, ColorPickerFlags);
         ImGui.EndDisabled();

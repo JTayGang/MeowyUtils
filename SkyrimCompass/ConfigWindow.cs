@@ -516,9 +516,11 @@ public sealed class ConfigWindow : Window
 
         bool tbB = cfg.ShowTargetBar;
         if (DrawToggle("Target Health Bar", ref tbB,
-            "Name + HP readout for your target, docked beneath the compass. Fill follows\n" +
-            "the hostile/friendly scheme below; background/border/text reuse the compass's\n" +
-            "own General-tab colors so the two always match."))
+            "Name + HP readout for your target, docked beneath the compass. Fill reuses\n" +
+            "the compass's own marker colors (player/enemy/NPC), swapping to the party role\n" +
+            "color when your target is a party member and role icons are showing;\n" +
+            "background/border/text reuse the compass's own General-tab colors so the two\n" +
+            "always match."))
         { cfg.ShowTargetBar = tbB; changed = true; }
 
         ImGui.Indent();

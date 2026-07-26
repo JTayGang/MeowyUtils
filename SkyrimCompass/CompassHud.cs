@@ -45,6 +45,16 @@ public sealed class CompassHud : IDisposable
     private const float LbFadeOutDuration = 2f;
     private const float LbDropThreshold   = 0.4f;
 
+    // Cast-ribbon fade-out (frame-persistent): same freeze + centre→edge wipe as the LB block
+    // above, but keyed to a specific target and triggered by casting stopping rather than a
+    // gauge drop. castWipeTargetId resets it on a target switch — a wipe belonging to a target
+    // you've since stopped looking at has no business playing on whoever you're looking at now
+    private ulong castWipeTargetId     = 0;
+    private float castTrackedProgress  = 0f;    // last live cast progress outside a fade-out
+    private float castFrozenProgress   = 0f;    // snapshot when casting stopped
+    private float castFadeOutStartTime = -1f;   // ImGui time wipe started; -1 = inactive
+    private const float CastFadeOutDuration = 0.4f; // shorter than LB's — casts end far more often
+
     // Target bar smoothing/flash state (frame-persistent) — same spirit as the LB fade-out
     // above but simpler: an exponential ease toward real HP, plus a decaying flash on damage
     private ulong lastTargetBarObjectId = 0;
@@ -75,6 +85,10 @@ public sealed class CompassHud : IDisposable
     private readonly ExcelSheet<ENpcResident> npcSheet;
     private readonly ExcelSheet<ENpcResident> npcSheetLocal;   // unforced client language — /compass debug diagnostics only
     private readonly ExcelSheet<ClassJob>     classJobSheet;
+
+    // Lumina.Excel.Sheets.Action fully-qualified throughout — unqualified "Action" collides
+    // with System.Action, same reason FFXIVClientStructs' GameObject is fully-qualified elsewhere
+    private readonly ExcelSheet<Lumina.Excel.Sheets.Action> actionSheet;
 
     // Keyword lists for npcSheet Title/Singular matching (see MatchesKeyword). Grow these as
     // new NPC vocation words turn up — use /compass debug near the NPC to read TitleEN/SingularEN
@@ -154,6 +168,7 @@ public sealed class CompassHud : IDisposable
         npcSheet                = dataManager.GetExcelSheet<ENpcResident>(ClientLanguage.English);
         npcSheetLocal           = dataManager.GetExcelSheet<ENpcResident>();
         classJobSheet           = dataManager.GetExcelSheet<ClassJob>();
+        actionSheet             = dataManager.GetExcelSheet<Lumina.Excel.Sheets.Action>();
 
         // OnDataUpdate fires every frame with ALL current nameplates (not just deltas)
         this.namePlateGui.OnDataUpdate += OnNamePlateDataUpdate;
@@ -494,10 +509,14 @@ public sealed class CompassHud : IDisposable
     // Sine-wave rippling ribbon along a segment: anchored flat at the corner end (u=0),
     // ramping to chaotic at the tip (u=1). fromLeft mirrors flow direction so both sides drift
     // toward centre; tipFadeStart dissolves the leading edge (closing solid as the bar
-    // charges); wipeProgress layers a separate centre→edge fade for the LB-used animation
+    // charges); wipeProgress layers a separate fade for the LB-used "after use" drain, always
+    // erasing high-u first — which end that physically is depends on wipeReversed (default
+    // false = erase toward u=1, i.e. whichever end u=1 lands on for this call's fromLeft/a/b
+    // choice; true erases toward u=0 instead). Independent of tipFadeStart's own u
     private static void DrawGlowLine(
         ImDrawListPtr dl, Vector2 a, Vector2 b, uint col,
-        float intensity, float t, bool fromLeft, float wipeProgress, float fillProgress)
+        float intensity, float t, bool fromLeft, float wipeProgress, float fillProgress,
+        bool wipeReversed = false)
     {
         Vector2 delta = b - a;
         float   len   = delta.Length();
@@ -543,8 +562,9 @@ public sealed class CompassHud : IDisposable
 
             float tipFade  = 1f - SmoothStep(u <= tipFadeStart ? 0f
                                : Math.Clamp((u - tipFadeStart) / (1f - tipFadeStart + 1e-4f), 0f, 1f));
+            float wipeU    = wipeReversed ? 1f - u : u;
             float wipeFade = 1f - SmoothStep(Math.Clamp(
-                               (u - (wipeBandCentre - wipeBandHalfWidth)) / (2f * wipeBandHalfWidth), 0f, 1f));
+                               (wipeU - (wipeBandCentre - wipeBandHalfWidth)) / (2f * wipeBandHalfWidth), 0f, 1f));
             fades[i] = tipFade * wipeFade;
         }
 
@@ -624,6 +644,62 @@ public sealed class CompassHud : IDisposable
 
         wipeProgress = 0f;
         return lbTrackedProgress;
+    }
+
+    // Same freeze-then-wipe shape as UpdateLimitBreakDisplay above, adapted for a boolean cast
+    // state instead of a continuously-tracked gauge: the trigger is casting stopping while some
+    // progress was tracked, not a magnitude drop, and a fresh cast cancels the wipe outright
+    // rather than resyncing on a magnitude check (cast progress isn't monotonic across two
+    // different casts the way a gauge is). Returns the progress driving the cast ribbon's
+    // length this frame; caller is responsible for resetting on a target switch
+    private float UpdateCastDisplay(IBattleChara? caster, float now, out float wipeProgress)
+    {
+        // TotalCastTime (not BaseCastTime) is the one that includes the game's own display-time
+        // adjustments — Dalamud's docs call it out for exactly this use
+        bool  isCasting    = caster != null && caster.IsCasting && caster.TotalCastTime > 0f;
+        float realProgress = isCasting ? Math.Clamp(caster!.CurrentCastTime / caster.TotalCastTime, 0f, 1f) : 0f;
+
+        if (castFadeOutStartTime < 0f)
+        {
+            if (!isCasting && castTrackedProgress > 0f)
+            {
+                castFrozenProgress   = castTrackedProgress;
+                castFadeOutStartTime = now;
+            }
+            else
+            {
+                castTrackedProgress = realProgress;
+            }
+        }
+
+        if (castFadeOutStartTime >= 0f)
+        {
+            float elapsed = now - castFadeOutStartTime;
+            if (isCasting || elapsed >= CastFadeOutDuration)
+            {
+                castFadeOutStartTime = -1f;
+                castTrackedProgress  = realProgress;
+                wipeProgress         = 0f;
+                return castTrackedProgress;
+            }
+            wipeProgress = elapsed / CastFadeOutDuration;
+            return castFrozenProgress;
+        }
+
+        wipeProgress = 0f;
+        return castTrackedProgress;
+    }
+
+    // CastActionType 1 is "Action" — the unified sheet spells, weaponskills, and abilities all
+    // share — which covers every cast worth labeling. Items/mounts/etc. use other sheets and
+    // don't show a name-worthy cast timer in practice, so they're left as null rather than
+    // adding lookups this HUD will realistically never use
+    private string? GetCastActionName(IBattleChara caster)
+    {
+        if (caster.CastActionType != 1) return null;
+        if (actionSheet.GetRowOrDefault(caster.CastActionId) is not { } row) return null;
+        string name = row.Name.ToString();
+        return name.Length > 0 ? name : null;
     }
 
     // True in duty content where party role matters: dungeons/trials/raids (BoundByDuty + its
@@ -818,8 +894,15 @@ public sealed class CompassHud : IDisposable
         float fontSize = ImGui.GetFontSize() * config.TargetBarFontScale;
         var   font     = ImGui.GetFont();
 
-        string label = target.Name.TextValue;
-        if (config.ShowTargetLevel && target is ICharacter lvlChar && lvlChar.Level > 0)
+        // Name/level row temporarily shows the cast action's name instead, for exactly as long
+        // as IsCasting is true — deliberately not tied to the ribbon's wipe-out grace period
+        // below; a text swap popping back instantly reads fine, the way native cast bars do
+        string? castName = target is IBattleChara castingChara && castingChara.IsCasting && castingChara.TotalCastTime > 0f
+            ? GetCastActionName(castingChara)
+            : null;
+
+        string label = castName ?? target.Name.TextValue;
+        if (castName == null && config.ShowTargetLevel && target is ICharacter lvlChar && lvlChar.Level > 0)
             label = $"Lv{lvlChar.Level}  {label}";
 
         var   tsz     = ImGui.CalcTextSize(label) * config.TargetBarFontScale;
@@ -894,15 +977,55 @@ public sealed class CompassHud : IDisposable
                 DrawGlowLine(dl, V(edgeX, textCy), V(targetX, textCy),
                     col, 1f, t, fromLeft: true, wipeProgress: 0f, fillProgress: 0f);
             }
+
+            // Cast bar: a third ribbon per side, built like the LB brackets above — same
+            // growing-segW mechanic, growing outward as the cast advances. Unlike the LB
+            // brackets, fillProgress stays 0 rather than tracking castProgress: tying it to
+            // castProgress collapses the tip's fade zone toward nothing as the cast nears
+            // completion (fully hard-edged right at 1.0), which reads as reaching past the
+            // two ambient ribbons above, which always fade over their outer 40%. Pinned to 0,
+            // this one keeps that same constant 40%-of-its-current-length fade at every length,
+            // so its tip matches theirs exactly once it grows to meet them.
+            // wipeProgress *is* live here though (UpdateCastDisplay, next to the LB version it
+            // mirrors) — same after-use drain as the LB brackets, so the ribbon eases away over
+            // CastFadeOutDuration instead of popping out of existence when a cast ends or gets
+            // interrupted. wipeReversed:true because this ribbon's anchor is u=0 (matching the
+            // two ambient ribbons, and needed for the fade note above) — the opposite of an LB
+            // bracket, whose u=1 is its centre-reaching growing tip. Left alone, the wipe would
+            // erase high-u first regardless, so it'd erase this ribbon's *outside* end first —
+            // backwards from LB's centre-first. wipeReversed flips just that, so the anchor end
+            // (nearest the name — this ribbon's "centre") erases first instead, same direction
+            // as LB, without touching the tip fade above.
+            // No config toggle. Colored with AggroWarningColor rather than borderCol — same
+            // warning accent the ToT bar swaps to when it's targeting you, reused here for
+            // "something's coming."
+            if (target.GameObjectId != castWipeTargetId)
+            {
+                castWipeTargetId     = target.GameObjectId;
+                castTrackedProgress  = 0f;
+                castFadeOutStartTime = -1f;
+            }
+            float castProgress = UpdateCastDisplay(target as IBattleChara, glowT, out float castWipeProgress);
+            if (castProgress > 0f)
+            {
+                float castIntensity = PulseIntensity(glowT);
+                uint  castCol       = WithAlpha(C(config.AggroWarningColor), barAlpha);
+                DrawGlowLine(dl, V(leftEdgeX, textCy), V(Lerp(leftEdgeX, ribbonLeftX, castProgress), textCy),
+                    castCol, castIntensity, glowT, fromLeft: true, wipeProgress: castWipeProgress, fillProgress: 0f,
+                    wipeReversed: true);
+                DrawGlowLine(dl, V(rightEdgeX, textCy), V(Lerp(rightEdgeX, ribbonRightX, castProgress), textCy),
+                    castCol, castIntensity, glowT, fromLeft: true, wipeProgress: castWipeProgress, fillProgress: 0f,
+                    wipeReversed: true);
+            }
         }
 
-        // Right click → vanilla context menu (see HandleTargetFrameRightClick). Region covers
+        // Right click → vanilla context menu (see HandleTargetFrameClick). Region covers
         // the HP trapezoid, name row, and flanking ornaments (can sit outside the trapezoid's width)
         float clickTop    = tbY;
         float clickBottom = nameY + tsz.Y;
         float clickLeft   = MathF.Min(tbX, leftOrnX - shHW);
         float clickRight  = MathF.Max(tbX + tbW, rightOrnX + shHW);
-        HandleTargetFrameRightClick(V(clickLeft, clickTop), V(clickRight, clickBottom), target);
+        HandleTargetFrameClick(V(clickLeft, clickTop), V(clickRight, clickBottom), target, allowLeftClickToTarget: false);
 
         return nameY + tsz.Y;
     }
@@ -957,26 +1080,42 @@ public sealed class CompassHud : IDisposable
         // Same right-click → vanilla context menu handling as the main target bar above, for
         // whatever your target has itself targeted (or, in the targetingMe case, for yourself —
         // right-clicking your own portrait/frame is valid in vanilla too)
-        HandleTargetFrameRightClick(V(tbX, tbY), V(tbX + tbW, tbY + tbH), tot);
+        HandleTargetFrameClick(V(tbX, tbY), V(tbX + tbW, tbY + tbH), tot, allowLeftClickToTarget: true);
     }
 
     // ── Target frame input — draw-list rendering above has no ImGui item, so no hover/click
     // state generates on its own; this is what actually wires the bar up to input. ──
 
     /// <summary>
-    /// Treats [rectMin, rectMax] as the target frame's hit region for this frame.
+    /// Handles both click types for a target frame's hit region. Bails out entirely once a
+    /// native context menu is already open — from that point its own items need the clicks, not
+    /// us. Without this, our own WantCaptureMouse claim (set below, every frame we're hovering
+    /// this rect) stays alive even while the menu covers the same screen space, which silently
+    /// eats the click before the menu's own item ever sees it — the actions become unclickable,
+    /// not just visually fought over.
     /// The `false` for IsMouseHoveringRect's clip param matters: its default (true) clips
     /// against ImGui's *current window*, meaningless here since this file never opens one
     /// (Begin/End) — left true, the rect silently clips to nothing and the click never fires.
     /// </summary>
-    private void HandleTargetFrameRightClick(Vector2 rectMin, Vector2 rectMax, IGameObject obj)
+    private void HandleTargetFrameClick(Vector2 rectMin, Vector2 rectMax, IGameObject obj, bool allowLeftClickToTarget)
     {
+        if (IsVanillaContextMenuOpen()) return;
         if (!ImGui.IsMouseHoveringRect(rectMin, rectMax, false)) return;
 
         // Local var, not chained off GetIO(): ImGuiIOPtr is a struct, and mutating a property
         // straight off a struct-returning call isnt guaranteed to write back to anything real
         var io = ImGui.GetIO();
         io.WantCaptureMouse = true;   // keep the click here, not the game world underneath (camera drag)
+
+        // Left click sets this object as your new target — same as clicking a vanilla ToT frame.
+        // Not offered on the main bar: left-clicking your own already-selected target is a no-op
+        // in vanilla too, so there's nothing useful to wire it to there.
+        if (allowLeftClickToTarget && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+        {
+            targetManager.Target = obj;
+            return;
+        }
+
         if (!ImGui.IsMouseClicked(ImGuiMouseButton.Right)) return;
 
         log.Info($"[SkyrimCompass debug] Target frame right-clicked ({obj.Name.TextValue}) — opening context menu.");

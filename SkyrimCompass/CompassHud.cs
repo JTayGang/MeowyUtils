@@ -506,39 +506,42 @@ public sealed class CompassHud : IDisposable
         Vector2 dir  = delta / len;
         Vector2 perp = new(-dir.Y, dir.X);
 
-        const float amplitude         = 4.0f;
-        const float waveLenLong       = 130f;
-        const float waveLenShort      = 22f;
-        const float flowSpeed         = 2.0f;
-        const float wipeBandHalfWidth = 0.18f;
+        const float amplitude         = 6f;
+        const float waveLen           = 26f;
+        const float flowSpeed         = 2f;
+        const float wipeBandHalfWidth = 0.2f;
+        const float harmonic2Weight   = 0.33f;   // u=1 blend toward a 2nd, faster wave; 0 = pure single sine
 
         // Fade zone closes to 0 width (fully opaque) as bar reaches 1.0 — solid "ready" cue
         float tipFadeStart   = Lerp(0.6f, 1.0f, Math.Clamp(fillProgress, 0f, 1f));
         float flowDir        = fromLeft ? -1f : 1f;
         float wipeBandCentre = Lerp(1f + wipeBandHalfWidth, -wipeBandHalfWidth, wipeProgress);
+        float freq           = 2f * MathF.PI / waveLen;
+        float freq2          = freq * 2f;                  // 2nd wave, double frequency — still constant, no integration needed
+        float timePhase      = t * flowSpeed * flowDir;
+        float timePhase2     = timePhase * 1.4f + 1.3f;    // different speed + fixed offset so the two never lock in step
 
-        int samples = Math.Clamp((int)(len / waveLenShort * 4f) + 2, 3, 96);
+        // Sized off the shorter of the two wavelengths in play (freq2's), so the faster wave
+        // that shows up near the tip is still resolved cleanly
+        int samples = Math.Clamp((int)(len / (waveLen * 0.5f) * 4f) + 2, 3, 96);
 
-        // stackalloc avoids per-call heap allocation (called up to 6× per frame)
+        // stackalloc avoids per-call heap allocation (called up to 18× per frame)
         Span<Vector2> pts   = stackalloc Vector2[96];
         Span<float>   fades = stackalloc float[96];
 
-        float phase = 0f, prevAlong = 0f;
         for (int i = 0; i < samples; i++)
         {
             float along = len * i / (samples - 1);
             float u     = fromLeft ? along / len : 1f - along / len;
 
-            // Integrate frequency step-by-step so phase stays continuous as freq shortens
-            float freq = Lerp(2f * MathF.PI / waveLenLong, 2f * MathF.PI / waveLenShort, u);
-            phase     += freq * (along - prevAlong);
-            prevAlong  = along;
-
-            float envelope  = u * u * (3f - 2f * u);
-            float timePhase = t * flowSpeed * flowDir;
-            float wave      = MathF.Sin(phase + timePhase) * (1f - 0.5f * u)
-                            + MathF.Sin(phase * 2.6f + timePhase * 1.5f + 1.3f) * (0.5f * u);
-
+            // envelope: 0 at anchor → 1 at tip — the main "minimal near origin, more toward the
+            // tip" shape. Blending in a 2nd, faster wave more heavily as u→1 adds back some of
+            // the non-uniform liveliness a single sine loses near the tip. Both frequencies are
+            // constant (unlike the old continuously-shortening one), so no phase integration —
+            // just one extra Sin call, no loop-carried state
+            float envelope = u * u * (3f - 2f * u);
+            float wave     = MathF.Sin(along * freq  + timePhase)  * (1f - harmonic2Weight * u)
+                            + MathF.Sin(along * freq2 + timePhase2) * (harmonic2Weight * u);
             pts[i] = a + dir * along + perp * (amplitude * envelope * wave);
 
             float tipFade  = 1f - SmoothStep(u <= tipFadeStart ? 0f

@@ -129,97 +129,29 @@ public sealed class ConfigWindow : Window
     }
 
     // ── Color theme data (consumed by DrawGeneralTab below) ────────────────────
-
-    private sealed class ColorTheme
-    {
-        public string  Name          = "";
-        public Vector4 Background, Border, Cardinal, Intercardinal, Tick;
-        public Vector4 Player, Enemy, Npc, Gathering, Treasure, Aetheryte, Fate;
-    }
+    // Positional order: Name, Background, Border, Cardinal, Intercardinal, Tick, Player, Enemy, Npc, Gathering, Treasure, Aetheryte, Fate
+    private sealed record ColorTheme(
+        string Name, Vector4 Background, Vector4 Border, Vector4 Cardinal, Vector4 Intercardinal, Vector4 Tick,
+        Vector4 Player, Vector4 Enemy, Vector4 Npc, Vector4 Gathering, Vector4 Treasure, Vector4 Aetheryte, Vector4 Fate);
 
     // "Original" mirrors Configuration's defaults exactly — picking it restores the out-of-box look
     private static readonly ColorTheme[] ColorThemes =
     {
-        new ColorTheme
-        {
-            Name          = "Original",
-            Background    = new(0.05f, 0.04f, 0.03f, 0.82f),
-            Border        = new(0.48f, 0.42f, 0.27f, 0.92f),
-            Cardinal      = new(1.00f, 0.97f, 0.88f, 1.00f),
-            Intercardinal = new(0.72f, 0.70f, 0.65f, 0.88f),
-            Tick          = new(0.58f, 0.56f, 0.52f, 0.72f),
-            Player        = new(0.40f, 0.65f, 1.00f, 0.92f),
-            Enemy         = new(1.00f, 0.25f, 0.25f, 0.92f),
-            Npc           = new(0.95f, 0.88f, 0.35f, 0.92f),
-            Gathering     = new(0.30f, 0.92f, 0.40f, 0.92f),
-            Treasure      = new(1.00f, 0.80f, 0.15f, 0.95f),
-            Aetheryte     = new(0.55f, 0.85f, 0.95f, 0.92f),
-            Fate          = new(0.82f, 0.35f, 0.95f, 0.95f),
-        },
-        new ColorTheme
-        {
-            Name          = "Frostfall",
-            Background    = new(0.03f, 0.06f, 0.10f, 0.84f),
-            Border        = new(0.55f, 0.75f, 0.88f, 0.92f),
-            Cardinal      = new(0.92f, 0.97f, 1.00f, 1.00f),
-            Intercardinal = new(0.68f, 0.82f, 0.90f, 0.88f),
-            Tick          = new(0.55f, 0.68f, 0.78f, 0.72f),
-            Player        = new(0.50f, 0.85f, 1.00f, 0.92f),
-            Enemy         = new(1.00f, 0.35f, 0.40f, 0.92f),
-            Npc           = new(0.85f, 0.95f, 1.00f, 0.92f),
-            Gathering     = new(0.40f, 0.95f, 0.85f, 0.92f),
-            Treasure      = new(0.95f, 0.92f, 0.65f, 0.95f),
-            Aetheryte     = new(0.60f, 0.90f, 1.00f, 0.92f),
-            Fate          = new(0.75f, 0.55f, 1.00f, 0.95f),
-        },
-        new ColorTheme
-        {
-            Name          = "Inferno",
-            Background    = new(0.08f, 0.03f, 0.02f, 0.85f),
-            Border        = new(0.75f, 0.32f, 0.10f, 0.92f),
-            Cardinal      = new(1.00f, 0.88f, 0.60f, 1.00f),
-            Intercardinal = new(0.88f, 0.58f, 0.32f, 0.88f),
-            Tick          = new(0.65f, 0.38f, 0.22f, 0.72f),
-            Player        = new(0.45f, 0.75f, 1.00f, 0.92f),
-            Enemy         = new(1.00f, 0.18f, 0.10f, 0.95f),
-            Npc           = new(1.00f, 0.78f, 0.30f, 0.92f),
-            Gathering     = new(0.55f, 0.90f, 0.35f, 0.92f),
-            Treasure      = new(1.00f, 0.70f, 0.10f, 0.95f),
-            Aetheryte     = new(0.95f, 0.55f, 0.85f, 0.92f),
-            Fate          = new(1.00f, 0.40f, 0.85f, 0.95f),
-        },
-        new ColorTheme
-        {
-            Name          = "Verdant",
-            Background    = new(0.03f, 0.06f, 0.03f, 0.84f),
-            Border        = new(0.38f, 0.58f, 0.32f, 0.92f),
-            Cardinal      = new(0.92f, 1.00f, 0.85f, 1.00f),
-            Intercardinal = new(0.68f, 0.82f, 0.60f, 0.88f),
-            Tick          = new(0.50f, 0.62f, 0.45f, 0.72f),
-            Player        = new(0.45f, 0.80f, 1.00f, 0.92f),
-            Enemy         = new(1.00f, 0.30f, 0.25f, 0.92f),
-            Npc           = new(0.92f, 0.85f, 0.40f, 0.92f),
-            Gathering     = new(0.45f, 1.00f, 0.50f, 0.95f),
-            Treasure      = new(1.00f, 0.85f, 0.25f, 0.95f),
-            Aetheryte     = new(0.55f, 0.92f, 0.80f, 0.92f),
-            Fate          = new(0.78f, 0.95f, 0.35f, 0.95f),
-        },
-        new ColorTheme
-        {
-            Name          = "Void",
-            Background    = new(0.04f, 0.02f, 0.08f, 0.85f),
-            Border        = new(0.58f, 0.38f, 0.78f, 0.92f),
-            Cardinal      = new(0.92f, 0.85f, 1.00f, 1.00f),
-            Intercardinal = new(0.72f, 0.62f, 0.85f, 0.88f),
-            Tick          = new(0.55f, 0.48f, 0.65f, 0.72f),
-            Player        = new(0.55f, 0.72f, 1.00f, 0.92f),
-            Enemy         = new(1.00f, 0.30f, 0.55f, 0.92f),
-            Npc           = new(0.88f, 0.78f, 1.00f, 0.92f),
-            Gathering     = new(0.55f, 0.95f, 0.65f, 0.92f),
-            Treasure      = new(1.00f, 0.75f, 0.95f, 0.95f),
-            Aetheryte     = new(0.68f, 0.55f, 1.00f, 0.92f),
-            Fate          = new(0.85f, 0.40f, 1.00f, 0.95f),
-        },
+        new("Original", new(0.05f,0.04f,0.03f,0.82f), new(0.48f,0.42f,0.27f,0.92f), new(1.00f,0.97f,0.88f,1.00f),
+            new(0.72f,0.70f,0.65f,0.88f), new(0.58f,0.56f,0.52f,0.72f), new(0.40f,0.65f,1.00f,0.92f), new(1.00f,0.25f,0.25f,0.92f),
+            new(0.95f,0.88f,0.35f,0.92f), new(0.30f,0.92f,0.40f,0.92f), new(1.00f,0.80f,0.15f,0.95f), new(0.55f,0.85f,0.95f,0.92f), new(0.82f,0.35f,0.95f,0.95f)),
+        new("Frostfall", new(0.03f,0.06f,0.10f,0.84f), new(0.55f,0.75f,0.88f,0.92f), new(0.92f,0.97f,1.00f,1.00f),
+            new(0.68f,0.82f,0.90f,0.88f), new(0.55f,0.68f,0.78f,0.72f), new(0.50f,0.85f,1.00f,0.92f), new(1.00f,0.35f,0.40f,0.92f),
+            new(0.85f,0.95f,1.00f,0.92f), new(0.40f,0.95f,0.85f,0.92f), new(0.95f,0.92f,0.65f,0.95f), new(0.60f,0.90f,1.00f,0.92f), new(0.75f,0.55f,1.00f,0.95f)),
+        new("Inferno", new(0.08f,0.03f,0.02f,0.85f), new(0.75f,0.32f,0.10f,0.92f), new(1.00f,0.88f,0.60f,1.00f),
+            new(0.88f,0.58f,0.32f,0.88f), new(0.65f,0.38f,0.22f,0.72f), new(0.45f,0.75f,1.00f,0.92f), new(1.00f,0.18f,0.10f,0.95f),
+            new(1.00f,0.78f,0.30f,0.92f), new(0.55f,0.90f,0.35f,0.92f), new(1.00f,0.70f,0.10f,0.95f), new(0.95f,0.55f,0.85f,0.92f), new(1.00f,0.40f,0.85f,0.95f)),
+        new("Verdant", new(0.03f,0.06f,0.03f,0.84f), new(0.38f,0.58f,0.32f,0.92f), new(0.92f,1.00f,0.85f,1.00f),
+            new(0.68f,0.82f,0.60f,0.88f), new(0.50f,0.62f,0.45f,0.72f), new(0.45f,0.80f,1.00f,0.92f), new(1.00f,0.30f,0.25f,0.92f),
+            new(0.92f,0.85f,0.40f,0.92f), new(0.45f,1.00f,0.50f,0.95f), new(1.00f,0.85f,0.25f,0.95f), new(0.55f,0.92f,0.80f,0.92f), new(0.78f,0.95f,0.35f,0.95f)),
+        new("Void", new(0.04f,0.02f,0.08f,0.85f), new(0.58f,0.38f,0.78f,0.92f), new(0.92f,0.85f,1.00f,1.00f),
+            new(0.72f,0.62f,0.85f,0.88f), new(0.55f,0.48f,0.65f,0.72f), new(0.55f,0.72f,1.00f,0.92f), new(1.00f,0.30f,0.55f,0.92f),
+            new(0.88f,0.78f,1.00f,0.92f), new(0.55f,0.95f,0.65f,0.92f), new(1.00f,0.75f,0.95f,0.95f), new(0.68f,0.55f,1.00f,0.92f), new(0.85f,0.40f,1.00f,0.95f)),
     };
 
     private static readonly string[] ColorThemeNames = Array.ConvertAll(ColorThemes, t => t.Name);
@@ -240,7 +172,7 @@ public sealed class ConfigWindow : Window
         cfg.FateColor          = t.Fate;
     }
 
-    // ── General tab (bar colors, theme presets, shared detection range/fade — cross-cutting, doesnt belong to one tab) ──
+    // ── General tab (bar colors, theme presets, shared detection range/fade — cross-cutting, no single tab owns it) ──
 
     private bool DrawGeneralTab(Configuration cfg)
     {
@@ -850,7 +782,7 @@ public sealed class ConfigWindow : Window
         return changed;
     }
 
-    // Slider bound to a getter/setter pair — avoids the temp-variable dance a property (cant pass by ref) would need
+    // Bound to a getter/setter pair — skips the temp-variable dance a property (no ref) would need
     private static bool DrawSliderInt(string label, int lo, int hi, Func<int> get, Action<int> set)
     {
         int v = get();

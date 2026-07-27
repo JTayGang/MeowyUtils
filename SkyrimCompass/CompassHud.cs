@@ -510,7 +510,7 @@ public sealed class CompassHud : IDisposable
         const float waveLen           = 26f;
         const float flowSpeed         = 2f;
         const float wipeBandHalfWidth = 0.2f;
-        const float harmonic2Weight   = 0.33f;   // u=1 blend toward a 2nd, faster wave; 0 = pure single sine
+        const float harmonic2Weight   = 0.33f;  // u=1 blend toward a 2nd, faster wave; 0 = pure single sine
 
         // Fade zone closes to 0 width (fully opaque) as bar reaches 1.0 — solid "ready" cue
         float tipFadeStart   = Lerp(0.6f, 1.0f, Math.Clamp(fillProgress, 0f, 1f));

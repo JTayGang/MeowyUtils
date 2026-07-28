@@ -96,23 +96,19 @@ public sealed class ConfigWindow : Window
             "Skips drawing during story cutscenes, skippable cinematics, and group pose —\n" +
             "there's nothing to navigate to while the camera isn't yours anyway.");
 
-        ImGui.Spacing();
-        ImGui.Separator();
-        ImGui.Spacing();
+        DrawSectionBreak();
 
         changed |= DrawToggle("Use camera direction instead of character facing",
             () => cfg.UseCameraDirection, v => cfg.UseCameraDirection = v,
             "On: follows where your CAMERA looks (free camera, screenshots, sightseeing).\n" +
             "Off: follows your CHARACTER's facing, like Skyrim's compass (recommended for combat).");
 
-        ImGui.Indent();
-        ImGui.BeginDisabled(!cfg.UseCameraDirection);
+        BeginIndentedDisabled(cfg.UseCameraDirection);
         changed |= DrawToggle("Also use camera location for distances##ucp",
             () => cfg.UseCameraPosition, v => cfg.UseCameraPosition = v,
             "Measures bearings/distances from your CAMERA's position instead of your character's.\n" +
             "Useful zoomed way out or with a camera offset mod. Needs 'Use camera direction' above.");
-        ImGui.EndDisabled();
-        ImGui.Unindent();
+        EndIndentedDisabled();
 
         ImGui.Spacing();
         ImGui.TextDisabled("Rotation Offset  (set to 180 if N and S are swapped)");
@@ -190,9 +186,7 @@ public sealed class ConfigWindow : Window
             ImGui.SetTooltip("Overwrites every compass/marker color in one click. Pick \"Original\" to restore\n" +
                               "defaults — colors can still be hand-tweaked after; a theme is a starting point.");
 
-        ImGui.Spacing();
-        ImGui.Separator();
-        ImGui.Spacing();
+        DrawSectionBreak();
 
         ImGui.TextDisabled("Detection range  (shared by every marker category, incl. FATEs — see FATEs tab for its multiplier)");
         changed |= DrawSliderInt("yalms##maxd", 10, 200, () => (int)cfg.MaxMarkerDistance, v => cfg.MaxMarkerDistance = v);
@@ -279,8 +273,7 @@ public sealed class ConfigWindow : Window
         bool changed = DrawEnableAndColor("players", "Players", () => cfg.ShowPlayers, v => cfg.ShowPlayers = v,
             () => cfg.PlayerColor, v => cfg.PlayerColor = v);
 
-        ImGui.Indent();
-        ImGui.BeginDisabled(!cfg.ShowPlayers);
+        BeginIndentedDisabled(cfg.ShowPlayers);
 
         changed |= DrawSizeSliders(
             () => cfg.PartyRoleIconMinSize, v => cfg.PartyRoleIconMinSize = v,
@@ -299,19 +292,15 @@ public sealed class ConfigWindow : Window
             "Healer=green, DPS=red), taking priority over the friend dot and named\n" +
             "overrides (see 'duty/PvP only' below). Shares the size slider above.");
 
-        ImGui.Indent();
-        ImGui.BeginDisabled(!cfg.ShowPartyRoleIcons);
+        BeginIndentedDisabled(cfg.ShowPartyRoleIcons);
         changed |= DrawToggle("Only in duty / PvP##pridonly", () => cfg.PartyRoleIconsOnlyInDuty, v => cfg.PartyRoleIconsOnlyInDuty = v,
             "Limits the job icon above to duty content and PvP, where party role actually\n" +
             "matters. Elsewhere, party members fall through to their named override, then\n" +
             "the friend/hollow dot below. Off = always show for any party member.");
-        ImGui.EndDisabled();
-        ImGui.Unindent();
+        EndIndentedDisabled();
 
         // ── Named player icon overrides ───────────────────────────────────────
-        ImGui.Spacing();
-        ImGui.Separator();
-        ImGui.Spacing();
+        DrawSectionBreak();
 
         ImGui.TextDisabled("Named player overrides");
         if (ImGui.IsItemHovered())
@@ -367,8 +356,7 @@ public sealed class ConfigWindow : Window
         if (!canAdd && ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
             ImGui.SetTooltip("Enter a player name and a non-zero icon ID to enable");
 
-        ImGui.EndDisabled(); // !cfg.ShowPlayers
-        ImGui.Unindent();
+        EndIndentedDisabled(); // !cfg.ShowPlayers
 
         ImGui.EndTabItem();
         return changed;
@@ -382,8 +370,7 @@ public sealed class ConfigWindow : Window
         bool changed = DrawEnableAndColor("enemies", "Enemies", () => cfg.ShowEnemies, v => cfg.ShowEnemies = v,
             () => cfg.EnemyColor, v => cfg.EnemyColor = v);
 
-        ImGui.Indent();
-        ImGui.BeginDisabled(!cfg.ShowEnemies);
+        BeginIndentedDisabled(cfg.ShowEnemies);
         changed |= DrawToggle("Only show enemies I'm engaged with##eng", () => cfg.EnemiesOnlyIfEngaged, v => cfg.EnemiesOnlyIfEngaged = v,
             "Only shows hostiles actually in combat with you or your party, instead of every\n" +
             "hostile in range — handy for big pulls and hunt trains.");
@@ -392,12 +379,9 @@ public sealed class ConfigWindow : Window
             () => cfg.EnemyMinSize, v => cfg.EnemyMinSize = v, () => cfg.EnemyMaxSize, v => cfg.EnemyMaxSize = v,
             50, 60, "en", tooltip: "Controls the size of every enemy marker.");
 
-        ImGui.EndDisabled();
-        ImGui.Unindent();
+        EndIndentedDisabled();
 
-        ImGui.Spacing();
-        ImGui.Separator();
-        ImGui.Spacing();
+        DrawSectionBreak();
 
         changed |= DrawEnableAndColor("lbglow", "Limit break glow (bar 1 color)",
             () => cfg.ShowLimitBreakGlow, v => cfg.ShowLimitBreakGlow = v,
@@ -405,8 +389,7 @@ public sealed class ConfigWindow : Window
             "A glowing border creeps in from each end as limit break charges — one layer\n" +
             "per bar, stacked as each fills. Full layers lit = bars charged, at a glance.");
 
-        ImGui.Indent();
-        ImGui.BeginDisabled(!cfg.ShowLimitBreakGlow);
+        BeginIndentedDisabled(cfg.ShowLimitBreakGlow);
 
         changed |= DrawColorEdit("Bar 2 color##lbc2", cfg.LimitBreakGlowColor2, v => cfg.LimitBreakGlowColor2 = v);
         changed |= DrawColorEdit("Bar 3 color##lbc3", cfg.LimitBreakGlowColor3, v => cfg.LimitBreakGlowColor3 = v);
@@ -414,12 +397,9 @@ public sealed class ConfigWindow : Window
             ImGui.SetTooltip("Each layer waves at its own speed so bars 2/3 never ripple in lockstep with\n" +
                               "bar 1 or each other — meant to look chaotic at a full break.");
 
-        ImGui.EndDisabled();
-        ImGui.Unindent();
+        EndIndentedDisabled();
 
-        ImGui.Spacing();
-        ImGui.Separator();
-        ImGui.Spacing();
+        DrawSectionBreak();
 
         changed |= DrawToggle("Target Health Bar", () => cfg.ShowTargetBar, v => cfg.ShowTargetBar = v,
             "Name + HP readout for your target, docked beneath the compass. Fill reuses\n" +
@@ -428,8 +408,7 @@ public sealed class ConfigWindow : Window
             "background/border/text reuse the compass's own General-tab colors so the two\n" +
             "always match.");
 
-        ImGui.Indent();
-        ImGui.BeginDisabled(!cfg.ShowTargetBar);
+        BeginIndentedDisabled(cfg.ShowTargetBar);
 
         changed |= DrawSliderFloat("Width  (fraction of compass)##tbwf", 0.3f, 1.0f,
             () => cfg.TargetBarWidthFraction, v => cfg.TargetBarWidthFraction = v);
@@ -452,19 +431,15 @@ public sealed class ConfigWindow : Window
         changed |= DrawColorEdit("Shield overlay##tbsc", cfg.TargetBarShieldColor, v => cfg.TargetBarShieldColor = v, ColorPickerFlags);
         ImGui.EndDisabled();
 
-        ImGui.EndDisabled();
-        ImGui.Unindent();
+        EndIndentedDisabled();
 
-        ImGui.Spacing();
-        ImGui.Separator();
-        ImGui.Spacing();
+        DrawSectionBreak();
 
         changed |= DrawToggle("Target-of-target", () => cfg.ShowTargetOfTargetBar, v => cfg.ShowTargetOfTargetBar = v,
             "Shows who/what YOUR target has itself targeted — FF14's target-of-target,\n" +
             "restyled. Hidden when that's nobody, or your target itself.");
 
-        ImGui.Indent();
-        ImGui.BeginDisabled(!cfg.ShowTargetOfTargetBar);
+        BeginIndentedDisabled(cfg.ShowTargetOfTargetBar);
 
         changed |= DrawToggle("Highlight if targeting me##aggro", () => cfg.HighlightIfTargetingMe, v => cfg.HighlightIfTargetingMe = v,
             "When your target's target is YOU, this tier lights up in a warning color\n" +
@@ -474,8 +449,7 @@ public sealed class ConfigWindow : Window
         changed |= DrawColorEdit("Warning color##aggroc", cfg.AggroWarningColor, v => cfg.AggroWarningColor = v, ColorPickerFlags);
         ImGui.EndDisabled();
 
-        ImGui.EndDisabled();
-        ImGui.Unindent();
+        EndIndentedDisabled();
 
         ImGui.EndTabItem();
         return changed;
@@ -489,8 +463,7 @@ public sealed class ConfigWindow : Window
         bool changed = DrawEnableAndColor("npcs", "NPCs", () => cfg.ShowNpcs, v => cfg.ShowNpcs = v,
             () => cfg.NpcColor, v => cfg.NpcColor = v);
 
-        ImGui.Indent();
-        ImGui.BeginDisabled(!cfg.ShowNpcs);
+        BeginIndentedDisabled(cfg.ShowNpcs);
         changed |= DrawToggle("Hide non-targetable \"ghost\" NPCs##tgt", () => cfg.NpcsOnlyIfTargetable, v => cfg.NpcsOnlyIfTargetable = v,
             "Filters out placeholder NPCs the game tracks even when nothing's there\n" +
             "(e.g. an empty chocobo stable slot). Recommended to leave on.");
@@ -518,8 +491,7 @@ public sealed class ConfigWindow : Window
             "Controls the size of every NPC marker — all icons above and the plain dot\n" +
             "shown when none apply.");
 
-        ImGui.EndDisabled();
-        ImGui.Unindent();
+        EndIndentedDisabled();
 
         ImGui.EndTabItem();
         return changed;
@@ -533,8 +505,7 @@ public sealed class ConfigWindow : Window
         bool changed = DrawEnableAndColor("gath", "Gathering Nodes", () => cfg.ShowGatheringNodes, v => cfg.ShowGatheringNodes = v,
             () => cfg.GatheringColor, v => cfg.GatheringColor = v);
 
-        ImGui.Indent();
-        ImGui.BeginDisabled(!cfg.ShowGatheringNodes);
+        BeginIndentedDisabled(cfg.ShowGatheringNodes);
         changed |= DrawToggle("Hide non-targetable \"ghost\" nodes##gtgt", () => cfg.GatheringOnlyIfTargetable, v => cfg.GatheringOnlyIfTargetable = v,
             "Filters out depleted or not-yet-spawned nodes the game still tracks even\n" +
             "when nothing's interactable there.");
@@ -542,16 +513,13 @@ public sealed class ConfigWindow : Window
         changed |= DrawToggle("Show Mining/Botany icons##gicon", () => cfg.ShowGatheringIcons, v => cfg.ShowGatheringIcons = v,
             "Shows the node's Mining/Quarrying/Logging/Botany icon instead of a plain dot.");
 
-        ImGui.BeginDisabled(!cfg.ShowGatheringIcons);
-        ImGui.Indent();
+        BeginIndentedDisabled(cfg.ShowGatheringIcons);
         changed |= DrawSizeSliders(
             () => cfg.GatheringIconMinSize, v => cfg.GatheringIconMinSize = v,
             () => cfg.GatheringIconMaxSize, v => cfg.GatheringIconMaxSize = v, 50, 60, "g");
-        ImGui.Unindent();
-        ImGui.EndDisabled();
+        EndIndentedDisabled();
 
-        ImGui.EndDisabled();
-        ImGui.Unindent();
+        EndIndentedDisabled();
 
         ImGui.EndTabItem();
         return changed;
@@ -565,8 +533,7 @@ public sealed class ConfigWindow : Window
         bool changed = DrawEnableAndColor("tres", "Treasure", () => cfg.ShowTreasure, v => cfg.ShowTreasure = v,
             () => cfg.TreasureColor, v => cfg.TreasureColor = v);
 
-        ImGui.Indent();
-        ImGui.BeginDisabled(!cfg.ShowTreasure);
+        BeginIndentedDisabled(cfg.ShowTreasure);
 
         changed |= DrawSizeSliders(
             () => cfg.TreasureMinSize, v => cfg.TreasureMinSize = v, () => cfg.TreasureMaxSize, v => cfg.TreasureMaxSize = v,
@@ -580,8 +547,7 @@ public sealed class ConfigWindow : Window
             "No game-data sheet exposes a chest's visual type from its BaseId, so every\n" +
             "coffer shows the same icon (below).");
 
-        ImGui.Indent();
-        ImGui.BeginDisabled(!cfg.ShowTreasureIcons);
+        BeginIndentedDisabled(cfg.ShowTreasureIcons);
 
         int trIconId = cfg.TreasureIconId;
         ImGui.SetNextItemWidth(90f);
@@ -591,11 +557,9 @@ public sealed class ConfigWindow : Window
             ImGui.SetTooltip("Game icon ID for every treasure coffer — 60354/60355/60356 are known\n" +
                               "chest-icon variants.");
 
-        ImGui.EndDisabled();
-        ImGui.Unindent();
+        EndIndentedDisabled();
 
-        ImGui.EndDisabled();
-        ImGui.Unindent();
+        EndIndentedDisabled();
 
         ImGui.EndTabItem();
         return changed;
@@ -609,8 +573,7 @@ public sealed class ConfigWindow : Window
         bool changed = DrawEnableAndColor("aeth", "Aetherytes", () => cfg.ShowAetherytes, v => cfg.ShowAetherytes = v,
             () => cfg.AetheryteColor, v => cfg.AetheryteColor = v);
 
-        ImGui.Indent();
-        ImGui.BeginDisabled(!cfg.ShowAetherytes);
+        BeginIndentedDisabled(cfg.ShowAetherytes);
 
         changed |= DrawToggle("Show Aethernet shards##aethshards", () => cfg.ShowAethernetShards, v => cfg.ShowAethernetShards = v,
             "Aethernet shards are the smaller waypoints in housing wards, the Firmament,\n" +
@@ -633,8 +596,7 @@ public sealed class ConfigWindow : Window
                               "as a substring, so \"Aethernet\" catches all shard names at once. Non-matching\n" +
                               "aetherytes are assumed to be main ones.");
 
-        ImGui.EndDisabled();
-        ImGui.Unindent();
+        EndIndentedDisabled();
 
         ImGui.EndTabItem();
         return changed;
@@ -655,8 +617,7 @@ public sealed class ConfigWindow : Window
             "pass as every marker (closer paints on top). Range = General tab's range ×\n" +
             "the multiplier below. Works even with everything else off.");
 
-        ImGui.Indent();
-        ImGui.BeginDisabled(!cfg.ShowFates);
+        BeginIndentedDisabled(cfg.ShowFates);
 
         changed |= DrawSliderFloat("Distance multiplier##fatemul", 0.5f, 5.0f,
             () => cfg.FateDistanceMultiplier, v => cfg.FateDistanceMultiplier = MathF.Max(0.5f, v), "%.1f×");
@@ -669,8 +630,7 @@ public sealed class ConfigWindow : Window
             () => cfg.FateIconMinSize, v => cfg.FateIconMinSize = v, () => cfg.FateIconMaxSize, v => cfg.FateIconMaxSize = v,
             50, 64, "fate", "Min icon size (far away)", "Max icon size (close up)");
 
-        ImGui.EndDisabled();
-        ImGui.Unindent();
+        EndIndentedDisabled();
 
         ImGui.EndTabItem();
         return changed;
@@ -681,6 +641,27 @@ public sealed class ConfigWindow : Window
         ImGuiColorEditFlags.NoInputs | ImGuiColorEditFlags.AlphaBar;
 
     // ── Shared tab building blocks ────────────────────────────────────────────
+
+    // Spacing/Separator/Spacing — the gap between one setting group and the next, throughout
+    private static void DrawSectionBreak()
+    {
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+    }
+
+    // Indent+BeginDisabled / EndDisabled+Unindent — wraps a setting group that only makes sense
+    // once its own enable toggle is on, throughout
+    private static void BeginIndentedDisabled(bool enabled)
+    {
+        ImGui.Indent();
+        ImGui.BeginDisabled(!enabled);
+    }
+    private static void EndIndentedDisabled()
+    {
+        ImGui.EndDisabled();
+        ImGui.Unindent();
+    }
 
     // Checkbox + optional hover tooltip in one call — the shape behind most toggles below
     private static bool DrawToggle(string label, Func<bool> get, Action<bool> set, string? tooltip = null)

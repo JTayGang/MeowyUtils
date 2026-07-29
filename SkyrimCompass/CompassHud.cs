@@ -78,7 +78,6 @@ public sealed class CompassHud : IDisposable
     private readonly Dictionary<uint, string> titleCache = new();
     private readonly Dictionary<uint, string> singularCache = new();
     private readonly ExcelSheet<ENpcResident> npcSheet;
-    private readonly ExcelSheet<ENpcResident> npcSheetLocal;   // client language; /compass debug only
     private readonly ExcelSheet<ClassJob>     classJobSheet;
 
     // Fully-qualified: unqualified "Action" collides with System.Action
@@ -156,7 +155,6 @@ public sealed class CompassHud : IDisposable
         gatheringPointBaseSheet = dataManager.GetExcelSheet<GatheringPointBase>();
         gatheringTypeSheet      = dataManager.GetExcelSheet<GatheringType>();
         npcSheet                = dataManager.GetExcelSheet<ENpcResident>(ClientLanguage.English);
-        npcSheetLocal           = dataManager.GetExcelSheet<ENpcResident>();
         classJobSheet           = dataManager.GetExcelSheet<ClassJob>();
         actionSheet             = dataManager.GetExcelSheet<Lumina.Excel.Sheets.Action>();
 
@@ -507,7 +505,7 @@ public sealed class CompassHud : IDisposable
         Vector2 dir  = delta / len;
         Vector2 perp = new(-dir.Y, dir.X);
 
-        const float amplitude         = 6f;
+        const float amplitude         = 5f;
         const float waveLen           = 26f;
         const float flowSpeed         = 2f;
         const float wipeBandHalfWidth = 0.2f;
@@ -1177,8 +1175,6 @@ public sealed class CompassHud : IDisposable
             var  obj = candidate.Obj!;
             uint col = candidate.Col;
 
-            float r = 3f + 7f * t;  // fallback dot radius (used by Gathering else-branch)
-
             int   iconId   = 0;
             float iconSize = 0f;
 
@@ -1282,17 +1278,23 @@ public sealed class CompassHud : IDisposable
                         }
                     }
                 }
-                else if (obj.ObjectKind == ObjectKind.EventNpc && !isAetheryteKind)
-                    // Excludes aetheryte-classified (Firmament crystals) — styled separately below
-                    DrawHollowDot(dl, sx, cy, Lerp(config.NpcQuestIconMinSize, config.NpcQuestIconMaxSize, t), col, alpha);
-                else if (obj.ObjectKind == ObjectKind.BattleNpc)
-                    DrawFilledDot(dl, sx, cy, Lerp(config.EnemyMinSize, config.EnemyMaxSize, t), col, alpha);
-                else if (isAetheryteKind)
-                    DrawFilledDot(dl, sx, cy, Lerp(config.AetheryteIconMinSize, config.AetheryteIconMaxSize, t), col, alpha);
-                else if (obj.ObjectKind == ObjectKind.Treasure)
-                    DrawFilledDot(dl, sx, cy, Lerp(config.TreasureMinSize, config.TreasureMaxSize, t), col, alpha);
                 else
-                    DrawFilledDot(dl, sx, cy, r * 2f, col, alpha);
+                {
+                    // Every remaining kind draws via the same Draw{Filled|Hollow}Dot(Lerp(min,max,t))
+                    // shape, so look the (min,max,filled) triple up once instead of repeating the
+                    // call per branch. Aetheryte checked first: Firmament crystals are EventNpc-kind
+                    // but should style as aetherytes, not quest NPCs
+                    (float min, float max, bool filled) dot =
+                        isAetheryteKind                         ? (config.AetheryteIconMinSize, config.AetheryteIconMaxSize, true)
+                      : obj.ObjectKind == ObjectKind.EventNpc   ? (config.NpcQuestIconMinSize, config.NpcQuestIconMaxSize, false)
+                      : obj.ObjectKind == ObjectKind.BattleNpc  ? (config.EnemyMinSize, config.EnemyMaxSize, true)
+                      : obj.ObjectKind == ObjectKind.Treasure   ? (config.TreasureMinSize, config.TreasureMaxSize, true)
+                      : (6f, 20f, true);   // generic fallback — was the hand-inlined r=3+7t radius, doubled
+
+                    float dotSize = Lerp(dot.min, dot.max, t);
+                    if (dot.filled) DrawFilledDot(dl, sx, cy, dotSize, col, alpha);
+                    else            DrawHollowDot(dl, sx, cy, dotSize, col, alpha);
+                }
             }
         }
     }
@@ -1394,27 +1396,6 @@ public sealed class CompassHud : IDisposable
             4      => C(new Vector4(0.30f, 0.69f, 0.49f, 0.90f)),   // Healer — green
             _      => C(new Vector4(0.54f, 0.54f, 0.54f, 0.85f)),   // DoH/DoL — gray
         };
-    }
-
-    // Reflects every public property on a Lumina row struct, prints Name=Value. /compass debug
-    // uses this to inspect raw sheet data when a field (e.g. Title) misbehaves
-    private static string DumpAllFields<T>(T? row) where T : struct
-    {
-        if (row is not { } r) return "<no row for this BaseId>";
-        var parts = new List<string>();
-        foreach (var prop in typeof(T).GetProperties())
-        {
-            string val;
-            try
-            {
-                var v = prop.GetValue(r);
-                val = v?.ToString() ?? "null";
-                if (val.Length > 60) val = val[..60] + "…"; // arrays/sub-structs can be huge
-            }
-            catch (Exception ex) { val = $"<threw {ex.GetType().Name}>"; }
-            parts.Add($"{prop.Name}={val}");
-        }
-        return string.Join(", ", parts);
     }
 
     // Resolves an NPC's English Title via ENpcResident, cached per BaseId. "" if none
@@ -1689,48 +1670,11 @@ public sealed class CompassHud : IDisposable
         foreach (var (dist, obj) in nearby)
         {
             string extra = "";
-            string fieldDumpEn = "", fieldDumpLocal = "";
-            if (obj.ObjectKind == ObjectKind.EventNpc)
-            {
-                string title         = GetTitle(obj.BaseId);
-                string singular      = GetSingular(obj.BaseId);
-                bool   hasQuestIcon  = npcMarkerIcons.TryGetValue(obj.GameObjectId, out int qIconId) && qIconId > 0;
-                bool   isMender      = IsMender(obj);
-                bool   isShop        = IsShop(obj);
-                bool   isSkipper     = IsSkipper(obj);
-                bool   isTicketer    = IsTicketer(obj);
-                bool   isChocoboKeep = IsChocoboKeep(obj);
-                bool   isFastTravel  = isSkipper || isTicketer || isChocoboKeep;
-                // Mirrors TryGetNpcIcon's priority order; names the sub-type since each has its own icon
-                string winner        = hasQuestIcon  ? $"QuestMarker(icon={qIconId})"
-                                     : isMender      ? "Mender"
-                                     : isShop        ? "Shop"
-                                     : isSkipper     ? "Skipper"
-                                     : isTicketer    ? "Ticketer"
-                                     : isChocoboKeep ? "ChocoboKeep"
-                                     : "none/dot";
-                // TitleEN/SingularEN: always English, what the *Keywords arrays actually match
-                // against. Word's here but Is* is false? Its missing from that keyword list
-                extra = $" | TitleEN=\"{title}\" | SingularEN=\"{singular}\" | QuestIcon={hasQuestIcon,-5} | " +
-                        $"IsMender={isMender,-5} | IsShop={isShop,-5} | IsChocoboKeep={isChocoboKeep,-5} | " +
-                        $"IsFastTravel={isFastTravel,-5} | WouldShow={winner}";
+            if (obj.ObjectKind == ObjectKind.EventNpc && npcSheet.GetRowOrDefault(obj.BaseId) is { } npcRow)
+                extra = $" | Singular=\"{npcRow.Singular.ToString()}\" | Plural=\"{npcRow.Plural.ToString()}\"";
 
-                // Both language variants: disagreement = English-forcing broke it; both blank = wrong field
-                fieldDumpEn    = DumpAllFields(npcSheet.GetRowOrDefault(obj.BaseId));
-                fieldDumpLocal = DumpAllFields(npcSheetLocal.GetRowOrDefault(obj.BaseId));
-            }
-            else if (obj.ObjectKind == ObjectKind.Treasure)
-                extra = $" | WouldShow={(config.ShowTreasureIcons ? $"Icon({config.TreasureIconId})" : "dot")}";
-
-            log.Info(
-                $"[SkyrimCompass debug] {dist,6:F1}y | Kind={obj.ObjectKind,-19} | " +
-                $"BaseId={obj.BaseId,-8} | Targetable={obj.IsTargetable,-5} | " +
-                $"Name=\"{obj.Name.TextValue}\"{extra}");
-            if (obj.ObjectKind == ObjectKind.EventNpc)
-            {
-                log.Info($"    ENpcResident[EN,forced]  {fieldDumpEn}");
-                log.Info($"    ENpcResident[client-lang] {fieldDumpLocal}");
-            }
+            log.Info($"[SkyrimCompass debug] {dist,6:F1}y | Kind={obj.ObjectKind,-19} | " +
+                     $"BaseId={obj.BaseId,-8} | Name=\"{obj.Name.TextValue}\"{extra}");
         }
         log.Info("[SkyrimCompass debug] Done. Use /xllog in-game to view the log window.");
     }

@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Numerics;
-using System.Reflection;
 using Dalamud.Game;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Fates;
@@ -275,11 +273,7 @@ public sealed class CompassHud : IDisposable
     private float UpdateContextMenuFadeAlpha(float now)
     {
         bool menuOpenNow = IsVanillaContextMenuOpen();
-        if (menuOpenNow != contextMenuWasOpen)
-        {
-            contextMenuFadeChangeTime = now;
-            contextMenuWasOpen        = menuOpenNow;
-        }
+        if (menuOpenNow != contextMenuWasOpen) { contextMenuFadeChangeTime = now; contextMenuWasOpen = menuOpenNow; }
 
         float t = ContextMenuFadeSeconds > 0f
             ? Math.Clamp((now - contextMenuFadeChangeTime) / ContextMenuFadeSeconds, 0f, 1f)
@@ -1085,11 +1079,7 @@ public sealed class CompassHud : IDisposable
 
         // Left click = new target, like clicking a vanilla ToT frame. Not offered on the main
         // bar: left-clicking your own already-selected target is a no-op in vanilla too
-        if (allowLeftClickToTarget && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
-        {
-            targetManager.Target = obj;
-            return;
-        }
+        if (allowLeftClickToTarget && ImGui.IsMouseClicked(ImGuiMouseButton.Left)) { targetManager.Target = obj; return; }
 
         if (!ImGui.IsMouseClicked(ImGuiMouseButton.Right)) return;
 
@@ -1103,26 +1093,14 @@ public sealed class CompassHud : IDisposable
     // native call returned null
     private unsafe void TryOpenVanillaTargetContextMenu(IGameObject obj)
     {
-        if (obj.Address == IntPtr.Zero)
-        {
-            log.Info("[SkyrimCompass debug] Target's Address was zero — can't open context menu.");
-            return;
-        }
+        if (obj.Address == IntPtr.Zero) { log.Info("[SkyrimCompass debug] Target's Address was zero — can't open context menu."); return; }
 
         var agentModule = FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentModule.Instance();
-        if (agentModule == null)
-        {
-            log.Info("[SkyrimCompass debug] AgentModule.Instance() was null — can't open context menu.");
-            return;
-        }
+        if (agentModule == null) { log.Info("[SkyrimCompass debug] AgentModule.Instance() was null — can't open context menu."); return; }
 
         var hudAgent = (FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentHUD*)
             agentModule->GetAgentByInternalId(FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentId.Hud);
-        if (hudAgent == null)
-        {
-            log.Info("[SkyrimCompass debug] AgentHUD agent was null — can't open context menu.");
-            return;
-        }
+        if (hudAgent == null) { log.Info("[SkyrimCompass debug] AgentHUD agent was null — can't open context menu."); return; }
 
         hudAgent->OpenContextMenuFromTarget((FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)obj.Address);
     }
@@ -1689,11 +1667,7 @@ public sealed class CompassHud : IDisposable
     public void DumpNearbyObjects(float radius = 50f)
     {
         var player = objectTable.LocalPlayer;
-        if (player == null)
-        {
-            log.Info("[SkyrimCompass debug] No local player — are you logged in?");
-            return;
-        }
+        if (player == null) { log.Info("[SkyrimCompass debug] No local player — are you logged in?"); return; }
 
         var pp     = player.Position;
         var nearby = new List<(float dist, IGameObject obj)>();
@@ -1746,9 +1720,7 @@ public sealed class CompassHud : IDisposable
                 fieldDumpLocal = DumpAllFields(npcSheetLocal.GetRowOrDefault(obj.BaseId));
             }
             else if (obj.ObjectKind == ObjectKind.Treasure)
-            {
                 extra = $" | WouldShow={(config.ShowTreasureIcons ? $"Icon({config.TreasureIconId})" : "dot")}";
-            }
 
             log.Info(
                 $"[SkyrimCompass debug] {dist,6:F1}y | Kind={obj.ObjectKind,-19} | " +

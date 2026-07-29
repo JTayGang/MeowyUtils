@@ -58,6 +58,9 @@ public sealed class CompassHud : IDisposable
     private float lastRawTargetHpFrac   = 1f;
     private float targetBarFlashAlpha   = 0f;
 
+    // Target status icons: reused every frame, no per-frame List<> allocation
+    private readonly List<(float RemainingTime, int Icon, string Name, string Description)> targetStatusBuffer = new();
+
     // Native context menus render above ImGui, so we dim the bar instead of hiding it
     private bool  contextMenuWasOpen;
     private float contextMenuFadeChangeTime = -1000f;  // time of last open/close flip
@@ -257,10 +260,14 @@ public sealed class CompassHud : IDisposable
         float tbRowY = by + bh + rowGap;
         float nameCx = bx + bw * 0.5f;   // compass's own center, not the (possibly-narrower) trapezoid's
 
+        float targetNameBottom = tbRowY;
         if (config.ShowTargetBar)
-            RenderTargetBar(dl, mainX, mainW, tbRowY, nameCx, rowW, now, barAlpha);
+            targetNameBottom = RenderTargetBar(dl, mainX, mainW, tbRowY, nameCx, rowW, now, barAlpha);
         if (hasTot)
             RenderTargetOfTargetBar(dl, totX, totW, tbRowY, player, now, barAlpha);
+
+        if (config.ShowTargetBar && config.ShowTargetStatuses && curTarget is IBattleChara targetChara)
+            RenderTargetStatuses(dl, targetChara, nameCx, targetNameBottom, barAlpha);
     }
 
     // Eases alpha toward ContextMenuDimmedAlpha while a menu's open, back to 1 on close.
@@ -732,7 +739,8 @@ public sealed class CompassHud : IDisposable
         return (rowX, mainW, totX, totW, rowW);
     }
 
-    // Y the bar finished at; currently unread by Draw() (ToT renders at a fixed row Y instead) — kept for future use
+    // Returns the bottom Y of the name row — Draw() anchors the status icon row beneath it
+    // (ToT ignores this and renders at a fixed row Y instead)
     private float RenderTargetBar(ImDrawListPtr dl, float tbX, float tbW, float tbY, float nameCx, float nameRowW, float now, float barAlpha)
     {
         var target = targetManager.Target;
@@ -992,6 +1000,70 @@ public sealed class CompassHud : IDisposable
         // Same right-click → context menu handling as the main bar, for whatever your target
         // has itself targeted (or yourself, in the targetingMe case — valid in vanilla too)
         HandleTargetFrameClick(V(tbX, tbY), V(tbX + tbW, tbY + tbH), tot, allowLeftClickToTarget: true);
+    }
+
+    // ── Target status icons — native StatusList order, capped count, small duration readout,
+    // hover tooltip. No sorting, no buff/debuff split: StatusList already gives us exactly what
+    // the vanilla frame would show, so this only ever filters out empty slots (StatusId 0) and
+    // ones whose GameData/Icon didn't resolve
+    private void RenderTargetStatuses(ImDrawListPtr dl, IBattleChara target, float cx, float y, float barAlpha)
+    {
+        float size = MathF.Max(8f, config.TargetStatusIconSize);
+        float hGap = size * 0.25f;
+        int   max  = Math.Max(1, config.TargetStatusMaxIcons);
+
+        targetStatusBuffer.Clear();
+        foreach (var status in target.StatusList)
+        {
+            if (targetStatusBuffer.Count >= max) break;
+            if (status.StatusId == 0) continue;
+            if (status.GameData.ValueNullable is not { } row || row.Icon == 0) continue;
+            targetStatusBuffer.Add((status.RemainingTime, (int)row.Icon, row.Name.ToString(), row.Description.ToString()));
+        }
+        if (targetStatusBuffer.Count == 0) return;
+
+        int   n       = targetStatusBuffer.Count;
+        float startX  = cx - (n * size + (n - 1) * hGap) * 0.5f;
+        float topGap  = size * 0.15f;                                        // tightened up from the name row
+        float halfH   = size * 0.5f * GetIconAspect(targetStatusBuffer[0].Icon);  // status icons run taller than wide
+        float scy     = y + topGap + halfH;
+
+        float fontSize = MathF.Max(9f, size * 0.8f);   // linear in icon size — no per-frame text measurement
+        var   font     = ImGui.GetFont();
+        float textGap  = -size * 0.12f;   // tucked up under the icon — its texture has some built-in padding
+
+        for (int i = 0; i < n; i++)
+        {
+            var (remaining, icon, name, description) = targetStatusBuffer[i];
+            float sx = startX + i * (size + hGap) + size * 0.5f;
+            if (!TryDrawIcon(dl, icon, sx, scy, size, barAlpha)) continue;
+
+            // At most 3 characters: seconds/minutes/hours count up, and anything 9 days or beyond
+            // (which the game itself stops tracking precisely too) just pins at "9+d"
+            string? durationLabel = remaining <= 0f ? null
+                : remaining < 60f ? $"{(int)remaining}"
+                : remaining < 3600f ? $"{(int)(remaining / 60f)}m"
+                : remaining < 86400f ? $"{(int)(remaining / 3600f)}h"
+                : remaining < 777600f ? $"{(int)(remaining / 86400f)}d"
+                : "9+d";
+
+            float hoverBottom = scy + halfH;
+
+            if (durationLabel != null)
+            {
+                Vector2 lsz = ImGui.CalcTextSize(durationLabel) * (fontSize / ImGui.GetFontSize());
+                float   lx  = sx - lsz.X * 0.5f;
+                float   ly  = scy + halfH + textGap;
+
+                dl.AddText(font, fontSize, V(lx + 1f, ly + 1f), WithAlpha(0xCC000000u, barAlpha), durationLabel);
+                dl.AddText(font, fontSize, V(lx, ly), WithAlpha(0xFFFFFFFFu, barAlpha), durationLabel);
+
+                hoverBottom = ly + lsz.Y;   // hover/tooltip rect covers the label too, not just the icon
+            }
+
+            if (ImGui.IsMouseHoveringRect(V(sx - size * 0.5f, scy - halfH), V(sx + size * 0.5f, hoverBottom), false))
+                ImGui.SetTooltip(string.IsNullOrWhiteSpace(description) ? name : $"{name}\n{description}");
+        }
     }
 
     // ── Target frame input — draw-list rendering has no ImGui item, so no hover/click state
@@ -1261,8 +1333,11 @@ public sealed class CompassHud : IDisposable
         return midAlpha * SmoothStep(t / midEnd);
     }
 
-    // Draws a game icon centred at (sx, cy). Returns false if texture not yet loaded.
-    // clipToCircle=true: quad stays at `size`, uvZoom crops the texture (fits a border ring).
+    // Draws a game icon centred at (sx, cy). `size` is the icon's width; height follows the
+    // source texture's real aspect ratio — a no-op for the square item/action/etc. icons used
+    // everywhere else in this file, but status icons are noticeably taller than wide, and
+    // forcing those into a square box squishes them. Returns false if texture not yet loaded.
+    // clipToCircle=true: quad stays square at `size`, uvZoom crops the texture (fits a border ring).
     // clipToCircle=false: uvZoom scales the quad itself. uvZoom=1.0 → no zoom either way
     private bool TryDrawIcon(
         ImDrawListPtr dl, int iconId, float sx, float cy, float size, float alpha,
@@ -1274,19 +1349,20 @@ public sealed class CompassHud : IDisposable
         var  tex  = sharedTex.GetWrapOrEmpty();
         uint tint = WithAlpha(0xFFFFFFFFu, alpha);
 
-        float   half;
+        float   halfW, halfH;
         Vector2 uvMin, uvMax;
 
         if (clipToCircle)
         {
-            half         = size * 0.5f;
+            halfW = halfH = size * 0.5f;
             float uvHalf = 0.5f / Math.Max(0.01f, uvZoom);
             uvMin = new(0.5f - uvHalf, 0.5f - uvHalf);
             uvMax = new(0.5f + uvHalf, 0.5f + uvHalf);
         }
         else
         {
-            half  = size * 0.5f * Math.Max(0.01f, uvZoom);
+            halfW = size * 0.5f * Math.Max(0.01f, uvZoom);
+            halfH = halfW * (tex.Size.X > 0f ? tex.Size.Y / tex.Size.X : 1f);
             uvMin = new(0f, 0f);
             uvMax = new(1f, 1f);
         }
@@ -1294,13 +1370,22 @@ public sealed class CompassHud : IDisposable
         PushUnclip(dl);
         dl.AddImageRounded(
             tex.Handle,
-            V(sx - half, cy - half),
-            V(sx + half, cy + half),
+            V(sx - halfW, cy - halfH),
+            V(sx + halfW, cy + halfH),
             uvMin, uvMax, tint,
-            clipToCircle ? half : 0f,
+            clipToCircle ? halfW : 0f,
             ImDrawFlags.RoundCornersAll);
         PopUnclip(dl);
         return true;
+    }
+
+    // Same aspect lookup TryDrawIcon uses internally — exposed for callers that need to know
+    // an icon's real height for layout (e.g. positioning a tooltip rect) without a `tex` in hand
+    private float GetIconAspect(int iconId)
+    {
+        if (!textureProvider.TryGetFromGameIcon(new GameIconLookup((uint)iconId), out var sharedTex)) return 1f;
+        var size = sharedTex.GetWrapOrEmpty().Size;
+        return size.X > 0f ? size.Y / size.X : 1f;
     }
 
     // GatheringPoint(BaseId) → GatheringPointBase → GatheringType → IconMain.

@@ -435,6 +435,17 @@ public sealed class ConfigWindow : Window
 
         DrawSectionBreak();
 
+        changed |= DrawToggle("Target status icons", () => cfg.ShowTargetStatuses, v => cfg.ShowTargetStatuses = v,
+            "Buff/debuff icons for your target, in a row beneath its name. Native game\n" +
+            "order — no sorting, no filtering; just whatever the vanilla frame would show.");
+
+        BeginIndentedDisabled(cfg.ShowTargetStatuses);
+        changed |= DrawSliderInt("Icon size##tssize", 12, 40, () => (int)cfg.TargetStatusIconSize, v => cfg.TargetStatusIconSize = v);
+        changed |= DrawSliderInt("Max icons##tsmax", 3, 20, () => cfg.TargetStatusMaxIcons, v => cfg.TargetStatusMaxIcons = v);
+        EndIndentedDisabled();
+
+        DrawSectionBreak();
+
         changed |= DrawToggle("Target-of-target", () => cfg.ShowTargetOfTargetBar, v => cfg.ShowTargetOfTargetBar = v,
             "Shows who/what YOUR target has itself targeted — FF14's target-of-target,\n" +
             "restyled. Hidden when that's nobody, or your target itself.");

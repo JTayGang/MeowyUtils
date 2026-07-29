@@ -82,6 +82,11 @@ public class Configuration : IPluginConfiguration
     public bool    ShowTargetBarRibbons   { get; set; } = true;   // glow ribbons flying out from the name's ornaments
     public Vector4 TargetBarShieldColor   { get; set; } = new(0.80f, 0.92f, 1.00f, 0.55f);
 
+    // Status icons for your target, docked beneath its name row — native slot order, no sorting/filtering
+    public bool  ShowTargetStatuses   { get; set; } = true;
+    public float TargetStatusIconSize { get; set; } = 22f;   // fixed size — no distance scaling like markers have
+    public int   TargetStatusMaxIcons { get; set; } = 10;
+
     // FF14's ToT, restyled: auto-hidden if nobody/self, except targeting YOU (dedicated warning color instead)
     public bool    ShowTargetOfTargetBar  { get; set; } = true;
     public bool    HighlightIfTargetingMe { get; set; } = true;

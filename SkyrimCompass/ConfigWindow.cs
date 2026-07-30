@@ -442,6 +442,14 @@ public sealed class ConfigWindow : Window
         BeginIndentedDisabled(cfg.ShowTargetStatuses);
         changed |= DrawSliderInt("Icon size##tssize", 12, 40, () => (int)cfg.TargetStatusIconSize, v => cfg.TargetStatusIconSize = v);
         changed |= DrawSliderInt("Max icons##tsmax", 3, 20, () => cfg.TargetStatusMaxIcons, v => cfg.TargetStatusMaxIcons = v);
+        changed |= DrawToggle("Include Moodles##tsmoodles", () => cfg.ShowMoodlesStatuses, v => cfg.ShowMoodlesStatuses = v,
+            "Adds the target's active Moodles into the row above, sharing its size and max-icons\n" +
+            "limit. Does nothing if the Moodles plugin isn't installed. No duration shown — Moodles\n" +
+            "only reports each status's total length, not time left.");
+        changed |= DrawToggle("Include Loci##tsloci", () => cfg.ShowLociStatuses, v => cfg.ShowLociStatuses = v,
+            "Adds the target's active Loci statuses into the row above, sharing its size and\n" +
+            "max-icons limit. Does nothing if the Loci plugin isn't installed. No duration shown —\n" +
+            "same reason as Moodles.");
         EndIndentedDisabled();
 
         DrawSectionBreak();
@@ -662,7 +670,7 @@ public sealed class ConfigWindow : Window
     }
 
     // Indent+BeginDisabled / EndDisabled+Unindent — wraps a setting group that only makes sense
-    // once its own enable toggle is on, throughout
+    // with its own enable toggle on, throughout
     private static void BeginIndentedDisabled(bool enabled)
     {
         ImGui.Indent();

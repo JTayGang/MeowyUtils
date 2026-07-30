@@ -6,7 +6,7 @@ using Dalamud.Plugin;
 
 namespace SkyrimCompass;
 
-// Per-player icon override — case-insensitive name match; falls back to a dot if the texture doesnt resolve
+// Per-player icon override: case-insensitive match, falls back to a dot if texture fails
 [Serializable]
 public class PlayerIconOverride
 {
@@ -30,7 +30,7 @@ public class Configuration : IPluginConfiguration
     public float CompassWidth  { get; set; } = 560f;
     public float CompassHeight { get; set; } = 35f;
     public float YOffset       { get; set; } = 8f;
-    public float XOffset       { get; set; } = 0f;   // shifts bar left(-)/right(+) of horizontal center
+    public float XOffset       { get; set; } = 0f;   // shifts bar left(-)/right(+) of center
 
     // Behaviour
     public float VisibleDegrees      { get; set; } = 90f;    // degrees of the full 360° visible at once
@@ -53,7 +53,7 @@ public class Configuration : IPluginConfiguration
     public bool  ShowPlayers        { get; set; } = true;
     public bool  SolidFriendDots    { get; set; } = true;   // friends render as solid dots (StatusFlags.Friend)
     public bool  ShowPartyRoleIcons { get; set; } = true;   // party job icon (ClassJob.RowId) + role-colored ring
-    // Restricts job icon/ring to duty+PvP (role matters); else falls to named override, then friend/hollow dot. Off=always-on
+    // Restricts job icon/ring to duty+PvP (role matters); else falls to named override, then friend/hollow dot; off=always-on
     public bool  PartyRoleIconsOnlyInDuty { get; set; } = true;
     public float PartyRoleIconMinSize     { get; set; } = 10f;
     public float PartyRoleIconMaxSize     { get; set; } = 24f;
@@ -86,6 +86,11 @@ public class Configuration : IPluginConfiguration
     public bool  ShowTargetStatuses   { get; set; } = true;
     public float TargetStatusIconSize { get; set; } = 22f;   // fixed size — no distance scaling like markers have
     public int   TargetStatusMaxIcons { get; set; } = 10;
+    // Moodles/Loci active statuses merged into the row above, sharing its size/cap; no-op if that
+    // plugin isn't installed. No duration label — neither plugin's IPC exposes time remaining,
+    // only each status's configured total length
+    public bool  ShowMoodlesStatuses  { get; set; } = true;
+    public bool  ShowLociStatuses     { get; set; } = true;
 
     // FF14's ToT, restyled: auto-hidden if nobody/self, except targeting YOU (dedicated warning color instead)
     public bool    ShowTargetOfTargetBar  { get; set; } = true;
@@ -98,8 +103,8 @@ public class Configuration : IPluginConfiguration
     public float NpcQuestIconMinSize  { get; set; } = 8f;
     public float NpcQuestIconMaxSize  { get; set; } = 40f;
 
-    // Mender/Shop/Fast-Travel detect via ENpcResident Title/Singular (vocation word), forced
-    // English regardless of client language. Share NpcQuestIcon's size range
+    // Mender/Shop/Fast-Travel detected via ENpcResident Title/Singular (vocation word), forced English
+    // regardless of client language; shares NpcQuestIcon's size range
     public bool ShowMenderIcons { get; set; } = true;
     public int  MenderIconId    { get; set; } = 60434;
     public bool ShowShopIcons   { get; set; } = true;
@@ -150,7 +155,7 @@ public class Configuration : IPluginConfiguration
     public float   FateIconMinSize        { get; set; } = 20f;
     public float   FateIconMaxSize        { get; set; } = 32f;
 
-    // True if any marker type is enabled — skips the object-table loop entirely otherwise
+    // True if any marker type is enabled — skips the object-table loop otherwise
     public bool ShowAnyMarkers =>
         ShowPlayers || ShowEnemies || ShowNpcs || ShowGatheringNodes || ShowTreasure || ShowAetherytes;
 

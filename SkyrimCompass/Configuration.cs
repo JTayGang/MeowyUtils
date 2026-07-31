@@ -92,6 +92,17 @@ public class Configuration : IPluginConfiguration
     public bool  ShowMoodlesStatuses  { get; set; } = true;
     public bool  ShowLociStatuses     { get; set; } = true;
 
+    // Standalone row for your OWN statuses (native + Moodles/Loci) — same rendering as the target
+    // row above, but its own size/cap/position, since it isn't docked beneath a target's name row.
+    // Off by default: existing users shouldn't get a new floating element they never positioned
+    public bool  ShowPlayerStatusBar     { get; set; } = false;
+    public float PlayerStatusIconSize    { get; set; } = 22f;
+    public int   PlayerStatusMaxIcons    { get; set; } = 10;
+    public bool  PlayerStatusShowMoodles { get; set; } = true;
+    public bool  PlayerStatusShowLoci    { get; set; } = true;
+    public float PlayerStatusXOffset     { get; set; } = 0f;     // left(-)/right(+) of screen center
+    public float PlayerStatusYOffset     { get; set; } = 160f;   // from top of screen
+
     // FF14's ToT, restyled: auto-hidden if nobody/self, except targeting YOU (dedicated warning color instead)
     public bool    ShowTargetOfTargetBar  { get; set; } = true;
     public bool    HighlightIfTargetingMe { get; set; } = true;

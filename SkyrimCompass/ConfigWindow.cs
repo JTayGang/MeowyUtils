@@ -454,6 +454,34 @@ public sealed class ConfigWindow : Window
 
         DrawSectionBreak();
 
+        changed |= DrawToggle("Player status bar", () => cfg.ShowPlayerStatusBar, v => cfg.ShowPlayerStatusBar = v,
+            "A separate, freely-positioned row of YOUR OWN active statuses (native + Moodles/Loci),\n" +
+            "so you can see them without having to target yourself. Independent size, icon cap,\n" +
+            "and Moodles/Loci toggles from the target row above.");
+
+        BeginIndentedDisabled(cfg.ShowPlayerStatusBar);
+        changed |= DrawSliderInt("Icon size##pssize", 12, 40, () => (int)cfg.PlayerStatusIconSize, v => cfg.PlayerStatusIconSize = v);
+        changed |= DrawSliderInt("Max icons##psmax", 3, 20, () => cfg.PlayerStatusMaxIcons, v => cfg.PlayerStatusMaxIcons = v);
+        changed |= DrawToggle("Include Moodles##psmoodles", () => cfg.PlayerStatusShowMoodles, v => cfg.PlayerStatusShowMoodles = v,
+            "Adds your active Moodles into the row above. Does nothing if the Moodles plugin isn't installed.");
+        changed |= DrawToggle("Include Loci##psloci", () => cfg.PlayerStatusShowLoci, v => cfg.PlayerStatusShowLoci = v,
+            "Adds your active Loci statuses into the row above. Does nothing if the Loci plugin isn't installed.");
+
+        // Row width varies with how many icons are currently active, so this range is an estimate
+        // (max icons at roughly their on-screen spacing) rather than an exact on-screen guarantee
+        // like the compass's own X/Y sliders get — same idea, just can't be pixel-exact here
+        var   io       = ImGui.GetIO();
+        float psWEst   = cfg.PlayerStatusMaxIcons * (cfg.PlayerStatusIconSize * 1.25f);
+        int   psXRange = (int)MathF.Max(0f, (io.DisplaySize.X - psWEst) * 0.5f);
+        changed |= DrawSliderInt("X Offset (from center)##psxo", -psXRange, psXRange, () => (int)cfg.PlayerStatusXOffset, v => cfg.PlayerStatusXOffset = v);
+
+        float psHEst = cfg.PlayerStatusIconSize * 1.6f;   // icon + duration label, roughly
+        int   psYMax = (int)MathF.Max(0f, io.DisplaySize.Y - psHEst);
+        changed |= DrawSliderInt("Y Offset (from top)##psyo", 0, psYMax, () => (int)cfg.PlayerStatusYOffset, v => cfg.PlayerStatusYOffset = v);
+        EndIndentedDisabled();
+
+        DrawSectionBreak();
+
         changed |= DrawToggle("Target-of-target", () => cfg.ShowTargetOfTargetBar, v => cfg.ShowTargetOfTargetBar = v,
             "Shows who/what YOUR target has itself targeted — FF14's target-of-target,\n" +
             "restyled. Hidden when that's nobody, or your target itself.");

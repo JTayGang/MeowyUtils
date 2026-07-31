@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Text.RegularExpressions;
 using Dalamud.Game;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Fates;
@@ -8,8 +9,11 @@ using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.SubKinds;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Game.Gui.NamePlate;
+using Dalamud.Game.Text.SeStringHandling;
+using Dalamud.Interface.ImGuiSeStringRenderer;
 using Dalamud.Interface.ManagedFontAtlas;
 using Dalamud.Interface.Textures;
+using Dalamud.Interface.Utility;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Ipc;
 using Dalamud.Plugin.Services;
@@ -88,6 +92,12 @@ public sealed class CompassHud : IDisposable
 
     // Target status icons: reused every frame, no per-frame List<> allocation
     private readonly List<(float RemainingTime, int Icon, string Name, string Description)> targetStatusBuffer = new();
+
+    // Moodles/Loci status text carries their own [color=x]/[glow=x]/[i] markup (x = a UIColor sheet
+    // row, numeric or a handful of named aliases); native status text never matches these tags, so
+    // it flows through unaffected. Encoded once per distinct (name, description) pair and reused —
+    // this runs every frame a tooltip's hovered, so parsing it fresh each time would be wasteful
+    private readonly Dictionary<(string Name, string Description), byte[]> formattedTooltipCache = new();
 
     // Native context menus render above ImGui, so we dim the bar instead of hiding it
     private bool  contextMenuWasOpen;
@@ -301,6 +311,9 @@ public sealed class CompassHud : IDisposable
 
         if (config.ShowTargetBar && config.ShowTargetStatuses && curTarget is IBattleChara targetChara)
             RenderTargetStatuses(dl, targetChara, nameCx, targetNameBottom, barAlpha);
+
+        if (config.ShowPlayerStatusBar)
+            RenderPlayerStatusBar(dl, player, barAlpha);
     }
 
     // Eases alpha toward ContextMenuDimmedAlpha while a menu's open, back to 1 on close.
@@ -1031,20 +1044,23 @@ public sealed class CompassHud : IDisposable
         HandleTargetFrameClick(V(tbX, tbY), V(tbX + tbW, tbY + tbH), tot, allowLeftClickToTarget: true);
     }
 
-    // ── Target status icons — native StatusList order, capped count, small duration readout,
-    // hover tooltip. No sorting, no buff/debuff split: StatusList already gives us exactly what
-    // the vanilla frame would show, so this only ever filters out empty slots (StatusId 0) and
-    // ones whose GameData/Icon didn't resolve. Moodles/Loci active statuses (if either plugin's
-    // installed and its toggle's on) are appended into this same row, same size/cap, no sorting
-    // between sources — native first, then Moodles, then Loci
-    private void RenderTargetStatuses(ImDrawListPtr dl, IBattleChara target, float cx, float y, float barAlpha)
+    // ── Status icon row — native StatusList order, capped count, small duration readout, hover
+    // tooltip. No sorting, no buff/debuff split: StatusList already gives us exactly what the
+    // vanilla frame would show, so this only ever filters out empty slots (StatusId 0) and ones
+    // whose GameData/Icon didn't resolve. Moodles/Loci active statuses (if either plugin's
+    // installed and its toggle's on) are appended into this same row, no sorting between sources
+    // — native first, then Moodles, then Loci. Shared by the target bar's status row and the
+    // standalone player bar below, so each can size/cap/toggle Moodles+Loci independently
+    private void RenderStatusIconRow(
+        ImDrawListPtr dl, IBattleChara character, float cx, float y, float barAlpha,
+        float iconSize, int maxIcons, bool includeMoodles, bool includeLoci)
     {
-        float size = MathF.Max(8f, config.TargetStatusIconSize);
+        float size = MathF.Max(8f, iconSize);
         float hGap = size * 0.25f;
-        int   max  = Math.Max(1, config.TargetStatusMaxIcons);
+        int   max  = Math.Max(1, maxIcons);
 
         targetStatusBuffer.Clear();
-        foreach (var status in target.StatusList)
+        foreach (var status in character.StatusList)
         {
             if (targetStatusBuffer.Count >= max) break;
             if (status.StatusId == 0) continue;
@@ -1052,15 +1068,15 @@ public sealed class CompassHud : IDisposable
             targetStatusBuffer.Add((status.RemainingTime, (int)row.Icon, row.Name.ToString(), row.Description.ToString()));
         }
 
-        if (target.Address != IntPtr.Zero)
+        if (character.Address != IntPtr.Zero)
         {
             float now = (float)ImGui.GetTime();
-            if (config.ShowMoodlesStatuses && targetStatusBuffer.Count < max
+            if (includeMoodles && targetStatusBuffer.Count < max
                 && IsPluginActive("Moodles", ref moodlesActive, ref moodlesActiveCheckedAt, now))
-                AppendMoodlesStatuses(target.Address, max);
-            if (config.ShowLociStatuses && targetStatusBuffer.Count < max
+                AppendMoodlesStatuses(character.Address, max);
+            if (includeLoci && targetStatusBuffer.Count < max
                 && IsPluginActive("Loci", ref lociActive, ref lociActiveCheckedAt, now))
-                AppendLociStatuses(target.Address, max);
+                AppendLociStatuses(character.Address, max);
         }
         if (targetStatusBuffer.Count == 0) return;
 
@@ -1104,8 +1120,32 @@ public sealed class CompassHud : IDisposable
             }
 
             if (ImGui.IsMouseHoveringRect(V(sx - size * 0.5f, scy - halfH), V(sx + size * 0.5f, hoverBottom), false))
-                ImGui.SetTooltip(string.IsNullOrWhiteSpace(description) ? name : $"{name}\n{description}");
+            {
+                // WrapWidth left at its default (null) wraps to ImGui.GetContentRegionAvail(), which
+                // is near-zero on a tooltip's first frame before it's grown to fit content — wrapping
+                // almost every glyph. Pinned huge instead, matching the old SetTooltip's no-wrap
+                // behavior (it only ever broke at our own explicit "\n" between name and description)
+                ImGui.BeginTooltip();
+                ImGuiHelpers.SeStringWrapped(GetFormattedTooltipBytes(name, description), new SeStringDrawParams { WrapWidth = 10000f });
+                ImGui.EndTooltip();
+            }
         }
+    }
+
+    private void RenderTargetStatuses(ImDrawListPtr dl, IBattleChara target, float cx, float y, float barAlpha) =>
+        RenderStatusIconRow(dl, target, cx, y, barAlpha, config.TargetStatusIconSize, config.TargetStatusMaxIcons,
+            config.ShowMoodlesStatuses, config.ShowLociStatuses);
+
+    // Standalone row for your OWN statuses — same rendering as the target row above, but
+    // independently sized/capped/positioned, since it isn't docked beneath anything. Centered
+    // on-screen plus its own offsets, mirroring how the compass itself is positioned in Draw()
+    private void RenderPlayerStatusBar(ImDrawListPtr dl, IBattleChara player, float barAlpha)
+    {
+        var   io = ImGui.GetIO();
+        float cx = io.DisplaySize.X * 0.5f + config.PlayerStatusXOffset;
+        float y  = config.PlayerStatusYOffset;
+        RenderStatusIconRow(dl, player, cx, y, barAlpha, config.PlayerStatusIconSize, config.PlayerStatusMaxIcons,
+            config.PlayerStatusShowMoodles, config.PlayerStatusShowLoci);
     }
 
     // True if `internalName` is installed and enabled. Rechecked at most every
@@ -1158,6 +1198,93 @@ public sealed class CompassHud : IDisposable
             if (s.IconID == 0) continue;
             targetStatusBuffer.Add((0f, (int)s.IconID, s.Title, s.Description));
         }
+    }
+
+    // The handful of human-readable names Moodles/Loci's own tag parsers accept for [color=x]/
+    // [glow=x] (ECommons.ChatMethods.UIColor / LociApi's equivalent) — both just label rows of the
+    // game's own UIColor sheet, so one table covers both plugins. Row IDs, not RGB: resolving a row
+    // to an actual color is left entirely to Dalamud's SeString renderer below, not done by hand
+    // here, since the exact sheet field layout has shifted across Lumina versions before
+    private static readonly Dictionary<string, ushort> NamedUiColors = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["WhiteNormal"] = 0, ["White"] = 1, ["Grey1"] = 2, ["Grey2"] = 3, ["Grey3"] = 4, ["Grey4"] = 5,
+        ["Grey5"] = 6, ["Black"] = 7, ["LightYellow"] = 8, ["Red"] = 17, ["DarkRed"] = 19, ["Green"] = 45,
+        ["DarkGreen"] = 47, ["WarmSeaBlue"] = 52, ["Orange"] = 500, ["LightBlue"] = 502, ["Yellow"] = 514,
+        ["Gold"] = 540, ["DarkBlue"] = 543, ["LightGreen"] = 551, ["Pink"] = 561,
+    };
+
+    // Same tag set Moodles/Loci themselves parse: [color=x]..[/color], [glow=x]..[/glow], [i]..[/i],
+    // x = a UIColor row, numeric or named
+    private static readonly Regex FormatTagRegex = new(
+        @"(\[color=[0-9a-zA-Z]+\])|(\[/color\])|(\[glow=[0-9a-zA-Z]+\])|(\[/glow\])|(\[i\])|(\[/i\])",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static bool TryResolveUiColor(string value, out ushort colorKey) =>
+        ushort.TryParse(value, out colorKey) || NamedUiColors.TryGetValue(value, out colorKey);
+
+    // Appends `raw` into `builder` as plain text plus any recognized tags. Unlike Moodles' own
+    // parser (which rejects the whole string on a mismatched tag), an unresolved color/glow value
+    // or an unbalanced tag just degrades to plain text for that span — this only ever displays
+    // someone else's already-authored text, so garbling the tooltip over one bad tag isn't worth it
+    private static void AppendFormattedSegment(SeStringBuilder builder, string raw)
+    {
+        bool colorOpen = false, glowOpen = false, italicsOpen = false;
+        int lastEnd = 0;
+        foreach (Match m in FormatTagRegex.Matches(raw))
+        {
+            if (m.Index > lastEnd) builder.AddText(raw[lastEnd..m.Index]);
+            lastEnd = m.Index + m.Length;
+            var tag = m.Value;
+
+            if (tag.StartsWith("[color=", StringComparison.OrdinalIgnoreCase))
+            {
+                if (TryResolveUiColor(tag[7..^1], out var id)) { builder.AddUiForeground(id); colorOpen = true; }
+            }
+            else if (tag.Equals("[/color]", StringComparison.OrdinalIgnoreCase))
+            {
+                if (colorOpen) { builder.AddUiForegroundOff(); colorOpen = false; }
+            }
+            else if (tag.StartsWith("[glow=", StringComparison.OrdinalIgnoreCase))
+            {
+                if (TryResolveUiColor(tag[6..^1], out var id)) { builder.AddUiGlow(id); glowOpen = true; }
+            }
+            else if (tag.Equals("[/glow]", StringComparison.OrdinalIgnoreCase))
+            {
+                if (glowOpen) { builder.AddUiGlowOff(); glowOpen = false; }
+            }
+            else if (tag.Equals("[i]", StringComparison.OrdinalIgnoreCase))
+            {
+                builder.AddItalicsOn(); italicsOpen = true;
+            }
+            else if (italicsOpen)   // "[/i]"
+            {
+                builder.AddItalicsOff(); italicsOpen = false;
+            }
+        }
+        if (lastEnd < raw.Length) builder.AddText(raw[lastEnd..]);
+
+        if (colorOpen) builder.AddUiForegroundOff();
+        if (glowOpen) builder.AddUiGlowOff();
+        if (italicsOpen) builder.AddItalicsOff();
+    }
+
+    // Encoded SeString bytes for a status tooltip, cached per (name, description) pair — see
+    // formattedTooltipCache above
+    private byte[] GetFormattedTooltipBytes(string name, string description)
+    {
+        var key = (name, description);
+        if (formattedTooltipCache.TryGetValue(key, out var cached)) return cached;
+
+        var builder = new SeStringBuilder();
+        AppendFormattedSegment(builder, name);
+        if (!string.IsNullOrWhiteSpace(description))
+        {
+            builder.AddText("\n");
+            AppendFormattedSegment(builder, description);
+        }
+        var bytes = builder.Encode();
+        formattedTooltipCache[key] = bytes;
+        return bytes;
     }
 
     // ── Target frame input — draw-list rendering has no ImGui item, so no hover/click state

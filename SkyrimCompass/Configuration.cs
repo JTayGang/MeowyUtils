@@ -86,22 +86,23 @@ public class Configuration : IPluginConfiguration
     public bool  ShowTargetStatuses   { get; set; } = true;
     public float TargetStatusIconSize { get; set; } = 22f;   // fixed size — no distance scaling like markers have
     public int   TargetStatusMaxIcons { get; set; } = 10;
-    // Moodles/Loci active statuses merged into the row above, sharing its size/cap; no-op if that
-    // plugin isn't installed. No duration label — neither plugin's IPC exposes time remaining,
-    // only each status's configured total length
-    public bool  ShowMoodlesStatuses  { get; set; } = true;
-    public bool  ShowLociStatuses     { get; set; } = true;
+    // Moodles/Loci active statuses always merge into the row above too, sharing its size/cap;
+    // each no-ops on its own if that particular plugin isn't installed. No duration label — neither
+    // plugin's IPC exposes time remaining, only each status's configured total length
 
-    // Standalone row for your OWN statuses (native + Moodles/Loci) — same rendering as the target
-    // row above, but its own size/cap/position, since it isn't docked beneath a target's name row.
-    // Off by default: existing users shouldn't get a new floating element they never positioned
-    public bool  ShowPlayerStatusBar     { get; set; } = false;
-    public float PlayerStatusIconSize    { get; set; } = 22f;
-    public int   PlayerStatusMaxIcons    { get; set; } = 10;
-    public bool  PlayerStatusShowMoodles { get; set; } = true;
-    public bool  PlayerStatusShowLoci    { get; set; } = true;
-    public float PlayerStatusXOffset     { get; set; } = 0f;     // left(-)/right(+) of screen center
-    public float PlayerStatusYOffset     { get; set; } = 160f;   // from top of screen
+    // Keeps your own Moodles and Loci statuses duplicated onto each other in the background (see
+    // StatusMirror.cs). The player's own status display is FFXIV's real, native buff bar now (not
+    // a SkyrimCompass-drawn row — that was removed once this made it redundant), which already
+    // shows Moodles-native icons; mirroring is what makes your Loci statuses show up there too,
+    // without SkyrimCompass needing to draw anything itself. Local player only; has no bearing on
+    // the target row above, which still merges both sources directly, since mirroring can't reach
+    // another person's game client
+    public bool MirrorMoodlesLoci        { get; set; } = false;
+    public bool MirrorMoodlesToLoci      { get; set; } = true;
+    public bool MirrorLociToMoodles      { get; set; } = true;
+    // Reflection-based fix for a confirmed Moodles/Loci icon-position conflict (Moodles miscounts
+    // native icons when Loci's are already drawn into the same shared UI region) — see StatusMirror.cs
+    public bool MirrorOffsetPatchEnabled { get; set; } = true;
 
     // FF14's ToT, restyled: auto-hidden if nobody/self, except targeting YOU (dedicated warning color instead)
     public bool    ShowTargetOfTargetBar  { get; set; } = true;

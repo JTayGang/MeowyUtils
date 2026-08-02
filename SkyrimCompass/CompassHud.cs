@@ -63,6 +63,25 @@ public sealed class CompassHud : IDisposable
     // installed plugin per access), so "is it active" is cached and only rechecked periodically
     private readonly ICallGateSubscriber<nint, List<MoodlesStatusInfo>> moodlesGetStatusesByPtr;
     private readonly ICallGateSubscriber<nint, List<LociStatusInfo>>    lociGetStatusesByPtr;
+
+    // Removal side of the same two bridges. Moodles' calls are void (fire-and-forget — Sticky/
+    // Permanent statuses are refused silently, so success isn't observable beyond the icon
+    // disappearing on the next update); Loci's returns an int (LociApiEc, near RenderStatusIconRow
+    // below) distinguishing why a refusal happened.
+    // Dalamud's InvokeAction(T1, T2) lives on ICallGateSubscriber<T1, T2, TRet> — the last type
+    // param is a required-but-discarded placeholder even for a genuinely void call (confirmed
+    // against Dalamud's own CallGatePubSubBase: InvokeAction packs args into object?[] and never
+    // touches TRet), hence `object` where you'd expect just two types.
+    //
+    // Two Moodles removal calls, not one: RemoveMoodleByPlayerV2 (ByPlayer, singular) is preferred
+    // — confirmed against Moodles' own IPCProcessor.cs that its internal RemoveMoodleInternal skips
+    // a CharaWatcher.Rendered.Contains(ptr) check that RemoveMoodlesByPtrV2's RemoveMoodlesInternal
+    // (plural) has, and it's what the user's own StatusBridge project uses for exactly this reason.
+    // RemoveMoodlesByPtrV2 stays as a fallback for the (in practice, shouldn't-happen) case where
+    // the character in question isn't an IPlayerCharacter
+    private readonly ICallGateSubscriber<System.Guid, IPlayerCharacter, object> moodlesRemoveByPlayer;
+    private readonly ICallGateSubscriber<List<System.Guid>, nint, object>       moodlesRemoveByPtr;
+    private readonly ICallGateSubscriber<System.Guid, nint, int>                lociRemoveByPtr;
     private bool  moodlesActive;
     private float moodlesActiveCheckedAt = -1000f;
     private bool  lociActive;
@@ -90,8 +109,10 @@ public sealed class CompassHud : IDisposable
     private float lastRawTargetHpFrac   = 1f;
     private float targetBarFlashAlpha   = 0f;
 
-    // Target status icons: reused every frame, no per-frame List<> allocation
-    private readonly List<(float RemainingTime, int Icon, string Name, string Description)> targetStatusBuffer = new();
+    // Target status icons: reused every frame, no per-frame List<> allocation. Source/StatusGuid
+    // exist only to support right-click removal (TryRemoveStatus); StatusGuid is unused/default
+    // for Native, since that path isn't wired up yet
+    private readonly List<(float RemainingTime, int Icon, string Name, string Description, StatusSource Source, System.Guid StatusGuid)> targetStatusBuffer = new();
 
     // Moodles/Loci status text carries their own [color=x]/[glow=x]/[i] markup (x = a UIColor sheet
     // row, numeric or a handful of named aliases); native status text never matches these tags, so
@@ -197,6 +218,12 @@ public sealed class CompassHud : IDisposable
             "Moodles.GetStatusManagerInfoByPtrV2");
         lociGetStatusesByPtr = pluginInterface.GetIpcSubscriber<nint, List<LociStatusInfo>>(
             "Loci.GetManagerInfoByPtr");
+        moodlesRemoveByPlayer = pluginInterface.GetIpcSubscriber<System.Guid, IPlayerCharacter, object>(
+            "Moodles.RemoveMoodleByPlayerV2");
+        moodlesRemoveByPtr = pluginInterface.GetIpcSubscriber<List<System.Guid>, nint, object>(
+            "Moodles.RemoveMoodlesByPtrV2");
+        lociRemoveByPtr = pluginInterface.GetIpcSubscriber<System.Guid, nint, int>(
+            "Loci.RemoveStatusByPtr");
 
         gatheringPointSheet     = dataManager.GetExcelSheet<GatheringPoint>();
         gatheringPointBaseSheet = dataManager.GetExcelSheet<GatheringPointBase>();
@@ -311,9 +338,6 @@ public sealed class CompassHud : IDisposable
 
         if (config.ShowTargetBar && config.ShowTargetStatuses && curTarget is IBattleChara targetChara)
             RenderTargetStatuses(dl, targetChara, nameCx, targetNameBottom, barAlpha);
-
-        if (config.ShowPlayerStatusBar)
-            RenderPlayerStatusBar(dl, player, barAlpha);
     }
 
     // Eases alpha toward ContextMenuDimmedAlpha while a menu's open, back to 1 on close.
@@ -1044,6 +1068,22 @@ public sealed class CompassHud : IDisposable
         HandleTargetFrameClick(V(tbX, tbY), V(tbX + tbW, tbY + tbH), tot, allowLeftClickToTarget: true);
     }
 
+    // Tags a buffered status icon by where it came from — right-click removal (TryRemoveStatus)
+    // only acts on Moodles/Loci; native statuses aren't wired up yet (see README)
+    private enum StatusSource : byte { Native, Moodles, Loci }
+
+    // Mirrors Loci.Api's LociApiEc (CordeliaMist/Loci.Api, Enums/LociApiEc.cs) member-for-member.
+    // Only used to interpret RemoveStatusByPtr's result for logging — never sent over IPC itself,
+    // so unlike the tuple aliases up top this doesn't need to round-trip through Dalamud's
+    // marshaling; the wire type is a plain int (Loci.Api's own subscriber wrapper does the same
+    // int -> enum cast client-side, per its FuncSubscriber<Guid, nint, int>)
+    private enum LociApiEc
+    {
+        Success = 0, NoChange = 1, PartialSuccess = 2, TargetNotFound = 3, TargetInvalid = 4,
+        DataNotFound = 5, DataInvalid = 6, ItemLocked = 7, InvalidKey = 8, ItemIsPersistent = 9,
+        ClientForbidden = 10, FSPathFaulted = 11, UnkError = int.MaxValue,
+    }
+
     // ── Status icon row — native StatusList order, capped count, small duration readout, hover
     // tooltip. No sorting, no buff/debuff split: StatusList already gives us exactly what the
     // vanilla frame would show, so this only ever filters out empty slots (StatusId 0) and ones
@@ -1065,7 +1105,8 @@ public sealed class CompassHud : IDisposable
             if (targetStatusBuffer.Count >= max) break;
             if (status.StatusId == 0) continue;
             if (status.GameData.ValueNullable is not { } row || row.Icon == 0) continue;
-            targetStatusBuffer.Add((status.RemainingTime, (int)row.Icon, row.Name.ToString(), row.Description.ToString()));
+            targetStatusBuffer.Add((status.RemainingTime, (int)row.Icon, row.Name.ToString(), row.Description.ToString(),
+                StatusSource.Native, System.Guid.Empty));
         }
 
         if (character.Address != IntPtr.Zero)
@@ -1092,7 +1133,7 @@ public sealed class CompassHud : IDisposable
 
         for (int i = 0; i < n; i++)
         {
-            var (remaining, icon, name, description) = targetStatusBuffer[i];
+            var (remaining, icon, name, description, source, statusGuid) = targetStatusBuffer[i];
             float sx = startX + i * (size + hGap) + size * 0.5f;
             if (!TryDrawIcon(dl, icon, sx, scy, size, barAlpha)) continue;
 
@@ -1128,25 +1169,17 @@ public sealed class CompassHud : IDisposable
                 ImGui.BeginTooltip();
                 ImGuiHelpers.SeStringWrapped(GetFormattedTooltipBytes(name, description), new SeStringDrawParams { WrapWidth = 10000f });
                 ImGui.EndTooltip();
+
+                // Native statuses aren't wired up yet (see README) — right-click is a no-op on those
+                if (source != StatusSource.Native && ImGui.IsMouseClicked(ImGuiMouseButton.Right))
+                    TryRemoveStatus(source, statusGuid, character, name);
             }
         }
     }
 
     private void RenderTargetStatuses(ImDrawListPtr dl, IBattleChara target, float cx, float y, float barAlpha) =>
         RenderStatusIconRow(dl, target, cx, y, barAlpha, config.TargetStatusIconSize, config.TargetStatusMaxIcons,
-            config.ShowMoodlesStatuses, config.ShowLociStatuses);
-
-    // Standalone row for your OWN statuses — same rendering as the target row above, but
-    // independently sized/capped/positioned, since it isn't docked beneath anything. Centered
-    // on-screen plus its own offsets, mirroring how the compass itself is positioned in Draw()
-    private void RenderPlayerStatusBar(ImDrawListPtr dl, IBattleChara player, float barAlpha)
-    {
-        var   io = ImGui.GetIO();
-        float cx = io.DisplaySize.X * 0.5f + config.PlayerStatusXOffset;
-        float y  = config.PlayerStatusYOffset;
-        RenderStatusIconRow(dl, player, cx, y, barAlpha, config.PlayerStatusIconSize, config.PlayerStatusMaxIcons,
-            config.PlayerStatusShowMoodles, config.PlayerStatusShowLoci);
-    }
+            includeMoodles: true, includeLoci: true);
 
     // True if `internalName` is installed and enabled. Rechecked at most every
     // PluginActiveCacheSeconds — InstalledPlugins builds a fresh wrapper per installed plugin on
@@ -1178,7 +1211,7 @@ public sealed class CompassHud : IDisposable
         {
             if (targetStatusBuffer.Count >= max) break;
             if (s.IconID <= 0) continue;
-            targetStatusBuffer.Add((0f, s.IconID, s.Title, s.Description));
+            targetStatusBuffer.Add((0f, s.IconID, s.Title, s.Description, StatusSource.Moodles, s.GUID));
         }
     }
 
@@ -1196,7 +1229,38 @@ public sealed class CompassHud : IDisposable
         {
             if (targetStatusBuffer.Count >= max) break;
             if (s.IconID == 0) continue;
-            targetStatusBuffer.Add((0f, (int)s.IconID, s.Title, s.Description));
+            targetStatusBuffer.Add((0f, (int)s.IconID, s.Title, s.Description, StatusSource.Loci, s.GUID));
+        }
+    }
+
+    // Right-click on a status icon: Moodles/Loci only (native statuses aren't wired up yet — see
+    // README). Each plugin gates removal on its own terms — Moodles refuses "Sticky"/Permanent
+    // statuses outright and says nothing further about it; Loci additionally distinguishes Locked
+    // from Persistent via its return code — so this always attempts the call and lets that plugin's
+    // own answer decide the outcome rather than us trying to predict it, logging either way via
+    // /xllog since that's the only feedback there is when a refusal is silent (Moodles' case)
+    private void TryRemoveStatus(StatusSource source, System.Guid guid, IBattleChara character, string name)
+    {
+        switch (source)
+        {
+            case StatusSource.Moodles:
+                try
+                {
+                    if (character is IPlayerCharacter pc)
+                        moodlesRemoveByPlayer.InvokeAction(guid, pc);
+                    else
+                        moodlesRemoveByPtr.InvokeAction(new List<System.Guid> { guid }, character.Address);
+                }
+                catch (Exception ex) { log.Info($"[SkyrimCompass debug] Moodles removal of \"{name}\" threw: {ex.Message}"); return; }
+                log.Info($"[SkyrimCompass debug] Asked Moodles to remove \"{name}\" (silently refused if it's Sticky).");
+                break;
+
+            case StatusSource.Loci:
+                int ec;
+                try { ec = lociRemoveByPtr.InvokeFunc(guid, character.Address); }
+                catch (Exception ex) { log.Info($"[SkyrimCompass debug] Loci removal of \"{name}\" threw: {ex.Message}"); return; }
+                log.Info($"[SkyrimCompass debug] Loci removal of \"{name}\": {(LociApiEc)ec}.");
+                break;
         }
     }
 

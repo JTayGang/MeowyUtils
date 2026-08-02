@@ -364,7 +364,7 @@ public sealed class ConfigWindow : Window
 
     // ── Combat tab ───────────────────────────────────────────────────────────
 
-    private static bool DrawCombatTab(Configuration cfg)
+    private bool DrawCombatTab(Configuration cfg)
     {
         if (!ImGui.BeginTabItem("Combat")) return false;
         bool changed = DrawEnableAndColor("enemies", "Enemies", () => cfg.ShowEnemies, v => cfg.ShowEnemies = v,
@@ -442,42 +442,46 @@ public sealed class ConfigWindow : Window
         BeginIndentedDisabled(cfg.ShowTargetStatuses);
         changed |= DrawSliderInt("Icon size##tssize", 12, 40, () => (int)cfg.TargetStatusIconSize, v => cfg.TargetStatusIconSize = v);
         changed |= DrawSliderInt("Max icons##tsmax", 3, 20, () => cfg.TargetStatusMaxIcons, v => cfg.TargetStatusMaxIcons = v);
-        changed |= DrawToggle("Include Moodles##tsmoodles", () => cfg.ShowMoodlesStatuses, v => cfg.ShowMoodlesStatuses = v,
-            "Adds the target's active Moodles into the row above, sharing its size and max-icons\n" +
-            "limit. Does nothing if the Moodles plugin isn't installed. No duration shown — Moodles\n" +
-            "only reports each status's total length, not time left.");
-        changed |= DrawToggle("Include Loci##tsloci", () => cfg.ShowLociStatuses, v => cfg.ShowLociStatuses = v,
-            "Adds the target's active Loci statuses into the row above, sharing its size and\n" +
-            "max-icons limit. Does nothing if the Loci plugin isn't installed. No duration shown —\n" +
-            "same reason as Moodles.");
         EndIndentedDisabled();
 
         DrawSectionBreak();
 
-        changed |= DrawToggle("Player status bar", () => cfg.ShowPlayerStatusBar, v => cfg.ShowPlayerStatusBar = v,
-            "A separate, freely-positioned row of YOUR OWN active statuses (native + Moodles/Loci),\n" +
-            "so you can see them without having to target yourself. Independent size, icon cap,\n" +
-            "and Moodles/Loci toggles from the target row above.");
+        changed |= DrawToggle("Mirror Moodles \u2194 Loci", () => cfg.MirrorMoodlesLoci, v => cfg.MirrorMoodlesLoci = v,
+            "Keeps your own Moodles and Loci statuses duplicated onto each other in the\n" +
+            "background (see StatusMirror.cs). Your own status display is FFXIV's real,\n" +
+            "native buff bar (not something SkyrimCompass draws), which already shows\n" +
+            "Moodles-native icons — this is what makes your Loci statuses show up there\n" +
+            "too. Doesn't affect the target status row further up — that still reads both\n" +
+            "sources directly, since mirroring can't reach another person's game client.");
 
-        BeginIndentedDisabled(cfg.ShowPlayerStatusBar);
-        changed |= DrawSliderInt("Icon size##pssize", 12, 40, () => (int)cfg.PlayerStatusIconSize, v => cfg.PlayerStatusIconSize = v);
-        changed |= DrawSliderInt("Max icons##psmax", 3, 20, () => cfg.PlayerStatusMaxIcons, v => cfg.PlayerStatusMaxIcons = v);
-        changed |= DrawToggle("Include Moodles##psmoodles", () => cfg.PlayerStatusShowMoodles, v => cfg.PlayerStatusShowMoodles = v,
-            "Adds your active Moodles into the row above. Does nothing if the Moodles plugin isn't installed.");
-        changed |= DrawToggle("Include Loci##psloci", () => cfg.PlayerStatusShowLoci, v => cfg.PlayerStatusShowLoci = v,
-            "Adds your active Loci statuses into the row above. Does nothing if the Loci plugin isn't installed.");
+        BeginIndentedDisabled(cfg.MirrorMoodlesLoci);
+        changed |= DrawToggle("Moodles \u2192 Loci##mirmtl", () => cfg.MirrorMoodlesToLoci, v => cfg.MirrorMoodlesToLoci = v);
+        changed |= DrawToggle("Loci \u2192 Moodles##mirltm", () => cfg.MirrorLociToMoodles, v => cfg.MirrorLociToMoodles = v,
+            "Requires \"Allow other plugins apply Moodles\" enabled in Moodles' own settings —\n" +
+            "off by default there, and there's no way for another plugin to detect or\n" +
+            "override it. If it's off, this direction silently does nothing.");
+        changed |= DrawToggle("Experimental icon-position fix##miroffset", () => cfg.MirrorOffsetPatchEnabled, v => cfg.MirrorOffsetPatchEnabled = v,
+            "Fixes a confirmed Moodles/Loci bug: having both installed can make Moodles\n" +
+            "miscount native status icons, scrambling where it draws its own — the likely\n" +
+            "cause if removing one status visually drops an unrelated one too. Reaches into\n" +
+            "Moodles' own internals via reflection; fails safe (falls back to Moodles' own\n" +
+            "default behavior) if a future Moodles update changes its shape.");
 
-        // Row width varies with how many icons are currently active, so this range is an estimate
-        // (max icons at roughly their on-screen spacing) rather than an exact on-screen guarantee
-        // like the compass's own X/Y sliders get — same idea, just can't be pixel-exact here
-        var   io       = ImGui.GetIO();
-        float psWEst   = cfg.PlayerStatusMaxIcons * (cfg.PlayerStatusIconSize * 1.25f);
-        int   psXRange = (int)MathF.Max(0f, (io.DisplaySize.X - psWEst) * 0.5f);
-        changed |= DrawSliderInt("X Offset (from center)##psxo", -psXRange, psXRange, () => (int)cfg.PlayerStatusXOffset, v => cfg.PlayerStatusXOffset = v);
+        ImGui.Spacing();
+        var mirror = plugin.StatusMirror;
+        ImGui.TextDisabled($"Moodles: {(mirror.MoodlesAvailable ? "connected" : "not found")}   " +
+                            $"Loci: {(mirror.LociAvailable ? "connected" : "not found")}");
+        ImGui.TextDisabled($"Mirrored into Loci: {mirror.MirroredIntoLociCount}   " +
+                            $"Mirrored into Moodles: {mirror.MirroredIntoMoodlesCount}" +
+                            (mirror.LockedMirrorCount > 0 ? $"   Locked (can't auto-remove): {mirror.LockedMirrorCount}" : ""));
+        ImGui.TextDisabled($"Icon-position fix: {mirror.OffsetPatchStatus}");
 
-        float psHEst = cfg.PlayerStatusIconSize * 1.6f;   // icon + duration label, roughly
-        int   psYMax = (int)MathF.Max(0f, io.DisplaySize.Y - psHEst);
-        changed |= DrawSliderInt("Y Offset (from top)##psyo", 0, psYMax, () => (int)cfg.PlayerStatusYOffset, v => cfg.PlayerStatusYOffset = v);
+        if (ImGui.Button("Clear stuck mirrors##mirclear"))
+            mirror.ClearAllMirrors();
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Removes every status this engine has ever mirrored, on both sides. Safe to\n" +
+                              "click even if nothing's actually stuck — anything still genuinely native gets\n" +
+                              "re-mirrored on the next pass regardless.");
         EndIndentedDisabled();
 
         DrawSectionBreak();

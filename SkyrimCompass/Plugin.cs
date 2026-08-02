@@ -14,6 +14,7 @@ public sealed class Plugin : IDalamudPlugin
 
     public IDalamudPluginInterface PluginInterface { get; }
     public Configuration Config { get; }
+    public StatusMirrorEngine StatusMirror { get; }
 
     private readonly ICommandManager commandManager;
     private readonly IPluginLog pluginLog;
@@ -26,7 +27,8 @@ public sealed class Plugin : IDalamudPlugin
         IDalamudPluginInterface pluginInterface, ICommandManager commandManager,
         IClientState clientState, IObjectTable objectTable, ITargetManager targetManager,
         INamePlateGui namePlateGui, ITextureProvider textureProvider, IFateTable fateTable,
-        ICondition condition, IGameGui gameGui, IDataManager dataManager, IPluginLog pluginLog)
+        ICondition condition, IGameGui gameGui, IDataManager dataManager, IFramework framework,
+        IPluginLog pluginLog)
     {
         PluginInterface = pluginInterface;
         this.commandManager = commandManager;
@@ -36,6 +38,8 @@ public sealed class Plugin : IDalamudPlugin
         // FFXIV's serif font, loaded once, shared with CompassHud
         jupiterFontHandle = pluginInterface.UiBuilder.FontAtlas.NewGameFontHandle(
             new GameFontStyle(GameFontFamily.Jupiter, 18));
+
+        StatusMirror = new StatusMirrorEngine(pluginInterface, framework, objectTable, pluginLog, Config);
 
         compassHud = new CompassHud(
             clientState, objectTable, targetManager, namePlateGui, textureProvider, fateTable,
@@ -61,6 +65,7 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenConfigUi -= OnOpenConfig;
         jupiterFontHandle.Dispose();
         compassHud.Dispose();
+        StatusMirror.Dispose();
     }
 
     private void OnCommand(string command, string args)

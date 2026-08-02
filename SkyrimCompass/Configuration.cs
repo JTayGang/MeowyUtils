@@ -87,8 +87,9 @@ public class Configuration : IPluginConfiguration
     public float TargetStatusIconSize { get; set; } = 22f;   // fixed size — no distance scaling like markers have
     public int   TargetStatusMaxIcons { get; set; } = 10;
     // Moodles/Loci active statuses always merge into the row above too, sharing its size/cap;
-    // each no-ops on its own if that particular plugin isn't installed. No duration label — neither
-    // plugin's IPC exposes time remaining, only each status's configured total length
+    // each no-ops on its own if that particular plugin isn't installed. Duration label is a
+    // client-side estimate (see CompassHud.cs's EstimateRemainingSeconds) — neither plugin's IPC
+    // exposes a true live countdown, only each status's total length
 
     // Keeps your own Moodles and Loci statuses duplicated onto each other in the background (see
     // StatusMirror.cs). The player's own status display is FFXIV's real, native buff bar now (not

@@ -114,6 +114,11 @@ public sealed class CompassHud : IDisposable
     // for Native, since that path isn't wired up yet
     private readonly List<(float RemainingTime, int Icon, string Name, string Description, StatusSource Source, System.Guid StatusGuid)> targetStatusBuffer = new();
 
+    // Client-side approximation of "time remaining" for Moodles/Loci statuses — see
+    // EstimateRemainingSeconds below for why this exists and its accuracy caveat
+    private readonly Dictionary<System.Guid, (DateTime FirstSeen, long TotalMs)> statusDurationTracker = new();
+    private float nextDurationTrackerPruneAt;
+
     // Moodles/Loci status text carries their own [color=x]/[glow=x]/[i] markup (x = a UIColor sheet
     // row, numeric or a handful of named aliases); native status text never matches these tags, so
     // it flows through unaffected. Encoded once per distinct (name, description) pair and reused —
@@ -1089,8 +1094,9 @@ public sealed class CompassHud : IDisposable
     // vanilla frame would show, so this only ever filters out empty slots (StatusId 0) and ones
     // whose GameData/Icon didn't resolve. Moodles/Loci active statuses (if either plugin's
     // installed and its toggle's on) are appended into this same row, no sorting between sources
-    // — native first, then Moodles, then Loci. Shared by the target bar's status row and the
-    // standalone player bar below, so each can size/cap/toggle Moodles+Loci independently
+    // — native first, then Moodles, then Loci. Used by the target bar's status row; toggles for
+    // including Moodles/Loci are per-call rather than global config, since the (now-removed)
+    // player bar used to want them independently — kept that way in case a second caller returns
     private void RenderStatusIconRow(
         ImDrawListPtr dl, IBattleChara character, float cx, float y, float barAlpha,
         float iconSize, int maxIcons, bool includeMoodles, bool includeLoci)
@@ -1099,13 +1105,21 @@ public sealed class CompassHud : IDisposable
         float hGap = size * 0.25f;
         int   max  = Math.Max(1, maxIcons);
 
+        PruneDurationTrackerIfDue((float)ImGui.GetTime());
+
         targetStatusBuffer.Clear();
         foreach (var status in character.StatusList)
         {
             if (targetStatusBuffer.Count >= max) break;
             if (status.StatusId == 0) continue;
             if (status.GameData.ValueNullable is not { } row || row.Icon == 0) continue;
-            targetStatusBuffer.Add((status.RemainingTime, (int)row.Icon, row.Name.ToString(), row.Description.ToString(),
+            // Vanilla shows no timer for these regardless of what RemainingTime's raw value says.
+            // IsFcBuff directly covers the reported cases (Free Company action buffs — The Heat of
+            // Battle, That Which Binds Us, etc. — 24h buffs whose RemainingTime gets refreshed with
+            // a short internal window rather than counting down, hence the stuck "30"). IsPermanent
+            // is the more general no-real-countdown flag, checked too for whatever else it covers
+            float remaining = (row.IsPermanent || row.IsFcBuff) ? 0f : status.RemainingTime;
+            targetStatusBuffer.Add((remaining, (int)row.Icon, row.Name.ToString(), row.Description.ToString(),
                 StatusSource.Native, System.Guid.Empty));
         }
 
@@ -1196,10 +1210,59 @@ public sealed class CompassHud : IDisposable
         return cached;
     }
 
-    // Appends the target's active Moodles into targetStatusBuffer, up to `max` total. RemainingTime
-    // is always 0 (no duration label drawn, same as a permanent native status) — Moodles' IPC only
-    // reports each status's configured total length, not time actually remaining, so a countdown
-    // here would just be wrong
+    // Neither plugin's IPC exposes a live countdown — ExpireTicks is confirmed, against both
+    // plugins' own source (Moodles' MyStatus.ToStatusTuple/FromTuple, Loci's LociStatus.ToTuple/
+    // Utils), to be a TOTAL duration in milliseconds fixed at apply time (-1 = permanent), not an
+    // absolute expiry timestamp — so "remaining" can't be computed from a single snapshot the way
+    // native's status.RemainingTime already gives us. This instead remembers the real-world moment
+    // we first saw each GUID at its current total duration, and counts down from there.
+    //
+    // Accuracy caveat: this is exact for anything applied while SkyrimCompass has been running to
+    // see it. A status that was already active before that — already on someone before you first
+    // targeted them, or before a /xlplugins reload — reads as "first seen now," so it'll show more
+    // time left than it actually has until it naturally expires once and gets reapplied
+    private float EstimateRemainingSeconds(System.Guid guid, long expireTicksMs)
+    {
+        if (expireTicksMs < 0) return 0f;   // permanent (NoExpire) — no countdown, same as native
+
+        var now = DateTime.UtcNow;
+        if (!statusDurationTracker.TryGetValue(guid, out var tracked) || tracked.TotalMs != expireTicksMs)
+        {
+            // First time seeing this GUID, or its total duration changed (refreshed/reapplied with
+            // a new length) — (re)start the clock from now
+            tracked = (now, expireTicksMs);
+            statusDurationTracker[guid] = tracked;
+        }
+
+        float remainingMs = expireTicksMs - (float)(now - tracked.FirstSeen).TotalMilliseconds;
+        return MathF.Max(0f, remainingMs / 1000f);
+    }
+
+    // Bounds statusDurationTracker's growth over a long session (every distinct Moodle/Loci
+    // application you've ever seen gets its own GUID, so old ones pile up as untargeted people's
+    // statuses expire). Throttled independently of IsPluginActive's own cache, since this only
+    // needs to run occasionally, not on the same cadence as an availability recheck
+    private void PruneDurationTrackerIfDue(float now)
+    {
+        if (now < nextDurationTrackerPruneAt) return;
+        nextDurationTrackerPruneAt = now + 60f;
+        if (statusDurationTracker.Count == 0) return;
+
+        var wallNow = DateTime.UtcNow;
+        var stale = new List<System.Guid>();
+        foreach (var (guid, tracked) in statusDurationTracker)
+        {
+            // 30s grace past estimated expiry — a status that's still actually active (our estimate
+            // was simply an underestimate) gets caught again on its next Append call regardless,
+            // since a fresh GUID lookup that's absent from the tracker just restarts the clock
+            if ((wallNow - tracked.FirstSeen).TotalMilliseconds > tracked.TotalMs + 30_000)
+                stale.Add(guid);
+        }
+        foreach (var guid in stale)
+            statusDurationTracker.Remove(guid);
+    }
+
+    // Appends the target's active Moodles into targetStatusBuffer, up to `max` total
     private void AppendMoodlesStatuses(nint targetAddress, int max)
     {
         List<MoodlesStatusInfo> statuses;
@@ -1211,7 +1274,8 @@ public sealed class CompassHud : IDisposable
         {
             if (targetStatusBuffer.Count >= max) break;
             if (s.IconID <= 0) continue;
-            targetStatusBuffer.Add((0f, s.IconID, s.Title, s.Description, StatusSource.Moodles, s.GUID));
+            float remaining = EstimateRemainingSeconds(s.GUID, s.ExpireTicks);
+            targetStatusBuffer.Add((remaining, s.IconID, s.Title, s.Description, StatusSource.Moodles, s.GUID));
         }
     }
 
@@ -1229,7 +1293,8 @@ public sealed class CompassHud : IDisposable
         {
             if (targetStatusBuffer.Count >= max) break;
             if (s.IconID == 0) continue;
-            targetStatusBuffer.Add((0f, (int)s.IconID, s.Title, s.Description, StatusSource.Loci, s.GUID));
+            float remaining = EstimateRemainingSeconds(s.GUID, s.ExpireTicks);
+            targetStatusBuffer.Add((remaining, (int)s.IconID, s.Title, s.Description, StatusSource.Loci, s.GUID));
         }
     }
 

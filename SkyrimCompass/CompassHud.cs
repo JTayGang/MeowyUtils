@@ -141,6 +141,10 @@ public sealed class CompassHud : IDisposable
     private readonly ExcelSheet<GatheringPointBase> gatheringPointBaseSheet;
     private readonly ExcelSheet<GatheringType>      gatheringTypeSheet;
 
+    // BaseId → keyword category (Mender/Shop/Skipper/Ticketer/ChocoboKeep/None), cached permanently
+    // for the same reason gatheringIconCache above is — see ClassifyNpc
+    private readonly Dictionary<uint, NpcCategory> npcCategoryCache = new();
+
     // BaseId → English Title/Singular cache. Named NPCs: vocation in Title, name in Singular;
     // flavor NPCs: vocation in Singular, Title empty; English forced so keywords match any client language
     private readonly Dictionary<uint, string> titleCache = new();
@@ -1184,7 +1188,7 @@ public sealed class CompassHud : IDisposable
                 // it's grown to fit content — wrapping almost every glyph — so an explicit pin is
                 // required either way; this just pins it at a readable size instead of a huge one
                 ImGui.BeginTooltip();
-                ImGuiHelpers.SeStringWrapped(GetFormattedTooltipBytes(name, description), new SeStringDrawParams { WrapWidth = 250f });
+                ImGuiHelpers.SeStringWrapped(GetFormattedTooltipBytes(name, description), new SeStringDrawParams { WrapWidth = 345f });
                 ImGui.EndTooltip();
 
                 // Native statuses aren't wired up yet (see README) — right-click is a no-op on those
@@ -1799,21 +1803,44 @@ public sealed class CompassHud : IDisposable
     private bool MatchesKeyword(uint baseId, string[] keywords) =>
         HasKeyword(GetTitle(baseId), keywords) || HasKeyword(GetSingular(baseId), keywords);
 
-    private bool IsMender(IGameObject o)      => MatchesKeyword(o.BaseId, MenderKeywords);
-    private bool IsShop(IGameObject o)        => MatchesKeyword(o.BaseId, ShopKeywords);
-    private bool IsSkipper(IGameObject o)     => MatchesKeyword(o.BaseId, SkipperKeywords);
-    private bool IsTicketer(IGameObject o)    => MatchesKeyword(o.BaseId, TicketerKeywords);
-    private bool IsChocoboKeep(IGameObject o) => MatchesKeyword(o.BaseId, ChocoboKeepKeywords);
+    private enum NpcCategory { None, Mender, Shop, Skipper, Ticketer, ChocoboKeep }
 
-    // Priority: live quest marker, then each keyword category; first match wins (data walk, not an if/else chain)
+    // BaseId → keyword category, cached permanently — same reasoning as GetGatheringIconId above:
+    // this depends only on static game data (the NPC's Title/Singular via MatchesKeyword), never on
+    // player state or config, so the keyword cascade only needs to run once ever per BaseId instead
+    // of every frame for as long as that NPC is on the compass. Priority order matches the old
+    // cascade's declaration order: first keyword list that matches wins
+    private NpcCategory ClassifyNpc(uint baseId)
+    {
+        if (npcCategoryCache.TryGetValue(baseId, out var cached)) return cached;
+
+        NpcCategory category =
+            MatchesKeyword(baseId, MenderKeywords)      ? NpcCategory.Mender :
+            MatchesKeyword(baseId, ShopKeywords)        ? NpcCategory.Shop :
+            MatchesKeyword(baseId, SkipperKeywords)     ? NpcCategory.Skipper :
+            MatchesKeyword(baseId, TicketerKeywords)    ? NpcCategory.Ticketer :
+            MatchesKeyword(baseId, ChocoboKeepKeywords) ? NpcCategory.ChocoboKeep :
+            NpcCategory.None;
+
+        return npcCategoryCache[baseId] = category;
+    }
+
+    // Priority: live quest marker, then keyword category (see ClassifyNpc) — first match wins.
+    // Config toggles are checked here, not baked into the cached category, since visibility is a
+    // setting that can change mid-session while the underlying classification never does
     private bool TryGetNpcIcon(IGameObject obj, out int iconId)
     {
         if (config.ShowNpcQuestIcons && npcMarkerIcons.TryGetValue(obj.GameObjectId, out iconId)) return true;
-        if (config.ShowMenderIcons && IsMender(obj))          { iconId = config.MenderIconId; return true; }
-        if (config.ShowShopIcons && IsShop(obj))              { iconId = config.ShopIconId; return true; }
-        if (config.ShowFastTravelIcons && IsSkipper(obj))     { iconId = config.FastTravelIconId; return true; }
-        if (config.ShowFastTravelIcons && IsTicketer(obj))    { iconId = config.FastTravelTicketerIconId; return true; }
-        if (config.ShowFastTravelIcons && IsChocoboKeep(obj)) { iconId = config.ChocoboKeepIconId; return true; }
+
+        switch (ClassifyNpc(obj.BaseId))
+        {
+            case NpcCategory.Mender when config.ShowMenderIcons:           iconId = config.MenderIconId; return true;
+            case NpcCategory.Shop when config.ShowShopIcons:               iconId = config.ShopIconId; return true;
+            case NpcCategory.Skipper when config.ShowFastTravelIcons:      iconId = config.FastTravelIconId; return true;
+            case NpcCategory.Ticketer when config.ShowFastTravelIcons:     iconId = config.FastTravelTicketerIconId; return true;
+            case NpcCategory.ChocoboKeep when config.ShowFastTravelIcons:  iconId = config.ChocoboKeepIconId; return true;
+        }
+
         iconId = 0;
         return false;
     }

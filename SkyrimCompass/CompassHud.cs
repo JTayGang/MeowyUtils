@@ -171,10 +171,10 @@ public sealed class CompassHud : IDisposable
     private static readonly string[] ChocoboKeepKeywords = { "Chocobokeep", "Falcon Porter" };
 
     // Reused every frame, no per-frame alloc. Obj/Fate: exactly one is set. T = normalized distance
-    private readonly List<(IGameObject? Obj, IFate? Fate, float Dist, float Delta, float T, uint Col)> allCandidates = new();
+    private readonly List<(IGameObject? Obj, IFate? Fate, float Dist, float Delta, float T, uint Col, AetheryteNameKind AetheryteKind)> allCandidates = new();
 
     // Static: avoids a new Comparison<> alloc per-frame Sort
-    private static readonly Comparison<(IGameObject? Obj, IFate? Fate, float Dist, float Delta, float T, uint Col)>
+    private static readonly Comparison<(IGameObject? Obj, IFate? Fate, float Dist, float Delta, float T, uint Col, AetheryteNameKind AetheryteKind)>
         DistFarFirst = (a, b) => b.Dist.CompareTo(a.Dist);
 
     // Compensates transparent icon padding (quest/Mender/Shop/job/override). Not Gathering/Aetheryte
@@ -1502,11 +1502,11 @@ public sealed class CompassHud : IDisposable
             foreach (var obj in objectTable)
             {
                 if (obj == null || obj.EntityId == player.EntityId) continue;
-                uint col = MarkerColor(obj, player);
-                if (col == 0) continue;
                 if (!TryComputeBearing(obj.Position, pp, heading, maxDistSq, extHalf,
                                        out float dist, out float delta)) continue;
-                allCandidates.Add((obj, null, dist, delta, 1f - dist / maxDist, col));
+                uint col = MarkerColor(obj, player, out AetheryteNameKind aetheryteKind);
+                if (col == 0) continue;
+                allCandidates.Add((obj, null, dist, delta, 1f - dist / maxDist, col, aetheryteKind));
             }
         }
 
@@ -1518,7 +1518,7 @@ public sealed class CompassHud : IDisposable
                 if (fate.State != FateState.Running && fate.State != FateState.Preparing) continue;
                 if (!TryComputeBearing(fate.Position, pp, heading, fateMaxDistSq, extHalf,
                                        out float dist, out float delta)) continue;
-                allCandidates.Add((null, fate, dist, delta, 1f - dist / fateMaxDist, 0u));
+                allCandidates.Add((null, fate, dist, delta, 1f - dist / fateMaxDist, 0u, AetheryteNameKind.None));
             }
         }
 
@@ -1551,12 +1551,12 @@ public sealed class CompassHud : IDisposable
             int   iconId   = 0;
             float iconSize = 0f;
 
-            bool  isAetheryteKind = ClassifyAetheryte(obj) != AetheryteNameKind.None;
+            bool  isAetheryteKind = candidate.AetheryteKind != AetheryteNameKind.None;
             float npcIconSize     = Lerp(config.NpcQuestIconMinSize, config.NpcQuestIconMaxSize, t) * IconSizeMultiplier;
 
             if (config.ShowAetheryteIcons && isAetheryteKind)
             {
-                iconId   = GetAetheryteIconId(obj);
+                iconId   = GetAetheryteIconId(candidate.AetheryteKind);
                 iconSize = Lerp(config.AetheryteIconMinSize, config.AetheryteIconMaxSize, t) * AetheryteIconSizeMultiplier;
             }
             else if (obj.ObjectKind == ObjectKind.EventNpc && TryGetNpcIcon(obj, out int npcIcon))
@@ -1833,15 +1833,17 @@ public sealed class CompassHud : IDisposable
         return looksLikeShard ? AetheryteNameKind.Shard : AetheryteNameKind.None;
     }
 
-    private int GetAetheryteIconId(IGameObject obj) =>
-        ClassifyAetheryte(obj) == AetheryteNameKind.Shard
+    private int GetAetheryteIconId(AetheryteNameKind kind) =>
+        kind == AetheryteNameKind.Shard
             ? config.AethernetShardIconId
             : config.AetheryteIconId;
 
-    // Returns true if obj is any aetheryte kind; color=0 if hidden by config
-    private bool TryGetAetheryteMarkerColor(IGameObject obj, out uint color)
+    // Returns true if obj is any aetheryte kind (also output via `kind` even when false, so
+    // MarkerColor's callers always get a real classification, never a stale/default value);
+    // color=0 if hidden by config
+    private bool TryGetAetheryteMarkerColor(IGameObject obj, out uint color, out AetheryteNameKind kind)
     {
-        var kind = ClassifyAetheryte(obj);
+        kind = ClassifyAetheryte(obj);
         if (kind == AetheryteNameKind.None) { color = 0u; return false; }
         bool hidden = !config.ShowAetherytes
             || (kind == AetheryteNameKind.Shard && !config.ShowAethernetShards);
@@ -1849,8 +1851,13 @@ public sealed class CompassHud : IDisposable
         return true;
     }
 
-    private uint MarkerColor(IGameObject obj, IPlayerCharacter player)
+    // aetheryteKind out-param exists purely so RenderAllMarkers' cull loop can capture the
+    // classification ClassifyAetheryte already computes internally here, and hand it to the render
+    // loop instead of that loop calling ClassifyAetheryte a second time per surviving candidate
+    private uint MarkerColor(IGameObject obj, IPlayerCharacter player, out AetheryteNameKind aetheryteKind)
     {
+        aetheryteKind = AetheryteNameKind.None;
+
         switch (obj.ObjectKind)
         {
             case ObjectKind.Pc:
@@ -1869,14 +1876,14 @@ public sealed class CompassHud : IDisposable
 
             case ObjectKind.EventNpc:
                 // Firmament crystals are EventNpcs — route through aetheryte path, not NPC color
-                if (TryGetAetheryteMarkerColor(obj, out uint eventNpcAetherCol)) return eventNpcAetherCol;
+                if (TryGetAetheryteMarkerColor(obj, out uint eventNpcAetherCol, out aetheryteKind)) return eventNpcAetherCol;
                 if (!config.ShowNpcs) return 0u;
                 if (config.NpcsOnlyIfTargetable && !obj.IsTargetable) return 0u;
                 return MarkerBaseColor(obj);
 
             case ObjectKind.EventObj:
                 // Housing-ward Aethernet shards are EventObj (not EventNpc)
-                return TryGetAetheryteMarkerColor(obj, out uint eventObjAetherCol)
+                return TryGetAetheryteMarkerColor(obj, out uint eventObjAetherCol, out aetheryteKind)
                     ? eventObjAetherCol : 0u;
 
             case ObjectKind.GatheringPoint:
@@ -1888,7 +1895,7 @@ public sealed class CompassHud : IDisposable
                 return config.ShowTreasure ? MarkerBaseColor(obj) : 0u;
 
             case ObjectKind.Aetheryte:
-                TryGetAetheryteMarkerColor(obj, out uint realAetherCol); // always Big/Shard, never None
+                TryGetAetheryteMarkerColor(obj, out uint realAetherCol, out aetheryteKind); // always Big/Shard, never None
                 return realAetherCol;
 
             default:

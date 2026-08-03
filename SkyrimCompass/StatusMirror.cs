@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Reflection;
 using Dalamud.Game.ClientState.Objects.SubKinds;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Ipc;
@@ -154,155 +153,6 @@ internal sealed class MirrorState
         {
             log.Warning(ex, "[SkyrimCompass] Failed to save status-mirror state.");
         }
-    }
-}
-
-/// <summary>
-/// EXPERIMENTAL. Reaches into Moodles' own loaded assembly via reflection and flips an internal
-/// flag controlling how Moodles decides where to draw its own status icons relative to the game's
-/// native ones.
-///
-/// Background, confirmed against Moodles' own source (GameGuiProcessors/TargetInfoProcessor.cs and
-/// four sibling processor files): Moodles has two ways to compute that offset. The default
-/// (CommonProcessor.NewMethod = true) visually scans the shared native icon UI region and counts
-/// populated slots, assuming anything visible there is a vanilla game status — which miscounts any
-/// icon another plugin has already drawn into that same region, specifically Loci, if Loci's render
-/// hook happens to run first on a given client session. The other path (NewMethod = false) asks
-/// Dalamud's own IPlayerCharacter.StatusList for the real, authoritative vanilla status count
-/// instead, which sidesteps the problem entirely. Both paths already exist and are already wired up
-/// inside Moodles' own code — this does not add new behavior to Moodles, it just flips which of
-/// Moodles' own existing paths gets used. This is very likely the exact mechanism behind "removing
-/// one status makes an unrelated one fall off": a miscounted offset means Moodles' own icon
-/// positions were already wrong before anything got removed, and removing something shifts the
-/// count, which just moves which icon the wrong position happens to land on next.
-///
-/// Stays labeled Experimental because every step below touches Moodles' internal, unversioned
-/// implementation details — a public static self-reference and two public instance fields, with no
-/// compatibility contract. It fails soft (see below) the moment Moodles renames or restructures any
-/// of them, and it's broader than the name suggests: flipping this changes Moodles' icon placement
-/// everywhere, for every character, not just the Loci-overlap case.
-///
-/// Failure mode by design: every reflection step is individually null-checked, with a specific
-/// <see cref="Status"/> message per failure point, wrapped in try/catch besides. If Moodles changes
-/// shape, this leaves Moodles at its own default behavior and reports why — it never throws into
-/// caller code or leaves anything partially modified.
-/// </summary>
-internal sealed class MoodlesOffsetPatch
-{
-    private const string AssemblyName            = "Moodles";
-    private const string PluginTypeName          = "Moodles.Moodles";
-    private const string StaticInstanceFieldName = "P";
-    private const string ProcessorFieldName      = "CommonProcessor";
-    private const string FlagFieldName           = "NewMethod";
-
-    private readonly IPluginLog log;
-
-    public MoodlesOffsetPatch(IPluginLog log) => this.log = log;
-
-    public string Status { get; private set; } = "Not yet attempted";
-    public bool IsApplied { get; private set; }
-
-    public bool TryApply()
-    {
-        try
-        {
-            var field = FindFlagField(out var processorInstance);
-            if (field == null || processorInstance == null)
-            {
-                IsApplied = false;
-                return false;
-            }
-
-            field.SetValue(processorInstance, false);
-
-            var confirmedValue = (bool)field.GetValue(processorInstance)!;
-            if (!confirmedValue)
-            {
-                IsApplied = true;
-                Status = "Applied (confirmed: NewMethod = false)";
-                log.Information("[SkyrimCompass] Experimental Moodles offset patch applied and confirmed.");
-                return true;
-            }
-
-            IsApplied = false;
-            Status = "Set the value but read-back still shows true — something is intercepting the write";
-            log.Warning("[SkyrimCompass] Experimental Moodles offset patch: read-back mismatch after apply.");
-            return false;
-        }
-        catch (Exception ex)
-        {
-            IsApplied = false;
-            Status = $"Failed: {ex.GetType().Name} - {ex.Message}";
-            log.Warning(ex, "[SkyrimCompass] Experimental Moodles offset patch threw while applying.");
-            return false;
-        }
-    }
-
-    /// <summary>Restores Moodles' own default. Safe to call even if never applied.</summary>
-    public bool TryRevert()
-    {
-        try
-        {
-            var field = FindFlagField(out var processorInstance);
-            if (field == null || processorInstance == null)
-                return false;
-
-            field.SetValue(processorInstance, true);
-            IsApplied = false;
-            Status = "Reverted to Moodles' default";
-            log.Information("[SkyrimCompass] Experimental Moodles offset patch reverted.");
-            return true;
-        }
-        catch (Exception ex)
-        {
-            log.Warning(ex, "[SkyrimCompass] Experimental Moodles offset patch threw while reverting.");
-            return false;
-        }
-    }
-
-    private FieldInfo? FindFlagField(out object? processorInstance)
-    {
-        processorInstance = null;
-
-        var assembly = AppDomain.CurrentDomain.GetAssemblies()
-            .FirstOrDefault(a => a.GetName().Name == AssemblyName);
-        if (assembly == null)
-        {
-            Status = "Moodles assembly not found (not loaded, or not installed)";
-            return null;
-        }
-
-        var pluginType = assembly.GetType(PluginTypeName);
-        if (pluginType == null)
-        {
-            Status = $"Moodles' plugin type has changed shape (expected '{PluginTypeName}') — patch is stale";
-            return null;
-        }
-
-        var instanceField = pluginType.GetField(StaticInstanceFieldName, BindingFlags.Public | BindingFlags.Static);
-        var pluginInstance = instanceField?.GetValue(null);
-        if (pluginInstance == null)
-        {
-            Status = "Moodles hasn't finished initializing yet";
-            return null;
-        }
-
-        var processorField = pluginType.GetField(ProcessorFieldName, BindingFlags.Public | BindingFlags.Instance);
-        processorInstance = processorField?.GetValue(pluginInstance);
-        if (processorInstance == null)
-        {
-            Status = $"Moodles' plugin class no longer has a '{ProcessorFieldName}' field — patch is stale";
-            return null;
-        }
-
-        var flagField = processorInstance.GetType().GetField(FlagFieldName, BindingFlags.Public | BindingFlags.Instance);
-        if (flagField == null || flagField.FieldType != typeof(bool))
-        {
-            Status = $"Moodles' processor no longer has a bool '{FlagFieldName}' field — patch is stale";
-            return null;
-        }
-
-        return flagField;
     }
 }
 
@@ -580,7 +430,6 @@ public sealed class StatusMirrorEngine : IDisposable
 
     private readonly MoodlesMirrorIpc moodles;
     private readonly LociMirrorIpc loci;
-    private readonly MoodlesOffsetPatch offsetPatch;
 
     private readonly MirrorState state;
     private bool stateDirty;
@@ -596,13 +445,11 @@ public sealed class StatusMirrorEngine : IDisposable
     private DateTime nextPeriodicReconcile = DateTime.MinValue;
     private volatile bool dirty = true;
 
-    public bool   MoodlesAvailable       => moodles.Available;
-    public bool   LociAvailable          => loci.Available;
-    public int    MirroredIntoLociCount    => MirroredIntoLoci.Count;
-    public int    MirroredIntoMoodlesCount => MirroredIntoMoodles.Count;
-    public int    LockedMirrorCount        => knownLockedInLoci.Count;
-    public bool   OffsetPatchApplied       => offsetPatch.IsApplied;
-    public string OffsetPatchStatus        => offsetPatch.Status;
+    public bool MoodlesAvailable         => moodles.Available;
+    public bool LociAvailable            => loci.Available;
+    public int  MirroredIntoLociCount    => MirroredIntoLoci.Count;
+    public int  MirroredIntoMoodlesCount => MirroredIntoMoodles.Count;
+    public int  LockedMirrorCount        => knownLockedInLoci.Count;
 
     public StatusMirrorEngine(
         IDalamudPluginInterface pluginInterface, IFramework framework, IObjectTable objectTable,
@@ -616,7 +463,6 @@ public sealed class StatusMirrorEngine : IDisposable
 
         moodles = new MoodlesMirrorIpc(pluginInterface, log);
         loci = new LociMirrorIpc(pluginInterface, log);
-        offsetPatch = new MoodlesOffsetPatch(log);
         state = MirrorState.Load(pluginInterface, log);
 
         moodles.LocalStatusesChanged += () => dirty = true;
@@ -648,12 +494,9 @@ public sealed class StatusMirrorEngine : IDisposable
     private void Reconcile()
     {
         // Runs before the enabled check on purpose: availability should stay fresh for the config
-        // UI even while mirroring itself is paused, and the offset patch is an independent concern
-        // — someone might want the icon fix active without mirroring running
+        // UI even while mirroring itself is paused
         moodles.RefreshAvailability();
         loci.RefreshAvailability();
-
-        UpdateOffsetPatch();
 
         if (!pluginConfig.MirrorMoodlesLoci) return;
         if (objectTable.LocalPlayer is not { } localPlayer) return;
@@ -666,27 +509,8 @@ public sealed class StatusMirrorEngine : IDisposable
         // recorded in MirroredIntoLoci, so the Loci->Moodles pass below correctly sees it as "not
         // native to Loci" and doesn't try to mirror it straight back — this identity-sharing is
         // what prevents feedback loops (see class remarks)
-        if (pluginConfig.MirrorMoodlesToLoci)
-            SyncMoodlesToLoci(moodleList, lociList);
-
-        if (pluginConfig.MirrorLociToMoodles)
-            SyncLociToMoodles(lociList, moodleList, localPlayer);
-    }
-
-    private void UpdateOffsetPatch()
-    {
-        if (pluginConfig.MirrorOffsetPatchEnabled)
-        {
-            // Idempotent-safe and cheap (a handful of reflection field lookups on a bool), so
-            // retrying every tick until it succeeds is simpler and more self-healing than
-            // event-driven re-application — it recovers on its own after a Moodles reload
-            if (moodles.Available && !offsetPatch.IsApplied)
-                offsetPatch.TryApply();
-        }
-        else if (offsetPatch.IsApplied)
-        {
-            offsetPatch.TryRevert();
-        }
+        SyncMoodlesToLoci(moodleList, lociList);
+        SyncLociToMoodles(lociList, moodleList, localPlayer);
     }
 
     private void SyncMoodlesToLoci(List<MoodlesStatusInfo> moodleList, List<LociStatusInfo> lociExisting)
@@ -706,8 +530,14 @@ public sealed class StatusMirrorEngine : IDisposable
             var sig = MirrorSignature.FromMoodles(m);
             var alreadyTracked = MirroredIntoLoci.TryGetValue(m.GUID, out var knownSig);
 
-            if (alreadyTracked && knownSig == sig)
-                continue; // nothing changed since we last pushed it
+            // The signature check alone only proves the SOURCE hasn't changed — it says nothing
+            // about whether the mirror is still actually there. Without the live-presence check,
+            // a mirror removed by anything this engine didn't do itself (self-targeted right-click
+            // removal, Loci's own UI, another plugin) would stay wrongly marked "up to date"
+            // forever, since nothing about the still-unchanged Moodles source would ever trip the
+            // signature comparison — permanently missing from Loci with no self-correction
+            if (alreadyTracked && knownSig == sig && lociExisting.Any(l => l.GUID == m.GUID))
+                continue; // unchanged AND still actually present — genuinely nothing to do
 
             if (!alreadyTracked && lociExisting.Any(l => l.GUID == m.GUID))
             {
@@ -718,6 +548,9 @@ public sealed class StatusMirrorEngine : IDisposable
                 continue;
             }
 
+            // Reached for a genuinely new native Moodle, OR a tracked one whose mirror vanished
+            // from Loci's live list above — TryApply re-creates it either way, since Loci itself
+            // decides whether this is a fresh apply or an update to an existing GUID
             var converted = MirrorConverter.ToLoci(m);
             var ec = loci.TryApply(converted);
             if (ec is LociApiEc.Success or LociApiEc.NoChange)
@@ -774,7 +607,9 @@ public sealed class StatusMirrorEngine : IDisposable
             var sig = MirrorSignature.FromLoci(l);
             var alreadyTracked = MirroredIntoMoodles.TryGetValue(l.GUID, out var knownSig);
 
-            if (alreadyTracked && knownSig == sig)
+            // Same fix as SyncMoodlesToLoci above, same reasoning: the signature check alone only
+            // proves the source hasn't changed, not that the mirror is still actually there
+            if (alreadyTracked && knownSig == sig && moodlesExisting.Any(m => m.GUID == l.GUID))
                 continue;
 
             if (!alreadyTracked && moodlesExisting.Any(m => m.GUID == l.GUID))
@@ -784,6 +619,8 @@ public sealed class StatusMirrorEngine : IDisposable
                 continue;
             }
 
+            // Reached for a genuinely new native Loci status, OR a tracked one whose mirror
+            // vanished from Moodles' live list above
             var converted = MirrorConverter.ToMoodles(l);
             if (moodles.TryApply(converted, localPlayer))
             {
@@ -849,9 +686,6 @@ public sealed class StatusMirrorEngine : IDisposable
     public void Dispose()
     {
         framework.Update -= OnFrameworkUpdate;
-
-        if (offsetPatch.IsApplied)
-            offsetPatch.TryRevert();
 
         if (stateDirty)
             state.Save(pluginInterface, log);

@@ -115,8 +115,10 @@ public sealed class CompassHud : IDisposable
     private readonly List<(float RemainingTime, int Icon, string Name, string Description, StatusSource Source, System.Guid StatusGuid)> targetStatusBuffer = new();
 
     // Client-side approximation of "time remaining" for Moodles/Loci statuses — see
-    // EstimateRemainingSeconds below for why this exists and its accuracy caveat
-    private readonly Dictionary<System.Guid, (DateTime FirstSeen, long TotalMs)> statusDurationTracker = new();
+    // EstimateRemainingSeconds below for why this exists and its accuracy caveat. FirstSeenAt is
+    // in ImGui.GetTime() units (seconds, monotonic) rather than DateTime.UtcNow, matching every
+    // other timer in this file and staying immune to wall-clock adjustments mid-session
+    private readonly Dictionary<System.Guid, (float FirstSeenAt, long TotalMs)> statusDurationTracker = new();
     private float nextDurationTrackerPruneAt;
 
     // Moodles/Loci status text carries their own [color=x]/[glow=x]/[i] markup (x = a UIColor sheet
@@ -1104,8 +1106,9 @@ public sealed class CompassHud : IDisposable
         float size = MathF.Max(8f, iconSize);
         float hGap = size * 0.25f;
         int   max  = Math.Max(1, maxIcons);
+        float now  = (float)ImGui.GetTime();
 
-        PruneDurationTrackerIfDue((float)ImGui.GetTime());
+        PruneDurationTrackerIfDue(now);
 
         targetStatusBuffer.Clear();
         foreach (var status in character.StatusList)
@@ -1125,13 +1128,12 @@ public sealed class CompassHud : IDisposable
 
         if (character.Address != IntPtr.Zero)
         {
-            float now = (float)ImGui.GetTime();
             if (includeMoodles && targetStatusBuffer.Count < max
                 && IsPluginActive("Moodles", ref moodlesActive, ref moodlesActiveCheckedAt, now))
-                AppendMoodlesStatuses(character.Address, max);
+                AppendMoodlesStatuses(character.Address, max, now);
             if (includeLoci && targetStatusBuffer.Count < max
                 && IsPluginActive("Loci", ref lociActive, ref lociActiveCheckedAt, now))
-                AppendLociStatuses(character.Address, max);
+                AppendLociStatuses(character.Address, max, now);
         }
         if (targetStatusBuffer.Count == 0) return;
 
@@ -1176,12 +1178,13 @@ public sealed class CompassHud : IDisposable
 
             if (ImGui.IsMouseHoveringRect(V(sx - size * 0.5f, scy - halfH), V(sx + size * 0.5f, hoverBottom), false))
             {
-                // WrapWidth left at its default (null) wraps to ImGui.GetContentRegionAvail(), which
-                // is near-zero on a tooltip's first frame before it's grown to fit content — wrapping
-                // almost every glyph. Pinned huge instead, matching the old SetTooltip's no-wrap
-                // behavior (it only ever broke at our own explicit "\n" between name and description)
+                // Fixed wrap width so long descriptions actually wrap into a readable box instead
+                // of running off as one long line. WrapWidth's default (null/0) resolves to
+                // GetContentRegionAvail(), which is near-zero on a tooltip's first frame before
+                // it's grown to fit content — wrapping almost every glyph — so an explicit pin is
+                // required either way; this just pins it at a readable size instead of a huge one
                 ImGui.BeginTooltip();
-                ImGuiHelpers.SeStringWrapped(GetFormattedTooltipBytes(name, description), new SeStringDrawParams { WrapWidth = 10000f });
+                ImGuiHelpers.SeStringWrapped(GetFormattedTooltipBytes(name, description), new SeStringDrawParams { WrapWidth = 250f });
                 ImGui.EndTooltip();
 
                 // Native statuses aren't wired up yet (see README) — right-click is a no-op on those
@@ -1214,18 +1217,18 @@ public sealed class CompassHud : IDisposable
     // plugins' own source (Moodles' MyStatus.ToStatusTuple/FromTuple, Loci's LociStatus.ToTuple/
     // Utils), to be a TOTAL duration in milliseconds fixed at apply time (-1 = permanent), not an
     // absolute expiry timestamp — so "remaining" can't be computed from a single snapshot the way
-    // native's status.RemainingTime already gives us. This instead remembers the real-world moment
-    // we first saw each GUID at its current total duration, and counts down from there.
+    // native's status.RemainingTime already gives us. This instead remembers the moment (in
+    // ImGui.GetTime() terms) we first saw each GUID at its current total duration, and counts down
+    // from there.
     //
     // Accuracy caveat: this is exact for anything applied while SkyrimCompass has been running to
     // see it. A status that was already active before that — already on someone before you first
     // targeted them, or before a /xlplugins reload — reads as "first seen now," so it'll show more
     // time left than it actually has until it naturally expires once and gets reapplied
-    private float EstimateRemainingSeconds(System.Guid guid, long expireTicksMs)
+    private float EstimateRemainingSeconds(System.Guid guid, long expireTicksMs, float now)
     {
         if (expireTicksMs < 0) return 0f;   // permanent (NoExpire) — no countdown, same as native
 
-        var now = DateTime.UtcNow;
         if (!statusDurationTracker.TryGetValue(guid, out var tracked) || tracked.TotalMs != expireTicksMs)
         {
             // First time seeing this GUID, or its total duration changed (refreshed/reapplied with
@@ -1234,8 +1237,8 @@ public sealed class CompassHud : IDisposable
             statusDurationTracker[guid] = tracked;
         }
 
-        float remainingMs = expireTicksMs - (float)(now - tracked.FirstSeen).TotalMilliseconds;
-        return MathF.Max(0f, remainingMs / 1000f);
+        float elapsedSeconds = now - tracked.FirstSeenAt;
+        return MathF.Max(0f, expireTicksMs / 1000f - elapsedSeconds);
     }
 
     // Bounds statusDurationTracker's growth over a long session (every distinct Moodle/Loci
@@ -1248,14 +1251,14 @@ public sealed class CompassHud : IDisposable
         nextDurationTrackerPruneAt = now + 60f;
         if (statusDurationTracker.Count == 0) return;
 
-        var wallNow = DateTime.UtcNow;
         var stale = new List<System.Guid>();
         foreach (var (guid, tracked) in statusDurationTracker)
         {
             // 30s grace past estimated expiry — a status that's still actually active (our estimate
             // was simply an underestimate) gets caught again on its next Append call regardless,
             // since a fresh GUID lookup that's absent from the tracker just restarts the clock
-            if ((wallNow - tracked.FirstSeen).TotalMilliseconds > tracked.TotalMs + 30_000)
+            float elapsedSeconds = now - tracked.FirstSeenAt;
+            if (elapsedSeconds > tracked.TotalMs / 1000f + 30f)
                 stale.Add(guid);
         }
         foreach (var guid in stale)
@@ -1263,7 +1266,7 @@ public sealed class CompassHud : IDisposable
     }
 
     // Appends the target's active Moodles into targetStatusBuffer, up to `max` total
-    private void AppendMoodlesStatuses(nint targetAddress, int max)
+    private void AppendMoodlesStatuses(nint targetAddress, int max, float now)
     {
         List<MoodlesStatusInfo> statuses;
         try { statuses = moodlesGetStatusesByPtr.InvokeFunc(targetAddress); }
@@ -1274,7 +1277,14 @@ public sealed class CompassHud : IDisposable
         {
             if (targetStatusBuffer.Count >= max) break;
             if (s.IconID <= 0) continue;
-            float remaining = EstimateRemainingSeconds(s.GUID, s.ExpireTicks);
+            // Someone with Moodles<->Loci mirroring on for themselves (this plugin's own feature,
+            // or StatusBridge) legitimately has every mirrored status in BOTH managers under the
+            // same GUID — without this check, targeting them doubles every one of their mirrored
+            // statuses on this row. Ironic worst case: the people most likely to double-render are
+            // exactly the ones also running this plugin or its sibling
+            if (targetStatusBuffer.Exists(e => e.StatusGuid == s.GUID))
+                continue;
+            float remaining = EstimateRemainingSeconds(s.GUID, s.ExpireTicks, now);
             targetStatusBuffer.Add((remaining, s.IconID, s.Title, s.Description, StatusSource.Moodles, s.GUID));
         }
     }
@@ -1282,7 +1292,7 @@ public sealed class CompassHud : IDisposable
     // Same as AppendMoodlesStatuses, for Loci. Separate method rather than a shared generic: the
     // two plugins' tuple shapes genuinely differ (IconID's signedness, field count/order), so a
     // forced abstraction would obscure more than two short, near-identical loops would
-    private void AppendLociStatuses(nint targetAddress, int max)
+    private void AppendLociStatuses(nint targetAddress, int max, float now)
     {
         List<LociStatusInfo> statuses;
         try { statuses = lociGetStatusesByPtr.InvokeFunc(targetAddress); }
@@ -1293,7 +1303,12 @@ public sealed class CompassHud : IDisposable
         {
             if (targetStatusBuffer.Count >= max) break;
             if (s.IconID == 0) continue;
-            float remaining = EstimateRemainingSeconds(s.GUID, s.ExpireTicks);
+            // Same reasoning as AppendMoodlesStatuses' own check above — this one's what actually
+            // fires in practice, since Moodles is appended first and already holds the shared GUID
+            // by the time this runs
+            if (targetStatusBuffer.Exists(e => e.StatusGuid == s.GUID))
+                continue;
+            float remaining = EstimateRemainingSeconds(s.GUID, s.ExpireTicks, now);
             targetStatusBuffer.Add((remaining, (int)s.IconID, s.Title, s.Description, StatusSource.Loci, s.GUID));
         }
     }

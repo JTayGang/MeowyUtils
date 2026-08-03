@@ -97,13 +97,9 @@ public class Configuration : IPluginConfiguration
     // shows Moodles-native icons; mirroring is what makes your Loci statuses show up there too,
     // without SkyrimCompass needing to draw anything itself. Local player only; has no bearing on
     // the target row above, which still merges both sources directly, since mirroring can't reach
-    // another person's game client
-    public bool MirrorMoodlesLoci        { get; set; } = false;
-    public bool MirrorMoodlesToLoci      { get; set; } = true;
-    public bool MirrorLociToMoodles      { get; set; } = true;
-    // Reflection-based fix for a confirmed Moodles/Loci icon-position conflict (Moodles miscounts
-    // native icons when Loci's are already drawn into the same shared UI region) — see StatusMirror.cs
-    public bool MirrorOffsetPatchEnabled { get; set; } = true;
+    // another person's game client. Single toggle for both directions — no realistic use case
+    // wants only one, so there's no separate MirrorMoodlesToLoci/MirrorLociToMoodles anymore
+    public bool MirrorMoodlesLoci { get; set; } = false;
 
     // FF14's ToT, restyled: auto-hidden if nobody/self, except targeting YOU (dedicated warning color instead)
     public bool    ShowTargetOfTargetBar  { get; set; } = true;

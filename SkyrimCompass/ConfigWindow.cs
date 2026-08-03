@@ -452,21 +452,13 @@ public sealed class ConfigWindow : Window
             "native buff bar (not something SkyrimCompass draws), which already shows\n" +
             "Moodles-native icons — this is what makes your Loci statuses show up there\n" +
             "too. Doesn't affect the target status row further up — that still reads both\n" +
-            "sources directly, since mirroring can't reach another person's game client.");
+            "sources directly, since mirroring can't reach another person's game client.\n\n" +
+            "The Loci -> Moodles direction requires \"Allow other plugins apply Moodles\"\n" +
+            "enabled in Moodles' own settings — off by default there, and there's no way\n" +
+            "for another plugin to detect or override it. If it's off, that direction\n" +
+            "silently does nothing; Moodles -> Loci is unaffected either way.");
 
         BeginIndentedDisabled(cfg.MirrorMoodlesLoci);
-        changed |= DrawToggle("Moodles \u2192 Loci##mirmtl", () => cfg.MirrorMoodlesToLoci, v => cfg.MirrorMoodlesToLoci = v);
-        changed |= DrawToggle("Loci \u2192 Moodles##mirltm", () => cfg.MirrorLociToMoodles, v => cfg.MirrorLociToMoodles = v,
-            "Requires \"Allow other plugins apply Moodles\" enabled in Moodles' own settings —\n" +
-            "off by default there, and there's no way for another plugin to detect or\n" +
-            "override it. If it's off, this direction silently does nothing.");
-        changed |= DrawToggle("Experimental icon-position fix##miroffset", () => cfg.MirrorOffsetPatchEnabled, v => cfg.MirrorOffsetPatchEnabled = v,
-            "Fixes a confirmed Moodles/Loci bug: having both installed can make Moodles\n" +
-            "miscount native status icons, scrambling where it draws its own — the likely\n" +
-            "cause if removing one status visually drops an unrelated one too. Reaches into\n" +
-            "Moodles' own internals via reflection; fails safe (falls back to Moodles' own\n" +
-            "default behavior) if a future Moodles update changes its shape.");
-
         ImGui.Spacing();
         var mirror = plugin.StatusMirror;
         ImGui.TextDisabled($"Moodles: {(mirror.MoodlesAvailable ? "connected" : "not found")}   " +
@@ -474,7 +466,6 @@ public sealed class ConfigWindow : Window
         ImGui.TextDisabled($"Mirrored into Loci: {mirror.MirroredIntoLociCount}   " +
                             $"Mirrored into Moodles: {mirror.MirroredIntoMoodlesCount}" +
                             (mirror.LockedMirrorCount > 0 ? $"   Locked (can't auto-remove): {mirror.LockedMirrorCount}" : ""));
-        ImGui.TextDisabled($"Icon-position fix: {mirror.OffsetPatchStatus}");
 
         if (ImGui.Button("Clear stuck mirrors##mirclear"))
             mirror.ClearAllMirrors();

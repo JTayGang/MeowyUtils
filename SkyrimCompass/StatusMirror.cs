@@ -461,6 +461,18 @@ public sealed class StatusMirrorEngine : IDisposable
     private readonly Dictionary<System.Guid, DateTime> recentlyRemoved = new();
     private const double RecentlyRemovedGraceSeconds = 1;
 
+    // GUIDs identified as stale "refresh ghosts" by the stale-twin check in SyncMoodlesToLoci/
+    // SyncLociToMoodles below — held here rather than relying solely on recentlyRemoved's own much
+    // shorter grace window, because Moodles'/Loci's own internal sweep that actually drops a
+    // cancelled status from GetLocalStatuses() can apparently run several seconds behind Cancel()
+    // itself (see recentlyRemoved's own comment above). A ghost that's still native-and-present
+    // once RecentlyRemovedGraceSeconds lapses would otherwise look exactly like a genuinely new
+    // status again and get its mirror recreated, undoing the retirement. Each set is pruned once
+    // its GUID actually falls out of the corresponding source's own list — at that point it's gone
+    // for real and doesn't need excluding anymore
+    private readonly HashSet<System.Guid> supersededMoodleGhosts = new();
+    private readonly HashSet<System.Guid> supersededLociGhosts = new();
+
     private bool IsRecentlyRemoved(System.Guid guid)
     {
         if (!recentlyRemoved.TryGetValue(guid, out var removedAt)) return false;
@@ -559,14 +571,22 @@ public sealed class StatusMirrorEngine : IDisposable
     {
         var allMoodleGuids = moodleList.Select(m => m.GUID).ToHashSet();
 
+        // A ghost prunes itself once its GUID genuinely falls out of Moodles' own list — see
+        // supersededMoodleGhosts' own comment above for why it's tracked separately from
+        // recentlyRemoved in the first place
+        supersededMoodleGhosts.RemoveWhere(g => !allMoodleGuids.Contains(g));
+
         // "Native to Moodles" excludes anything that's itself a mirror this engine created in
         // Moodles, sourced from Loci (tracked in MirroredIntoMoodles, not MirroredIntoLoci — the
         // opposite dict from this direction's own bookkeeping). Checking the wrong dict here was
         // the root cause of a real bug: a freshly-mirrored, still-genuinely-native Moodle would
         // fall out of this filter the moment it got tracked, making the cleanup pass below
         // immediately treat its own successful mirror as orphaned and remove it again.
-        // IsRecentlyRemoved guards a second, related bug — see its own doc comment
-        var nativeMoodles = moodleList.Where(m => !MirroredIntoMoodles.ContainsKey(m.GUID) && !IsRecentlyRemoved(m.GUID)).ToList();
+        // IsRecentlyRemoved guards a second, related bug — see its own doc comment.
+        // supersededMoodleGhosts guards a third — see its own doc comment
+        var nativeMoodles = moodleList.Where(m => !MirroredIntoMoodles.ContainsKey(m.GUID) && !IsRecentlyRemoved(m.GUID) && !supersededMoodleGhosts.Contains(m.GUID)).ToList();
+
+        var staleTwins = new List<System.Guid>();
 
         foreach (var m in nativeMoodles)
         {
@@ -591,6 +611,28 @@ public sealed class StatusMirrorEngine : IDisposable
                 continue;
             }
 
+            if (!alreadyTracked)
+            {
+                // A refresh mints a fresh GUID (recentlyRemoved's own comment above — "both plugins
+                // mint a fresh Guid.NewGuid() per genuine application"), but the pre-refresh GUID
+                // keeps appearing in GetLocalStatuses(), signature unchanged, until Moodles' own
+                // sweep actually drops it, which can run well behind the refresh itself. Left alone,
+                // that stale GUID sails through the unchanged-and-present branch above untouched
+                // while this fresh one gets mirrored as a brand new status: a real, visible
+                // duplicate in Loci for however long that window lasts, and — wherever the stale
+                // GUID itself is being displayed — a countdown that never reflects the refresh,
+                // since its signature never changes either. A signature match against something
+                // already tracked, whose own source is still sitting in this same tick's
+                // moodleList, is as close to "this is that same status, refreshed" as the data
+                // available here allows; retiring it now instead of waiting on Moodles' own sweep
+                // collapses the visible window down to this tick
+                foreach (var (trackedGuid, trackedSig) in MirroredIntoLoci)
+                {
+                    if (trackedGuid != m.GUID && trackedSig == sig && moodleList.Any(other => other.GUID == trackedGuid))
+                        staleTwins.Add(trackedGuid);
+                }
+            }
+
             // Reached for a genuinely new native Moodle, OR a tracked one whose mirror vanished
             // from Loci's live list above — TryApply re-creates it either way, since Loci itself
             // decides whether this is a fresh apply or an update to an existing GUID
@@ -601,6 +643,27 @@ public sealed class StatusMirrorEngine : IDisposable
                 MirroredIntoLoci[m.GUID] = sig;
                 MarkStateDirty();
             }
+        }
+
+        // Deferred until after the loop above has fully finished, rather than done inline as each
+        // one's found — mutating MirroredIntoLoci mid-loop would risk the stale GUID's own
+        // iteration (elsewhere in nativeMoodles, order not guaranteed) landing after this and
+        // re-adopting it via the "Loci entry already exists" branch above, undoing the retirement
+        // within the very same tick.
+        //
+        // This only fires the request and marks the GUID superseded — it deliberately does NOT
+        // touch MirroredIntoLoci or interpret TryRemove's result itself, for the same "don't trust
+        // a same-tick call, only untrack once a later fresh poll confirms it" reason the ordinary
+        // cleanup loop below never does either. Leaving it tracked means that loop's own
+        // allMoodleGuids-based sweep — same locked-item handling included — is what actually
+        // finishes the job, once Moodles' own sweep drops the stale GUID for real and it falls out
+        // of allMoodleGuids. supersededMoodleGhosts is what keeps it from being misread as a
+        // genuinely new Moodle (and its mirror recreated) in the meantime
+        foreach (var stale in staleTwins.Distinct())
+        {
+            loci.TryRemove(stale);
+            recentlyRemoved[stale] = DateTime.UtcNow;
+            supersededMoodleGhosts.Add(stale);
         }
 
         // Clean up mirrors whose native Moodles source is truly gone — "truly gone" means absent
@@ -641,10 +704,17 @@ public sealed class StatusMirrorEngine : IDisposable
     {
         var allLociGuids = lociList.Select(l => l.GUID).ToHashSet();
 
+        // A ghost prunes itself once its GUID genuinely falls out of Loci's own list — see
+        // supersededLociGhosts' own comment above
+        supersededLociGhosts.RemoveWhere(g => !allLociGuids.Contains(g));
+
         // Mirror image of SyncMoodlesToLoci's own fix above: "native to Loci" excludes anything
         // that's itself a mirror this engine created in Loci, sourced from Moodles (tracked in
-        // MirroredIntoLoci, the opposite dict from this direction's own bookkeeping)
-        var nativeLoci = lociList.Where(l => !MirroredIntoLoci.ContainsKey(l.GUID) && !IsRecentlyRemoved(l.GUID)).ToList();
+        // MirroredIntoLoci, the opposite dict from this direction's own bookkeeping).
+        // supersededLociGhosts guards a third case — see its own doc comment
+        var nativeLoci = lociList.Where(l => !MirroredIntoLoci.ContainsKey(l.GUID) && !IsRecentlyRemoved(l.GUID) && !supersededLociGhosts.Contains(l.GUID)).ToList();
+
+        var staleTwins = new List<System.Guid>();
 
         foreach (var l in nativeLoci)
         {
@@ -663,6 +733,20 @@ public sealed class StatusMirrorEngine : IDisposable
                 continue;
             }
 
+            if (!alreadyTracked)
+            {
+                // Same stale-twin situation as SyncMoodlesToLoci above, mirrored: a refresh mints a
+                // fresh GUID on Loci's side too, but the pre-refresh GUID lingers in Loci's own
+                // GetManagerInfo() until its internal sweep catches up. Retiring the matching-
+                // signature twin here, rather than waiting on that, keeps this direction from
+                // producing its own visible duplicate in Moodles
+                foreach (var (trackedGuid, trackedSig) in MirroredIntoMoodles)
+                {
+                    if (trackedGuid != l.GUID && trackedSig == sig && lociList.Any(other => other.GUID == trackedGuid))
+                        staleTwins.Add(trackedGuid);
+                }
+            }
+
             // Reached for a genuinely new native Loci status, OR a tracked one whose mirror
             // vanished from Moodles' live list above
             var converted = MirrorConverter.ToMoodles(l);
@@ -671,6 +755,22 @@ public sealed class StatusMirrorEngine : IDisposable
                 MirroredIntoMoodles[l.GUID] = sig;
                 MarkStateDirty();
             }
+        }
+
+        // Deferred until after the loop for the same reason as SyncMoodlesToLoci's own deferred
+        // retirement above — avoids the stale GUID's own iteration re-adopting it mid-loop
+        foreach (var stale in staleTwins.Distinct())
+        {
+            if (!MirroredIntoMoodles.ContainsKey(stale)) continue;
+
+            // Moodles' remove call is fire-and-forget (bool return isn't a reliable removal
+            // confirmation — see the cleanup loop below), so this doesn't attempt locked-item
+            // handling the way the Loci side does; it just fires the request and leaves the entry
+            // tracked. The cleanup loop below re-fires it every tick from here until a fresh
+            // moodlesExisting poll confirms it's actually gone, same as any other orphaned mirror
+            moodles.TryRemove(stale, localPlayer);
+            recentlyRemoved[stale] = DateTime.UtcNow;
+            supersededLociGhosts.Add(stale);
         }
 
         // "Truly gone" means absent from the full current Loci list (allLociGuids), same reasoning

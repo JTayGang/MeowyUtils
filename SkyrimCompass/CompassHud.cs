@@ -1187,6 +1187,13 @@ public sealed class CompassHud : IDisposable
                 // ImGui's own popup edge-avoidance still applies on top of this near screen edges
                 ImGui.SetNextWindowPos(V(sx, hoverBottom + tooltipGap), ImGuiCond.Always, V(0.5f, 0f));
 
+                // Same background the rest of the compass uses (config.BackgroundColor, faded by
+                // this bar's own barAlpha) instead of ImGui's default popup style, for visual
+                // consistency with the target bar/HP bar it's popping out of. RGB untouched, only
+                // the alpha channel scaled — the color's own translucency is already baked into W
+                var tooltipBg = config.BackgroundColor;
+                ImGui.PushStyleColor(ImGuiCol.PopupBg, new Vector4(tooltipBg.X, tooltipBg.Y, tooltipBg.Z, tooltipBg.W * barAlpha));
+
                 // Fixed wrap width so long descriptions actually wrap into a readable box instead
                 // of running off as one long line. WrapWidth's default (null/0) resolves to
                 // GetContentRegionAvail(), which is near-zero on a tooltip's first frame before
@@ -1195,6 +1202,7 @@ public sealed class CompassHud : IDisposable
                 ImGui.BeginTooltip();
                 ImGuiHelpers.SeStringWrapped(GetFormattedTooltipBytes(name, description), new SeStringDrawParams { WrapWidth = 345f });
                 ImGui.EndTooltip();
+                ImGui.PopStyleColor();
             }
         }
     }

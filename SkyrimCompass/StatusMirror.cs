@@ -442,6 +442,47 @@ public sealed class StatusMirrorEngine : IDisposable
     // stops being locked, so a genuinely new lock situation still gets reported
     private readonly HashSet<System.Guid> knownLockedInLoci = new();
 
+    // GUIDs whose mirror was just confirmed-removed, held here for a short grace period before
+    // they're eligible to be treated as "genuinely native" again.
+    //
+    // Confirmed against both plugins' own source: Cancel() on either side (Moodles' MyStatus/
+    // CommonProcessor, Loci's LociStatusManager.Cancel) only sets an internal expiry marker — the
+    // actual removal from the list GetClientStatusManagerInfoV2()/GetManagerInfo() reads from
+    // happens later, via a separate sweep. Neither plugin's exposed tuple reflects that
+    // pending-removal state either — Loci's ToTuple(), specifically, computes ExpireTicks from the
+    // status's static configured duration fields, never from the internal expiry marker Cancel()
+    // actually touches — so a status mid-removal is indistinguishable from a still-genuinely-active
+    // one via the data this engine can see. Without this guard, a reconcile tick that happens to
+    // poll during that window can see a just-untracked GUID reappear and, since the GUID is no
+    // longer in either tracking dict, misread it as new. A GUID reappearing is never actually "new"
+    // in practice — both plugins mint a fresh Guid.NewGuid() per genuine application — so the only
+    // sane read of a recently-removed GUID reappearing is "still being cleaned up upstream," not
+    // "coincidentally reused"
+    private readonly Dictionary<System.Guid, DateTime> recentlyRemoved = new();
+    private const double RecentlyRemovedGraceSeconds = 1;
+
+    private bool IsRecentlyRemoved(System.Guid guid)
+    {
+        if (!recentlyRemoved.TryGetValue(guid, out var removedAt)) return false;
+        if ((DateTime.UtcNow - removedAt).TotalSeconds <= RecentlyRemovedGraceSeconds) return true;
+        recentlyRemoved.Remove(guid);   // grace period elapsed — treat a reappearance normally now
+        return false;
+    }
+
+    // Bounds recentlyRemoved's growth over a long session — most entries self-prune the next time
+    // IsRecentlyRemoved happens to be asked about that exact GUID, but a removed status whose GUID
+    // never comes up again (the common case — it's gone for good) would otherwise sit here forever
+    private void PruneRecentlyRemoved()
+    {
+        if (recentlyRemoved.Count == 0) return;
+        var expired = recentlyRemoved
+            .Where(kv => (DateTime.UtcNow - kv.Value).TotalSeconds > RecentlyRemovedGraceSeconds)
+            .Select(kv => kv.Key)
+            .ToList();
+        foreach (var guid in expired)
+            recentlyRemoved.Remove(guid);
+    }
+
     private DateTime nextPeriodicReconcile = DateTime.MinValue;
     private volatile bool dirty = true;
 
@@ -497,6 +538,7 @@ public sealed class StatusMirrorEngine : IDisposable
         // UI even while mirroring itself is paused
         moodles.RefreshAvailability();
         loci.RefreshAvailability();
+        PruneRecentlyRemoved();
 
         if (!pluginConfig.MirrorMoodlesLoci) return;
         if (objectTable.LocalPlayer is not { } localPlayer) return;
@@ -522,8 +564,9 @@ public sealed class StatusMirrorEngine : IDisposable
         // opposite dict from this direction's own bookkeeping). Checking the wrong dict here was
         // the root cause of a real bug: a freshly-mirrored, still-genuinely-native Moodle would
         // fall out of this filter the moment it got tracked, making the cleanup pass below
-        // immediately treat its own successful mirror as orphaned and remove it again
-        var nativeMoodles = moodleList.Where(m => !MirroredIntoMoodles.ContainsKey(m.GUID)).ToList();
+        // immediately treat its own successful mirror as orphaned and remove it again.
+        // IsRecentlyRemoved guards a second, related bug — see its own doc comment
+        var nativeMoodles = moodleList.Where(m => !MirroredIntoMoodles.ContainsKey(m.GUID) && !IsRecentlyRemoved(m.GUID)).ToList();
 
         foreach (var m in nativeMoodles)
         {
@@ -590,6 +633,7 @@ public sealed class StatusMirrorEngine : IDisposable
             MirroredIntoLoci.Remove(guid);
             MarkStateDirty();
             knownLockedInLoci.Remove(guid);
+            recentlyRemoved[guid] = DateTime.UtcNow;
         }
     }
 
@@ -600,7 +644,7 @@ public sealed class StatusMirrorEngine : IDisposable
         // Mirror image of SyncMoodlesToLoci's own fix above: "native to Loci" excludes anything
         // that's itself a mirror this engine created in Loci, sourced from Moodles (tracked in
         // MirroredIntoLoci, the opposite dict from this direction's own bookkeeping)
-        var nativeLoci = lociList.Where(l => !MirroredIntoLoci.ContainsKey(l.GUID)).ToList();
+        var nativeLoci = lociList.Where(l => !MirroredIntoLoci.ContainsKey(l.GUID) && !IsRecentlyRemoved(l.GUID)).ToList();
 
         foreach (var l in nativeLoci)
         {
@@ -645,6 +689,7 @@ public sealed class StatusMirrorEngine : IDisposable
 
             MirroredIntoMoodles.Remove(guid);
             MarkStateDirty();
+            recentlyRemoved[guid] = DateTime.UtcNow;
         }
     }
 

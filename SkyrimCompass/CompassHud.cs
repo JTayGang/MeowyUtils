@@ -88,6 +88,22 @@ public sealed class CompassHud : IDisposable
     private float lociActiveCheckedAt   = -1000f;
     private const float PluginActiveCacheSeconds = 5f;
 
+    // Version-gate for this row's own Moodles/Loci calls, mirroring StatusMirrorEngine's
+    // MoodlesMirrorIpc/LociMirrorIpc (StatusMirror.cs) rather than only checking IsLoaded the way
+    // IsPluginActive above does. Today a breaking IPC change on either plugin's side surfaces only
+    // as AppendMoodlesStatuses/AppendLociStatuses's own catch swallowing an exception every frame,
+    // with no signal that the integration itself has gone stale (as opposed to the plugin simply
+    // not being installed) — this brings the target row's checks up to the same standard the mirror
+    // engine already meets: checked, cached on the same cadence as IsPluginActive, and logged once
+    // on the healthy -> unhealthy transition rather than never or every frame
+    private readonly ICallGateSubscriber<int>        moodlesVersion;
+    private readonly ICallGateSubscriber<(int, int)> lociApiVersion;
+    private const int MoodlesMinimumApiVersion = 4;   // same threshold MoodlesMirrorIpc uses
+    private bool  moodlesVersionOk;
+    private float moodlesVersionCheckedAt = -1000f;
+    private bool  lociVersionOk;
+    private float lociVersionCheckedAt   = -1000f;
+
     // LB fade-out state (see UpdateFadeOut): freezes + centre→edge wipes on a big gauge drop
     private float lbTrackedProgress  = 0f;
     private float lbFrozenProgress   = 0f;
@@ -120,6 +136,23 @@ public sealed class CompassHud : IDisposable
     // other timer in this file and staying immune to wall-clock adjustments mid-session
     private readonly Dictionary<System.Guid, (float FirstSeenAt, long TotalMs)> statusDurationTracker = new();
     private float nextDurationTrackerPruneAt;
+
+    // Raw Moodles/Loci status payloads for the current target, fetched over IPC at most once per
+    // StatusPayloadCacheSeconds instead of unconditionally every frame — same "cache it, don't poll
+    // every frame" instinct as IsPluginActive below, applied to the payload itself rather than just
+    // availability (StatusMirrorEngine already does the equivalent thing via its own dirty-flag/
+    // event scheme; this is the simpler time-gated option since the countdown shown to the player
+    // is computed independently by EstimateRemainingSeconds from elapsed time, not from anything in
+    // the freshly-fetched list, so a slightly-stale payload doesn't make the numbers jumpy). Keyed
+    // by target address so switching target invalidates the cache immediately rather than briefly
+    // showing the previous target's statuses for up to a whole throttle window
+    private List<MoodlesStatusInfo>? cachedMoodlesStatuses;
+    private nint  cachedMoodlesTargetAddress = IntPtr.Zero;
+    private float cachedMoodlesFetchedAt     = -1000f;
+    private List<LociStatusInfo>? cachedLociStatuses;
+    private nint  cachedLociTargetAddress = IntPtr.Zero;
+    private float cachedLociFetchedAt     = -1000f;
+    private const float StatusPayloadCacheSeconds = 0.12f;   // within the 100-150ms review suggested
 
     // Moodles/Loci status text carries their own [color=x]/[glow=x]/[i] markup (x = a UIColor sheet
     // row, numeric or a handful of named aliases); native status text never matches these tags, so
@@ -235,6 +268,8 @@ public sealed class CompassHud : IDisposable
             "Moodles.RemoveMoodlesByPtrV2");
         lociRemoveByPtr = pluginInterface.GetIpcSubscriber<System.Guid, nint, int>(
             "Loci.RemoveStatusByPtr");
+        moodlesVersion = pluginInterface.GetIpcSubscriber<int>("Moodles.Version");
+        lociApiVersion = pluginInterface.GetIpcSubscriber<(int, int)>("Loci.ApiVersion");
 
         gatheringPointSheet     = dataManager.GetExcelSheet<GatheringPoint>();
         gatheringPointBaseSheet = dataManager.GetExcelSheet<GatheringPointBase>();
@@ -1133,10 +1168,12 @@ public sealed class CompassHud : IDisposable
         if (character.Address != IntPtr.Zero)
         {
             if (includeMoodles && targetStatusBuffer.Count < max
-                && IsPluginActive("Moodles", ref moodlesActive, ref moodlesActiveCheckedAt, now))
+                && IsPluginActive("Moodles", ref moodlesActive, ref moodlesActiveCheckedAt, now)
+                && IsMoodlesVersionCompatible(now))
                 AppendMoodlesStatuses(character.Address, max, now);
             if (includeLoci && targetStatusBuffer.Count < max
-                && IsPluginActive("Loci", ref lociActive, ref lociActiveCheckedAt, now))
+                && IsPluginActive("Loci", ref lociActive, ref lociActiveCheckedAt, now)
+                && IsLociVersionCompatible(now))
                 AppendLociStatuses(character.Address, max, now);
         }
         if (targetStatusBuffer.Count == 0) return;
@@ -1217,6 +1254,37 @@ public sealed class CompassHud : IDisposable
         return cached;
     }
 
+    // See the moodlesVersion/lociApiVersion fields' own comment above for why this exists alongside
+    // IsPluginActive rather than folded into it — the two checks have genuinely different shapes
+    // (a numeric minimum vs. "the call didn't throw"), matching how MoodlesMirrorIpc/LociMirrorIpc
+    // check their own two plugins differently in StatusMirror.cs. Only called once IsPluginActive
+    // has already confirmed the plugin's loaded, so a not-installed Moodles/Loci never reaches this
+    private bool IsMoodlesVersionCompatible(float now)
+    {
+        if (now - moodlesVersionCheckedAt < PluginActiveCacheSeconds) return moodlesVersionOk;
+        moodlesVersionCheckedAt = now;
+        var wasOk = moodlesVersionOk;
+        try { moodlesVersionOk = moodlesVersion.InvokeFunc() >= MoodlesMinimumApiVersion; }
+        catch { moodlesVersionOk = false; }
+
+        if (wasOk && !moodlesVersionOk)
+            log.Warning("[SkyrimCompass] Moodles IPC version is no longer compatible with the target status row — its icons will stop appearing there until this plugin is updated.");
+        return moodlesVersionOk;
+    }
+
+    private bool IsLociVersionCompatible(float now)
+    {
+        if (now - lociVersionCheckedAt < PluginActiveCacheSeconds) return lociVersionOk;
+        lociVersionCheckedAt = now;
+        var wasOk = lociVersionOk;
+        try { _ = lociApiVersion.InvokeFunc(); lociVersionOk = true; }   // just needs to not throw, same as LociMirrorIpc
+        catch { lociVersionOk = false; }
+
+        if (wasOk && !lociVersionOk)
+            log.Warning("[SkyrimCompass] Loci IPC version is no longer compatible with the target status row — its icons will stop appearing there until this plugin is updated.");
+        return lociVersionOk;
+    }
+
     // Neither plugin's IPC exposes a live countdown — ExpireTicks is confirmed, against both
     // plugins' own source (Moodles' MyStatus.ToStatusTuple/FromTuple, Loci's LociStatus.ToTuple/
     // Utils), to be a TOTAL duration in milliseconds fixed at apply time (-1 = permanent), not an
@@ -1269,15 +1337,24 @@ public sealed class CompassHud : IDisposable
             statusDurationTracker.Remove(guid);
     }
 
-    // Appends the target's active Moodles into targetStatusBuffer, up to `max` total
+    // Appends the target's active Moodles into targetStatusBuffer, up to `max` total. The IPC fetch
+    // itself is throttled to StatusPayloadCacheSeconds rather than run unconditionally every frame
+    // — see the cache fields' own comment above for why that's safe. A failed/exceptional fetch is
+    // cached as "nothing" for the same window rather than retried every frame, so a persistent
+    // failure (e.g. mid-unload) doesn't spam retries any faster than a healthy fetch would poll
     private void AppendMoodlesStatuses(nint targetAddress, int max, float now)
     {
-        List<MoodlesStatusInfo> statuses;
-        try { statuses = moodlesGetStatusesByPtr.InvokeFunc(targetAddress); }
-        catch { return; }   // not installed, wrong version, or any other IPC hiccup — skip quietly
-        if (statuses == null) return;
+        if (cachedMoodlesStatuses == null || targetAddress != cachedMoodlesTargetAddress
+            || now - cachedMoodlesFetchedAt >= StatusPayloadCacheSeconds)
+        {
+            cachedMoodlesTargetAddress = targetAddress;
+            cachedMoodlesFetchedAt     = now;
+            try { cachedMoodlesStatuses = moodlesGetStatusesByPtr.InvokeFunc(targetAddress); }
+            catch { cachedMoodlesStatuses = null; }   // not installed, wrong version, or any other IPC hiccup — skip quietly
+        }
+        if (cachedMoodlesStatuses == null) return;
 
-        foreach (var s in statuses)
+        foreach (var s in cachedMoodlesStatuses)
         {
             if (targetStatusBuffer.Count >= max) break;
             if (s.IconID <= 0) continue;
@@ -1293,17 +1370,23 @@ public sealed class CompassHud : IDisposable
         }
     }
 
-    // Same as AppendMoodlesStatuses, for Loci. Separate method rather than a shared generic: the
-    // two plugins' tuple shapes genuinely differ (IconID's signedness, field count/order), so a
-    // forced abstraction would obscure more than two short, near-identical loops would
+    // Same as AppendMoodlesStatuses, for Loci, including the same fetch-throttling. Separate method
+    // rather than a shared generic: the two plugins' tuple shapes genuinely differ (IconID's
+    // signedness, field count/order), so a forced abstraction would obscure more than two short,
+    // near-identical loops would
     private void AppendLociStatuses(nint targetAddress, int max, float now)
     {
-        List<LociStatusInfo> statuses;
-        try { statuses = lociGetStatusesByPtr.InvokeFunc(targetAddress); }
-        catch { return; }
-        if (statuses == null) return;
+        if (cachedLociStatuses == null || targetAddress != cachedLociTargetAddress
+            || now - cachedLociFetchedAt >= StatusPayloadCacheSeconds)
+        {
+            cachedLociTargetAddress = targetAddress;
+            cachedLociFetchedAt     = now;
+            try { cachedLociStatuses = lociGetStatusesByPtr.InvokeFunc(targetAddress); }
+            catch { cachedLociStatuses = null; }
+        }
+        if (cachedLociStatuses == null) return;
 
-        foreach (var s in statuses)
+        foreach (var s in cachedLociStatuses)
         {
             if (targetStatusBuffer.Count >= max) break;
             if (s.IconID == 0) continue;

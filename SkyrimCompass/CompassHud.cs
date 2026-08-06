@@ -649,6 +649,17 @@ private float RenderTargetBar(ImDrawListPtr dl, float tbX, float tbW, float tbY,
     {
         var chara = (ICharacter)currentTarget;
         float rawFrac = chara.MaxHp > 0f ? Math.Clamp(chara.CurrentHp / chara.MaxHp, 0f, 1f) : 0f;
+
+        // ─── Minion detection: force full health bar ────────────────
+bool isMinion = currentTarget.ObjectKind == ObjectKind.Companion;
+if (isMinion)
+{
+    rawFrac = 1f;
+    displayedTargetHpFrac = 1f;
+    lastRawTargetHpFrac = 1f;
+    targetBarFlashAlpha = 0f;
+}
+
         float dt = ImGui.GetIO().DeltaTime;
         if (currentTarget.GameObjectId != lastTargetBarObjectId)
         {
@@ -659,17 +670,19 @@ private float RenderTargetBar(ImDrawListPtr dl, float tbX, float tbW, float tbY,
         }
         else
         {
-            if (rawFrac < lastRawTargetHpFrac - 0.001f) targetBarFlashAlpha = 1f;
+            if (!isMinion && rawFrac < lastRawTargetHpFrac - 0.001f)
+                targetBarFlashAlpha = 1f;
             lastRawTargetHpFrac = rawFrac;
             displayedTargetHpFrac += (rawFrac - displayedTargetHpFrac) * (1f - MathF.Exp(-dt * 14f));
         }
-        targetBarFlashAlpha = MathF.Max(0f, targetBarFlashAlpha - dt / 0.4f);
+        if (!isMinion)
+            targetBarFlashAlpha = MathF.Max(0f, targetBarFlashAlpha - dt / 0.4f);
 
         DrawTrapezoidBar(dl, tbX, tbY, tbW, tbH, displayedTargetHpFrac, bgCol, fillCol, barAlpha,
-            config.ShowTargetBarShield ? chara.ShieldPercentage / 100f : null,
-            config.ShowTargetBarShield ? C(config.TargetBarShieldColor) : null);
+            (!isMinion && config.ShowTargetBarShield) ? chara.ShieldPercentage / 100f : null,
+            (!isMinion && config.ShowTargetBarShield) ? C(config.TargetBarShieldColor) : null);
 
-        if (targetBarFlashAlpha > 0f)
+        if (!isMinion && targetBarFlashAlpha > 0f)
         {
             float lo = MathF.Min(rawFrac, displayedTargetHpFrac);
             float hi = MathF.Max(rawFrac, displayedTargetHpFrac);
@@ -685,7 +698,7 @@ private float RenderTargetBar(ImDrawListPtr dl, float tbX, float tbW, float tbY,
         }
     }
 
-    // ─── Name row ──────────────────────────────────────────────────
+    // ─── Name row (unchanged) ──────────────────────────────────────
     using var jupiterScope = jupiterFont.Available ? jupiterFont.Push() : null;
     float fontSize = ImGui.GetFontSize() * config.TargetBarFontScale;
     var font = ImGui.GetFont();
@@ -717,7 +730,7 @@ private float RenderTargetBar(ImDrawListPtr dl, float tbX, float tbW, float tbY,
     DrawEndCapOutlines(dl, leftOrnX, textCy, ornHW, ornHH, borderCol, ornHW * 0.28f);
     DrawEndCapOutlines(dl, rightOrnX, textCy, ornHW, ornHH, borderCol, ornHW * 0.28f);
 
-    // ─── Ribbons ──────────────────────────────────────────────────
+    // ─── Ribbons (unchanged) ────────────────────────────────────────
     if (isChara && config.ShowTargetBarRibbons)
     {
         float leftEdge = leftOrnX - ornHW, rightEdge = rightOrnX + ornHW;
@@ -737,7 +750,7 @@ private float RenderTargetBar(ImDrawListPtr dl, float tbX, float tbW, float tbY,
         foreach (var (edge, target, col, tMul, tOff) in ribbons)
             DrawGlowLine(dl, V(edge, textCy), V(target, textCy), col, 1f, glowT * tMul + tOff, true, 0f, 0f);
 
-        // ─── Cast ribbon (safe cast + division guard) ──────────
+        // Cast ribbon (unchanged)
         if (currentTarget.GameObjectId != castWipeTargetId)
         {
             castWipeTargetId = currentTarget.GameObjectId;

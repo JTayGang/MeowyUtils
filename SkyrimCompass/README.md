@@ -6,12 +6,23 @@ A Dalamud plugin that replaces FFXIV's minimap, limit break bars, and target hea
   <img src="images/hero.png" alt="Skyrim Compass in action" width="720">
 </p>
 
-## BEFORE YOU INSTALL
+## BEFORE YOU INSTALL (For moodles users)
 In order to apply moodles, you MUST tick these boxes in Moodles settings
 
 <p align="center">
   <img src="images/settings.png" alt="Change this setting" width="720">
 </p>
+
+
+## KNOWN ISSUES
+- Moodles and Loci show the vfx twice when applying a status, like its applying them twice.
+  Thats because it IS. It copies your moodles and locis so that they show for both, and hides the extra copy. 
+- Using /xlkill will discard your character's "state" and make statuses randomly reappear on next login.
+  TO FIX: Close the game normally once.
+- Moodle timers do not display a countdown unless "persist expire time" is enabled for the moodle.
+  I couldnt find a fix for this. (The timer still works fine, just doesnt display)
+- When "persist expire time" is enabled for a moodle, reapplying that moodle breaks a bit.
+  TO FIX: remove the moodle before re-applying
 
 ## Install
 

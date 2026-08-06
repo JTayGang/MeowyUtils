@@ -1,6 +1,6 @@
 # Skyrim Compass
 
-A Dalamud plugin that replaces FFXIV's minimap, limit break bars, and target health bars with an immersive, Skyrim style compass strip.
+Whoa look, the first (somewhat) working compatibility layer for Loci and Moodles! Oh yeah, theres also a neat Skyrim-type compass if you care about that.
 
 <p align="center">
   <img src="images/hero.png" alt="Skyrim Compass in action" width="720">

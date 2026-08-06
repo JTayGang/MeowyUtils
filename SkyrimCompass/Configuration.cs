@@ -27,9 +27,9 @@ public class Configuration : IPluginConfiguration
     public bool Enabled { get; set; } = true;
 
     // Layout
-    public float CompassWidth  { get; set; } = 560f;
+    public float CompassWidth  { get; set; } = 570f;
     public float CompassHeight { get; set; } = 35f;
-    public float YOffset       { get; set; } = 8f;
+    public float YOffset       { get; set; } = 10f;
     public float XOffset       { get; set; } = 0f;   // shifts bar left(-)/right(+) of center
 
     // Behaviour
@@ -55,19 +55,19 @@ public class Configuration : IPluginConfiguration
     public bool  ShowPartyRoleIcons { get; set; } = true;   // party job icon (ClassJob.RowId) + role-colored ring
     // Restricts job icon/ring to duty+PvP (role matters); else falls to named override, then friend/hollow dot; off=always-on
     public bool  PartyRoleIconsOnlyInDuty { get; set; } = true;
-    public float PartyRoleIconMinSize     { get; set; } = 10f;
-    public float PartyRoleIconMaxSize     { get; set; } = 24f;
+    public float PartyRoleIconMinSize     { get; set; } = 8f;
+    public float PartyRoleIconMaxSize     { get; set; } = 25f;
 
     // Checked after party role icons (when shown, see PartyRoleIconsOnlyInDuty), before friend/ring fallback
     public List<PlayerIconOverride> PlayerIconOverrides { get; set; } = new();
 
     public bool  ShowEnemies          { get; set; } = true;
     public bool  EnemiesOnlyIfEngaged { get; set; } = true;   // only enemies in combat (with you or your party)
-    public float EnemyMinSize         { get; set; } = 6f;
-    public float EnemyMaxSize         { get; set; } = 20f;
+    public float EnemyMinSize         { get; set; } = 8f;
+    public float EnemyMaxSize         { get; set; } = 25f;
 
     // Border glows in from both ends per bar's 0-100% progress; stacked layers show charged-bar count
-    public bool    ShowLimitBreakGlow   { get; set; } = false;
+    public bool    ShowLimitBreakGlow   { get; set; } = true;
     public Vector4 LimitBreakGlowColor  { get; set; } = new(1.00f, 0.65f, 0.10f, 0.95f);
     public Vector4 LimitBreakGlowColor2 { get; set; } = new(1.00f, 0.95f, 0.20f, 0.95f);   // bar 2, yellow by default
     public Vector4 LimitBreakGlowColor3 { get; set; } = new(1.00f, 1.00f, 1.00f, 0.95f);   // bar 3, white by default
@@ -84,7 +84,7 @@ public class Configuration : IPluginConfiguration
 
     // Status icons for your target, docked beneath its name row — native slot order, no sorting/filtering
     public bool  ShowTargetStatuses   { get; set; } = true;
-    public float TargetStatusIconSize { get; set; } = 22f;   // fixed size — no distance scaling like markers have
+    public float TargetStatusIconSize { get; set; } = 25f;   // fixed size — no distance scaling like markers have
     public int   TargetStatusMaxIcons { get; set; } = 10;
     // Moodles/Loci active statuses always merge into the row above too, sharing its size/cap;
     // each no-ops on its own if that particular plugin isn't installed. Duration label is a
@@ -99,7 +99,7 @@ public class Configuration : IPluginConfiguration
     // the target row above, which still merges both sources directly, since mirroring can't reach
     // another person's game client. Single toggle for both directions — no realistic use case
     // wants only one, so there's no separate MirrorMoodlesToLoci/MirrorLociToMoodles anymore
-    public bool MirrorMoodlesLoci { get; set; } = false;
+    public bool MirrorMoodlesLoci { get; set; } = true;
 
     // FF14's ToT, restyled: auto-hidden if nobody/self, except targeting YOU (dedicated warning color instead)
     public bool    ShowTargetOfTargetBar  { get; set; } = true;
@@ -126,14 +126,14 @@ public class Configuration : IPluginConfiguration
 
     public bool  ShowGatheringNodes        { get; set; } = true;
     public bool  GatheringOnlyIfTargetable { get; set; } = true;   // hides non-targetable placeholders
-    public bool  ShowGatheringIcons        { get; set; } = false;  // Mining/Botany/Quarrying/Logging icon
-    public float GatheringIconMinSize      { get; set; } = 20f;
-    public float GatheringIconMaxSize      { get; set; } = 30f;
+    public bool  ShowGatheringIcons        { get; set; } = true;  // Mining/Botany/Quarrying/Logging icon
+    public float GatheringIconMinSize      { get; set; } = 8f;
+    public float GatheringIconMaxSize      { get; set; } = 60f;
     public bool  ShowTreasure              { get; set; } = true;
     public bool  ShowTreasureIcons         { get; set; } = true;   // no sheet maps BaseId->visual type, so one icon fits all
     public int   TreasureIconId            { get; set; } = 60354;  // 60354/60355/60356 are known variants — swap if wrong
-    public float TreasureMinSize           { get; set; } = 6f;
-    public float TreasureMaxSize           { get; set; } = 20f;
+    public float TreasureMinSize           { get; set; } = 8f;
+    public float TreasureMaxSize           { get; set; } = 60f;
     public bool  ShowAetherytes            { get; set; } = true;
     public bool  ShowAethernetShards       { get; set; } = true;   // smaller waypoints, matched via AethernetShardName
     public bool  ShowAetheryteIcons        { get; set; } = true;
@@ -141,14 +141,14 @@ public class Configuration : IPluginConfiguration
     public int     AetheryteIconId      { get; set; } = 60453;
     public int     AethernetShardIconId { get; set; } = 60430;
     public Vector4 AetheryteColor       { get; set; } = new(0.55f, 0.85f, 0.95f, 0.92f);
-    public float   AetheryteIconMinSize { get; set; } = 20f;
+    public float   AetheryteIconMinSize { get; set; } = 8f;
     public float   AetheryteIconMaxSize { get; set; } = 30f;
     public float   MaxMarkerDistance    { get; set; } = 100f;   // max detection range in yalms (true 3D distance)
 
     // Dot distance-fade curve (fractions of max range, 0–1)
-    public float DotNearZone { get; set; } = 0.85f;
-    public float DotFarZone  { get; set; } = 0.25f;
-    public float DotMidAlpha { get; set; } = 0.50f;
+    public float DotNearZone { get; set; } = 0.925f;
+    public float DotFarZone  { get; set; } = 0.325f;
+    public float DotMidAlpha { get; set; } = 0.325f;
 
     // Marker colors
     public Vector4 PlayerColor    { get; set; } = new(0.40f, 0.65f, 1.00f, 0.92f);
@@ -160,9 +160,9 @@ public class Configuration : IPluginConfiguration
     // FATEs — zone-wide POI, independent of ShowAnyMarkers (often wanted with everything else off)
     public bool    ShowFates              { get; set; } = true;
     public Vector4 FateColor              { get; set; } = new(0.82f, 0.35f, 0.95f, 0.95f);   // fallback if icon fails to load
-    public float   FateDistanceMultiplier { get; set; } = 2.5f;   // FATE range = MaxMarkerDistance × this
+    public float   FateDistanceMultiplier { get; set; } = 3.5f;   // FATE range = MaxMarkerDistance × this
     public float   FateIconMinSize        { get; set; } = 20f;
-    public float   FateIconMaxSize        { get; set; } = 32f;
+    public float   FateIconMaxSize        { get; set; } = 40f;
 
     // True if any marker type is enabled — skips the object-table loop otherwise
     public bool ShowAnyMarkers =>

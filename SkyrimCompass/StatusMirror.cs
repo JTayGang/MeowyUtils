@@ -8,11 +8,6 @@ using Dalamud.Plugin.Ipc;
 using Dalamud.Plugin.Services;
 using System.Text.Json;
 
-// Same external-contract wire shapes CompassHud.cs declares at its own top (see the comment there
-// for the full rationale). Redeclared here rather than shared because `using X = (...)` tuple
-// aliases are file-scoped in C#, not `global using` — this file needs its own copy, field-for-field
-// identical, the same way every plugin in this ecosystem redeclares them rather than taking a
-// project reference on Moodles/Loci themselves
 using MoodlesStatusInfo = (
     int Version, System.Guid GUID, int IconID, string Title, string Description, string CustomVFXPath,
     long ExpireTicks, int Type, int Stacks, int StackSteps, uint Modifiers, System.Guid ChainedStatus,
@@ -24,9 +19,6 @@ using LociStatusInfo = (
 
 namespace SkyrimCompass;
 
-// Mirrors Loci.Api's LociApiEc member-for-member (see CompassHud.cs's own copy of this same enum
-// for the fuller rationale on duplicating it per-file instead of sharing it: it's a fixed external
-// contract, not logic, and Dalamud's wire type for it is a plain int either way)
 internal enum LociApiEc
 {
     Success = 0, NoChange = 1, PartialSuccess = 2, TargetNotFound = 3, TargetInvalid = 4,
@@ -34,14 +26,6 @@ internal enum LociApiEc
     ClientForbidden = 10, FSPathFaulted = 11, UnkError = int.MaxValue,
 }
 
-/// <summary>
-/// Field-level snapshot of a status, used purely for cheap "did anything meaningful change since
-/// we last pushed this" comparisons. Deliberately excludes GUID (that's the tracking dictionary's
-/// key already), Version (unvalidated by either plugin), and every chain-related field — chain
-/// data references GUIDs from the *source* plugin's own saved-status library, so copying it across
-/// verbatim would point at nothing in the destination plugin (or, astronomically unlikely, at an
-/// unrelated status that happens to share a GUID) — it's stripped on every mirror instead.
-/// </summary>
 internal readonly record struct MirrorSignature(
     long IconID, string Title, string Description, string CustomVFXPath, long ExpireTicks,
     int Type, int Stacks, int StackSteps, uint Modifiers, string Applier, string Dispeller)
@@ -55,14 +39,6 @@ internal readonly record struct MirrorSignature(
         l.Type, l.Stacks, l.StackSteps, l.Modifiers, l.Applier, l.Dispeller);
 }
 
-/// <summary>
-/// Converts statuses between Moodles' and Loci's tuple shapes for mirroring. Both agree closely on
-/// units and enum values (StatusType and the first 7 Modifiers flags are numerically identical,
-/// ExpireTicks is milliseconds-with-(-1)-meaning-permanent in both), so most fields are a straight
-/// copy. Two deliberate gaps: chain-trigger data is always stripped (see MirrorSignature above),
-/// and Moodles' "Permanent" (Sticky) flag has no Loci equivalent, so mirroring Loci -> Moodles
-/// always produces Permanent = false.
-/// </summary>
 internal static class MirrorConverter
 {
     public static LociStatusInfo ToLoci(MoodlesStatusInfo m) => (
@@ -103,16 +79,6 @@ internal static class MirrorConverter
         Permanent: false);
 }
 
-/// <summary>
-/// Persisted record of which GUIDs the mirror engine has created, in which direction, and with
-/// what signature — a small JSON file in the plugin's own config directory, loaded on startup and
-/// saved whenever it changes. Exists specifically to avoid a "ghost status" failure mode: if this
-/// tracking were in-memory only, every game restart would start identity-tracking from a blank
-/// slate, with nothing to go on except whether both sides currently happen to agree — which breaks
-/// the moment only one side survives a restart correctly. The GUID-matching "adopt" fallback further
-/// down in StatusMirrorEngine still exists for a missing/corrupted state file, but this is the
-/// primary mechanism, not the guess.
-/// </summary>
 internal sealed class MirrorState
 {
     public Dictionary<System.Guid, MirrorSignature> MirroredIntoLoci    { get; set; } = new();
@@ -121,7 +87,6 @@ internal sealed class MirrorState
     private static string FilePath(IDalamudPluginInterface pluginInterface) =>
         Path.Combine(pluginInterface.ConfigDirectory.FullName, "status_mirror_state.json");
 
-    /// <summary>Never throws. A missing, corrupt, or unreadable file just returns a fresh, empty state.</summary>
     public static MirrorState Load(IDalamudPluginInterface pluginInterface, IPluginLog log)
     {
         try
@@ -133,14 +98,13 @@ internal sealed class MirrorState
             var loaded = JsonSerializer.Deserialize<MirrorState>(File.ReadAllText(path));
             return loaded ?? new MirrorState();
         }
-        catch (Exception ex)
+        catch
         {
-            log.Warning(ex, "[SkyrimCompass] Failed to load persisted status-mirror state — starting fresh.");
+            log.Warning("[SkyrimCompass] Failed to load persisted status-mirror state — starting fresh.");
             return new MirrorState();
         }
     }
 
-    /// <summary>Never throws — a failed save just means falling back to the GUID-matching guess next restart.</summary>
     public void Save(IDalamudPluginInterface pluginInterface, IPluginLog log)
     {
         try
@@ -156,7 +120,6 @@ internal sealed class MirrorState
     }
 }
 
-/// <summary>Thin wrapper around the handful of Moodles IPC calls the mirror engine needs, local-player-only.</summary>
 internal sealed class MoodlesMirrorIpc : IDisposable
 {
     private const int MinimumApiVersion = 4;
@@ -194,12 +157,12 @@ internal sealed class MoodlesMirrorIpc : IDisposable
 
         if (Available && !wasAvailable)
         {
-            log.Information("[SkyrimCompass] Moodles IPC became available for status mirroring.");
+            log.Information("[SkyrimCompass] Moodles IPC became available.");
             TrySubscribeToChanges();
         }
         else if (!Available && wasAvailable)
         {
-            log.Information("[SkyrimCompass] Moodles IPC became unavailable for status mirroring.");
+            log.Information("[SkyrimCompass] Moodles IPC became unavailable.");
         }
     }
 
@@ -219,23 +182,17 @@ internal sealed class MoodlesMirrorIpc : IDisposable
 
     private void OnStatusManagerModified(nint address) => LocalStatusesChanged?.Invoke();
 
-    /// <summary>Fetches the local player's currently-applied Moodles. Empty list on any failure.</summary>
     public List<MoodlesStatusInfo> GetLocalStatuses()
     {
         if (!Available) return [];
         try { return getClientStatusManagerInfo.InvokeFunc() ?? []; }
         catch (Exception ex)
         {
-            log.Warning(ex, "[SkyrimCompass] Failed to read local Moodles statuses for mirroring.");
+            log.Warning(ex, "[SkyrimCompass] Failed to read local Moodles statuses.");
             return [];
         }
     }
 
-    /// <summary>
-    /// Requires "Allow other plugins apply Moodles" (broadcast) enabled in Moodles' own settings —
-    /// off by default, and there's no way for another plugin to detect or override it. If it's off,
-    /// Loci -> Moodles mirroring silently does nothing; that's Moodles' own gate, not a bug here.
-    /// </summary>
     public bool TryApply(MoodlesStatusInfo status, IPlayerCharacter localPlayer)
     {
         if (!Available) return false;
@@ -271,12 +228,11 @@ internal sealed class MoodlesMirrorIpc : IDisposable
         if (subscribedToChanges)
         {
             try { statusManagerModified.Unsubscribe(OnStatusManagerModified); }
-            catch { /* best effort */ }
+            catch { }
         }
     }
 }
 
-/// <summary>Thin wrapper around the handful of Loci IPC calls the mirror engine needs, local-player-only.</summary>
 internal sealed class LociMirrorIpc : IDisposable
 {
     private readonly IPluginLog log;
@@ -311,19 +267,19 @@ internal sealed class LociMirrorIpc : IDisposable
         var wasAvailable = Available;
         try
         {
-            _ = apiVersion.InvokeFunc(); // just needs to not throw
+            _ = apiVersion.InvokeFunc();
             Available = isEnabled.InvokeFunc();
         }
         catch { Available = false; }
 
         if (Available && !wasAvailable)
         {
-            log.Information("[SkyrimCompass] Loci IPC became available for status mirroring.");
+            log.Information("[SkyrimCompass] Loci IPC became available.");
             TrySubscribeToChanges();
         }
         else if (!Available && wasAvailable)
         {
-            log.Information("[SkyrimCompass] Loci IPC became unavailable for status mirroring.");
+            log.Information("[SkyrimCompass] Loci IPC became unavailable.");
         }
     }
 
@@ -343,20 +299,17 @@ internal sealed class LociMirrorIpc : IDisposable
 
     private void OnManagerChanged(nint address, int changeTypeRaw) => LocalStatusesChanged?.Invoke();
 
-    /// <summary>Fetches the local player's currently-applied Loci statuses. Empty list on any failure.</summary>
     public List<LociStatusInfo> GetLocalStatuses()
     {
         if (!Available) return [];
         try { return getManagerInfo.InvokeFunc() ?? []; }
         catch (Exception ex)
         {
-            log.Warning(ex, "[SkyrimCompass] Failed to read local Loci statuses for mirroring.");
+            log.Warning(ex, "[SkyrimCompass] Failed to read local Loci statuses.");
             return [];
         }
     }
 
-    /// <summary>Returns the real LociApiEc rather than collapsing to bool — callers react differently
-    /// to e.g. ItemLocked (will never succeed with key=0, stop retrying) than a transient failure.</summary>
     public LociApiEc TryApply(LociStatusInfo status)
     {
         if (!Available) return LociApiEc.TargetInvalid;
@@ -396,30 +349,11 @@ internal sealed class LociMirrorIpc : IDisposable
         if (subscribedToChanges)
         {
             try { managerChanged.Unsubscribe(OnManagerChanged); }
-            catch { /* best effort */ }
+            catch { }
         }
     }
 }
 
-/// <summary>
-/// Keeps the local player's Moodles and Loci statuses mirrored onto each other in the background,
-/// so FFXIV's own native buff bar — which already shows Moodles-native icons, and is what the
-/// player sees now that CompassHud.cs's hand-drawn player row was removed — shows your Loci
-/// statuses too, without SkyrimCompass drawing anything itself. Ported from the user's own
-/// StatusBridge project (github.com/JTayGang/MeowyUtils/tree/main/StatusBridge), trimmed for a
-/// single always-local consumer: no cross-sync-plugin awareness needed (this only ever mirrors
-/// your own live state, regardless of what any sync plugin does with it afterward), and no
-/// live-state-reader-based staleness filtering (BridgeEngine's own comments confirm that when that
-/// read fails or is absent, every consumer already falls back to treating every native-looking GUID
-/// as a candidate — i.e. omitting it entirely reduces to that same fallback path, not a functional
-/// gap; it's a responsiveness refinement, not something this depends on for correctness).
-///
-/// Identity trick, unchanged from StatusBridge: a mirrored status keeps the exact same GUID in
-/// both systems, which gives three things for free — telling "a status this engine created" apart
-/// from "one you made natively", preventing feedback loops (mirroring a Moodle into Loci can't loop
-/// back around and get mirrored from Loci back into Moodles as if it were new), and natural
-/// de-duplication (re-mirroring an already-mirrored pair updates in place, not a second copy).
-/// </summary>
 public sealed class StatusMirrorEngine : IDisposable
 {
     private readonly Configuration pluginConfig;
@@ -437,39 +371,9 @@ public sealed class StatusMirrorEngine : IDisposable
     private Dictionary<System.Guid, MirrorSignature> MirroredIntoLoci    => state.MirroredIntoLoci;
     private Dictionary<System.Guid, MirrorSignature> MirroredIntoMoodles => state.MirroredIntoMoodles;
 
-    // GUIDs already logged as stuck-locked on Loci's side, so the tick loop doesn't spam the log
-    // for something that'll keep failing the same way until manually unlocked. Cleared once a GUID
-    // stops being locked, so a genuinely new lock situation still gets reported
     private readonly HashSet<System.Guid> knownLockedInLoci = new();
-
-    // GUIDs whose mirror was just confirmed-removed, held here for a short grace period before
-    // they're eligible to be treated as "genuinely native" again.
-    //
-    // Confirmed against both plugins' own source: Cancel() on either side (Moodles' MyStatus/
-    // CommonProcessor, Loci's LociStatusManager.Cancel) only sets an internal expiry marker — the
-    // actual removal from the list GetClientStatusManagerInfoV2()/GetManagerInfo() reads from
-    // happens later, via a separate sweep. Neither plugin's exposed tuple reflects that
-    // pending-removal state either — Loci's ToTuple(), specifically, computes ExpireTicks from the
-    // status's static configured duration fields, never from the internal expiry marker Cancel()
-    // actually touches — so a status mid-removal is indistinguishable from a still-genuinely-active
-    // one via the data this engine can see. Without this guard, a reconcile tick that happens to
-    // poll during that window can see a just-untracked GUID reappear and, since the GUID is no
-    // longer in either tracking dict, misread it as new. A GUID reappearing is never actually "new"
-    // in practice — both plugins mint a fresh Guid.NewGuid() per genuine application — so the only
-    // sane read of a recently-removed GUID reappearing is "still being cleaned up upstream," not
-    // "coincidentally reused"
     private readonly Dictionary<System.Guid, DateTime> recentlyRemoved = new();
     private const double RecentlyRemovedGraceSeconds = 1;
-
-    // GUIDs identified as stale "refresh ghosts" by the stale-twin check in SyncMoodlesToLoci/
-    // SyncLociToMoodles below — held here rather than relying solely on recentlyRemoved's own much
-    // shorter grace window, because Moodles'/Loci's own internal sweep that actually drops a
-    // cancelled status from GetLocalStatuses() can apparently run several seconds behind Cancel()
-    // itself (see recentlyRemoved's own comment above). A ghost that's still native-and-present
-    // once RecentlyRemovedGraceSeconds lapses would otherwise look exactly like a genuinely new
-    // status again and get its mirror recreated, undoing the retirement. Each set is pruned once
-    // its GUID actually falls out of the corresponding source's own list — at that point it's gone
-    // for real and doesn't need excluding anymore
     private readonly HashSet<System.Guid> supersededMoodleGhosts = new();
     private readonly HashSet<System.Guid> supersededLociGhosts = new();
 
@@ -477,20 +381,16 @@ public sealed class StatusMirrorEngine : IDisposable
     {
         if (!recentlyRemoved.TryGetValue(guid, out var removedAt)) return false;
         if ((DateTime.UtcNow - removedAt).TotalSeconds <= RecentlyRemovedGraceSeconds) return true;
-        recentlyRemoved.Remove(guid);   // grace period elapsed — treat a reappearance normally now
+        recentlyRemoved.Remove(guid);
         return false;
     }
 
-    // Bounds recentlyRemoved's growth over a long session — most entries self-prune the next time
-    // IsRecentlyRemoved happens to be asked about that exact GUID, but a removed status whose GUID
-    // never comes up again (the common case — it's gone for good) would otherwise sit here forever
     private void PruneRecentlyRemoved()
     {
         if (recentlyRemoved.Count == 0) return;
-        var expired = recentlyRemoved
-            .Where(kv => (DateTime.UtcNow - kv.Value).TotalSeconds > RecentlyRemovedGraceSeconds)
-            .Select(kv => kv.Key)
-            .ToList();
+        var now = DateTime.UtcNow;
+        var expired = recentlyRemoved.Where(kv => (now - kv.Value).TotalSeconds > RecentlyRemovedGraceSeconds)
+                                     .Select(kv => kv.Key).ToList();
         foreach (var guid in expired)
             recentlyRemoved.Remove(guid);
     }
@@ -533,7 +433,7 @@ public sealed class StatusMirrorEngine : IDisposable
         nextPeriodicReconcile = now + TimeSpan.FromSeconds(1);
 
         try { Reconcile(); }
-        catch (Exception ex) { log.Error(ex, "[SkyrimCompass] Status-mirror reconciliation pass threw unexpectedly."); }
+        catch (Exception ex) { log.Error(ex, "[SkyrimCompass] Reconcile threw."); }
 
         if (stateDirty)
         {
@@ -546,8 +446,6 @@ public sealed class StatusMirrorEngine : IDisposable
 
     private void Reconcile()
     {
-        // Runs before the enabled check on purpose: availability should stay fresh for the config
-        // UI even while mirroring itself is paused
         moodles.RefreshAvailability();
         loci.RefreshAvailability();
         PruneRecentlyRemoved();
@@ -559,10 +457,6 @@ public sealed class StatusMirrorEngine : IDisposable
         var moodleList = moodles.GetLocalStatuses();
         var lociList = loci.GetLocalStatuses();
 
-        // Order matters: running Moodles->Loci first means anything it just mirrored is immediately
-        // recorded in MirroredIntoLoci, so the Loci->Moodles pass below correctly sees it as "not
-        // native to Loci" and doesn't try to mirror it straight back — this identity-sharing is
-        // what prevents feedback loops (see class remarks)
         SyncMoodlesToLoci(moodleList, lociList);
         SyncLociToMoodles(lociList, moodleList, localPlayer);
     }
@@ -570,21 +464,14 @@ public sealed class StatusMirrorEngine : IDisposable
     private void SyncMoodlesToLoci(List<MoodlesStatusInfo> moodleList, List<LociStatusInfo> lociExisting)
     {
         var allMoodleGuids = moodleList.Select(m => m.GUID).ToHashSet();
+        var lociGuids = lociExisting.Select(l => l.GUID).ToHashSet();
 
-        // A ghost prunes itself once its GUID genuinely falls out of Moodles' own list — see
-        // supersededMoodleGhosts' own comment above for why it's tracked separately from
-        // recentlyRemoved in the first place
         supersededMoodleGhosts.RemoveWhere(g => !allMoodleGuids.Contains(g));
 
-        // "Native to Moodles" excludes anything that's itself a mirror this engine created in
-        // Moodles, sourced from Loci (tracked in MirroredIntoMoodles, not MirroredIntoLoci — the
-        // opposite dict from this direction's own bookkeeping). Checking the wrong dict here was
-        // the root cause of a real bug: a freshly-mirrored, still-genuinely-native Moodle would
-        // fall out of this filter the moment it got tracked, making the cleanup pass below
-        // immediately treat its own successful mirror as orphaned and remove it again.
-        // IsRecentlyRemoved guards a second, related bug — see its own doc comment.
-        // supersededMoodleGhosts guards a third — see its own doc comment
-        var nativeMoodles = moodleList.Where(m => !MirroredIntoMoodles.ContainsKey(m.GUID) && !IsRecentlyRemoved(m.GUID) && !supersededMoodleGhosts.Contains(m.GUID)).ToList();
+        var nativeMoodles = moodleList.Where(m =>
+            !MirroredIntoMoodles.ContainsKey(m.GUID) &&
+            !IsRecentlyRemoved(m.GUID) &&
+            !supersededMoodleGhosts.Contains(m.GUID)).ToList();
 
         var staleTwins = new List<System.Guid>();
 
@@ -593,19 +480,11 @@ public sealed class StatusMirrorEngine : IDisposable
             var sig = MirrorSignature.FromMoodles(m);
             var alreadyTracked = MirroredIntoLoci.TryGetValue(m.GUID, out var knownSig);
 
-            // The signature check alone only proves the SOURCE hasn't changed — it says nothing
-            // about whether the mirror is still actually there. Without the live-presence check,
-            // a mirror removed by anything this engine didn't do itself (self-targeted right-click
-            // removal, Loci's own UI, another plugin) would stay wrongly marked "up to date"
-            // forever, since nothing about the still-unchanged Moodles source would ever trip the
-            // signature comparison — permanently missing from Loci with no self-correction
-            if (alreadyTracked && knownSig == sig && lociExisting.Any(l => l.GUID == m.GUID))
-                continue; // unchanged AND still actually present — genuinely nothing to do
+            if (alreadyTracked && knownSig == sig && lociGuids.Contains(m.GUID))
+                continue;
 
-            if (!alreadyTracked && lociExisting.Any(l => l.GUID == m.GUID))
+            if (!alreadyTracked && lociGuids.Contains(m.GUID))
             {
-                // A Loci entry with this exact GUID already exists — only expected on a
-                // missing/corrupted state file; adopt it as tracked rather than re-pushing a duplicate
                 MirroredIntoLoci[m.GUID] = sig;
                 MarkStateDirty();
                 continue;
@@ -613,29 +492,13 @@ public sealed class StatusMirrorEngine : IDisposable
 
             if (!alreadyTracked)
             {
-                // A refresh mints a fresh GUID (recentlyRemoved's own comment above — "both plugins
-                // mint a fresh Guid.NewGuid() per genuine application"), but the pre-refresh GUID
-                // keeps appearing in GetLocalStatuses(), signature unchanged, until Moodles' own
-                // sweep actually drops it, which can run well behind the refresh itself. Left alone,
-                // that stale GUID sails through the unchanged-and-present branch above untouched
-                // while this fresh one gets mirrored as a brand new status: a real, visible
-                // duplicate in Loci for however long that window lasts, and — wherever the stale
-                // GUID itself is being displayed — a countdown that never reflects the refresh,
-                // since its signature never changes either. A signature match against something
-                // already tracked, whose own source is still sitting in this same tick's
-                // moodleList, is as close to "this is that same status, refreshed" as the data
-                // available here allows; retiring it now instead of waiting on Moodles' own sweep
-                // collapses the visible window down to this tick
-                foreach (var (trackedGuid, trackedSig) in MirroredIntoLoci)
+                foreach (var kv in MirroredIntoLoci)
                 {
-                    if (trackedGuid != m.GUID && trackedSig == sig && moodleList.Any(other => other.GUID == trackedGuid))
-                        staleTwins.Add(trackedGuid);
+                    if (kv.Key != m.GUID && kv.Value == sig && allMoodleGuids.Contains(kv.Key))
+                        staleTwins.Add(kv.Key);
                 }
             }
 
-            // Reached for a genuinely new native Moodle, OR a tracked one whose mirror vanished
-            // from Loci's live list above — TryApply re-creates it either way, since Loci itself
-            // decides whether this is a fresh apply or an update to an existing GUID
             var converted = MirrorConverter.ToLoci(m);
             var ec = loci.TryApply(converted);
             if (ec is LociApiEc.Success or LociApiEc.NoChange)
@@ -645,20 +508,6 @@ public sealed class StatusMirrorEngine : IDisposable
             }
         }
 
-        // Deferred until after the loop above has fully finished, rather than done inline as each
-        // one's found — mutating MirroredIntoLoci mid-loop would risk the stale GUID's own
-        // iteration (elsewhere in nativeMoodles, order not guaranteed) landing after this and
-        // re-adopting it via the "Loci entry already exists" branch above, undoing the retirement
-        // within the very same tick.
-        //
-        // This only fires the request and marks the GUID superseded — it deliberately does NOT
-        // touch MirroredIntoLoci or interpret TryRemove's result itself, for the same "don't trust
-        // a same-tick call, only untrack once a later fresh poll confirms it" reason the ordinary
-        // cleanup loop below never does either. Leaving it tracked means that loop's own
-        // allMoodleGuids-based sweep — same locked-item handling included — is what actually
-        // finishes the job, once Moodles' own sweep drops the stale GUID for real and it falls out
-        // of allMoodleGuids. supersededMoodleGhosts is what keeps it from being misread as a
-        // genuinely new Moodle (and its mirror recreated) in the meantime
         foreach (var stale in staleTwins.Distinct())
         {
             loci.TryRemove(stale);
@@ -666,30 +515,20 @@ public sealed class StatusMirrorEngine : IDisposable
             supersededMoodleGhosts.Add(stale);
         }
 
-        // Clean up mirrors whose native Moodles source is truly gone — "truly gone" means absent
-        // from the full current Moodles list (allMoodleGuids), not merely absent from the
-        // native-only subset above (a tracked GUID is *expected* to fall out of that filter; that's
-        // not the same as its source having disappeared)
         foreach (var guid in MirroredIntoLoci.Keys.Where(g => !allMoodleGuids.Contains(g)).ToList())
         {
-            if (lociExisting.Any(l => l.GUID == guid))
+            if (lociGuids.Contains(guid))
             {
-                // Still there as of this tick's fresh poll — ask Loci to remove it, but don't stop
-                // tracking yet; a same-tick "it didn't throw" isn't proof it actually took effect.
-                // Only untrack once a later tick's fresh poll confirms it's really gone — otherwise
-                // a removal that's blocked or delayed turns into a permanent, untracked ghost
                 var ec = loci.TryRemove(guid);
-
                 if (ec == LociApiEc.ItemLocked)
                 {
                     if (knownLockedInLoci.Add(guid))
-                        log.Warning($"[SkyrimCompass] A mirrored Loci status ({guid}) is locked and can't be removed automatically — unlock it in Loci's own UI if you want it gone.");
+                        log.Warning($"[SkyrimCompass] Loci status locked: {guid}");
                 }
                 else
                 {
                     knownLockedInLoci.Remove(guid);
                 }
-
                 continue;
             }
 
@@ -703,16 +542,14 @@ public sealed class StatusMirrorEngine : IDisposable
     private void SyncLociToMoodles(List<LociStatusInfo> lociList, List<MoodlesStatusInfo> moodlesExisting, IPlayerCharacter localPlayer)
     {
         var allLociGuids = lociList.Select(l => l.GUID).ToHashSet();
+        var moodleGuids = moodlesExisting.Select(m => m.GUID).ToHashSet();
 
-        // A ghost prunes itself once its GUID genuinely falls out of Loci's own list — see
-        // supersededLociGhosts' own comment above
         supersededLociGhosts.RemoveWhere(g => !allLociGuids.Contains(g));
 
-        // Mirror image of SyncMoodlesToLoci's own fix above: "native to Loci" excludes anything
-        // that's itself a mirror this engine created in Loci, sourced from Moodles (tracked in
-        // MirroredIntoLoci, the opposite dict from this direction's own bookkeeping).
-        // supersededLociGhosts guards a third case — see its own doc comment
-        var nativeLoci = lociList.Where(l => !MirroredIntoLoci.ContainsKey(l.GUID) && !IsRecentlyRemoved(l.GUID) && !supersededLociGhosts.Contains(l.GUID)).ToList();
+        var nativeLoci = lociList.Where(l =>
+            !MirroredIntoLoci.ContainsKey(l.GUID) &&
+            !IsRecentlyRemoved(l.GUID) &&
+            !supersededLociGhosts.Contains(l.GUID)).ToList();
 
         var staleTwins = new List<System.Guid>();
 
@@ -721,12 +558,10 @@ public sealed class StatusMirrorEngine : IDisposable
             var sig = MirrorSignature.FromLoci(l);
             var alreadyTracked = MirroredIntoMoodles.TryGetValue(l.GUID, out var knownSig);
 
-            // Same fix as SyncMoodlesToLoci above, same reasoning: the signature check alone only
-            // proves the source hasn't changed, not that the mirror is still actually there
-            if (alreadyTracked && knownSig == sig && moodlesExisting.Any(m => m.GUID == l.GUID))
+            if (alreadyTracked && knownSig == sig && moodleGuids.Contains(l.GUID))
                 continue;
 
-            if (!alreadyTracked && moodlesExisting.Any(m => m.GUID == l.GUID))
+            if (!alreadyTracked && moodleGuids.Contains(l.GUID))
             {
                 MirroredIntoMoodles[l.GUID] = sig;
                 MarkStateDirty();
@@ -735,20 +570,13 @@ public sealed class StatusMirrorEngine : IDisposable
 
             if (!alreadyTracked)
             {
-                // Same stale-twin situation as SyncMoodlesToLoci above, mirrored: a refresh mints a
-                // fresh GUID on Loci's side too, but the pre-refresh GUID lingers in Loci's own
-                // GetManagerInfo() until its internal sweep catches up. Retiring the matching-
-                // signature twin here, rather than waiting on that, keeps this direction from
-                // producing its own visible duplicate in Moodles
-                foreach (var (trackedGuid, trackedSig) in MirroredIntoMoodles)
+                foreach (var kv in MirroredIntoMoodles)
                 {
-                    if (trackedGuid != l.GUID && trackedSig == sig && lociList.Any(other => other.GUID == trackedGuid))
-                        staleTwins.Add(trackedGuid);
+                    if (kv.Key != l.GUID && kv.Value == sig && allLociGuids.Contains(kv.Key))
+                        staleTwins.Add(kv.Key);
                 }
             }
 
-            // Reached for a genuinely new native Loci status, OR a tracked one whose mirror
-            // vanished from Moodles' live list above
             var converted = MirrorConverter.ToMoodles(l);
             if (moodles.TryApply(converted, localPlayer))
             {
@@ -757,32 +585,20 @@ public sealed class StatusMirrorEngine : IDisposable
             }
         }
 
-        // Deferred until after the loop for the same reason as SyncMoodlesToLoci's own deferred
-        // retirement above — avoids the stale GUID's own iteration re-adopting it mid-loop
         foreach (var stale in staleTwins.Distinct())
         {
-            if (!MirroredIntoMoodles.ContainsKey(stale)) continue;
-
-            // Moodles' remove call is fire-and-forget (bool return isn't a reliable removal
-            // confirmation — see the cleanup loop below), so this doesn't attempt locked-item
-            // handling the way the Loci side does; it just fires the request and leaves the entry
-            // tracked. The cleanup loop below re-fires it every tick from here until a fresh
-            // moodlesExisting poll confirms it's actually gone, same as any other orphaned mirror
-            moodles.TryRemove(stale, localPlayer);
-            recentlyRemoved[stale] = DateTime.UtcNow;
-            supersededLociGhosts.Add(stale);
+            if (MirroredIntoMoodles.ContainsKey(stale))
+            {
+                moodles.TryRemove(stale, localPlayer);
+                recentlyRemoved[stale] = DateTime.UtcNow;
+                supersededLociGhosts.Add(stale);
+            }
         }
 
-        // "Truly gone" means absent from the full current Loci list (allLociGuids), same reasoning
-        // as SyncMoodlesToLoci's cleanup comment above
         foreach (var guid in MirroredIntoMoodles.Keys.Where(g => !allLociGuids.Contains(g)).ToList())
         {
-            if (moodlesExisting.Any(m => m.GUID == guid))
+            if (moodleGuids.Contains(guid))
             {
-                // Same reasoning as SyncMoodlesToLoci's cleanup loop — don't untrack on a same-tick
-                // assumption, only once a fresh poll confirms it's gone. This side is the one
-                // actually affected by Moodles' fire-and-forget (void) remove call and its Ephemeral
-                // gate, so it's the more important half of this particular check
                 moodles.TryRemove(guid, localPlayer);
                 continue;
             }
@@ -793,12 +609,6 @@ public sealed class StatusMirrorEngine : IDisposable
         }
     }
 
-    /// <summary>
-    /// Removes every status this engine has ever mirrored, on both sides — a manual escape hatch
-    /// for a stuck pair. Only ever touches the mirror half of a pair, never the native original; if
-    /// the native source is still genuinely alive, the next reconcile pass correctly recreates the
-    /// mirror — that's not a bug, it's this doing exactly what it's supposed to.
-    /// </summary>
     public void ClearAllMirrors()
     {
         foreach (var guid in MirroredIntoLoci.Keys.ToList())
@@ -824,6 +634,10 @@ public sealed class StatusMirrorEngine : IDisposable
             MirroredIntoMoodles.Remove(guid);
             MarkStateDirty();
         }
+
+        recentlyRemoved.Clear();
+        supersededMoodleGhosts.Clear();
+        supersededLociGhosts.Clear();
 
         log.Information("[SkyrimCompass] Cleared all mirrored statuses.");
     }

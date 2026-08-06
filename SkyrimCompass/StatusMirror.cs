@@ -377,6 +377,9 @@ public sealed class StatusMirrorEngine : IDisposable
     private readonly HashSet<System.Guid> supersededMoodleGhosts = new();
     private readonly HashSet<System.Guid> supersededLociGhosts = new();
 
+    // --- FIX: flag to force refresh of mirrors on change ---
+    private bool mirrorsNeedRefresh;
+
     private bool IsRecentlyRemoved(System.Guid guid)
     {
         if (!recentlyRemoved.TryGetValue(guid, out var removedAt)) return false;
@@ -418,8 +421,9 @@ public sealed class StatusMirrorEngine : IDisposable
         loci = new LociMirrorIpc(pluginInterface, log);
         state = MirrorState.Load(pluginInterface, log);
 
-        moodles.LocalStatusesChanged += () => dirty = true;
-        loci.LocalStatusesChanged += () => dirty = true;
+        // --- FIX: set mirrorsNeedRefresh on any change ---
+        moodles.LocalStatusesChanged += () => { dirty = true; mirrorsNeedRefresh = true; };
+        loci.LocalStatusesChanged += () => { dirty = true; mirrorsNeedRefresh = true; };
         framework.Update += OnFrameworkUpdate;
     }
 
@@ -457,16 +461,45 @@ public sealed class StatusMirrorEngine : IDisposable
         var moodleList = moodles.GetLocalStatuses();
         var lociList = loci.GetLocalStatuses();
 
-        SyncMoodlesToLoci(moodleList, lociList);
-        SyncLociToMoodles(lociList, moodleList, localPlayer);
+        // --- FIX: pass the refresh flag ---
+        SyncMoodlesToLoci(moodleList, lociList, mirrorsNeedRefresh);
+        SyncLociToMoodles(lociList, moodleList, localPlayer, mirrorsNeedRefresh);
+
+        // clear the flag after both directions have processed
+        mirrorsNeedRefresh = false;
     }
 
-    private void SyncMoodlesToLoci(List<MoodlesStatusInfo> moodleList, List<LociStatusInfo> lociExisting)
+    private void SyncMoodlesToLoci(List<MoodlesStatusInfo> moodleList, List<LociStatusInfo> lociExisting, bool forceRefresh)
     {
         var allMoodleGuids = moodleList.Select(m => m.GUID).ToHashSet();
         var lociGuids = lociExisting.Select(l => l.GUID).ToHashSet();
 
         supersededMoodleGhosts.RemoveWhere(g => !allMoodleGuids.Contains(g));
+
+        // --- FIX: force re-apply all existing mirrored Moodles that are still present ---
+        if (forceRefresh)
+        {
+            foreach (var kv in MirroredIntoLoci.ToList())
+            {
+                var guid = kv.Key;
+                if (allMoodleGuids.Contains(guid))
+                {
+                    var src = moodleList.First(m => m.GUID == guid);
+                    var sig = MirrorSignature.FromMoodles(src);
+                    var converted = MirrorConverter.ToLoci(src);
+                    var ec = loci.TryApply(converted);
+                    if (ec is LociApiEc.Success or LociApiEc.NoChange)
+                    {
+                        MirroredIntoLoci[guid] = sig;
+                        MarkStateDirty();
+                    }
+                    else if (ec == LociApiEc.ItemLocked)
+                    {
+                        knownLockedInLoci.Add(guid);
+                    }
+                }
+            }
+        }
 
         var nativeMoodles = moodleList.Where(m =>
             !MirroredIntoMoodles.ContainsKey(m.GUID) &&
@@ -539,12 +572,33 @@ public sealed class StatusMirrorEngine : IDisposable
         }
     }
 
-    private void SyncLociToMoodles(List<LociStatusInfo> lociList, List<MoodlesStatusInfo> moodlesExisting, IPlayerCharacter localPlayer)
+    private void SyncLociToMoodles(List<LociStatusInfo> lociList, List<MoodlesStatusInfo> moodlesExisting,
+                                  IPlayerCharacter localPlayer, bool forceRefresh)
     {
         var allLociGuids = lociList.Select(l => l.GUID).ToHashSet();
         var moodleGuids = moodlesExisting.Select(m => m.GUID).ToHashSet();
 
         supersededLociGhosts.RemoveWhere(g => !allLociGuids.Contains(g));
+
+        // --- FIX: force re-apply all existing mirrored Loci that are still present ---
+        if (forceRefresh)
+        {
+            foreach (var kv in MirroredIntoMoodles.ToList())
+            {
+                var guid = kv.Key;
+                if (allLociGuids.Contains(guid))
+                {
+                    var src = lociList.First(l => l.GUID == guid);
+                    var sig = MirrorSignature.FromLoci(src);
+                    var converted = MirrorConverter.ToMoodles(src);
+                    if (moodles.TryApply(converted, localPlayer))
+                    {
+                        MirroredIntoMoodles[guid] = sig;
+                        MarkStateDirty();
+                    }
+                }
+            }
+        }
 
         var nativeLoci = lociList.Where(l =>
             !MirroredIntoLoci.ContainsKey(l.GUID) &&

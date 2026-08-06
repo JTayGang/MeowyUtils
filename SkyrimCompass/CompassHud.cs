@@ -275,7 +275,7 @@ public sealed class CompassHud : IDisposable
         if (hasTot)
             RenderTargetOfTargetBar(dl, totX, totW, tbRowY, player, now, barAlpha, inDutyOrPvp);
 
-        if (config.ShowTargetBar && config.ShowTargetStatuses && curTarget is IBattleChara targetChara)
+        if (config.ShowTargetStatuses && curTarget is IBattleChara targetChara)
             RenderTargetStatuses(dl, targetChara, nameCx, targetNameBottom, barAlpha);
     }
 

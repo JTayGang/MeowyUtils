@@ -312,6 +312,7 @@ public sealed class ConfigWindow : Window
         EndIndentedDisabled();
 
         DrawSectionBreak();
+    // ── Target Health Bar ──────────────────────────────────────
         changed |= DrawToggle("Target Health Bar", () => cfg.ShowTargetBar, v => cfg.ShowTargetBar = v,
             "Name+HP readout docked beneath compass.");
         BeginIndentedDisabled(cfg.ShowTargetBar);
@@ -328,8 +329,9 @@ public sealed class ConfigWindow : Window
         ImGui.BeginDisabled(!cfg.ShowTargetBarShield);
         changed |= DrawColorEdit("Shield overlay##tbsc", cfg.TargetBarShieldColor, v => cfg.TargetBarShieldColor = v, ColorPickerFlags);
         ImGui.EndDisabled();
-        EndIndentedDisabled();
+        EndIndentedDisabled();   // ← closes the target bar block
 
+    // ── Target Status Icons (now independent) ─────────────────
         DrawSectionBreak();
         changed |= DrawToggle("Target status icons", () => cfg.ShowTargetStatuses, v => cfg.ShowTargetStatuses = v,
             "Buff/debuff icons below target name.");

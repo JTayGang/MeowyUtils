@@ -1,7 +1,7 @@
 {
     "Author": "Meowmeowmeow Cat",
     "Name": "Skyrim Compass",
-    "Punchline": "I got Moodles + Loci playing nice. Oh and theres a compass, too.",
+    "Punchline": "I got Moodles + Loci playing (somewhat) nice. Oh and theres a compass, too.",
     "Description": "Adds a Skyrim-style compass bar at the top of your screen. Shows cardinal directions, nearby entity markers, (players, enemies, gathering nodes, etc.) as well as several combat hug replacements. Use /compass to toggle and /compass config to open settings.",
     "Tags": [ "compass", "hud", "navigation", "minimap", "skyrim" ],
     "InternalName": "SkyrimCompass",

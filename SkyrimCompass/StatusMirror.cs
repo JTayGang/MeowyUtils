@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using Dalamud.Game.ClientState.Objects.SubKinds;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Ipc;
@@ -377,7 +376,7 @@ public sealed class StatusMirrorEngine : IDisposable
     private readonly HashSet<System.Guid> supersededMoodleGhosts = new();
     private readonly HashSet<System.Guid> supersededLociGhosts = new();
 
-    // --- FIX: flag to force refresh of mirrors on change ---
+    // flag to force refresh of mirrors on change
     private bool mirrorsNeedRefresh;
 
     private bool IsRecentlyRemoved(System.Guid guid)
@@ -392,8 +391,10 @@ public sealed class StatusMirrorEngine : IDisposable
     {
         if (recentlyRemoved.Count == 0) return;
         var now = DateTime.UtcNow;
-        var expired = recentlyRemoved.Where(kv => (now - kv.Value).TotalSeconds > RecentlyRemovedGraceSeconds)
-                                     .Select(kv => kv.Key).ToList();
+        var expired = new List<System.Guid>();
+        foreach (var kv in recentlyRemoved)
+            if ((now - kv.Value).TotalSeconds > RecentlyRemovedGraceSeconds)
+                expired.Add(kv.Key);
         foreach (var guid in expired)
             recentlyRemoved.Remove(guid);
     }
@@ -421,7 +422,7 @@ public sealed class StatusMirrorEngine : IDisposable
         loci = new LociMirrorIpc(pluginInterface, log);
         state = MirrorState.Load(pluginInterface, log);
 
-        // --- FIX: set mirrorsNeedRefresh on any change ---
+        // set mirrorsNeedRefresh on any change
         moodles.LocalStatusesChanged += () => { dirty = true; mirrorsNeedRefresh = true; };
         loci.LocalStatusesChanged += () => { dirty = true; mirrorsNeedRefresh = true; };
         framework.Update += OnFrameworkUpdate;
@@ -461,7 +462,7 @@ public sealed class StatusMirrorEngine : IDisposable
         var moodleList = moodles.GetLocalStatuses();
         var lociList = loci.GetLocalStatuses();
 
-        // --- FIX: pass the refresh flag ---
+        // pass the refresh flag
         SyncMoodlesToLoci(moodleList, lociList, mirrorsNeedRefresh);
         SyncLociToMoodles(lociList, moodleList, localPlayer, mirrorsNeedRefresh);
 
@@ -469,49 +470,69 @@ public sealed class StatusMirrorEngine : IDisposable
         mirrorsNeedRefresh = false;
     }
 
+    // ─── LINQ‑free version of SyncMoodlesToLoci ──────────────────────────
     private void SyncMoodlesToLoci(List<MoodlesStatusInfo> moodleList, List<LociStatusInfo> lociExisting, bool forceRefresh)
     {
-        var allMoodleGuids = moodleList.Select(m => m.GUID).ToHashSet();
-        var lociGuids = lociExisting.Select(l => l.GUID).ToHashSet();
+        // Build fast lookup sets
+        var allMoodleGuids = new HashSet<Guid>(moodleList.Count);
+        var moodleDict = new Dictionary<Guid, MoodlesStatusInfo>(moodleList.Count);
+        foreach (var m in moodleList)
+        {
+            allMoodleGuids.Add(m.GUID);
+            moodleDict[m.GUID] = m;
+        }
 
+        var lociGuids = new HashSet<Guid>(lociExisting.Count);
+        foreach (var l in lociExisting)
+            lociGuids.Add(l.GUID);
+
+        // Remove superseded ghosts
         supersededMoodleGhosts.RemoveWhere(g => !allMoodleGuids.Contains(g));
 
-        // --- FIX: force re-apply all existing mirrored Moodles that are still present ---
+        // Force re-apply all existing mirrored Moodles that are still present
         if (forceRefresh)
         {
-            foreach (var kv in MirroredIntoLoci.ToList())
+            // iterate over a snapshot of keys
+            var keys = new List<Guid>(MirroredIntoLoci.Keys);
+            foreach (var guid in keys)
             {
-                var guid = kv.Key;
-                if (allMoodleGuids.Contains(guid))
+                if (!allMoodleGuids.Contains(guid))
+                    continue;
+
+                var src = moodleDict[guid];
+                var sig = MirrorSignature.FromMoodles(src);
+                var converted = MirrorConverter.ToLoci(src);
+                var ec = loci.TryApply(converted);
+                if (ec is LociApiEc.Success or LociApiEc.NoChange)
                 {
-                    var src = moodleList.First(m => m.GUID == guid);
-                    var sig = MirrorSignature.FromMoodles(src);
-                    var converted = MirrorConverter.ToLoci(src);
-                    var ec = loci.TryApply(converted);
-                    if (ec is LociApiEc.Success or LociApiEc.NoChange)
-                    {
-                        MirroredIntoLoci[guid] = sig;
-                        MarkStateDirty();
-                    }
-                    else if (ec == LociApiEc.ItemLocked)
-                    {
-                        knownLockedInLoci.Add(guid);
-                    }
+                    MirroredIntoLoci[guid] = sig;
+                    MarkStateDirty();
+                }
+                else if (ec == LociApiEc.ItemLocked)
+                {
+                    knownLockedInLoci.Add(guid);
                 }
             }
         }
 
-        var nativeMoodles = moodleList.Where(m =>
-            !MirroredIntoMoodles.ContainsKey(m.GUID) &&
-            !IsRecentlyRemoved(m.GUID) &&
-            !supersededMoodleGhosts.Contains(m.GUID)).ToList();
+        // native Moodles (not already mirrored into Loci, not recently removed, not ghosted)
+        var nativeMoodles = new List<MoodlesStatusInfo>();
+        foreach (var m in moodleList)
+        {
+            if (!MirroredIntoMoodles.ContainsKey(m.GUID) &&
+                !IsRecentlyRemoved(m.GUID) &&
+                !supersededMoodleGhosts.Contains(m.GUID))
+            {
+                nativeMoodles.Add(m);
+            }
+        }
 
-        var staleTwins = new List<System.Guid>();
+        var staleTwins = new List<Guid>();
 
         foreach (var m in nativeMoodles)
         {
             var sig = MirrorSignature.FromMoodles(m);
-            var alreadyTracked = MirroredIntoLoci.TryGetValue(m.GUID, out var knownSig);
+            bool alreadyTracked = MirroredIntoLoci.TryGetValue(m.GUID, out var knownSig);
 
             if (alreadyTracked && knownSig == sig && lociGuids.Contains(m.GUID))
                 continue;
@@ -528,7 +549,10 @@ public sealed class StatusMirrorEngine : IDisposable
                 foreach (var kv in MirroredIntoLoci)
                 {
                     if (kv.Key != m.GUID && kv.Value == sig && allMoodleGuids.Contains(kv.Key))
+                    {
                         staleTwins.Add(kv.Key);
+                        break;
+                    }
                 }
             }
 
@@ -541,14 +565,22 @@ public sealed class StatusMirrorEngine : IDisposable
             }
         }
 
-        foreach (var stale in staleTwins.Distinct())
+        // Remove stale twins (distinct)
+        var staleSet = new HashSet<Guid>(staleTwins);
+        foreach (var stale in staleSet)
         {
             loci.TryRemove(stale);
             recentlyRemoved[stale] = DateTime.UtcNow;
             supersededMoodleGhosts.Add(stale);
         }
 
-        foreach (var guid in MirroredIntoLoci.Keys.Where(g => !allMoodleGuids.Contains(g)).ToList())
+        // Remove mirrors for Moodles that no longer exist
+        var toRemove = new List<Guid>();
+        foreach (var kv in MirroredIntoLoci)
+            if (!allMoodleGuids.Contains(kv.Key))
+                toRemove.Add(kv.Key);
+
+        foreach (var guid in toRemove)
         {
             if (lociGuids.Contains(guid))
             {
@@ -572,45 +604,64 @@ public sealed class StatusMirrorEngine : IDisposable
         }
     }
 
+    // ─── LINQ‑free version of SyncLociToMoodles ──────────────────────────
     private void SyncLociToMoodles(List<LociStatusInfo> lociList, List<MoodlesStatusInfo> moodlesExisting,
                                   IPlayerCharacter localPlayer, bool forceRefresh)
     {
-        var allLociGuids = lociList.Select(l => l.GUID).ToHashSet();
-        var moodleGuids = moodlesExisting.Select(m => m.GUID).ToHashSet();
+        // Build fast lookup sets
+        var allLociGuids = new HashSet<Guid>(lociList.Count);
+        var lociDict = new Dictionary<Guid, LociStatusInfo>(lociList.Count);
+        foreach (var l in lociList)
+        {
+            allLociGuids.Add(l.GUID);
+            lociDict[l.GUID] = l;
+        }
 
+        var moodleGuids = new HashSet<Guid>(moodlesExisting.Count);
+        foreach (var m in moodlesExisting)
+            moodleGuids.Add(m.GUID);
+
+        // Remove superseded ghosts
         supersededLociGhosts.RemoveWhere(g => !allLociGuids.Contains(g));
 
-        // --- FIX: force re-apply all existing mirrored Loci that are still present ---
+        // Force re-apply all existing mirrored Loci that are still present
         if (forceRefresh)
         {
-            foreach (var kv in MirroredIntoMoodles.ToList())
+            var keys = new List<Guid>(MirroredIntoMoodles.Keys);
+            foreach (var guid in keys)
             {
-                var guid = kv.Key;
-                if (allLociGuids.Contains(guid))
+                if (!allLociGuids.Contains(guid))
+                    continue;
+
+                var src = lociDict[guid];
+                var sig = MirrorSignature.FromLoci(src);
+                var converted = MirrorConverter.ToMoodles(src);
+                if (moodles.TryApply(converted, localPlayer))
                 {
-                    var src = lociList.First(l => l.GUID == guid);
-                    var sig = MirrorSignature.FromLoci(src);
-                    var converted = MirrorConverter.ToMoodles(src);
-                    if (moodles.TryApply(converted, localPlayer))
-                    {
-                        MirroredIntoMoodles[guid] = sig;
-                        MarkStateDirty();
-                    }
+                    MirroredIntoMoodles[guid] = sig;
+                    MarkStateDirty();
                 }
             }
         }
 
-        var nativeLoci = lociList.Where(l =>
-            !MirroredIntoLoci.ContainsKey(l.GUID) &&
-            !IsRecentlyRemoved(l.GUID) &&
-            !supersededLociGhosts.Contains(l.GUID)).ToList();
+        // native Loci (not already mirrored into Moodles, not recently removed, not ghosted)
+        var nativeLoci = new List<LociStatusInfo>();
+        foreach (var l in lociList)
+        {
+            if (!MirroredIntoLoci.ContainsKey(l.GUID) &&
+                !IsRecentlyRemoved(l.GUID) &&
+                !supersededLociGhosts.Contains(l.GUID))
+            {
+                nativeLoci.Add(l);
+            }
+        }
 
-        var staleTwins = new List<System.Guid>();
+        var staleTwins = new List<Guid>();
 
         foreach (var l in nativeLoci)
         {
             var sig = MirrorSignature.FromLoci(l);
-            var alreadyTracked = MirroredIntoMoodles.TryGetValue(l.GUID, out var knownSig);
+            bool alreadyTracked = MirroredIntoMoodles.TryGetValue(l.GUID, out var knownSig);
 
             if (alreadyTracked && knownSig == sig && moodleGuids.Contains(l.GUID))
                 continue;
@@ -627,7 +678,10 @@ public sealed class StatusMirrorEngine : IDisposable
                 foreach (var kv in MirroredIntoMoodles)
                 {
                     if (kv.Key != l.GUID && kv.Value == sig && allLociGuids.Contains(kv.Key))
+                    {
                         staleTwins.Add(kv.Key);
+                        break;
+                    }
                 }
             }
 
@@ -639,7 +693,9 @@ public sealed class StatusMirrorEngine : IDisposable
             }
         }
 
-        foreach (var stale in staleTwins.Distinct())
+        // Remove stale twins (distinct)
+        var staleSet = new HashSet<Guid>(staleTwins);
+        foreach (var stale in staleSet)
         {
             if (MirroredIntoMoodles.ContainsKey(stale))
             {
@@ -649,7 +705,13 @@ public sealed class StatusMirrorEngine : IDisposable
             }
         }
 
-        foreach (var guid in MirroredIntoMoodles.Keys.Where(g => !allLociGuids.Contains(g)).ToList())
+        // Remove mirrors for Loci that no longer exist
+        var toRemove = new List<Guid>();
+        foreach (var kv in MirroredIntoMoodles)
+            if (!allLociGuids.Contains(kv.Key))
+                toRemove.Add(kv.Key);
+
+        foreach (var guid in toRemove)
         {
             if (moodleGuids.Contains(guid))
             {
@@ -665,25 +727,49 @@ public sealed class StatusMirrorEngine : IDisposable
 
     public void ClearAllMirrors()
     {
-        foreach (var guid in MirroredIntoLoci.Keys.ToList())
+        // Remove all MirroredIntoLoci
+        var keysLoci = new List<Guid>(MirroredIntoLoci.Keys);
+        foreach (var guid in keysLoci)
             loci.TryRemove(guid);
 
-        var lociStillPresent = loci.GetLocalStatuses().Select(l => l.GUID).ToHashSet();
-        foreach (var guid in MirroredIntoLoci.Keys.Where(g => !lociStillPresent.Contains(g)).ToList())
+        // Get still‑present Loci GUIDs
+        var lociStillPresent = new HashSet<Guid>();
+        foreach (var l in loci.GetLocalStatuses())
+            lociStillPresent.Add(l.GUID);
+
+        // Remove entries whose GUID is no longer present in Loci
+        var toRemoveLoci = new List<Guid>();
+        foreach (var kv in MirroredIntoLoci)
+            if (!lociStillPresent.Contains(kv.Key))
+                toRemoveLoci.Add(kv.Key);
+
+        foreach (var guid in toRemoveLoci)
         {
             MirroredIntoLoci.Remove(guid);
             MarkStateDirty();
             knownLockedInLoci.Remove(guid);
         }
 
+        // Remove all MirroredIntoMoodles
         if (objectTable.LocalPlayer is { } localPlayer)
         {
-            foreach (var guid in MirroredIntoMoodles.Keys.ToList())
+            var keysMoodles = new List<Guid>(MirroredIntoMoodles.Keys);
+            foreach (var guid in keysMoodles)
                 moodles.TryRemove(guid, localPlayer);
         }
 
-        var moodlesStillPresent = moodles.GetLocalStatuses().Select(m => m.GUID).ToHashSet();
-        foreach (var guid in MirroredIntoMoodles.Keys.Where(g => !moodlesStillPresent.Contains(g)).ToList())
+        // Get still‑present Moodle GUIDs
+        var moodlesStillPresent = new HashSet<Guid>();
+        foreach (var m in moodles.GetLocalStatuses())
+            moodlesStillPresent.Add(m.GUID);
+
+        // Remove entries whose GUID is no longer present in Moodles
+        var toRemoveMoodles = new List<Guid>();
+        foreach (var kv in MirroredIntoMoodles)
+            if (!moodlesStillPresent.Contains(kv.Key))
+                toRemoveMoodles.Add(kv.Key);
+
+        foreach (var guid in toRemoveMoodles)
         {
             MirroredIntoMoodles.Remove(guid);
             MarkStateDirty();

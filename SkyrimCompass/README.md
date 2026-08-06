@@ -20,7 +20,7 @@ In order to apply moodles, you MUST tick these boxes in Moodles settings
    Thats because it IS. It copies your moodles and locis so that they show for both, and hides the extra copy. 
 - After using /xlkill some statuses randomly reappear on next login.
 
-   TO FIX: Close the game normally once to save your characters "state".
+   TO FIX: Close the game normally once to save your character's "state".
 - Moodle timers do not display a countdown unless "persist expire time" is enabled for the moodle.
 
    I couldnt find a fix for this. (The timer still works fine, just doesnt display)

@@ -31,6 +31,7 @@ public class Configuration : IPluginConfiguration
     public float CompassHeight { get; set; } = 35f;
     public float YOffset       { get; set; } = 10f;
     public float XOffset       { get; set; } = 0f;   // shifts bar left(-)/right(+) of center
+    public bool  ShowCompassBar { get; set; } = true;   // new
 
     // Behaviour
     public float VisibleDegrees      { get; set; } = 90f;    // degrees of the full 360° visible at once

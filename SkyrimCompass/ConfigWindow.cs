@@ -78,6 +78,10 @@ public sealed class ConfigWindow : Window
         changed |= DrawSliderFloat("Font Scale##fs", 0.5f, 2.5f, () => cfg.FontScale, v => cfg.FontScale = v);
 
         ImGui.Spacing();
+        changed |= DrawToggle("Show Compass Bar", () => cfg.ShowCompassBar, v => cfg.ShowCompassBar = v,
+            "Hide the main compass strip while keeping target bars and status icons.");
+
+        ImGui.Spacing();
         changed |= DrawToggle("Show numeric heading", () => cfg.ShowHeadingText, v => cfg.ShowHeadingText = v);
         changed |= DrawToggle("Hide during cutscenes", () => cfg.HideDuringCutscenes, v => cfg.HideDuringCutscenes = v,
             "Skips drawing in story/skippable cinematics and group pose.");

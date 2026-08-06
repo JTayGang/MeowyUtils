@@ -255,7 +255,8 @@ public sealed class CompassHud : IDisposable
         // Cache duty/pvp state once per frame
         bool inDutyOrPvp = IsInDutyOrPvp();
 
-        RenderBar(dl, bx, by, bw, bh, heading, player, originPos, now, inDutyOrPvp);
+        if (config.ShowCompassBar)
+            RenderBar(dl, bx, by, bw, bh, heading, player, originPos, now, inDutyOrPvp);
 
         float barAlpha = UpdateContextMenuFadeAlpha(now);
 

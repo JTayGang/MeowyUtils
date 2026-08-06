@@ -6,6 +6,13 @@ A Dalamud plugin that replaces FFXIV's minimap, limit break bars, and target hea
   <img src="images/hero.png" alt="Skyrim Compass in action" width="720">
 </p>
 
+## BEFORE YOU INSTALL
+In order to apply moodles, you MUST tick these boxes in Moodles settings
+
+<p align="center">
+  <img src="images/settings.png" alt="Change this setting" width="720">
+</p>
+
 ## Install
 
 Add this URL as a custom plugin repository in Dalamud (Settings > Experimental > Custom Plugin Repositories), then install **Skyrim Compass** from the plugin list.

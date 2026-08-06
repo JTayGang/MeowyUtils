@@ -630,144 +630,152 @@ public sealed class CompassHud : IDisposable
         hudAgent->OpenContextMenuFromTarget((FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)obj.Address);
     }
 
-    private float RenderTargetBar(ImDrawListPtr dl, float tbX, float tbW, float tbY, float nameCx,
-        float nameRowW, float now, float barAlpha, bool inDutyOrPvp)
+private float RenderTargetBar(ImDrawListPtr dl, float tbX, float tbW, float tbY, float nameCx,
+    float nameRowW, float now, float barAlpha, bool inDutyOrPvp)
+{
+    var currentTarget = targetManager.Target;
+    if (currentTarget == null) return tbY;
+
+    uint borderCol = WithAlpha(C(config.BorderColor), barAlpha);
+    uint bgCol = WithAlpha(C(config.BackgroundColor), barAlpha);
+    uint nameCol = WithAlpha(C(config.CardinalColor), barAlpha);
+
+    float cx = nameCx;
+    bool isChara = currentTarget is ICharacter;
+    float tbH = isChara ? MathF.Max(4f, config.TargetBarHeight) : 0f;
+    uint fillCol = WithAlpha(TargetBarFillColor(currentTarget, inDutyOrPvp), barAlpha);
+
+    if (isChara)
     {
-        var currentTarget = targetManager.Target;  // renamed from 'target' to avoid shadowing
-        if (currentTarget == null) return tbY;
-
-        uint borderCol = WithAlpha(C(config.BorderColor), barAlpha);
-        uint bgCol = WithAlpha(C(config.BackgroundColor), barAlpha);
-        uint nameCol = WithAlpha(C(config.CardinalColor), barAlpha);
-
-        float cx = nameCx;
-        bool isChara = currentTarget is ICharacter;
-        float tbH = isChara ? MathF.Max(4f, config.TargetBarHeight) : 0f;
-        uint fillCol = WithAlpha(TargetBarFillColor(currentTarget, inDutyOrPvp), barAlpha);
-
-        if (isChara)
+        var chara = (ICharacter)currentTarget;
+        float rawFrac = chara.MaxHp > 0f ? Math.Clamp(chara.CurrentHp / chara.MaxHp, 0f, 1f) : 0f;
+        float dt = ImGui.GetIO().DeltaTime;
+        if (currentTarget.GameObjectId != lastTargetBarObjectId)
         {
-            var chara = (ICharacter)currentTarget;
-            float rawFrac = chara.MaxHp > 0f ? Math.Clamp(chara.CurrentHp / chara.MaxHp, 0f, 1f) : 0f;
-            float dt = ImGui.GetIO().DeltaTime;
-            if (currentTarget.GameObjectId != lastTargetBarObjectId)
-            {
-                lastTargetBarObjectId = currentTarget.GameObjectId;
-                displayedTargetHpFrac = rawFrac;
-                lastRawTargetHpFrac = rawFrac;
-                targetBarFlashAlpha = 0f;
-            }
-            else
-            {
-                if (rawFrac < lastRawTargetHpFrac - 0.001f) targetBarFlashAlpha = 1f;
-                lastRawTargetHpFrac = rawFrac;
-                displayedTargetHpFrac += (rawFrac - displayedTargetHpFrac) * (1f - MathF.Exp(-dt * 14f));
-            }
-            targetBarFlashAlpha = MathF.Max(0f, targetBarFlashAlpha - dt / 0.4f);
+            lastTargetBarObjectId = currentTarget.GameObjectId;
+            displayedTargetHpFrac = rawFrac;
+            lastRawTargetHpFrac = rawFrac;
+            targetBarFlashAlpha = 0f;
+        }
+        else
+        {
+            if (rawFrac < lastRawTargetHpFrac - 0.001f) targetBarFlashAlpha = 1f;
+            lastRawTargetHpFrac = rawFrac;
+            displayedTargetHpFrac += (rawFrac - displayedTargetHpFrac) * (1f - MathF.Exp(-dt * 14f));
+        }
+        targetBarFlashAlpha = MathF.Max(0f, targetBarFlashAlpha - dt / 0.4f);
 
-            DrawTrapezoidBar(dl, tbX, tbY, tbW, tbH, displayedTargetHpFrac, bgCol, fillCol, barAlpha,
-                config.ShowTargetBarShield ? chara.ShieldPercentage / 100f : null,
-                config.ShowTargetBarShield ? C(config.TargetBarShieldColor) : null);
+        DrawTrapezoidBar(dl, tbX, tbY, tbW, tbH, displayedTargetHpFrac, bgCol, fillCol, barAlpha,
+            config.ShowTargetBarShield ? chara.ShieldPercentage / 100f : null,
+            config.ShowTargetBarShield ? C(config.TargetBarShieldColor) : null);
 
-            // Flash sliver
-            if (targetBarFlashAlpha > 0f)
+        if (targetBarFlashAlpha > 0f)
+        {
+            float lo = MathF.Min(rawFrac, displayedTargetHpFrac);
+            float hi = MathF.Max(rawFrac, displayedTargetHpFrac);
+            if (hi > lo)
             {
-                float lo = MathF.Min(rawFrac, displayedTargetHpFrac);
-                float hi = MathF.Max(rawFrac, displayedTargetHpFrac);
-                if (hi > lo)
-                {
-                    float taper = MathF.Min(tbH * 0.9f, tbW * 0.35f);
-                    const float inset = 2f;
-                    float innerH = tbH - inset * 2f;
-                    float innerTaper = taper * (innerH / tbH);
-                    var (fTl, fTr, fBr, fBl) = TrapezoidSlice(tbX + inset, tbY + inset, tbW - inset * 2f, innerH, innerTaper, lo, hi);
-                    dl.AddQuadFilled(fTl, fTr, fBr, fBl, WithAlpha(0xFFFFFFFFu, targetBarFlashAlpha * 0.5f * barAlpha));
-                }
+                float taper = MathF.Min(tbH * 0.9f, tbW * 0.35f);
+                const float inset = 2f;
+                float innerH = tbH - inset * 2f;
+                float innerTaper = taper * (innerH / tbH);
+                var (fTl, fTr, fBr, fBl) = TrapezoidSlice(tbX + inset, tbY + inset, tbW - inset * 2f, innerH, innerTaper, lo, hi);
+                dl.AddQuadFilled(fTl, fTr, fBr, fBl, WithAlpha(0xFFFFFFFFu, targetBarFlashAlpha * 0.5f * barAlpha));
             }
         }
-
-        // Name row
-        using var jupiterScope = jupiterFont.Available ? jupiterFont.Push() : null;
-        float fontSize = ImGui.GetFontSize() * config.TargetBarFontScale;
-        var font = ImGui.GetFont();
-
-        string? castName = currentTarget is IBattleChara castingChara && castingChara.IsCasting && castingChara.TotalCastTime > 0f
-            ? GetCastActionName(castingChara) : null;
-
-        string label = castName ?? currentTarget.Name.TextValue;
-        if (castName == null && config.ShowTargetLevel && currentTarget is ICharacter lvlChar && lvlChar.Level > 0)
-            label = $"Lv{lvlChar.Level}  {label}";
-
-        var tsz = ImGui.CalcTextSize(label) * config.TargetBarFontScale;
-        float nameGap = MathF.Max(6f, tbH * 0.5f);
-        float nameY = tbY + tbH + nameGap;
-        float tx = cx - tsz.X * 0.5f;
-
-        uint shadowCol = WithAlpha(0xCC000000u, barAlpha);
-        foreach (var (dx, dy) in new[] { (-1f,-1f), (0f,-1f), (1f,-1f), (-1f,0f), (1f,0f), (-1f,1f), (0f,1f), (1f,1f) })
-            dl.AddText(font, fontSize, V(tx + dx, nameY + dy), shadowCol, label);
-        dl.AddText(font, fontSize, V(tx, nameY), nameCol, label);
-
-        float ornHH = fontSize * 0.46f, ornHW = ornHH * 0.69f;
-        float ornGap = 6f;
-        float textCy = nameY + tsz.Y * 0.5f;
-        float leftOrnX = tx - ornGap - ornHW, rightOrnX = tx + tsz.X + ornGap + ornHW;
-        float shHW = ornHW + 2f, shHH = ornHH + 2f;
-        DrawFilledDiamond(dl, leftOrnX, textCy, shHW, shHH, shadowCol);
-        DrawFilledDiamond(dl, rightOrnX, textCy, shHW, shHH, shadowCol);
-        DrawEndCapOutlines(dl, leftOrnX, textCy, ornHW, ornHH, borderCol, ornHW * 0.28f);
-        DrawEndCapOutlines(dl, rightOrnX, textCy, ornHW, ornHH, borderCol, ornHW * 0.28f);
-
-        // Ribbons
-        if (isChara && config.ShowTargetBarRibbons)
-        {
-            float leftEdge = leftOrnX - ornHW, rightEdge = rightOrnX + ornHW;
-            float rowLeft = nameCx - nameRowW * 0.5f, rowRight = nameCx + nameRowW * 0.5f;
-            float inset = MathF.Max(8f, nameRowW * 0.06f);
-            float ribbonL = MathF.Min(rowLeft + inset, leftEdge - 24f);
-            float ribbonR = MathF.Max(rowRight - inset, rightEdge + 24f);
-            float glowT = now;
-
-            (float edge, float target, uint col, float tMul, float tOff)[] ribbons =
-            {
-                (leftEdge, ribbonL, shadowCol, 0.65f, 7.1f),
-                (leftEdge, ribbonL, borderCol, 1.00f, 0.0f),
-                (rightEdge, ribbonR, shadowCol, 1.15f, 5.3f),
-                (rightEdge, ribbonR, borderCol, 1.60f, 3.7f),
-            };
-            foreach (var (edge, target, col, tMul, tOff) in ribbons)
-                DrawGlowLine(dl, V(edge, textCy), V(target, textCy), col, 1f, glowT * tMul + tOff, true, 0f, 0f);
-
-            // Cast ribbon
-            if (currentTarget.GameObjectId != castWipeTargetId)
-            {
-                castWipeTargetId = currentTarget.GameObjectId;
-                castTrackedProgress = 0f;
-                castFadeOutStartTime = -1f;
-            }
-            float castReal = (currentTarget as IBattleChara) != null && ((IBattleChara)currentTarget).IsCasting
-                ? Math.Clamp(((IBattleChara)currentTarget).CurrentCastTime / ((IBattleChara)currentTarget).TotalCastTime, 0f, 1f) : 0f;
-            float castDisp = UpdateFadeOut(ref castTrackedProgress, ref castFrozenProgress, ref castFadeOutStartTime,
-                castReal, !((IBattleChara?)currentTarget)?.IsCasting ?? false, ((IBattleChara?)currentTarget)?.IsCasting ?? false,
-                false, glowT, CastFadeOutDuration, out float castWipe);
-            if (castDisp > 0f)
-            {
-                uint castCol = WithAlpha(C(config.AggroWarningColor), barAlpha);
-                float ci = PulseIntensity(glowT);
-                DrawGlowLine(dl, V(leftEdge, textCy), V(Lerp(leftEdge, ribbonL, castDisp), textCy),
-                    castCol, ci, glowT, true, castWipe, 0f, true);
-                DrawGlowLine(dl, V(rightEdge, textCy), V(Lerp(rightEdge, ribbonR, castDisp), textCy),
-                    castCol, ci, glowT, true, castWipe, 0f, true);
-            }
-        }
-
-        float clickTop = tbY, clickBottom = nameY + tsz.Y;
-        float clickLeft = MathF.Min(tbX, leftOrnX - shHW);
-        float clickRight = MathF.Max(tbX + tbW, rightOrnX + shHW);
-        HandleTargetFrameClick(V(clickLeft, clickTop), V(clickRight, clickBottom), currentTarget!, false);
-
-        return nameY + tsz.Y;
     }
+
+    // ─── Name row ──────────────────────────────────────────────────
+    using var jupiterScope = jupiterFont.Available ? jupiterFont.Push() : null;
+    float fontSize = ImGui.GetFontSize() * config.TargetBarFontScale;
+    var font = ImGui.GetFont();
+
+    string? castName = currentTarget is IBattleChara castingChara && castingChara.IsCasting && castingChara.TotalCastTime > 0f
+        ? GetCastActionName(castingChara) : null;
+
+    string label = castName ?? currentTarget.Name.TextValue;
+    if (castName == null && config.ShowTargetLevel && currentTarget is ICharacter lvlChar && lvlChar.Level > 0)
+        label = $"Lv{lvlChar.Level}  {label}";
+
+    var tsz = ImGui.CalcTextSize(label) * config.TargetBarFontScale;
+    float nameGap = MathF.Max(6f, tbH * 0.5f);
+    float nameY = tbY + tbH + nameGap;
+    float tx = cx - tsz.X * 0.5f;
+
+    uint shadowCol = WithAlpha(0xCC000000u, barAlpha);
+    foreach (var (dx, dy) in new[] { (-1f,-1f), (0f,-1f), (1f,-1f), (-1f,0f), (1f,0f), (-1f,1f), (0f,1f), (1f,1f) })
+        dl.AddText(font, fontSize, V(tx + dx, nameY + dy), shadowCol, label);
+    dl.AddText(font, fontSize, V(tx, nameY), nameCol, label);
+
+    float ornHH = fontSize * 0.46f, ornHW = ornHH * 0.69f;
+    float ornGap = 6f;
+    float textCy = nameY + tsz.Y * 0.5f;
+    float leftOrnX = tx - ornGap - ornHW, rightOrnX = tx + tsz.X + ornGap + ornHW;
+    float shHW = ornHW + 2f, shHH = ornHH + 2f;
+    DrawFilledDiamond(dl, leftOrnX, textCy, shHW, shHH, shadowCol);
+    DrawFilledDiamond(dl, rightOrnX, textCy, shHW, shHH, shadowCol);
+    DrawEndCapOutlines(dl, leftOrnX, textCy, ornHW, ornHH, borderCol, ornHW * 0.28f);
+    DrawEndCapOutlines(dl, rightOrnX, textCy, ornHW, ornHH, borderCol, ornHW * 0.28f);
+
+    // ─── Ribbons ──────────────────────────────────────────────────
+    if (isChara && config.ShowTargetBarRibbons)
+    {
+        float leftEdge = leftOrnX - ornHW, rightEdge = rightOrnX + ornHW;
+        float rowLeft = nameCx - nameRowW * 0.5f, rowRight = nameCx + nameRowW * 0.5f;
+        float inset = MathF.Max(8f, nameRowW * 0.06f);
+        float ribbonL = MathF.Min(rowLeft + inset, leftEdge - 24f);
+        float ribbonR = MathF.Max(rowRight - inset, rightEdge + 24f);
+        float glowT = now;
+
+        (float edge, float target, uint col, float tMul, float tOff)[] ribbons =
+        {
+            (leftEdge, ribbonL, shadowCol, 0.65f, 7.1f),
+            (leftEdge, ribbonL, borderCol, 1.00f, 0.0f),
+            (rightEdge, ribbonR, shadowCol, 1.15f, 5.3f),
+            (rightEdge, ribbonR, borderCol, 1.60f, 3.7f),
+        };
+        foreach (var (edge, target, col, tMul, tOff) in ribbons)
+            DrawGlowLine(dl, V(edge, textCy), V(target, textCy), col, 1f, glowT * tMul + tOff, true, 0f, 0f);
+
+        // ─── Cast ribbon (safe cast + division guard) ──────────
+        if (currentTarget.GameObjectId != castWipeTargetId)
+        {
+            castWipeTargetId = currentTarget.GameObjectId;
+            castTrackedProgress = 0f;
+            castFadeOutStartTime = -1f;
+        }
+
+        var battleChara = currentTarget as IBattleChara;
+        bool isCasting = battleChara?.IsCasting ?? false;
+        float totalCastTime = battleChara?.TotalCastTime ?? 0f;
+        float castReal = 0f;
+        if (isCasting && totalCastTime > 0f)
+        {
+            castReal = Math.Clamp((battleChara?.CurrentCastTime ?? 0f) / totalCastTime, 0f, 1f);
+        }
+
+        float castDisp = UpdateFadeOut(ref castTrackedProgress, ref castFrozenProgress, ref castFadeOutStartTime,
+            castReal, !isCasting && castTrackedProgress > 0f, isCasting,
+            false, glowT, CastFadeOutDuration, out float castWipe);
+
+        if (castDisp > 0f)
+        {
+            uint castCol = WithAlpha(C(config.AggroWarningColor), barAlpha);
+            float ci = PulseIntensity(glowT);
+            DrawGlowLine(dl, V(leftEdge, textCy), V(Lerp(leftEdge, ribbonL, castDisp), textCy),
+                castCol, ci, glowT, true, castWipe, 0f, true);
+            DrawGlowLine(dl, V(rightEdge, textCy), V(Lerp(rightEdge, ribbonR, castDisp), textCy),
+                castCol, ci, glowT, true, castWipe, 0f, true);
+        }
+    }
+
+    float clickTop = tbY, clickBottom = nameY + tsz.Y;
+    float clickLeft = MathF.Min(tbX, leftOrnX - shHW);
+    float clickRight = MathF.Max(tbX + tbW, rightOrnX + shHW);
+    HandleTargetFrameClick(V(clickLeft, clickTop), V(clickRight, clickBottom), currentTarget!, false);
+
+    return nameY + tsz.Y;
+}
 
     private void RenderTargetOfTargetBar(ImDrawListPtr dl, float tbX, float tbW, float tbY,
         IPlayerCharacter player, float now, float barAlpha, bool inDutyOrPvp)

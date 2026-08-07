@@ -28,6 +28,10 @@ In order to apply moodles, you MUST tick these boxes in Moodles settings
 
   TO FIX: remove the moodle before re-applying
 
+- BUT WHAT ABOUT STATUS BRIDGE????
+
+   Uninstall it. This replaces it. (you can disable everything except the status bar if you dont want the compass)
+
 ## Install
 
 Add this URL as a custom plugin repository in Dalamud (Settings > Experimental > Custom Plugin Repositories), then install **Skyrim Compass** from the plugin list.
@@ -36,7 +40,9 @@ Add this URL as a custom plugin repository in Dalamud (Settings > Experimental >
 https://raw.githubusercontent.com/JTayGang/MeowyUtils/main/repo.json
 ```
 
-Same URL for every plugin in this repo. See the [repo root](../) for the full list.
+
+
+It basically only solved half the problem. It fixes status display for the PLAYER, but not for EVERYONE ELSE, and statuses would show up invisible for everyone you target. By 
 
 ---
 

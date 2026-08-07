@@ -3,7 +3,7 @@
 Whoa look, the first (somewhat) working compatibility layer for Loci and Moodles! Oh yeah, theres also a neat Skyrim-type compass if you care about that.
 
 <p align="center">
-  <img src="images/hero.jpg" alt="Skyrim Compass in action" width="720">
+  <img src="images/Hero.jpg" alt="Skyrim Compass in action" width="720">
 </p>
 
 ## BEFORE YOU INSTALL (For moodles users)

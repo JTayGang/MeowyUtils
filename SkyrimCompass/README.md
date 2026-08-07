@@ -1,36 +1,10 @@
 # Skyrim Compass
 
-Whoa look, the first (somewhat) working compatibility layer for Loci and Moodles! Oh yeah, theres also a neat Skyrim-type compass if you care about that.
+A Dalamud plugin that replaces FFXIV's minimap, limit break bars, and target health bars with an immersive, Skyrim style compass strip.
 
 <p align="center">
   <img src="images/hero.png" alt="Skyrim Compass in action" width="720">
 </p>
-
-## BEFORE YOU INSTALL (For moodles users)
-In order to apply moodles, you MUST tick these boxes in Moodles settings
-
-<p align="center">
-  <img src="images/settings.png" alt="Change this setting" width="720">
-</p>
-
-
-## KNOWN ISSUES
-- Moodles and Loci show the vfx twice when applying a status, like its applying them twice.
-
-   Thats because it IS. It copies your moodles and locis so that they show for both, and hides the extra copy. 
-- After using /xlkill some statuses randomly reappear on next login.
-
-   TO FIX: Close the game normally once to save your character's "state".
-- Moodle timers do not display a countdown unless "persist expire time" is enabled for the moodle.
-
-   I couldnt find a fix for this. (The timer still works fine, just doesnt display)
-- When "persist expire time" is enabled for a moodle, reapplying that moodle breaks a bit.
-
-  TO FIX: remove the moodle before re-applying
-
-- BUT WHAT ABOUT STATUS BRIDGE????
-
-  Uninstall it. This replaces it. (you can disable everything except the status bar if you dont want the compass)
 
 ## Install
 
@@ -39,6 +13,8 @@ Add this URL as a custom plugin repository in Dalamud (Settings > Experimental >
 ```
 https://raw.githubusercontent.com/JTayGang/MeowyUtils/main/repo.json
 ```
+
+Same URL for every plugin in this repo. See the [repo root](../) for the full list.
 
 ---
 
@@ -74,7 +50,6 @@ Open with `/compass config`. Settings are split across tabs (Layout, General, Pl
 | Command | Effect |
 |---|---|
 | `/compass` | Toggle the compass on/off |
-| `/compass on - /compass off` | For macro use if a big black box was covering your screen or something |
 | `/compass config` | Open settings |
 
 The settings window is also reachable from the Dalamud plugin list's gear icon.

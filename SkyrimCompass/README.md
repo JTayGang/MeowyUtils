@@ -40,10 +40,6 @@ Add this URL as a custom plugin repository in Dalamud (Settings > Experimental >
 https://raw.githubusercontent.com/JTayGang/MeowyUtils/main/repo.json
 ```
 
-
-
-It basically only solved half the problem. It fixes status display for the PLAYER, but not for EVERYONE ELSE, and statuses would show up invisible for everyone you target. By 
-
 ---
 
 ## Features

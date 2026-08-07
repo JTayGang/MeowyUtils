@@ -7,7 +7,7 @@ them from.
 | Plugin | What it does |
 |---|---|
 | [**Skyrim Compass**](./SkyrimCompass) | A Skyrim-style horizontal compass bar with cardinal directions, tick marks, and nearby entity markers (players, enemies, gathering nodes, treasure). |
-| [**StatusBridge**](./StatusBridge) | Mirrors your live Moodles and Loci statuses onto each other, so whichever sync plugin you use picks up a unified status regardless of which backend it natively reads. |
+| [**StatusBridge**](./StatusBridge) | BROKEN, DONT INSTALL Mirrors your live Moodles and Loci statuses onto each other, so whichever sync plugin you use picks up a unified status regardless of which backend it natively reads. |
 
 Each plugin has its own README (linked above) with full feature lists, requirements, and
 build/usage instructions specific to that plugin.

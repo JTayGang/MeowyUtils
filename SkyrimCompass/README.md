@@ -30,7 +30,7 @@ In order to apply moodles, you MUST tick these boxes in Moodles settings
 
 - BUT WHAT ABOUT STATUS BRIDGE????
 
-   Uninstall it. This replaces it. (you can disable everything except the status bar if you dont want the compass)
+  Uninstall it. This replaces it. (you can disable everything except the status bar if you dont want the compass)
 
 ## Install
 

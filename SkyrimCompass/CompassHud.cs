@@ -649,7 +649,7 @@ private float RenderTargetBar(ImDrawListPtr dl, float tbX, float tbW, float tbY,
     if (isChara)
     {
         var chara = (ICharacter)currentTarget;
-        float rawFrac = chara.MaxHp > 0f ? Math.Clamp(chara.CurrentHp / chara.MaxHp, 0f, 1f) : 0f;
+        float rawFrac = chara.MaxHp > 0f ? Math.Clamp((float)chara.CurrentHp / chara.MaxHp, 0f, 1f) : 0f;
 
         // ─── Minion detection: force full health bar ────────────────
 bool isMinion = currentTarget.ObjectKind == ObjectKind.Companion;
@@ -801,7 +801,7 @@ if (isMinion)
         bool targetingMe = config.HighlightIfTargetingMe && currentTarget.TargetObjectId == player.GameObjectId;
         float tbH = MathF.Max(4f, config.TargetBarHeight);
         uint fillCol = targetingMe ? C(config.AggroWarningColor) : TargetBarFillColor(tot, inDutyOrPvp);
-        float frac = chara.MaxHp > 0f ? Math.Clamp(chara.CurrentHp / chara.MaxHp, 0f, 1f) : 0f;
+        float frac = chara.MaxHp > 0f ? Math.Clamp((float)chara.CurrentHp / chara.MaxHp, 0f, 1f) : 0f;
         float pulse = targetingMe ? 0.82f + 0.18f * MathF.Sin(now * 5f) : 1f;
 
         DrawTrapezoidBar(dl, tbX, tbY, tbW, tbH, frac,

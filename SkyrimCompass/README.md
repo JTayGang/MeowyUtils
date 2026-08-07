@@ -78,6 +78,7 @@ Open with `/compass config`. Settings are split across tabs (Layout, General, Pl
 | Command | Effect |
 |---|---|
 | `/compass` | Toggle the compass on/off |
+| `/compass on - /compass off` | for macro use if a big black box was covering your screen or something |
 | `/compass config` | Open settings |
 
 The settings window is also reachable from the Dalamud plugin list's gear icon.

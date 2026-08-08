@@ -379,6 +379,10 @@ public sealed class StatusMirrorEngine : IDisposable
     // Minimum time between reconciliations (even when dirty) to avoid starving upstream debounce
     private const float MinReconcileIntervalSeconds = 0.25f; // 250 ms
 
+    // Debounce for state file saves
+    private DateTime _nextStateSaveTime = DateTime.UtcNow;
+    private const float StateSaveIntervalSeconds = 5.0f;
+
     // flag to force refresh of mirrors on change
     private bool mirrorsNeedRefresh;
 
@@ -448,10 +452,12 @@ public sealed class StatusMirrorEngine : IDisposable
         try { Reconcile(); }
         catch (Exception ex) { log.Error(ex, "[SkyrimCompass] Reconcile threw."); }
 
-        if (stateDirty)
+        // Debounced state save: at most once every 5 seconds
+        if (stateDirty && now >= _nextStateSaveTime)
         {
             state.Save(pluginInterface, log);
             stateDirty = false;
+            _nextStateSaveTime = now + TimeSpan.FromSeconds(StateSaveIntervalSeconds);
         }
     }
 
@@ -804,6 +810,7 @@ public sealed class StatusMirrorEngine : IDisposable
     {
         framework.Update -= OnFrameworkUpdate;
 
+        // Save any pending state on shutdown
         if (stateDirty)
             state.Save(pluginInterface, log);
 

@@ -70,6 +70,7 @@ public sealed class CompassHud : IDisposable
     private float castFrozenProgress   = 0f;
     private float castFadeOutStartTime = -1f;
     private const float CastFadeOutDuration = 0.4f;
+    private const int MaxTooltipCacheSize = 200;
 
     // Target HP bar
     private ulong lastTargetBarObjectId = 0;
@@ -456,7 +457,7 @@ public sealed class CompassHud : IDisposable
         float phase = t * flowSpeed * flowDir;
         float phase2 = phase * 1.4f + 1.3f;
 
-        int samples = Math.Clamp((int)(len / (waveLen * 0.5f) * 4f) + 2, 3, 96);
+        int samples = Math.Clamp((int)(len / (waveLen * 0.5f) * 4f) + 2, 3, 48);
         Span<Vector2> pts = stackalloc Vector2[96];
         Span<float> fades = stackalloc float[96];
         for (int i = 0; i < samples; i++)
@@ -1053,10 +1054,20 @@ if (isMinion)
     private byte[] GetFormattedTooltipBytes(string name, string desc)
     {
         var key = (name, desc);
-        if (formattedTooltipCache.TryGetValue(key, out var cached)) return cached;
+        if (formattedTooltipCache.TryGetValue(key, out var cached))
+            return cached;
+
+        // Prune if too large
+        if (formattedTooltipCache.Count >= MaxTooltipCacheSize)
+            formattedTooltipCache.Clear();
+
         var b = new SeStringBuilder();
         AppendFormattedSegment(b, name);
-        if (!string.IsNullOrWhiteSpace(desc)) { b.AddText("\n"); AppendFormattedSegment(b, desc); }
+        if (!string.IsNullOrWhiteSpace(desc))
+        {
+            b.AddText("\n");
+            AppendFormattedSegment(b, desc);
+        }
         var bytes = b.Encode();
         formattedTooltipCache[key] = bytes;
         return bytes;

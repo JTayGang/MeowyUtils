@@ -376,6 +376,9 @@ public sealed class StatusMirrorEngine : IDisposable
     private readonly HashSet<System.Guid> supersededMoodleGhosts = new();
     private readonly HashSet<System.Guid> supersededLociGhosts = new();
 
+    // Minimum time between reconciliations (even when dirty) to avoid starving upstream debounce
+    private const float MinReconcileIntervalSeconds = 0.25f; // 250 ms
+
     // flag to force refresh of mirrors on change
     private bool mirrorsNeedRefresh;
 
@@ -431,11 +434,16 @@ public sealed class StatusMirrorEngine : IDisposable
     private void OnFrameworkUpdate(IFramework fw)
     {
         var now = DateTime.UtcNow;
-        if (!dirty && now < nextPeriodicReconcile)
+        // Enforce minimum interval even when dirty
+        if (now < nextPeriodicReconcile)
+            return;
+
+        // Only run if dirty or periodic check is due
+        if (!dirty && now < nextPeriodicReconcile + TimeSpan.FromSeconds(1))
             return;
 
         dirty = false;
-        nextPeriodicReconcile = now + TimeSpan.FromSeconds(1);
+        nextPeriodicReconcile = now + TimeSpan.FromSeconds(MinReconcileIntervalSeconds);
 
         try { Reconcile(); }
         catch (Exception ex) { log.Error(ex, "[SkyrimCompass] Reconcile threw."); }
@@ -501,6 +509,11 @@ public sealed class StatusMirrorEngine : IDisposable
 
                 var src = moodleDict[guid];
                 var sig = MirrorSignature.FromMoodles(src);
+
+                // Skip if already tracked and signature unchanged
+                if (MirroredIntoLoci.TryGetValue(guid, out var existingSig) && existingSig == sig)
+                    continue;
+
                 var converted = MirrorConverter.ToLoci(src);
                 var ec = loci.TryApply(converted);
                 if (ec is LociApiEc.Success or LociApiEc.NoChange)
@@ -635,6 +648,11 @@ public sealed class StatusMirrorEngine : IDisposable
 
                 var src = lociDict[guid];
                 var sig = MirrorSignature.FromLoci(src);
+
+                // Skip if already tracked and signature unchanged
+                if (MirroredIntoMoodles.TryGetValue(guid, out var existingSig) && existingSig == sig)
+                    continue;
+
                 var converted = MirrorConverter.ToMoodles(src);
                 if (moodles.TryApply(converted, localPlayer))
                 {

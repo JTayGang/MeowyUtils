@@ -103,9 +103,12 @@ public class Configuration : IPluginConfiguration
     public bool MirrorMoodlesLoci { get; set; } = true;
 
     // FF14's ToT, restyled: auto-hidden if nobody/self, except targeting YOU (dedicated warning color instead)
-    public bool    ShowTargetOfTargetBar  { get; set; } = true;
-    public bool    HighlightIfTargetingMe { get; set; } = true;
-    public Vector4 AggroWarningColor      { get; set; } = new(1.00f, 0.82f, 0.16f, 1.00f);
+    public bool    ShowTargetOfTargetBar       { get; set; } = true;
+    public bool    HighlightIfTargetingMe      { get; set; } = true;
+    public Vector4 AggroWarningColor           { get; set; } = new(1.00f, 0.82f, 0.16f, 1.00f);
+    public bool    ShowTargetOfTargetName      { get; set; } = true;   // name centered over the ToT bar
+    public bool    TargetOfTargetFirstNameOnly { get; set; } = false;  // trims multi-word names to the first word
+    public bool    TargetOfTargetShowYou       { get; set; } = true;   // shows "YOU" when ToT is you, instead of your name
 
     public bool  ShowNpcs             { get; set; } = true;
     public bool  NpcsOnlyIfTargetable { get; set; } = true;   // hides non-targetable placeholders (e.g. empty stable slot)

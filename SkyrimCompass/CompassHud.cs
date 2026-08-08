@@ -262,7 +262,7 @@ public sealed class CompassHud : IDisposable
 
         var curTarget = targetManager.Target;
         var curTot = curTarget?.TargetObject;
-        bool hasTot = config.ShowTargetOfTargetBar && curTarget != null && curTot != null
+        bool hasTot = config.ShowTargetBar && config.ShowTargetOfTargetBar && curTarget != null && curTot != null
             && curTot.GameObjectId != curTarget.GameObjectId && curTot is ICharacter;
 
         var (mainX, mainW, totX, totW, rowW) = SplitTargetBarRow(bx, bw, hasTot);
@@ -808,6 +808,37 @@ if (isMinion)
             WithAlpha(C(config.BackgroundColor), barAlpha),
             WithAlpha(fillCol, pulse * barAlpha),
             barAlpha);
+
+        // ─── ToT name, centered over the bar (same style as target name) ─
+        if (config.ShowTargetOfTargetName)
+        {
+            using var totFontScope = jupiterFont.Available ? jupiterFont.Push() : null;
+            var font = ImGui.GetFont();
+            bool totIsPlayer = chara.GameObjectId == player.GameObjectId;
+            string totLabel = (totIsPlayer && config.TargetOfTargetShowYou) ? "YOU" : chara.Name.TextValue;
+            if (config.TargetOfTargetFirstNameOnly)
+            {
+                int sp = totLabel.IndexOf(' ');
+                if (sp > 0) totLabel = totLabel[..sp];
+            }
+
+            float totScale = config.TargetBarFontScale;
+            var totBaseSz = ImGui.CalcTextSize(totLabel);
+            float totMaxTextW = MathF.Max(4f, tbW - 4f);
+            if (totBaseSz.X > 0f && totBaseSz.X * totScale > totMaxTextW)
+                totScale = totMaxTextW / totBaseSz.X; // shrink long names so they don't spill past the (narrower) ToT bar
+
+            float totFontSize = ImGui.GetFontSize() * totScale;
+            var totTsz = totBaseSz * totScale;
+            float totTx = tbX + (tbW - totTsz.X) * 0.5f;
+            float totTy = tbY + (tbH - totTsz.Y) * 0.5f;
+
+            uint totNameCol = WithAlpha(C(config.CardinalColor), barAlpha);
+            uint totShadowCol = WithAlpha(0xCC000000u, barAlpha);
+            foreach (var (dx, dy) in new[] { (-1f,-1f), (0f,-1f), (1f,-1f), (-1f,0f), (1f,0f), (-1f,1f), (0f,1f), (1f,1f) })
+                dl.AddText(font, totFontSize, V(totTx + dx, totTy + dy), totShadowCol, totLabel);
+            dl.AddText(font, totFontSize, V(totTx, totTy), totNameCol, totLabel);
+        }
 
         // Pass 'chara' (non-null ICharacter) with null-forgiving operator to suppress CS8604
         HandleTargetFrameClick(V(tbX, tbY), V(tbX + tbW, tbY + tbH), chara!, true);

@@ -367,6 +367,15 @@ public sealed class ConfigWindow : Window
         ImGui.BeginDisabled(!cfg.HighlightIfTargetingMe);
         changed |= DrawColorEdit("Warning color##aggroc", cfg.AggroWarningColor, v => cfg.AggroWarningColor = v, ColorPickerFlags);
         ImGui.EndDisabled();
+
+        changed |= DrawToggle("Show name##totname", () => cfg.ShowTargetOfTargetName, v => cfg.ShowTargetOfTargetName = v,
+            "Shows the target-of-target's name centered over their bar.");
+        BeginIndentedDisabled(cfg.ShowTargetOfTargetName);
+        changed |= DrawToggle("Only show first name##totfirstname", () => cfg.TargetOfTargetFirstNameOnly, v => cfg.TargetOfTargetFirstNameOnly = v,
+            "Trims multi-word names down to just the first word.");
+        changed |= DrawToggle("Show \"YOU\" for yourself##totyou", () => cfg.TargetOfTargetShowYou, v => cfg.TargetOfTargetShowYou = v,
+            "Displays \"YOU\" instead of your character name when you are the target-of-target.");
+        EndIndentedDisabled();
         EndIndentedDisabled();
 
         ImGui.EndTabItem();

@@ -11,10 +11,6 @@ public sealed class ConfigWindow : Window
     private PlayerIconOverride _newOverride = new();
     private int _selectedThemeIndex = 0;
 
-    // Debounce for config saves
-    private DateTime _lastConfigSave = DateTime.MinValue;
-    private const float ConfigSaveDebounceSeconds = 1.0f;
-
     public ConfigWindow(Plugin plugin)
         : base("Skyrim Compass Settings##skyrimcompasscfg",
                ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoScrollbar)
@@ -55,12 +51,8 @@ public sealed class ConfigWindow : Window
         if (ImGui.Button("Close", new Vector2(80, 0)))
             IsOpen = false;
 
-        // Debounced save: at most once per second
-        if (changed && (DateTime.UtcNow - _lastConfigSave).TotalSeconds >= ConfigSaveDebounceSeconds)
-        {
+        if (changed)
             cfg.Save(plugin.PluginInterface);
-            _lastConfigSave = DateTime.UtcNow;
-        }
     }
 
     // ── Layout tab ───────────────────────────────────────────────────────────

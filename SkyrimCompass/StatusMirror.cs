@@ -377,7 +377,7 @@ public sealed class StatusMirrorEngine : IDisposable
     private readonly HashSet<System.Guid> supersededLociGhosts = new();
 
     // Minimum time between reconciliations (even when dirty) to avoid starving upstream debounce
-    private const float MinReconcileIntervalSeconds = 0.25f; // 250 ms
+    private const float MinReconcileIntervalSeconds = 0.333f; // 333 ms
 
     // Debounce for state file saves
     private DateTime _nextStateSaveTime = DateTime.UtcNow;

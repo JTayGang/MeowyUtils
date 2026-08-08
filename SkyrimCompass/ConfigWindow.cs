@@ -15,6 +15,11 @@ public sealed class ConfigWindow : Window
     private DateTime _lastConfigSave = DateTime.MinValue;
     private const float ConfigSaveDebounceSeconds = 1.0f;
 
+    // Tracks whether a change is waiting to be written to disk. Unlike a local
+    // "changed" bool, this survives across frames, so a change that arrives inside
+    // the debounce window isn't silently dropped once the triggering frame passes.
+    private bool _configDirty = false;
+
     public ConfigWindow(Plugin plugin)
         : base("Skyrim Compass Settings##skyrimcompasscfg",
                ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoScrollbar)
@@ -55,11 +60,19 @@ public sealed class ConfigWindow : Window
         if (ImGui.Button("Close", new Vector2(80, 0)))
             IsOpen = false;
 
-        // Debounced save: at most once per second
-        if (changed && (DateTime.UtcNow - _lastConfigSave).TotalSeconds >= ConfigSaveDebounceSeconds)
+        if (changed)
+            _configDirty = true;
+
+        // Debounced save: at most once per second while the window stays open.
+        // If a pending change is still waiting when the debounce hasn't cleared yet
+        // AND the window is closing (this frame or already closed), flush it
+        // immediately instead of losing it — Draw() won't be called again to retry.
+        var debounceElapsed = (DateTime.UtcNow - _lastConfigSave).TotalSeconds >= ConfigSaveDebounceSeconds;
+        if (_configDirty && (debounceElapsed || !IsOpen))
         {
             cfg.Save(plugin.PluginInterface);
             _lastConfigSave = DateTime.UtcNow;
+            _configDirty = false;
         }
     }
 

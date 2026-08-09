@@ -15,9 +15,7 @@ public sealed class ConfigWindow : Window
     private DateTime _lastConfigSave = DateTime.MinValue;
     private const float ConfigSaveDebounceSeconds = 1.0f;
 
-    // Tracks whether a change is waiting to be written to disk. Unlike a local
-    // "changed" bool, this survives across frames, so a change that arrives inside
-    // the debounce window isn't silently dropped once the triggering frame passes.
+    // Tracks whether a change is waiting to be written to disk.
     private bool _configDirty = false;
 
     public ConfigWindow(Plugin plugin)
@@ -44,15 +42,10 @@ public sealed class ConfigWindow : Window
 
         if (ImGui.BeginTabBar("##tabs"))
         {
-            changed |= DrawLayoutTab(cfg);
-            changed |= DrawGeneralTab(cfg);
-            changed |= DrawPlayersTab(cfg);
+            changed |= DrawAppearanceTab(cfg);
+            changed |= DrawMarkersTab(cfg);
             changed |= DrawCombatTab(cfg);
-            changed |= DrawNpcsTab(cfg);
-            changed |= DrawGatheringTab(cfg);
-            changed |= DrawTreasureTab(cfg);
-            changed |= DrawAetherytesTab(cfg);
-            changed |= DrawFatesTab(cfg);
+            changed |= DrawAdvancedTab(cfg);
             ImGui.EndTabBar();
         }
 
@@ -63,10 +56,6 @@ public sealed class ConfigWindow : Window
         if (changed)
             _configDirty = true;
 
-        // Debounced save: at most once per second while the window stays open.
-        // If a pending change is still waiting when the debounce hasn't cleared yet
-        // AND the window is closing (this frame or already closed), flush it
-        // immediately instead of losing it — Draw() won't be called again to retry.
         var debounceElapsed = (DateTime.UtcNow - _lastConfigSave).TotalSeconds >= ConfigSaveDebounceSeconds;
         if (_configDirty && (debounceElapsed || !IsOpen))
         {
@@ -76,56 +65,420 @@ public sealed class ConfigWindow : Window
         }
     }
 
-    // ── Layout tab ───────────────────────────────────────────────────────────
-    private static bool DrawLayoutTab(Configuration cfg)
+    // ───────────────────────────────────────────────────────────────────────────
+    // TAB 1: APPEARANCE – Compass strip, behavior, colors, camera
+    // ───────────────────────────────────────────────────────────────────────────
+    private bool DrawAppearanceTab(Configuration cfg)
     {
-        if (!ImGui.BeginTabItem("Layout")) return false;
+        if (!ImGui.BeginTabItem("Appearance")) return false;
         bool changed = false;
 
-        changed |= DrawSliderInt("Width##w", 200, 1400, () => (int)cfg.CompassWidth, v => cfg.CompassWidth = v);
-        changed |= DrawSliderInt("Height##h", 20, 80, () => (int)cfg.CompassHeight, v => cfg.CompassHeight = v);
+        // ── Compass Strip ─────────────────────────────────────────────────
+        if (ImGui.CollapsingHeader("Compass Strip", ImGuiTreeNodeFlags.DefaultOpen))
+        {
+            ImGui.SetNextItemWidth(120f);
+            changed |= DrawSliderInt("Width##w", 200, 1400, () => (int)cfg.CompassWidth, v => cfg.CompassWidth = v);
+            ImGui.SameLine();
+            ImGui.SetNextItemWidth(120f);
+            changed |= DrawSliderInt("Height##h", 20, 80, () => (int)cfg.CompassHeight, v => cfg.CompassHeight = v);
 
-        var io = ImGui.GetIO();
-        int yMax = (int)MathF.Max(0f, io.DisplaySize.Y - cfg.CompassHeight);
-        changed |= DrawSliderInt("Y Offset (from top)##yo", 0, yMax, () => (int)cfg.YOffset, v => cfg.YOffset = v);
+            var io = ImGui.GetIO();
+            int yMax = (int)MathF.Max(0f, io.DisplaySize.Y - cfg.CompassHeight);
+            changed |= DrawSliderInt("Y Offset (from top)##yo", 0, yMax, () => (int)cfg.YOffset, v => cfg.YOffset = v);
 
-        int xRange = (int)MathF.Max(0f, (io.DisplaySize.X - cfg.CompassWidth) * 0.5f);
-        changed |= DrawSliderInt("X Offset (from center)##xo", -xRange, xRange, () => (int)cfg.XOffset, v => cfg.XOffset = v,
-            "Shifts compass left/right; range auto-adjusts to screen width.");
+            int xRange = (int)MathF.Max(0f, (io.DisplaySize.X - cfg.CompassWidth) * 0.5f);
+            changed |= DrawSliderInt("X Offset (from center)##xo", -xRange, xRange, () => (int)cfg.XOffset, v => cfg.XOffset = v,
+                "Shifts compass left/right; range auto-adjusts to screen width.");
 
-        ImGui.Spacing();
-        changed |= DrawSliderInt("Visible Degrees##vd", 30, 180, () => (int)cfg.VisibleDegrees, v => cfg.VisibleDegrees = v);
-        changed |= DrawSliderFloat("Lens Strength##ls", 1.0f, 3.0f, () => cfg.LensStrength, v => cfg.LensStrength = v);
-        changed |= DrawSliderFloat("Font Scale##fs", 0.5f, 2.5f, () => cfg.FontScale, v => cfg.FontScale = v);
+            ImGui.Spacing();
+            changed |= DrawSliderInt("Visible Degrees##vd", 30, 180, () => (int)cfg.VisibleDegrees, v => cfg.VisibleDegrees = v);
+            changed |= DrawSliderFloat("Lens Strength##ls", 1.0f, 3.0f, () => cfg.LensStrength, v => cfg.LensStrength = v);
+            changed |= DrawSliderFloat("Font Scale##fs", 0.5f, 2.5f, () => cfg.FontScale, v => cfg.FontScale = v);
 
-        ImGui.Spacing();
-        changed |= DrawToggle("Show Compass Bar", () => cfg.ShowCompassBar, v => cfg.ShowCompassBar = v,
-            "Hide the main compass strip while keeping target bars and status icons.");
+            ImGui.Spacing();
+            changed |= DrawToggle("Show Compass Bar", () => cfg.ShowCompassBar, v => cfg.ShowCompassBar = v,
+                "Hide the main compass strip while keeping target bars and status icons.");
+            changed |= DrawToggle("Show numeric heading", () => cfg.ShowHeadingText, v => cfg.ShowHeadingText = v);
+            changed |= DrawToggle("Hide during cutscenes", () => cfg.HideDuringCutscenes, v => cfg.HideDuringCutscenes = v,
+                "Skips drawing in story/skippable cinematics and group pose.");
+        }
 
-        ImGui.Spacing();
-        changed |= DrawToggle("Show numeric heading", () => cfg.ShowHeadingText, v => cfg.ShowHeadingText = v);
-        changed |= DrawToggle("Hide during cutscenes", () => cfg.HideDuringCutscenes, v => cfg.HideDuringCutscenes = v,
-            "Skips drawing in story/skippable cinematics and group pose.");
+        // ── Colors & Theme ──────────────────────────────────────────────
+        if (ImGui.CollapsingHeader("Colors & Theme", ImGuiTreeNodeFlags.DefaultOpen))
+        {
+            changed |= DrawColorEdit("Background##bgc", cfg.BackgroundColor, v => cfg.BackgroundColor = v);
+            changed |= DrawColorEdit("Border##bdc", cfg.BorderColor, v => cfg.BorderColor = v);
+            changed |= DrawColorEdit("Cardinal (N/S/E/W)##cdc", cfg.CardinalColor, v => cfg.CardinalColor = v);
+            changed |= DrawColorEdit("Intercardinal (NE/SW…)##icc", cfg.IntercardinalColor, v => cfg.IntercardinalColor = v);
+            changed |= DrawColorEdit("Tick marks##tkc", cfg.TickColor, v => cfg.TickColor = v);
 
-        DrawSectionBreak();
-        changed |= DrawToggle("Use camera direction (not character facing)",
-            () => cfg.UseCameraDirection, v => cfg.UseCameraDirection = v,
-            "Follows camera orientation instead of character facing.");
-        BeginIndentedDisabled(cfg.UseCameraDirection);
-        changed |= DrawToggle("Also use camera location for distances##ucp",
-            () => cfg.UseCameraPosition, v => cfg.UseCameraPosition = v,
-            "Measures distances from camera position; requires 'Use camera direction'.");
-        EndIndentedDisabled();
+            ImGui.SetNextItemWidth(180);
+            if (ImGui.Combo("Theme preset##colortheme", ref _selectedThemeIndex, ColorThemeNames, ColorThemeNames.Length))
+            {
+                ApplyColorTheme(cfg, ColorThemes[_selectedThemeIndex]);
+                changed = true;
+            }
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Overwrites all colors; pick \"Original\" to restore defaults.");
+        }
 
-        ImGui.Spacing();
-        ImGui.TextDisabled("Rotation Offset (set 180 if N/S swapped)");
-        changed |= DrawSliderInt("##rotoff", -180, 180, () => (int)cfg.RotationOffset, v => cfg.RotationOffset = v);
+        // ── Camera ──────────────────────────────────────────────────────
+        if (ImGui.CollapsingHeader("Camera & Direction"))
+        {
+            changed |= DrawToggle("Use camera direction (not character facing)",
+                () => cfg.UseCameraDirection, v => cfg.UseCameraDirection = v,
+                "Follows camera orientation instead of character facing.");
+            BeginIndentedDisabled(cfg.UseCameraDirection);
+            changed |= DrawToggle("Also use camera location for distances##ucp",
+                () => cfg.UseCameraPosition, v => cfg.UseCameraPosition = v,
+                "Measures distances from camera position; requires 'Use camera direction'.");
+            EndIndentedDisabled();
+
+            ImGui.Spacing();
+            ImGui.TextDisabled("Rotation Offset (set 180 if N/S swapped)");
+            changed |= DrawSliderInt("##rotoff", -180, 180, () => (int)cfg.RotationOffset, v => cfg.RotationOffset = v);
+        }
 
         ImGui.EndTabItem();
         return changed;
     }
 
-    // ── Color themes ────────────────────────────────────────────────────────
+    // ───────────────────────────────────────────────────────────────────────────
+    // TAB 2: MARKERS – Global range, fade, and all marker type toggles
+    // ───────────────────────────────────────────────────────────────────────────
+    private bool DrawMarkersTab(Configuration cfg)
+    {
+        if (!ImGui.BeginTabItem("Markers")) return false;
+        bool changed = false;
+
+        // ── Global settings (range & fade) ──────────────────────────────
+        if (ImGui.CollapsingHeader("Global Marker Settings", ImGuiTreeNodeFlags.DefaultOpen))
+        {
+            changed |= DrawSliderInt("Detection range (yalms)##maxd", 10, 200, () => (int)cfg.MaxMarkerDistance, v => cfg.MaxMarkerDistance = v,
+                "Maximum distance for all markers (FATEs use a multiplier).");
+            ImGui.Spacing();
+            ImGui.TextDisabled("Dot distance‑fade curve");
+            changed |= DrawSliderFloat("Full opacity zone##nz", 0.5f, 1.0f, () => cfg.DotNearZone, v => cfg.DotNearZone = v,
+                tooltip: "Dots fully opaque closer than this fraction of max range; 1.0 = always opaque.");
+            changed |= DrawSliderFloat("Fade‑to‑zero zone##fz", 0.0f, 0.5f, () => cfg.DotFarZone, v => cfg.DotFarZone = v,
+                tooltip: "Dots fade to invisible below this fraction of max range; 0.0 = no fade‑to‑zero.");
+            changed |= DrawSliderFloat("Mid‑range opacity##ma", 0.0f, 1.0f, () => cfg.DotMidAlpha, v => cfg.DotMidAlpha = v,
+                tooltip: "Opacity of dots in the middle distance band.");
+        }
+
+        // ── Players ──────────────────────────────────────────────────────
+        if (ImGui.CollapsingHeader("Players", ImGuiTreeNodeFlags.DefaultOpen))
+        {
+            changed |= DrawEnableAndColor("players", "Players", () => cfg.ShowPlayers, v => cfg.ShowPlayers = v,
+                () => cfg.PlayerColor, v => cfg.PlayerColor = v);
+
+            BeginIndentedDisabled(cfg.ShowPlayers);
+            changed |= DrawSizeSliders(
+                () => cfg.PartyRoleIconMinSize, v => cfg.PartyRoleIconMinSize = v,
+                () => cfg.PartyRoleIconMaxSize, v => cfg.PartyRoleIconMaxSize = v, 50, 60, "pr");
+
+            ImGui.Spacing();
+            changed |= DrawToggle("Solid dot for friends##sfr", () => cfg.SolidFriendDots, v => cfg.SolidFriendDots = v,
+                "Friends show as solid dot instead of hollow ring.");
+            changed |= DrawToggle("Show job icon for party members##pri", () => cfg.ShowPartyRoleIcons, v => cfg.ShowPartyRoleIcons = v,
+                "Party members show class/job icon on role‑colored dot.");
+            BeginIndentedDisabled(cfg.ShowPartyRoleIcons);
+            changed |= DrawToggle("Only in duty / PvP##pridonly", () => cfg.PartyRoleIconsOnlyInDuty, v => cfg.PartyRoleIconsOnlyInDuty = v,
+                "Limit job icons to duties/PvP; off = always show.");
+            EndIndentedDisabled();
+            EndIndentedDisabled();
+        }
+
+        // ── Enemies ──────────────────────────────────────────────────────
+        if (ImGui.CollapsingHeader("Enemies"))
+        {
+            changed |= DrawEnableAndColor("enemies", "Enemies", () => cfg.ShowEnemies, v => cfg.ShowEnemies = v,
+                () => cfg.EnemyColor, v => cfg.EnemyColor = v);
+
+            BeginIndentedDisabled(cfg.ShowEnemies);
+            changed |= DrawToggle("Only show engaged enemies##eng", () => cfg.EnemiesOnlyIfEngaged, v => cfg.EnemiesOnlyIfEngaged = v,
+                "Only hostiles in combat with you/your party.");
+            changed |= DrawSizeSliders(
+                () => cfg.EnemyMinSize, v => cfg.EnemyMinSize = v, () => cfg.EnemyMaxSize, v => cfg.EnemyMaxSize = v,
+                50, 60, "en");
+            EndIndentedDisabled();
+        }
+
+        // ── NPCs ─────────────────────────────────────────────────────────
+        if (ImGui.CollapsingHeader("NPCs"))
+        {
+            changed |= DrawEnableAndColor("npcs", "NPCs", () => cfg.ShowNpcs, v => cfg.ShowNpcs = v,
+                () => cfg.NpcColor, v => cfg.NpcColor = v);
+
+            BeginIndentedDisabled(cfg.ShowNpcs);
+            changed |= DrawToggle("Hide non‑targetable \"ghost\" NPCs##tgt", () => cfg.NpcsOnlyIfTargetable, v => cfg.NpcsOnlyIfTargetable = v,
+                "Filters placeholder/empty slot NPCs.");
+            changed |= DrawToggle("Show quest marker icons##qicon", () => cfg.ShowNpcQuestIcons, v => cfg.ShowNpcQuestIcons = v,
+                "Shows quest '!' / '?' icons on NPCs.");
+            changed |= DrawToggle("Show Mender icon##micon", () => cfg.ShowMenderIcons, v => cfg.ShowMenderIcons = v,
+                "Gear repair vendors.");
+            changed |= DrawToggle("Show Shop/Trader icon##sicon", () => cfg.ShowShopIcons, v => cfg.ShowShopIcons = v,
+                "Merchant/Vendor NPCs.");
+            changed |= DrawToggle("Show Fast Travel icons##fticon", () => cfg.ShowFastTravelIcons, v => cfg.ShowFastTravelIcons = v,
+                "Ferry, airship, Chocobo Keep, etc.");
+            changed |= DrawSizeSliders(
+                () => cfg.NpcQuestIconMinSize, v => cfg.NpcQuestIconMinSize = v,
+                () => cfg.NpcQuestIconMaxSize, v => cfg.NpcQuestIconMaxSize = v, 50, 60, "q");
+            EndIndentedDisabled();
+        }
+
+        // ── Gathering Nodes ─────────────────────────────────────────────
+        if (ImGui.CollapsingHeader("Gathering Nodes"))
+        {
+            changed |= DrawEnableAndColor("gath", "Gathering Nodes", () => cfg.ShowGatheringNodes, v => cfg.ShowGatheringNodes = v,
+                () => cfg.GatheringColor, v => cfg.GatheringColor = v);
+
+            BeginIndentedDisabled(cfg.ShowGatheringNodes);
+            changed |= DrawToggle("Hide non‑targetable \"ghost\" nodes##gtgt", () => cfg.GatheringOnlyIfTargetable, v => cfg.GatheringOnlyIfTargetable = v,
+                "Filters depleted/not‑yet‑spawned nodes.");
+            changed |= DrawToggle("Show Mining/Botany icons##gicon", () => cfg.ShowGatheringIcons, v => cfg.ShowGatheringIcons = v,
+                "Shows node type icon.");
+            BeginIndentedDisabled(cfg.ShowGatheringIcons);
+            changed |= DrawSizeSliders(
+                () => cfg.GatheringIconMinSize, v => cfg.GatheringIconMinSize = v,
+                () => cfg.GatheringIconMaxSize, v => cfg.GatheringIconMaxSize = v, 50, 60, "g");
+            EndIndentedDisabled();
+            EndIndentedDisabled();
+        }
+
+        // ── Treasure ────────────────────────────────────────────────────
+        if (ImGui.CollapsingHeader("Treasure Coffers"))
+        {
+            changed |= DrawEnableAndColor("tres", "Treasure", () => cfg.ShowTreasure, v => cfg.ShowTreasure = v,
+                () => cfg.TreasureColor, v => cfg.TreasureColor = v);
+
+            BeginIndentedDisabled(cfg.ShowTreasure);
+            changed |= DrawSizeSliders(
+                () => cfg.TreasureMinSize, v => cfg.TreasureMinSize = v,
+                () => cfg.TreasureMaxSize, v => cfg.TreasureMaxSize = v, 50, 60, "tr");
+            ImGui.Spacing();
+
+            changed |= DrawToggle("Show chest icon##tricon", () => cfg.ShowTreasureIcons, v => cfg.ShowTreasureIcons = v,
+                "Uses a single icon (below) for all treasure coffers.");
+            BeginIndentedDisabled(cfg.ShowTreasureIcons);
+            int trIconId = cfg.TreasureIconId;
+            ImGui.SetNextItemWidth(90f);
+            if (ImGui.InputInt("Icon ID##triconid", ref trIconId, 0, 0))
+            { cfg.TreasureIconId = Math.Max(0, trIconId); changed = true; }
+            EndIndentedDisabled();
+            EndIndentedDisabled();
+        }
+
+        // ── Aetherytes ──────────────────────────────────────────────────
+        if (ImGui.CollapsingHeader("Aetherytes"))
+        {
+            changed |= DrawEnableAndColor("aeth", "Aetherytes", () => cfg.ShowAetherytes, v => cfg.ShowAetherytes = v,
+                () => cfg.AetheryteColor, v => cfg.AetheryteColor = v);
+
+            BeginIndentedDisabled(cfg.ShowAetherytes);
+            changed |= DrawToggle("Show Aethernet shards##aethshards", () => cfg.ShowAethernetShards, v => cfg.ShowAethernetShards = v,
+                "Smaller waypoints in housing wards, Firmament, etc.");
+            changed |= DrawToggle("Show aetheryte icon##aicon", () => cfg.ShowAetheryteIcons, v => cfg.ShowAetheryteIcons = v,
+                "Falls back to dot if icon not resolved.");
+            changed |= DrawSizeSliders(
+                () => cfg.AetheryteIconMinSize, v => cfg.AetheryteIconMinSize = v,
+                () => cfg.AetheryteIconMaxSize, v => cfg.AetheryteIconMaxSize = v, 50, 60, "a");
+
+            string shardName = cfg.AethernetShardName;
+            ImGui.SetNextItemWidth(200f);
+            if (ImGui.InputText("Aethernet shard name##shardname", ref shardName, 64))
+            { cfg.AethernetShardName = shardName; changed = true; }
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Substring in shard names to identify them (e.g. \"Aethernet\").");
+            EndIndentedDisabled();
+        }
+
+        // ── FATEs ───────────────────────────────────────────────────────
+        if (ImGui.CollapsingHeader("FATEs"))
+        {
+            changed |= DrawEnableAndColor("fates", "Show FATEs", () => cfg.ShowFates, v => cfg.ShowFates = v,
+                () => cfg.FateColor, v => cfg.FateColor = v,
+                "Shows active/about‑to‑start FATEs; range = General range × multiplier.");
+
+            BeginIndentedDisabled(cfg.ShowFates);
+            changed |= DrawSliderFloat("Distance multiplier##fatemul", 0.5f, 5.0f,
+                () => cfg.FateDistanceMultiplier, v => cfg.FateDistanceMultiplier = MathF.Max(0.5f, v), "%.1f×");
+            ImGui.TextDisabled($"Effective FATE range: {cfg.MaxMarkerDistance * cfg.FateDistanceMultiplier:F0} yalms");
+            changed |= DrawSizeSliders(
+                () => cfg.FateIconMinSize, v => cfg.FateIconMinSize = v,
+                () => cfg.FateIconMaxSize, v => cfg.FateIconMaxSize = v, 50, 64, "fate");
+            EndIndentedDisabled();
+        }
+
+        ImGui.EndTabItem();
+        return changed;
+    }
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // TAB 3: TARGETING & COMBAT
+    // ───────────────────────────────────────────────────────────────────────────
+    private bool DrawCombatTab(Configuration cfg)
+    {
+        if (!ImGui.BeginTabItem("Targeting & Combat")) return false;
+        bool changed = false;
+
+        // ── Target Health Bar ──────────────────────────────────────────
+        if (ImGui.CollapsingHeader("Target Health Bar", ImGuiTreeNodeFlags.DefaultOpen))
+        {
+            changed |= DrawToggle("Target Health Bar", () => cfg.ShowTargetBar, v => cfg.ShowTargetBar = v,
+                "Name+HP readout docked beneath compass.");
+            BeginIndentedDisabled(cfg.ShowTargetBar);
+            changed |= DrawSliderFloat("Width (fraction of compass)##tbwf", 0.3f, 1.0f,
+                () => cfg.TargetBarWidthFraction, v => cfg.TargetBarWidthFraction = v);
+            changed |= DrawSliderInt("Bar thickness##tbh", 6, 30, () => (int)cfg.TargetBarHeight, v => cfg.TargetBarHeight = v);
+            changed |= DrawSliderFloat("Name font scale##tbfs", 0.5f, 2.5f,
+                () => cfg.TargetBarFontScale, v => cfg.TargetBarFontScale = v);
+            changed |= DrawToggle("Show target level##tblvl", () => cfg.ShowTargetLevel, v => cfg.ShowTargetLevel = v);
+            changed |= DrawToggle("Show HP percentage##tbhpp", () => cfg.ShowTargetHealthPercent, v => cfg.ShowTargetHealthPercent = v,
+        	"Shows percentage under the health bar.");
+	    BeginIndentedDisabled(cfg.ShowTargetHealthPercent);
+	    changed |= DrawToggle("Show on target‑of‑target##tbtothpp", () => cfg.ShowTargetOfTargetHealthPercent, v => cfg.ShowTargetOfTargetHealthPercent = v,
+        	"Also shows percentage on the target‑of‑target bar.");
+    	    EndIndentedDisabled();
+            changed |= DrawEnableAndColor("tbshd", "Show shield overlay",
+                () => cfg.ShowTargetBarShield, v => cfg.ShowTargetBarShield = v,
+                () => cfg.TargetBarShieldColor, v => cfg.TargetBarShieldColor = v,
+                "Light sheen over shielded portion of the bar.");
+            changed |= DrawToggle("Show name ribbons##tbrib", () => cfg.ShowTargetBarRibbons, v => cfg.ShowTargetBarRibbons = v,
+                "Glowing ribbons from name ornaments.");
+            EndIndentedDisabled();
+        }
+
+        // ── Target Status Icons ────────────────────────────────────────
+        if (ImGui.CollapsingHeader("Target Status Icons", ImGuiTreeNodeFlags.DefaultOpen))
+        {
+            changed |= DrawToggle("Target status icons", () => cfg.ShowTargetStatuses, v => cfg.ShowTargetStatuses = v,
+                "Buff/debuff icons below target name.");
+            BeginIndentedDisabled(cfg.ShowTargetStatuses);
+            changed |= DrawSliderInt("Icon size##tssize", 12, 40, () => (int)cfg.TargetStatusIconSize, v => cfg.TargetStatusIconSize = v);
+            changed |= DrawSliderInt("Max icons##tsmax", 3, 20, () => cfg.TargetStatusMaxIcons, v => cfg.TargetStatusMaxIcons = v);
+            EndIndentedDisabled();
+        }
+
+        // ── Target‑of‑Target ──────────────────────────────────────────
+        if (ImGui.CollapsingHeader("Target-of-Target"))
+        {
+            changed |= DrawToggle("Target-of-target bar", () => cfg.ShowTargetOfTargetBar, v => cfg.ShowTargetOfTargetBar = v,
+                "Shows who/what your target has targeted.");
+            BeginIndentedDisabled(cfg.ShowTargetOfTargetBar);
+            changed |= DrawToggle("Highlight if targeting me##aggro", () => cfg.HighlightIfTargetingMe, v => cfg.HighlightIfTargetingMe = v,
+                "Warns when your target targets you.");
+            ImGui.BeginDisabled(!cfg.HighlightIfTargetingMe);
+            changed |= DrawColorEdit("Warning color##aggroc", cfg.AggroWarningColor, v => cfg.AggroWarningColor = v, ColorPickerFlags);
+            ImGui.EndDisabled();
+
+            changed |= DrawToggle("Show name##totname", () => cfg.ShowTargetOfTargetName, v => cfg.ShowTargetOfTargetName = v,
+                "Shows the target‑of‑target's name centered over their bar.");
+            BeginIndentedDisabled(cfg.ShowTargetOfTargetName);
+            changed |= DrawToggle("Only show first name##totfirstname", () => cfg.TargetOfTargetFirstNameOnly, v => cfg.TargetOfTargetFirstNameOnly = v,
+                "Trims multi‑word names down to just the first word.");
+            changed |= DrawToggle("Show \"YOU\" for yourself##totyou", () => cfg.TargetOfTargetShowYou, v => cfg.TargetOfTargetShowYou = v,
+                "Displays \"YOU\" instead of your character name when you are the target‑of‑target.");
+            EndIndentedDisabled();
+            EndIndentedDisabled();
+        }
+
+        // ── Limit Break Glow ────────────────────────────────────────────
+        if (ImGui.CollapsingHeader("Limit Break Glow"))
+        {
+            changed |= DrawEnableAndColor("lbglow", "Limit break glow (bar 1 color)",
+                () => cfg.ShowLimitBreakGlow, v => cfg.ShowLimitBreakGlow = v,
+                () => cfg.LimitBreakGlowColor, v => cfg.LimitBreakGlowColor = v,
+                "Glowing border as LB charges – one layer per bar.");
+            BeginIndentedDisabled(cfg.ShowLimitBreakGlow);
+            changed |= DrawColorEdit("Bar 2 color##lbc2", cfg.LimitBreakGlowColor2, v => cfg.LimitBreakGlowColor2 = v, ColorPickerFlags);
+            changed |= DrawColorEdit("Bar 3 color##lbc3", cfg.LimitBreakGlowColor3, v => cfg.LimitBreakGlowColor3 = v, ColorPickerFlags);
+            EndIndentedDisabled();
+        }
+
+        ImGui.EndTabItem();
+        return changed;
+    }
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // TAB 4: ADVANCED – Player overrides, Status mirror
+    // ───────────────────────────────────────────────────────────────────────────
+    private bool DrawAdvancedTab(Configuration cfg)
+    {
+        if (!ImGui.BeginTabItem("Advanced")) return false;
+        bool changed = false;
+
+        // ── Player Icon Overrides ─────────────────────────────────────
+        if (ImGui.CollapsingHeader("Player Icon Overrides", ImGuiTreeNodeFlags.DefaultOpen))
+        {
+            ImGui.TextDisabled("Override icons for specific players by name.");
+            if (cfg.PlayerIconOverrides.Count == 0)
+                ImGui.TextDisabled("  (none)");
+
+            int removeAt = -1;
+            for (int i = 0; i < cfg.PlayerIconOverrides.Count; i++)
+            {
+                ImGui.PushID(i);
+                if (ImGui.Button("X##rmov")) removeAt = i;
+                ImGui.SameLine();
+                changed |= DrawOverrideRow(cfg.PlayerIconOverrides[i], "ov", 110f);
+                ImGui.PopID();
+            }
+            if (removeAt >= 0) { cfg.PlayerIconOverrides.RemoveAt(removeAt); changed = true; }
+
+            ImGui.Separator();
+            ImGui.TextDisabled("Add new override:");
+            ImGui.SameLine();
+            DrawOverrideRow(_newOverride, "newov", 120f);
+            ImGui.SameLine();
+
+            bool canAdd = !string.IsNullOrWhiteSpace(_newOverride.PlayerName) && _newOverride.IconBaseId > 0;
+            ImGui.BeginDisabled(!canAdd);
+            if (ImGui.Button("Add##addov"))
+            {
+                _newOverride.PlayerName = _newOverride.PlayerName.Trim();
+                cfg.PlayerIconOverrides.Add(_newOverride);
+                _newOverride = new PlayerIconOverride
+                {
+                    ShowBorder = _newOverride.ShowBorder,
+                    BorderColor = _newOverride.BorderColor,
+                    ShowFill = _newOverride.ShowFill,
+                    FillColor = _newOverride.FillColor,
+                    ClipToCircle = _newOverride.ClipToCircle,
+                    SizeMultiplier = _newOverride.SizeMultiplier,
+                };
+                changed = true;
+            }
+            ImGui.EndDisabled();
+        }
+
+        // ── Moodles ↔ Loci Mirror ────────────────────────────────────
+        if (ImGui.CollapsingHeader("Moodles ↔ Loci Mirror", ImGuiTreeNodeFlags.DefaultOpen))
+        {
+            changed |= DrawToggle("Mirror Moodles \u2194 Loci", () => cfg.MirrorMoodlesLoci, v => cfg.MirrorMoodlesLoci = v,
+                "Keep your own Moodles and Loci statuses mirrored onto each other.");
+
+            BeginIndentedDisabled(cfg.MirrorMoodlesLoci);
+            var mirror = plugin.StatusMirror;
+            ImGui.TextDisabled($"Moodles: {(mirror.MoodlesAvailable ? "connected" : "not found")}   " +
+                               $"Loci: {(mirror.LociAvailable ? "connected" : "not found")}");
+            ImGui.TextDisabled($"Mirrored into Loci: {mirror.MirroredIntoLociCount}   " +
+                               $"Mirrored into Moodles: {mirror.MirroredIntoMoodlesCount}" +
+                               (mirror.LockedMirrorCount > 0 ? $"   Locked: {mirror.LockedMirrorCount}" : ""));
+            if (ImGui.Button("Clear stuck mirrors##mirclear"))
+                mirror.ClearAllMirrors();
+            EndIndentedDisabled();
+        }
+
+        ImGui.EndTabItem();
+        return changed;
+    }
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // Shared UI helpers (unchanged from original)
+    // ───────────────────────────────────────────────────────────────────────────
+
+    // ── Color themes (copied from original) ──────────────────────────────
     private sealed record ColorTheme(
         string Name, Vector4 Background, Vector4 Border, Vector4 Cardinal, Vector4 Intercardinal, Vector4 Tick,
         Vector4 Player, Vector4 Enemy, Vector4 Npc, Vector4 Gathering, Vector4 Treasure, Vector4 Aetheryte, Vector4 Fate);
@@ -167,46 +520,7 @@ public sealed class ConfigWindow : Window
         cfg.FateColor = t.Fate;
     }
 
-    // ── General tab ──────────────────────────────────────────────────────────
-    private bool DrawGeneralTab(Configuration cfg)
-    {
-        if (!ImGui.BeginTabItem("General")) return false;
-        bool changed = false;
-
-        ImGui.TextDisabled("Bar colors");
-        changed |= DrawColorEdit("Background##bgc", cfg.BackgroundColor, v => cfg.BackgroundColor = v);
-        changed |= DrawColorEdit("Border##bdc", cfg.BorderColor, v => cfg.BorderColor = v);
-        changed |= DrawColorEdit("Cardinal (N/S/E/W)##cdc", cfg.CardinalColor, v => cfg.CardinalColor = v);
-        changed |= DrawColorEdit("Intercardinal (NE/SW…)##icc", cfg.IntercardinalColor, v => cfg.IntercardinalColor = v);
-        changed |= DrawColorEdit("Tick marks##tkc", cfg.TickColor, v => cfg.TickColor = v);
-
-        ImGui.SetNextItemWidth(180);
-        if (ImGui.Combo("Theme preset##colortheme", ref _selectedThemeIndex, ColorThemeNames, ColorThemeNames.Length))
-        {
-            ApplyColorTheme(cfg, ColorThemes[_selectedThemeIndex]);
-            changed = true;
-        }
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Overwrites all colors; pick \"Original\" to restore defaults.");
-
-        DrawSectionBreak();
-        ImGui.TextDisabled("Detection range (shared by all markers, incl. FATEs)");
-        changed |= DrawSliderInt("yalms##maxd", 10, 200, () => (int)cfg.MaxMarkerDistance, v => cfg.MaxMarkerDistance = v);
-
-        ImGui.Spacing();
-        ImGui.TextDisabled("Dot distance-fade curve");
-        changed |= DrawSliderFloat("Full opacity zone##nz", 0.5f, 1.0f, () => cfg.DotNearZone, v => cfg.DotNearZone = v,
-            tooltip: "Dots fully opaque closer than this fraction of max range; 1.0 = always opaque.");
-        changed |= DrawSliderFloat("Fade-to-zero zone##fz", 0.0f, 0.5f, () => cfg.DotFarZone, v => cfg.DotFarZone = v,
-            tooltip: "Dots fade to invisible below this fraction of max range; 0.0 = no fade-to-zero.");
-        changed |= DrawSliderFloat("Mid-range opacity##ma", 0.0f, 1.0f, () => cfg.DotMidAlpha, v => cfg.DotMidAlpha = v,
-            tooltip: "Opacity of dots in the middle distance band.");
-
-        ImGui.EndTabItem();
-        return changed;
-    }
-
-    // ── Players tab ──────────────────────────────────────────────────────────
+    // ── Override row (used in Advanced tab) ────────────────────────────
     private static bool DrawOverrideRow(PlayerIconOverride ov, string idSuffix, float nameWidth)
     {
         bool changed = false;
@@ -244,292 +558,7 @@ public sealed class ConfigWindow : Window
         return changed;
     }
 
-    private bool DrawPlayersTab(Configuration cfg)
-    {
-        if (!ImGui.BeginTabItem("Players")) return false;
-        bool changed = DrawEnableAndColor("players", "Players", () => cfg.ShowPlayers, v => cfg.ShowPlayers = v,
-            () => cfg.PlayerColor, v => cfg.PlayerColor = v);
-
-        BeginIndentedDisabled(cfg.ShowPlayers);
-        changed |= DrawSizeSliders(
-            () => cfg.PartyRoleIconMinSize, v => cfg.PartyRoleIconMinSize = v,
-            () => cfg.PartyRoleIconMaxSize, v => cfg.PartyRoleIconMaxSize = v, 50, 60, "pr");
-
-        ImGui.Spacing();
-        changed |= DrawToggle("Solid dot for friends##sfr", () => cfg.SolidFriendDots, v => cfg.SolidFriendDots = v,
-            "Friends show as solid dot instead of hollow ring.");
-        changed |= DrawToggle("Show job icon for party members##pri", () => cfg.ShowPartyRoleIcons, v => cfg.ShowPartyRoleIcons = v,
-            "Party members show class/job icon on role-colored dot.");
-        BeginIndentedDisabled(cfg.ShowPartyRoleIcons);
-        changed |= DrawToggle("Only in duty / PvP##pridonly", () => cfg.PartyRoleIconsOnlyInDuty, v => cfg.PartyRoleIconsOnlyInDuty = v,
-            "Limit job icons to duties/PvP; off = always show.");
-        EndIndentedDisabled();
-
-        DrawSectionBreak();
-        ImGui.TextDisabled("Named player overrides");
-        if (cfg.PlayerIconOverrides.Count == 0)
-            ImGui.TextDisabled("  (none)");
-
-        int removeAt = -1;
-        for (int i = 0; i < cfg.PlayerIconOverrides.Count; i++)
-        {
-            ImGui.PushID(i);
-            if (ImGui.Button("X##rmov")) removeAt = i;
-            ImGui.SameLine();
-            changed |= DrawOverrideRow(cfg.PlayerIconOverrides[i], "ov", 110f);
-            ImGui.PopID();
-        }
-        if (removeAt >= 0) { cfg.PlayerIconOverrides.RemoveAt(removeAt); changed = true; }
-
-        ImGui.Spacing();
-        ImGui.TextDisabled("Add override:");
-        ImGui.SameLine();
-        DrawOverrideRow(_newOverride, "newov", 120f);
-        ImGui.SameLine();
-
-        bool canAdd = !string.IsNullOrWhiteSpace(_newOverride.PlayerName) && _newOverride.IconBaseId > 0;
-        ImGui.BeginDisabled(!canAdd);
-        if (ImGui.Button("Add##addov"))
-        {
-            _newOverride.PlayerName = _newOverride.PlayerName.Trim();
-            cfg.PlayerIconOverrides.Add(_newOverride);
-            _newOverride = new PlayerIconOverride
-            {
-                ShowBorder = _newOverride.ShowBorder,
-                BorderColor = _newOverride.BorderColor,
-                ShowFill = _newOverride.ShowFill,
-                FillColor = _newOverride.FillColor,
-                ClipToCircle = _newOverride.ClipToCircle,
-                SizeMultiplier = _newOverride.SizeMultiplier,
-            };
-            changed = true;
-        }
-        ImGui.EndDisabled();
-
-        EndIndentedDisabled();
-        ImGui.EndTabItem();
-        return changed;
-    }
-
-// ── Combat tab ──────────────────────────────────────────────────────────
-private bool DrawCombatTab(Configuration cfg)
-{
-    if (!ImGui.BeginTabItem("Combat")) return false;
-    bool changed = DrawEnableAndColor("enemies", "Enemies", () => cfg.ShowEnemies, v => cfg.ShowEnemies = v,
-        () => cfg.EnemyColor, v => cfg.EnemyColor = v);
-
-    BeginIndentedDisabled(cfg.ShowEnemies);
-    changed |= DrawToggle("Only show engaged enemies##eng", () => cfg.EnemiesOnlyIfEngaged, v => cfg.EnemiesOnlyIfEngaged = v,
-        "Only hostiles in combat with you/your party.");
-    changed |= DrawSizeSliders(
-        () => cfg.EnemyMinSize, v => cfg.EnemyMinSize = v, () => cfg.EnemyMaxSize, v => cfg.EnemyMaxSize = v,
-        50, 60, "en");
-    EndIndentedDisabled();
-
-    DrawSectionBreak();
-    changed |= DrawEnableAndColor("lbglow", "Limit break glow (bar 1 color)",
-        () => cfg.ShowLimitBreakGlow, v => cfg.ShowLimitBreakGlow = v,
-        () => cfg.LimitBreakGlowColor, v => cfg.LimitBreakGlowColor = v,
-        "Glowing border as LB charges – one layer per bar.");
-    BeginIndentedDisabled(cfg.ShowLimitBreakGlow);
-    // Pass ColorPickerFlags to remove RGBA sliders – matches bar 1's simple swatch style
-    changed |= DrawColorEdit("Bar 2 color##lbc2", cfg.LimitBreakGlowColor2, v => cfg.LimitBreakGlowColor2 = v, ColorPickerFlags);
-    changed |= DrawColorEdit("Bar 3 color##lbc3", cfg.LimitBreakGlowColor3, v => cfg.LimitBreakGlowColor3 = v, ColorPickerFlags);
-    EndIndentedDisabled();
-
-    DrawSectionBreak();
-    // ── Target Health Bar ──────────────────────────────────────
-    changed |= DrawToggle("Target Health Bar", () => cfg.ShowTargetBar, v => cfg.ShowTargetBar = v,
-        "Name+HP readout docked beneath compass.");
-    BeginIndentedDisabled(cfg.ShowTargetBar);
-    changed |= DrawSliderFloat("Width  (fraction of compass)##tbwf", 0.3f, 1.0f,
-        () => cfg.TargetBarWidthFraction, v => cfg.TargetBarWidthFraction = v);
-    changed |= DrawSliderInt("Bar thickness##tbh", 6, 30, () => (int)cfg.TargetBarHeight, v => cfg.TargetBarHeight = v);
-    changed |= DrawSliderFloat("Name font scale##tbfs", 0.5f, 2.5f,
-        () => cfg.TargetBarFontScale, v => cfg.TargetBarFontScale = v);
-    changed |= DrawToggle("Show target level##tblvl", () => cfg.ShowTargetLevel, v => cfg.ShowTargetLevel = v);
-    // Shield overlay – now uses the same inline toggle+color pattern as Enemies/Players
-    changed |= DrawEnableAndColor("tbshd", "Show shield overlay",
-        () => cfg.ShowTargetBarShield, v => cfg.ShowTargetBarShield = v,
-        () => cfg.TargetBarShieldColor, v => cfg.TargetBarShieldColor = v,
-        "Light sheen over shielded portion of the bar.");
-    changed |= DrawToggle("Show name ribbons##tbrib", () => cfg.ShowTargetBarRibbons, v => cfg.ShowTargetBarRibbons = v,
-        "Glowing ribbons from name ornaments.");
-    EndIndentedDisabled();   // ← closes the target bar block
-
-    // ── Target Status Icons (now independent) ─────────────────
-    DrawSectionBreak();
-    changed |= DrawToggle("Target status icons", () => cfg.ShowTargetStatuses, v => cfg.ShowTargetStatuses = v,
-        "Buff/debuff icons below target name.");
-    BeginIndentedDisabled(cfg.ShowTargetStatuses);
-    changed |= DrawSliderInt("Icon size##tssize", 12, 40, () => (int)cfg.TargetStatusIconSize, v => cfg.TargetStatusIconSize = v);
-    changed |= DrawSliderInt("Max icons##tsmax", 3, 20, () => cfg.TargetStatusMaxIcons, v => cfg.TargetStatusMaxIcons = v);
-    EndIndentedDisabled();
-
-    DrawSectionBreak();
-    changed |= DrawToggle("Mirror Moodles \u2194 Loci", () => cfg.MirrorMoodlesLoci, v => cfg.MirrorMoodlesLoci = v,
-        "Keep your own Moodles and Loci statuses mirrored onto each other.");
-    BeginIndentedDisabled(cfg.MirrorMoodlesLoci);
-    var mirror = plugin.StatusMirror;
-    ImGui.TextDisabled($"Moodles: {(mirror.MoodlesAvailable ? "connected" : "not found")}   " +
-                        $"Loci: {(mirror.LociAvailable ? "connected" : "not found")}");
-    ImGui.TextDisabled($"Mirrored into Loci: {mirror.MirroredIntoLociCount}   " +
-                        $"Mirrored into Moodles: {mirror.MirroredIntoMoodlesCount}" +
-                        (mirror.LockedMirrorCount > 0 ? $"   Locked: {mirror.LockedMirrorCount}" : ""));
-    if (ImGui.Button("Clear stuck mirrors##mirclear"))
-        mirror.ClearAllMirrors();
-    EndIndentedDisabled();
-
-    DrawSectionBreak();
-    changed |= DrawToggle("Target-of-target", () => cfg.ShowTargetOfTargetBar, v => cfg.ShowTargetOfTargetBar = v,
-        "Shows who/what your target has targeted.");
-    BeginIndentedDisabled(cfg.ShowTargetOfTargetBar);
-    changed |= DrawToggle("Highlight if targeting me##aggro", () => cfg.HighlightIfTargetingMe, v => cfg.HighlightIfTargetingMe = v,
-        "Warns when your target targets you.");
-    ImGui.BeginDisabled(!cfg.HighlightIfTargetingMe);
-    changed |= DrawColorEdit("Warning color##aggroc", cfg.AggroWarningColor, v => cfg.AggroWarningColor = v, ColorPickerFlags);
-    ImGui.EndDisabled();
-
-    changed |= DrawToggle("Show name##totname", () => cfg.ShowTargetOfTargetName, v => cfg.ShowTargetOfTargetName = v,
-        "Shows the target-of-target's name centered over their bar.");
-    BeginIndentedDisabled(cfg.ShowTargetOfTargetName);
-    changed |= DrawToggle("Only show first name##totfirstname", () => cfg.TargetOfTargetFirstNameOnly, v => cfg.TargetOfTargetFirstNameOnly = v,
-        "Trims multi-word names down to just the first word.");
-    changed |= DrawToggle("Show \"YOU\" for yourself##totyou", () => cfg.TargetOfTargetShowYou, v => cfg.TargetOfTargetShowYou = v,
-        "Displays \"YOU\" instead of your character name when you are the target-of-target.");
-    EndIndentedDisabled();
-    EndIndentedDisabled();
-
-    ImGui.EndTabItem();
-    return changed;
-}
-
-    // ── NPCs tab ─────────────────────────────────────────────────────────────
-    private static bool DrawNpcsTab(Configuration cfg)
-    {
-        if (!ImGui.BeginTabItem("NPCs")) return false;
-        bool changed = DrawEnableAndColor("npcs", "NPCs", () => cfg.ShowNpcs, v => cfg.ShowNpcs = v,
-            () => cfg.NpcColor, v => cfg.NpcColor = v);
-
-        BeginIndentedDisabled(cfg.ShowNpcs);
-        changed |= DrawToggle("Hide non-targetable \"ghost\" NPCs##tgt", () => cfg.NpcsOnlyIfTargetable, v => cfg.NpcsOnlyIfTargetable = v,
-            "Filters placeholder/empty slot NPCs.");
-        changed |= DrawToggle("Show quest marker icons##qicon", () => cfg.ShowNpcQuestIcons, v => cfg.ShowNpcQuestIcons = v,
-            "Shows quest '!' / '?' icons on NPCs.");
-        changed |= DrawToggle("Show Mender icon##micon", () => cfg.ShowMenderIcons, v => cfg.ShowMenderIcons = v,
-            "Gear repair vendors.");
-        changed |= DrawToggle("Show Shop/Trader icon##sicon", () => cfg.ShowShopIcons, v => cfg.ShowShopIcons = v,
-            "Merchant/Vendor NPCs.");
-        changed |= DrawToggle("Show Fast Travel icons##fticon", () => cfg.ShowFastTravelIcons, v => cfg.ShowFastTravelIcons = v,
-            "Ferry, airship, Chocobo Keep, etc.");
-        changed |= DrawSizeSliders(
-            () => cfg.NpcQuestIconMinSize, v => cfg.NpcQuestIconMinSize = v,
-            () => cfg.NpcQuestIconMaxSize, v => cfg.NpcQuestIconMaxSize = v, 50, 60, "q");
-        EndIndentedDisabled();
-
-        ImGui.EndTabItem();
-        return changed;
-    }
-
-    // ── Gathering tab ────────────────────────────────────────────────────────
-    private static bool DrawGatheringTab(Configuration cfg)
-    {
-        if (!ImGui.BeginTabItem("Gathering")) return false;
-        bool changed = DrawEnableAndColor("gath", "Gathering Nodes", () => cfg.ShowGatheringNodes, v => cfg.ShowGatheringNodes = v,
-            () => cfg.GatheringColor, v => cfg.GatheringColor = v);
-
-        BeginIndentedDisabled(cfg.ShowGatheringNodes);
-        changed |= DrawToggle("Hide non-targetable \"ghost\" nodes##gtgt", () => cfg.GatheringOnlyIfTargetable, v => cfg.GatheringOnlyIfTargetable = v,
-            "Filters depleted/not-yet-spawned nodes.");
-        changed |= DrawToggle("Show Mining/Botany icons##gicon", () => cfg.ShowGatheringIcons, v => cfg.ShowGatheringIcons = v,
-            "Shows node type icon.");
-        BeginIndentedDisabled(cfg.ShowGatheringIcons);
-        changed |= DrawSizeSliders(
-            () => cfg.GatheringIconMinSize, v => cfg.GatheringIconMinSize = v,
-            () => cfg.GatheringIconMaxSize, v => cfg.GatheringIconMaxSize = v, 50, 60, "g");
-        EndIndentedDisabled();
-        EndIndentedDisabled();
-
-        ImGui.EndTabItem();
-        return changed;
-    }
-
-    // ── Treasure tab ─────────────────────────────────────────────────────────
-    private static bool DrawTreasureTab(Configuration cfg)
-    {
-        if (!ImGui.BeginTabItem("Treasure")) return false;
-        bool changed = DrawEnableAndColor("tres", "Treasure", () => cfg.ShowTreasure, v => cfg.ShowTreasure = v,
-            () => cfg.TreasureColor, v => cfg.TreasureColor = v);
-
-        BeginIndentedDisabled(cfg.ShowTreasure);
-        changed |= DrawSizeSliders(
-            () => cfg.TreasureMinSize, v => cfg.TreasureMinSize = v,
-            () => cfg.TreasureMaxSize, v => cfg.TreasureMaxSize = v, 50, 60, "tr");
-        ImGui.Spacing();
-
-        changed |= DrawToggle("Show chest icon##tricon", () => cfg.ShowTreasureIcons, v => cfg.ShowTreasureIcons = v,
-            "Uses a single icon (below) for all treasure coffers.");
-        BeginIndentedDisabled(cfg.ShowTreasureIcons);
-        int trIconId = cfg.TreasureIconId;
-        ImGui.SetNextItemWidth(90f);
-        if (ImGui.InputInt("Icon ID##triconid", ref trIconId, 0, 0))
-        { cfg.TreasureIconId = Math.Max(0, trIconId); changed = true; }
-        EndIndentedDisabled();
-        EndIndentedDisabled();
-
-        ImGui.EndTabItem();
-        return changed;
-    }
-
-    // ── Aetherytes tab ───────────────────────────────────────────────────────
-    private static bool DrawAetherytesTab(Configuration cfg)
-    {
-        if (!ImGui.BeginTabItem("Aetherytes")) return false;
-        bool changed = DrawEnableAndColor("aeth", "Aetherytes", () => cfg.ShowAetherytes, v => cfg.ShowAetherytes = v,
-            () => cfg.AetheryteColor, v => cfg.AetheryteColor = v);
-
-        BeginIndentedDisabled(cfg.ShowAetherytes);
-        changed |= DrawToggle("Show Aethernet shards##aethshards", () => cfg.ShowAethernetShards, v => cfg.ShowAethernetShards = v,
-            "Smaller waypoints in housing wards, Firmament, etc.");
-        changed |= DrawToggle("Show aetheryte icon##aicon", () => cfg.ShowAetheryteIcons, v => cfg.ShowAetheryteIcons = v,
-            "Falls back to dot if icon not resolved.");
-        changed |= DrawSizeSliders(
-            () => cfg.AetheryteIconMinSize, v => cfg.AetheryteIconMinSize = v,
-            () => cfg.AetheryteIconMaxSize, v => cfg.AetheryteIconMaxSize = v, 50, 60, "a");
-
-        string shardName = cfg.AethernetShardName;
-        if (ImGui.InputText("Aethernet shard name##shardname", ref shardName, 64))
-        { cfg.AethernetShardName = shardName; changed = true; }
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Substring in shard names to identify them (e.g. \"Aethernet\").");
-        EndIndentedDisabled();
-
-        ImGui.EndTabItem();
-        return changed;
-    }
-
-    // ── FATEs tab ────────────────────────────────────────────────────────────
-    private static bool DrawFatesTab(Configuration cfg)
-    {
-        if (!ImGui.BeginTabItem("FATEs")) return false;
-        bool changed = DrawEnableAndColor("fates", "Show FATEs", () => cfg.ShowFates, v => cfg.ShowFates = v,
-            () => cfg.FateColor, v => cfg.FateColor = v,
-            "Shows active/about-to-start FATEs; range = General range × multiplier.");
-
-        BeginIndentedDisabled(cfg.ShowFates);
-        changed |= DrawSliderFloat("Distance multiplier##fatemul", 0.5f, 5.0f,
-            () => cfg.FateDistanceMultiplier, v => cfg.FateDistanceMultiplier = MathF.Max(0.5f, v), "%.1f×");
-        ImGui.TextDisabled($"Effective FATE range: {cfg.MaxMarkerDistance * cfg.FateDistanceMultiplier:F0} yalms");
-        changed |= DrawSizeSliders(
-            () => cfg.FateIconMinSize, v => cfg.FateIconMinSize = v,
-            () => cfg.FateIconMaxSize, v => cfg.FateIconMaxSize = v, 50, 64, "fate");
-        EndIndentedDisabled();
-
-        ImGui.EndTabItem();
-        return changed;
-    }
-
-    // ── Shared UI helpers ────────────────────────────────────────────────────
+    // ── General helpers ──────────────────────────────────────────────────
     private static void DrawSectionBreak()
     {
         ImGui.Spacing();
@@ -586,7 +615,6 @@ private bool DrawCombatTab(Configuration cfg)
         return changed;
     }
 
-    // Updated: added optional tooltip parameter
     private static bool DrawSliderInt(string label, int lo, int hi, Func<int> get, Action<int> set, string? tooltip = null)
     {
         int v = get();
@@ -595,7 +623,6 @@ private bool DrawCombatTab(Configuration cfg)
         return false;
     }
 
-    // Updated: added optional tooltip parameter (fmt is now separate)
     private static bool DrawSliderFloat(string label, float lo, float hi, Func<float> get, Action<float> set,
                                         string? fmt = null, string? tooltip = null)
     {

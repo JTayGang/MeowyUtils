@@ -700,7 +700,7 @@ if (isMinion)
         }
     }
 
-    // ─── Name row (unchanged) ──────────────────────────────────────
+    // ─── Name row ──────────────────────────────────────────────────────
     using var jupiterScope = jupiterFont.Available ? jupiterFont.Push() : null;
     float fontSize = ImGui.GetFontSize() * config.TargetBarFontScale;
     var font = ImGui.GetFont();
@@ -732,7 +732,7 @@ if (isMinion)
     DrawEndCapOutlines(dl, leftOrnX, textCy, ornHW, ornHH, borderCol, ornHW * 0.28f);
     DrawEndCapOutlines(dl, rightOrnX, textCy, ornHW, ornHH, borderCol, ornHW * 0.28f);
 
-    // ─── Ribbons (unchanged) ────────────────────────────────────────
+    // ─── Ribbons ────────────────────────────────────────────────────────
     if (isChara && config.ShowTargetBarRibbons)
     {
         float leftEdge = leftOrnX - ornHW, rightEdge = rightOrnX + ornHW;
@@ -784,6 +784,30 @@ if (isMinion)
         }
     }
 
+    // ─── HP Percentage ──────────────────────────────────────────
+    if (config.ShowTargetHealthPercent && isChara && tbH > 0f)
+    {
+        float taper = MathF.Min(tbH * 0.9f, tbW * 0.35f);
+        float bottomLeftX = tbX + taper;
+        float bottomY = tbY + tbH;
+
+        float pctFontSize = ImGui.GetFontSize() * config.TargetBarFontScale;
+        float percentGap = MathF.Max(4f, pctFontSize * 0.25f);
+        float py = bottomY + percentGap;
+
+        string pctText = $"{(int)(displayedTargetHpFrac * 100)}%";
+        Vector2 pctSz = ImGui.CalcTextSize(pctText) * (pctFontSize / ImGui.GetFontSize());
+
+        uint pctCol = WithAlpha(C(config.CardinalColor), barAlpha);
+        uint pctShadow = WithAlpha(0xCC000000u, barAlpha);
+
+        // Left-aligned under the left slanted edge
+        float px = bottomLeftX;
+        foreach (var (dx, dy) in new[] { (-1f,-1f), (0f,-1f), (1f,-1f), (-1f,0f), (1f,0f), (-1f,1f), (0f,1f), (1f,1f) })
+            dl.AddText(font, pctFontSize, V(px + dx, py + dy), pctShadow, pctText);
+        dl.AddText(font, pctFontSize, V(px, py), pctCol, pctText);
+    }
+
     float clickTop = tbY, clickBottom = nameY + tsz.Y;
     float clickLeft = MathF.Min(tbX, leftOrnX - shHW);
     float clickRight = MathF.Max(tbX + tbW, rightOrnX + shHW);
@@ -793,57 +817,80 @@ if (isMinion)
 }
 
     private void RenderTargetOfTargetBar(ImDrawListPtr dl, float tbX, float tbW, float tbY,
-        IPlayerCharacter player, float now, float barAlpha, bool inDutyOrPvp)
+    IPlayerCharacter player, float now, float barAlpha, bool inDutyOrPvp)
+{
+    var currentTarget = targetManager.Target;
+    var tot = currentTarget?.TargetObject;
+    if (currentTarget == null || tot == null || tot.GameObjectId == currentTarget.GameObjectId || tot is not ICharacter chara) return;
+
+    bool targetingMe = config.HighlightIfTargetingMe && currentTarget.TargetObjectId == player.GameObjectId;
+    float tbH = MathF.Max(4f, config.TargetBarHeight);
+    uint fillCol = targetingMe ? C(config.AggroWarningColor) : TargetBarFillColor(tot, inDutyOrPvp);
+    float frac = chara.MaxHp > 0f ? Math.Clamp((float)chara.CurrentHp / chara.MaxHp, 0f, 1f) : 0f;
+    float pulse = targetingMe ? 0.82f + 0.18f * MathF.Sin(now * 5f) : 1f;
+
+    DrawTrapezoidBar(dl, tbX, tbY, tbW, tbH, frac,
+        WithAlpha(C(config.BackgroundColor), barAlpha),
+        WithAlpha(fillCol, pulse * barAlpha),
+        barAlpha);
+
+    // ─── ToT name, centered over the bar ──────────────────────────
+    using var totFontScope = jupiterFont.Available ? jupiterFont.Push() : null;
+    var font = ImGui.GetFont();
+
+    // ─── HP Percentage ──────────────────────────────────────────
+    if (config.ShowTargetHealthPercent && config.ShowTargetOfTargetHealthPercent)
     {
-        var currentTarget = targetManager.Target;
-        var tot = currentTarget?.TargetObject;
-        if (currentTarget == null || tot == null || tot.GameObjectId == currentTarget.GameObjectId || tot is not ICharacter chara) return;
+        float taper = MathF.Min(tbH * 0.9f, tbW * 0.35f);
+        float bottomRightX = tbX + tbW - taper;
+        float bottomY = tbY + tbH;
 
-        bool targetingMe = config.HighlightIfTargetingMe && currentTarget.TargetObjectId == player.GameObjectId;
-        float tbH = MathF.Max(4f, config.TargetBarHeight);
-        uint fillCol = targetingMe ? C(config.AggroWarningColor) : TargetBarFillColor(tot, inDutyOrPvp);
-        float frac = chara.MaxHp > 0f ? Math.Clamp((float)chara.CurrentHp / chara.MaxHp, 0f, 1f) : 0f;
-        float pulse = targetingMe ? 0.82f + 0.18f * MathF.Sin(now * 5f) : 1f;
+        float pctFontSize = ImGui.GetFontSize() * config.TargetBarFontScale;
+        float percentGap = MathF.Max(4f, pctFontSize * 0.25f);
+        float py = bottomY + percentGap;
 
-        DrawTrapezoidBar(dl, tbX, tbY, tbW, tbH, frac,
-            WithAlpha(C(config.BackgroundColor), barAlpha),
-            WithAlpha(fillCol, pulse * barAlpha),
-            barAlpha);
+        string pctText = $"{(int)(frac * 100)}%";
+        Vector2 pctSz = ImGui.CalcTextSize(pctText) * (pctFontSize / ImGui.GetFontSize());
 
-        // ─── ToT name, centered over the bar (same style as target name) ─
-        if (config.ShowTargetOfTargetName)
+        uint pctCol = WithAlpha(C(config.CardinalColor), barAlpha);
+        uint pctShadow = WithAlpha(0xCC000000u, barAlpha);
+
+        float px = bottomRightX - pctSz.X;
+        foreach (var (dx, dy) in new[] { (-1f,-1f), (0f,-1f), (1f,-1f), (-1f,0f), (1f,0f), (-1f,1f), (0f,1f), (1f,1f) })
+            dl.AddText(font, pctFontSize, V(px + dx, py + dy), pctShadow, pctText);
+        dl.AddText(font, pctFontSize, V(px, py), pctCol, pctText);
+    }
+
+    if (config.ShowTargetOfTargetName)
+    {
+        bool totIsPlayer = chara.GameObjectId == player.GameObjectId;
+        string totLabel = (totIsPlayer && config.TargetOfTargetShowYou) ? "YOU" : chara.Name.TextValue;
+        if (config.TargetOfTargetFirstNameOnly)
         {
-            using var totFontScope = jupiterFont.Available ? jupiterFont.Push() : null;
-            var font = ImGui.GetFont();
-            bool totIsPlayer = chara.GameObjectId == player.GameObjectId;
-            string totLabel = (totIsPlayer && config.TargetOfTargetShowYou) ? "YOU" : chara.Name.TextValue;
-            if (config.TargetOfTargetFirstNameOnly)
-            {
-                int sp = totLabel.IndexOf(' ');
-                if (sp > 0) totLabel = totLabel[..sp];
-            }
-
-            float totScale = config.TargetBarFontScale;
-            var totBaseSz = ImGui.CalcTextSize(totLabel);
-            float totMaxTextW = MathF.Max(4f, tbW - 4f);
-            if (totBaseSz.X > 0f && totBaseSz.X * totScale > totMaxTextW)
-                totScale = totMaxTextW / totBaseSz.X; // shrink long names so they don't spill past the (narrower) ToT bar
-
-            float totFontSize = ImGui.GetFontSize() * totScale;
-            var totTsz = totBaseSz * totScale;
-            float totTx = tbX + (tbW - totTsz.X) * 0.5f;
-            float totTy = tbY + (tbH - totTsz.Y) * 0.5f;
-
-            uint totNameCol = WithAlpha(C(config.CardinalColor), barAlpha);
-            uint totShadowCol = WithAlpha(0xCC000000u, barAlpha);
-            foreach (var (dx, dy) in new[] { (-1f,-1f), (0f,-1f), (1f,-1f), (-1f,0f), (1f,0f), (-1f,1f), (0f,1f), (1f,1f) })
-                dl.AddText(font, totFontSize, V(totTx + dx, totTy + dy), totShadowCol, totLabel);
-            dl.AddText(font, totFontSize, V(totTx, totTy), totNameCol, totLabel);
+            int sp = totLabel.IndexOf(' ');
+            if (sp > 0) totLabel = totLabel[..sp];
         }
 
-        // Pass 'chara' (non-null ICharacter) with null-forgiving operator to suppress CS8604
-        HandleTargetFrameClick(V(tbX, tbY), V(tbX + tbW, tbY + tbH), chara!, true);
+        float totScale = config.TargetBarFontScale;
+        var totBaseSz = ImGui.CalcTextSize(totLabel);
+        float totMaxTextW = MathF.Max(4f, tbW - 4f);
+        if (totBaseSz.X > 0f && totBaseSz.X * totScale > totMaxTextW)
+            totScale = totMaxTextW / totBaseSz.X;
+
+        float totFontSize = ImGui.GetFontSize() * totScale;
+        var totTsz = totBaseSz * totScale;
+        float totTx = tbX + (tbW - totTsz.X) * 0.5f;
+        float totTy = tbY + (tbH - totTsz.Y) * 0.5f;
+
+        uint totNameCol = WithAlpha(C(config.CardinalColor), barAlpha);
+        uint totShadowCol = WithAlpha(0xCC000000u, barAlpha);
+        foreach (var (dx, dy) in new[] { (-1f,-1f), (0f,-1f), (1f,-1f), (-1f,0f), (1f,0f), (-1f,1f), (0f,1f), (1f,1f) })
+            dl.AddText(font, totFontSize, V(totTx + dx, totTy + dy), totShadowCol, totLabel);
+        dl.AddText(font, totFontSize, V(totTx, totTy), totNameCol, totLabel);
     }
+
+    HandleTargetFrameClick(V(tbX, tbY), V(tbX + tbW, tbY + tbH), chara!, true);
+}
 
     // ─── Status icons ──────────────────────────────────────────────
 private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float cx, float y, float barAlpha,

@@ -80,6 +80,8 @@ public class Configuration : IPluginConfiguration
     public float   TargetBarFontScale     { get; set; } = 1.0f;
     public bool    ShowTargetLevel        { get; set; } = true;
     public bool    ShowTargetBarShield    { get; set; } = true;   // sheen over ICharacter.ShieldPercentage
+    public bool ShowTargetHealthPercent { get; set; } = false;
+    public bool ShowTargetOfTargetHealthPercent { get; set; } = true;   
     public bool    ShowTargetBarRibbons   { get; set; } = true;   // glow ribbons flying out from the name's ornaments
     public Vector4 TargetBarShieldColor   { get; set; } = new(0.80f, 0.92f, 1.00f, 0.55f);
 

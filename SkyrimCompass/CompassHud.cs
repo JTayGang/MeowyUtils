@@ -846,97 +846,100 @@ if (isMinion)
     }
 
     // ─── Status icons ──────────────────────────────────────────────
-    private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float cx, float y, float barAlpha,
-        float iconSize, int maxIcons, bool includeMoodles, bool includeLoci)
+private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float cx, float y, float barAlpha,
+    float iconSize, int maxIcons, bool includeMoodles, bool includeLoci)
+{
+    float size = MathF.Max(8f, iconSize);
+    float hGap = size * 0.25f;
+    int max = Math.Max(1, maxIcons);
+    float now = (float)ImGui.GetTime();
+
+    PruneDurationTrackerIfDue(now);
+    targetStatusBuffer.Clear();
+
+    foreach (var status in character.StatusList)
     {
-        float size = MathF.Max(8f, iconSize);
-        float hGap = size * 0.25f;
-        int max = Math.Max(1, maxIcons);
-        float now = (float)ImGui.GetTime();
+        if (targetStatusBuffer.Count >= max) break;
+        if (status.StatusId == 0) continue;
+        if (status.GameData.ValueNullable is not { } row || row.Icon == 0) continue;
+        float remaining = (row.IsPermanent || row.IsFcBuff) ? 0f : status.RemainingTime;
+        targetStatusBuffer.Add((remaining, (int)row.Icon, row.Name.ToString(), row.Description.ToString(), System.Guid.Empty, (int)status.Param));
+    }
 
-        PruneDurationTrackerIfDue(now);
-        targetStatusBuffer.Clear();
+    if (character.Address != IntPtr.Zero)
+    {
+        if (includeMoodles && targetStatusBuffer.Count < max && IsPluginActive(moodlesIpc, now) && IsVersionCompatible(moodlesIpc, now))
+            AppendPluginStatuses(character.Address, max, now, moodlesGetStatusesByPtr, ref cachedMoodles,
+                ref cachedMoodlesTarget, ref cachedMoodlesFetchedAt, s => s.GUID, s => s.IconID,
+                s => (s.Title, s.Description), s => s.ExpireTicks, s => s.Stacks);
+        if (includeLoci && targetStatusBuffer.Count < max && IsPluginActive(lociIpc, now) && IsVersionCompatible(lociIpc, now))
+            AppendPluginStatuses(character.Address, max, now, lociGetStatusesByPtr, ref cachedLoci,
+                ref cachedLociTarget, ref cachedLociFetchedAt, s => s.GUID, s => (int)s.IconID,
+                s => (s.Title, s.Description), s => s.ExpireTicks, s => s.Stacks);
+    }
 
-        foreach (var status in character.StatusList)
+    if (targetStatusBuffer.Count == 0) return;
+
+    int n = targetStatusBuffer.Count;
+    float startX = cx - (n * size + (n - 1) * hGap) * 0.5f;
+    float topGap = size * 0.15f;
+    float halfH = size * 0.5f * GetIconAspect(targetStatusBuffer[0].Icon);
+    float scy = y + topGap + halfH;
+    float fontSize = MathF.Max(9f, size * 0.8f);
+    var font = ImGui.GetFont();
+    float textGap = -size * 0.12f;
+    float tooltipGap = MathF.Max(4f, size * 0.15f);
+
+    for (int i = 0; i < n; i++)
+    {
+        var (remaining, icon, name, desc, guid, stacks) = targetStatusBuffer[i];
+        float sx = startX + i * (size + hGap) + size * 0.5f;
+
+        // ─── Adjust icon for plugin statuses with stacks ──────────
+        int displayIcon = icon;
+        if (guid != System.Guid.Empty && stacks > 1)
         {
-            if (targetStatusBuffer.Count >= max) break;
-            if (status.StatusId == 0) continue;
-            if (status.GameData.ValueNullable is not { } row || row.Icon == 0) continue;
-            float remaining = (row.IsPermanent || row.IsFcBuff) ? 0f : status.RemainingTime;
-            targetStatusBuffer.Add((remaining, (int)row.Icon, row.Name.ToString(), row.Description.ToString(), System.Guid.Empty, (int)status.Param));
+            // Assume stack icons are sequential: base + (stacks - 1)
+            displayIcon = icon + stacks - 1;
         }
 
-        if (character.Address != IntPtr.Zero)
+        // Try drawing with adjusted icon; fallback to base if it fails
+        if (!TryDrawIcon(dl, displayIcon, sx, scy, size, barAlpha))
         {
-            if (includeMoodles && targetStatusBuffer.Count < max && IsPluginActive(moodlesIpc, now) && IsVersionCompatible(moodlesIpc, now))
-                AppendPluginStatuses(character.Address, max, now, moodlesGetStatusesByPtr, ref cachedMoodles,
-                    ref cachedMoodlesTarget, ref cachedMoodlesFetchedAt, s => s.GUID, s => s.IconID,
-                    s => (s.Title, s.Description), s => s.ExpireTicks, s => s.Stacks);
-            if (includeLoci && targetStatusBuffer.Count < max && IsPluginActive(lociIpc, now) && IsVersionCompatible(lociIpc, now))
-                AppendPluginStatuses(character.Address, max, now, lociGetStatusesByPtr, ref cachedLoci,
-                    ref cachedLociTarget, ref cachedLociFetchedAt, s => s.GUID, s => (int)s.IconID,
-                    s => (s.Title, s.Description), s => s.ExpireTicks, s => s.Stacks);
+            if (displayIcon != icon)
+                TryDrawIcon(dl, icon, sx, scy, size, barAlpha);
         }
 
-        if (targetStatusBuffer.Count == 0) return;
+        string? durationLabel = remaining <= 0f ? null
+            : remaining < 60f ? $"{(int)remaining}"
+            : remaining < 3600f ? $"{(int)(remaining / 60f)}m"
+            : remaining < 86400f ? $"{(int)(remaining / 3600f)}h"
+            : remaining < 777600f ? $"{(int)(remaining / 86400f)}d"
+            : "9+d";
 
-        int n = targetStatusBuffer.Count;
-        float startX = cx - (n * size + (n - 1) * hGap) * 0.5f;
-        float topGap = size * 0.15f;
-        float halfH = size * 0.5f * GetIconAspect(targetStatusBuffer[0].Icon);
-        float scy = y + topGap + halfH;
-        float fontSize = MathF.Max(9f, size * 0.8f);
-        var font = ImGui.GetFont();
-        float textGap = -size * 0.12f;
-        float tooltipGap = MathF.Max(4f, size * 0.15f);
-
-        for (int i = 0; i < n; i++)
+        float hoverBottom = scy + halfH;
+        if (durationLabel != null)
         {
-            var (remaining, icon, name, desc, guid, stacks) = targetStatusBuffer[i];
-            float sx = startX + i * (size + hGap) + size * 0.5f;
-            if (!TryDrawIcon(dl, icon, sx, scy, size, barAlpha)) continue;
+            Vector2 lsz = ImGui.CalcTextSize(durationLabel) * (fontSize / ImGui.GetFontSize());
+            float lx = sx - lsz.X * 0.5f;
+            float ly = scy + halfH + textGap;
+            dl.AddText(font, fontSize, V(lx + 1f, ly + 1f), WithAlpha(0xCC000000u, barAlpha), durationLabel);
+            dl.AddText(font, fontSize, V(lx, ly), WithAlpha(0xFFFFFFFFu, barAlpha), durationLabel);
+            hoverBottom = ly + lsz.Y;
+        }
 
-            if (stacks > 1)
-            {
-                string stackLabel = stacks > 99 ? "99+" : stacks.ToString();
-                float stackFontSize = MathF.Max(8f, size * 0.42f);
-                Vector2 ssz = ImGui.CalcTextSize(stackLabel) * (stackFontSize / ImGui.GetFontSize());
-                float stx = sx + size * 0.5f - ssz.X - 1f;
-                float sty = scy + halfH - ssz.Y - 1f;
-                dl.AddText(font, stackFontSize, V(stx + 1f, sty + 1f), WithAlpha(0xCC000000u, barAlpha), stackLabel);
-                dl.AddText(font, stackFontSize, V(stx, sty), WithAlpha(0xFFFFFFFFu, barAlpha), stackLabel);
-            }
-
-            string? durationLabel = remaining <= 0f ? null
-                : remaining < 60f ? $"{(int)remaining}"
-                : remaining < 3600f ? $"{(int)(remaining / 60f)}m"
-                : remaining < 86400f ? $"{(int)(remaining / 3600f)}h"
-                : remaining < 777600f ? $"{(int)(remaining / 86400f)}d"
-                : "9+d";
-
-            float hoverBottom = scy + halfH;
-            if (durationLabel != null)
-            {
-                Vector2 lsz = ImGui.CalcTextSize(durationLabel) * (fontSize / ImGui.GetFontSize());
-                float lx = sx - lsz.X * 0.5f;
-                float ly = scy + halfH + textGap;
-                dl.AddText(font, fontSize, V(lx + 1f, ly + 1f), WithAlpha(0xCC000000u, barAlpha), durationLabel);
-                dl.AddText(font, fontSize, V(lx, ly), WithAlpha(0xFFFFFFFFu, barAlpha), durationLabel);
-                hoverBottom = ly + lsz.Y;
-            }
-
-            if (ImGui.IsMouseHoveringRect(V(sx - size * 0.5f, scy - halfH), V(sx + size * 0.5f, hoverBottom), false))
-            {
-                ImGui.SetNextWindowPos(V(sx, hoverBottom + tooltipGap), ImGuiCond.Always, V(0.5f, 0f));
-                var tooltipBg = config.BackgroundColor;
-                ImGui.PushStyleColor(ImGuiCol.PopupBg, new Vector4(tooltipBg.X, tooltipBg.Y, tooltipBg.Z, tooltipBg.W * barAlpha));
-                ImGui.BeginTooltip();
-                ImGuiHelpers.SeStringWrapped(GetFormattedTooltipBytes(name, desc), new SeStringDrawParams { WrapWidth = 345f });
-                ImGui.EndTooltip();
-                ImGui.PopStyleColor();
-            }
+        if (ImGui.IsMouseHoveringRect(V(sx - size * 0.5f, scy - halfH), V(sx + size * 0.5f, hoverBottom), false))
+        {
+            ImGui.SetNextWindowPos(V(sx, hoverBottom + tooltipGap), ImGuiCond.Always, V(0.5f, 0f));
+            var tooltipBg = config.BackgroundColor;
+            ImGui.PushStyleColor(ImGuiCol.PopupBg, new Vector4(tooltipBg.X, tooltipBg.Y, tooltipBg.Z, tooltipBg.W * barAlpha));
+            ImGui.BeginTooltip();
+            ImGuiHelpers.SeStringWrapped(GetFormattedTooltipBytes(name, desc), new SeStringDrawParams { WrapWidth = 345f });
+            ImGui.EndTooltip();
+            ImGui.PopStyleColor();
         }
     }
+}
 
     private void RenderTargetStatuses(ImDrawListPtr dl, IBattleChara target, float cx, float y, float barAlpha) =>
         RenderStatusIconRow(dl, target, cx, y, barAlpha, config.TargetStatusIconSize, config.TargetStatusMaxIcons, true, true);

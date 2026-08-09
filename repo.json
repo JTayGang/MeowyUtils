@@ -14,7 +14,7 @@
     "IsHide": false,
     "IsTestingExclusive": false,
     "DownloadLinkInstall": "https://github.com/JTayGang/MeowyUtils/releases/download/SkyrimCompass2.0.0.5/latest.zip",
-    "DownloadLinkTesting": "https://github.com/JTayGang/MeowyUtils/releases/download/SkyrimCompass2.0.0.5/latest.zip",
+    "DownloadLinkTesting": "https://github.com/JTayGang/MeowyUtils/raw/refs/heads/main/SkyrimCompass/bin/Release/SkyrimCompass/latest.zip",
     "DownloadLinkUpdate": "https://github.com/JTayGang/MeowyUtils/releases/download/SkyrimCompass2.0.0.5/latest.zip",
     "LastUpdate": "1750000000"
   },

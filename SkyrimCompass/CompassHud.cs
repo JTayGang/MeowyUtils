@@ -79,7 +79,7 @@ public sealed class CompassHud : IDisposable
     private float targetBarFlashAlpha   = 0f;
 
     // Target status buffer (reused)
-    private readonly List<(float Remaining, int Icon, string Name, string Desc, System.Guid Guid)> targetStatusBuffer = new();
+    private readonly List<(float Remaining, int Icon, string Name, string Desc, System.Guid Guid, int Stacks)> targetStatusBuffer = new();
 
     // Duration tracker for Moodles/Loci
     private readonly Dictionary<System.Guid, (float FirstSeen, long TotalMs)> statusDurationTracker = new();
@@ -863,7 +863,7 @@ if (isMinion)
             if (status.StatusId == 0) continue;
             if (status.GameData.ValueNullable is not { } row || row.Icon == 0) continue;
             float remaining = (row.IsPermanent || row.IsFcBuff) ? 0f : status.RemainingTime;
-            targetStatusBuffer.Add((remaining, (int)row.Icon, row.Name.ToString(), row.Description.ToString(), System.Guid.Empty));
+            targetStatusBuffer.Add((remaining, (int)row.Icon, row.Name.ToString(), row.Description.ToString(), System.Guid.Empty, (int)status.Param));
         }
 
         if (character.Address != IntPtr.Zero)
@@ -871,11 +871,11 @@ if (isMinion)
             if (includeMoodles && targetStatusBuffer.Count < max && IsPluginActive(moodlesIpc, now) && IsVersionCompatible(moodlesIpc, now))
                 AppendPluginStatuses(character.Address, max, now, moodlesGetStatusesByPtr, ref cachedMoodles,
                     ref cachedMoodlesTarget, ref cachedMoodlesFetchedAt, s => s.GUID, s => s.IconID,
-                    s => (s.Title, s.Description), s => s.ExpireTicks);
+                    s => (s.Title, s.Description), s => s.ExpireTicks, s => s.Stacks);
             if (includeLoci && targetStatusBuffer.Count < max && IsPluginActive(lociIpc, now) && IsVersionCompatible(lociIpc, now))
                 AppendPluginStatuses(character.Address, max, now, lociGetStatusesByPtr, ref cachedLoci,
                     ref cachedLociTarget, ref cachedLociFetchedAt, s => s.GUID, s => (int)s.IconID,
-                    s => (s.Title, s.Description), s => s.ExpireTicks);
+                    s => (s.Title, s.Description), s => s.ExpireTicks, s => s.Stacks);
         }
 
         if (targetStatusBuffer.Count == 0) return;
@@ -892,9 +892,20 @@ if (isMinion)
 
         for (int i = 0; i < n; i++)
         {
-            var (remaining, icon, name, desc, guid) = targetStatusBuffer[i];
+            var (remaining, icon, name, desc, guid, stacks) = targetStatusBuffer[i];
             float sx = startX + i * (size + hGap) + size * 0.5f;
             if (!TryDrawIcon(dl, icon, sx, scy, size, barAlpha)) continue;
+
+            if (stacks > 1)
+            {
+                string stackLabel = stacks > 99 ? "99+" : stacks.ToString();
+                float stackFontSize = MathF.Max(8f, size * 0.42f);
+                Vector2 ssz = ImGui.CalcTextSize(stackLabel) * (stackFontSize / ImGui.GetFontSize());
+                float stx = sx + size * 0.5f - ssz.X - 1f;
+                float sty = scy + halfH - ssz.Y - 1f;
+                dl.AddText(font, stackFontSize, V(stx + 1f, sty + 1f), WithAlpha(0xCC000000u, barAlpha), stackLabel);
+                dl.AddText(font, stackFontSize, V(stx, sty), WithAlpha(0xFFFFFFFFu, barAlpha), stackLabel);
+            }
 
             string? durationLabel = remaining <= 0f ? null
                 : remaining < 60f ? $"{(int)remaining}"
@@ -966,7 +977,8 @@ if (isMinion)
         Func<T, System.Guid> guidSelector,
         Func<T, int> iconSelector,
         Func<T, (string Name, string Desc)> textSelector,
-        Func<T, long> expireTicksSelector)
+        Func<T, long> expireTicksSelector,
+        Func<T, int> stacksSelector)
     {
         if (cache == null || targetAddress != cachedTarget || now - fetchedAt >= StatusPayloadCacheSeconds)
         {
@@ -987,7 +999,8 @@ if (isMinion)
             var (name, desc) = textSelector(s);
             long expire = expireTicksSelector(s);
             float remaining = EstimateRemainingSeconds(guid, expire, now);
-            targetStatusBuffer.Add((remaining, icon, name, desc, guid));
+            int stacks = stacksSelector(s);
+            targetStatusBuffer.Add((remaining, icon, name, desc, guid, stacks));
         }
     }
 

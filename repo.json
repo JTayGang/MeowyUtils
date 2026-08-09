@@ -6,7 +6,7 @@
     "Description": "Adds a Skyrim-style compass bar at the top of your screen. Shows cardinal directions, tick marks, and nearby entity markers (players, enemies, gathering nodes, and more). Use /compass to toggle and /compass config to open settings.",
     "InternalName": "SkyrimCompass",
     "AssemblyVersion": "2.0.0.5",
-    "TestingAssemblyVersion": "2.0.0.5",
+    "TestingAssemblyVersion": null,
     "RepoUrl": "https://github.com/JTayGang/MeowyUtils",
     "ApplicableVersion": "any",
     "DalamudApiLevel": 15,
@@ -14,7 +14,7 @@
     "IsHide": false,
     "IsTestingExclusive": false,
     "DownloadLinkInstall": "https://github.com/JTayGang/MeowyUtils/releases/download/SkyrimCompass2.0.0.5/latest.zip",
-    "DownloadLinkTesting": "https://raw.githubusercontent.com/JTayGang/MeowyUtils/main/SkyrimCompass/bin/Release/SkyrimCompass/latest.zip",
+    "DownloadLinkTesting": "https://github.com/JTayGang/MeowyUtils/releases/download/SkyrimCompass2.0.0.5/latest.zip",
     "DownloadLinkUpdate": "https://github.com/JTayGang/MeowyUtils/releases/download/SkyrimCompass2.0.0.5/latest.zip",
     "LastUpdate": "1750000000"
   },

@@ -106,11 +106,12 @@ public sealed class ConfigWindow : Window
         // ── Colors & Theme ──────────────────────────────────────────────
         if (ImGui.CollapsingHeader("Colors & Theme", ImGuiTreeNodeFlags.DefaultOpen))
         {
-            changed |= DrawColorEdit("Background##bgc", cfg.BackgroundColor, v => cfg.BackgroundColor = v);
-            changed |= DrawColorEdit("Border##bdc", cfg.BorderColor, v => cfg.BorderColor = v);
-            changed |= DrawColorEdit("Cardinal (N/S/E/W)##cdc", cfg.CardinalColor, v => cfg.CardinalColor = v);
-            changed |= DrawColorEdit("Intercardinal (NE/SW…)##icc", cfg.IntercardinalColor, v => cfg.IntercardinalColor = v);
-            changed |= DrawColorEdit("Tick marks##tkc", cfg.TickColor, v => cfg.TickColor = v);
+            // All color pickers now use ColorPickerFlags for a compact swatch with alpha bar
+            changed |= DrawColorEdit("Background##bgc", cfg.BackgroundColor, v => cfg.BackgroundColor = v, ColorPickerFlags);
+            changed |= DrawColorEdit("Border##bdc", cfg.BorderColor, v => cfg.BorderColor = v, ColorPickerFlags);
+            changed |= DrawColorEdit("Cardinal (N/S/E/W)##cdc", cfg.CardinalColor, v => cfg.CardinalColor = v, ColorPickerFlags);
+            changed |= DrawColorEdit("Intercardinal (NE/SW…)##icc", cfg.IntercardinalColor, v => cfg.IntercardinalColor = v, ColorPickerFlags);
+            changed |= DrawColorEdit("Tick marks##tkc", cfg.TickColor, v => cfg.TickColor = v, ColorPickerFlags);
 
             ImGui.SetNextItemWidth(180);
             if (ImGui.Combo("Theme preset##colortheme", ref _selectedThemeIndex, ColorThemeNames, ColorThemeNames.Length))
@@ -123,7 +124,8 @@ public sealed class ConfigWindow : Window
         }
 
         // ── Camera ──────────────────────────────────────────────────────
-        if (ImGui.CollapsingHeader("Camera & Direction"))
+        // Now open by default
+        if (ImGui.CollapsingHeader("Camera & Direction", ImGuiTreeNodeFlags.DefaultOpen))
         {
             changed |= DrawToggle("Use camera direction (not character facing)",
                 () => cfg.UseCameraDirection, v => cfg.UseCameraDirection = v,
@@ -559,12 +561,6 @@ public sealed class ConfigWindow : Window
     }
 
     // ── General helpers ──────────────────────────────────────────────────
-    private static void DrawSectionBreak()
-    {
-        ImGui.Spacing();
-        ImGui.Separator();
-        ImGui.Spacing();
-    }
 
     private static void BeginIndentedDisabled(bool enabled)
     {

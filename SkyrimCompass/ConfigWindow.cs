@@ -311,97 +311,98 @@ public sealed class ConfigWindow : Window
         return changed;
     }
 
-    // ── Combat tab ──────────────────────────────────────────────────────────
-    private bool DrawCombatTab(Configuration cfg)
-    {
-        if (!ImGui.BeginTabItem("Combat")) return false;
-        bool changed = DrawEnableAndColor("enemies", "Enemies", () => cfg.ShowEnemies, v => cfg.ShowEnemies = v,
-            () => cfg.EnemyColor, v => cfg.EnemyColor = v);
+// ── Combat tab ──────────────────────────────────────────────────────────
+private bool DrawCombatTab(Configuration cfg)
+{
+    if (!ImGui.BeginTabItem("Combat")) return false;
+    bool changed = DrawEnableAndColor("enemies", "Enemies", () => cfg.ShowEnemies, v => cfg.ShowEnemies = v,
+        () => cfg.EnemyColor, v => cfg.EnemyColor = v);
 
-        BeginIndentedDisabled(cfg.ShowEnemies);
-        changed |= DrawToggle("Only show engaged enemies##eng", () => cfg.EnemiesOnlyIfEngaged, v => cfg.EnemiesOnlyIfEngaged = v,
-            "Only hostiles in combat with you/your party.");
-        changed |= DrawSizeSliders(
-            () => cfg.EnemyMinSize, v => cfg.EnemyMinSize = v, () => cfg.EnemyMaxSize, v => cfg.EnemyMaxSize = v,
-            50, 60, "en");
-        EndIndentedDisabled();
+    BeginIndentedDisabled(cfg.ShowEnemies);
+    changed |= DrawToggle("Only show engaged enemies##eng", () => cfg.EnemiesOnlyIfEngaged, v => cfg.EnemiesOnlyIfEngaged = v,
+        "Only hostiles in combat with you/your party.");
+    changed |= DrawSizeSliders(
+        () => cfg.EnemyMinSize, v => cfg.EnemyMinSize = v, () => cfg.EnemyMaxSize, v => cfg.EnemyMaxSize = v,
+        50, 60, "en");
+    EndIndentedDisabled();
 
-        DrawSectionBreak();
-        changed |= DrawEnableAndColor("lbglow", "Limit break glow (bar 1 color)",
-            () => cfg.ShowLimitBreakGlow, v => cfg.ShowLimitBreakGlow = v,
-            () => cfg.LimitBreakGlowColor, v => cfg.LimitBreakGlowColor = v,
-            "Glowing border as LB charges – one layer per bar.");
-        BeginIndentedDisabled(cfg.ShowLimitBreakGlow);
-        changed |= DrawColorEdit("Bar 2 color##lbc2", cfg.LimitBreakGlowColor2, v => cfg.LimitBreakGlowColor2 = v);
-        changed |= DrawColorEdit("Bar 3 color##lbc3", cfg.LimitBreakGlowColor3, v => cfg.LimitBreakGlowColor3 = v);
-        EndIndentedDisabled();
+    DrawSectionBreak();
+    changed |= DrawEnableAndColor("lbglow", "Limit break glow (bar 1 color)",
+        () => cfg.ShowLimitBreakGlow, v => cfg.ShowLimitBreakGlow = v,
+        () => cfg.LimitBreakGlowColor, v => cfg.LimitBreakGlowColor = v,
+        "Glowing border as LB charges – one layer per bar.");
+    BeginIndentedDisabled(cfg.ShowLimitBreakGlow);
+    // Pass ColorPickerFlags to remove RGBA sliders – matches bar 1's simple swatch style
+    changed |= DrawColorEdit("Bar 2 color##lbc2", cfg.LimitBreakGlowColor2, v => cfg.LimitBreakGlowColor2 = v, ColorPickerFlags);
+    changed |= DrawColorEdit("Bar 3 color##lbc3", cfg.LimitBreakGlowColor3, v => cfg.LimitBreakGlowColor3 = v, ColorPickerFlags);
+    EndIndentedDisabled();
 
-        DrawSectionBreak();
+    DrawSectionBreak();
     // ── Target Health Bar ──────────────────────────────────────
-        changed |= DrawToggle("Target Health Bar", () => cfg.ShowTargetBar, v => cfg.ShowTargetBar = v,
-            "Name+HP readout docked beneath compass.");
-        BeginIndentedDisabled(cfg.ShowTargetBar);
-        changed |= DrawSliderFloat("Width  (fraction of compass)##tbwf", 0.3f, 1.0f,
-            () => cfg.TargetBarWidthFraction, v => cfg.TargetBarWidthFraction = v);
-        changed |= DrawSliderInt("Bar thickness##tbh", 6, 30, () => (int)cfg.TargetBarHeight, v => cfg.TargetBarHeight = v);
-        changed |= DrawSliderFloat("Name font scale##tbfs", 0.5f, 2.5f,
-            () => cfg.TargetBarFontScale, v => cfg.TargetBarFontScale = v);
-        changed |= DrawToggle("Show target level##tblvl", () => cfg.ShowTargetLevel, v => cfg.ShowTargetLevel = v);
-        changed |= DrawToggle("Show shield overlay##tbshd", () => cfg.ShowTargetBarShield, v => cfg.ShowTargetBarShield = v,
-            "Light sheen over shielded portion of the bar.");
-        changed |= DrawToggle("Show name ribbons##tbrib", () => cfg.ShowTargetBarRibbons, v => cfg.ShowTargetBarRibbons = v,
-            "Glowing ribbons from name ornaments.");
-        ImGui.BeginDisabled(!cfg.ShowTargetBarShield);
-        changed |= DrawColorEdit("Shield overlay##tbsc", cfg.TargetBarShieldColor, v => cfg.TargetBarShieldColor = v, ColorPickerFlags);
-        ImGui.EndDisabled();
-        EndIndentedDisabled();   // ← closes the target bar block
+    changed |= DrawToggle("Target Health Bar", () => cfg.ShowTargetBar, v => cfg.ShowTargetBar = v,
+        "Name+HP readout docked beneath compass.");
+    BeginIndentedDisabled(cfg.ShowTargetBar);
+    changed |= DrawSliderFloat("Width  (fraction of compass)##tbwf", 0.3f, 1.0f,
+        () => cfg.TargetBarWidthFraction, v => cfg.TargetBarWidthFraction = v);
+    changed |= DrawSliderInt("Bar thickness##tbh", 6, 30, () => (int)cfg.TargetBarHeight, v => cfg.TargetBarHeight = v);
+    changed |= DrawSliderFloat("Name font scale##tbfs", 0.5f, 2.5f,
+        () => cfg.TargetBarFontScale, v => cfg.TargetBarFontScale = v);
+    changed |= DrawToggle("Show target level##tblvl", () => cfg.ShowTargetLevel, v => cfg.ShowTargetLevel = v);
+    // Shield overlay – now uses the same inline toggle+color pattern as Enemies/Players
+    changed |= DrawEnableAndColor("tbshd", "Show shield overlay",
+        () => cfg.ShowTargetBarShield, v => cfg.ShowTargetBarShield = v,
+        () => cfg.TargetBarShieldColor, v => cfg.TargetBarShieldColor = v,
+        "Light sheen over shielded portion of the bar.");
+    changed |= DrawToggle("Show name ribbons##tbrib", () => cfg.ShowTargetBarRibbons, v => cfg.ShowTargetBarRibbons = v,
+        "Glowing ribbons from name ornaments.");
+    EndIndentedDisabled();   // ← closes the target bar block
 
     // ── Target Status Icons (now independent) ─────────────────
-        DrawSectionBreak();
-        changed |= DrawToggle("Target status icons", () => cfg.ShowTargetStatuses, v => cfg.ShowTargetStatuses = v,
-            "Buff/debuff icons below target name.");
-        BeginIndentedDisabled(cfg.ShowTargetStatuses);
-        changed |= DrawSliderInt("Icon size##tssize", 12, 40, () => (int)cfg.TargetStatusIconSize, v => cfg.TargetStatusIconSize = v);
-        changed |= DrawSliderInt("Max icons##tsmax", 3, 20, () => cfg.TargetStatusMaxIcons, v => cfg.TargetStatusMaxIcons = v);
-        EndIndentedDisabled();
+    DrawSectionBreak();
+    changed |= DrawToggle("Target status icons", () => cfg.ShowTargetStatuses, v => cfg.ShowTargetStatuses = v,
+        "Buff/debuff icons below target name.");
+    BeginIndentedDisabled(cfg.ShowTargetStatuses);
+    changed |= DrawSliderInt("Icon size##tssize", 12, 40, () => (int)cfg.TargetStatusIconSize, v => cfg.TargetStatusIconSize = v);
+    changed |= DrawSliderInt("Max icons##tsmax", 3, 20, () => cfg.TargetStatusMaxIcons, v => cfg.TargetStatusMaxIcons = v);
+    EndIndentedDisabled();
 
-        DrawSectionBreak();
-        changed |= DrawToggle("Mirror Moodles \u2194 Loci", () => cfg.MirrorMoodlesLoci, v => cfg.MirrorMoodlesLoci = v,
-            "Keep your own Moodles and Loci statuses mirrored onto each other.");
-        BeginIndentedDisabled(cfg.MirrorMoodlesLoci);
-        var mirror = plugin.StatusMirror;
-        ImGui.TextDisabled($"Moodles: {(mirror.MoodlesAvailable ? "connected" : "not found")}   " +
-                            $"Loci: {(mirror.LociAvailable ? "connected" : "not found")}");
-        ImGui.TextDisabled($"Mirrored into Loci: {mirror.MirroredIntoLociCount}   " +
-                            $"Mirrored into Moodles: {mirror.MirroredIntoMoodlesCount}" +
-                            (mirror.LockedMirrorCount > 0 ? $"   Locked: {mirror.LockedMirrorCount}" : ""));
-        if (ImGui.Button("Clear stuck mirrors##mirclear"))
-            mirror.ClearAllMirrors();
-        EndIndentedDisabled();
+    DrawSectionBreak();
+    changed |= DrawToggle("Mirror Moodles \u2194 Loci", () => cfg.MirrorMoodlesLoci, v => cfg.MirrorMoodlesLoci = v,
+        "Keep your own Moodles and Loci statuses mirrored onto each other.");
+    BeginIndentedDisabled(cfg.MirrorMoodlesLoci);
+    var mirror = plugin.StatusMirror;
+    ImGui.TextDisabled($"Moodles: {(mirror.MoodlesAvailable ? "connected" : "not found")}   " +
+                        $"Loci: {(mirror.LociAvailable ? "connected" : "not found")}");
+    ImGui.TextDisabled($"Mirrored into Loci: {mirror.MirroredIntoLociCount}   " +
+                        $"Mirrored into Moodles: {mirror.MirroredIntoMoodlesCount}" +
+                        (mirror.LockedMirrorCount > 0 ? $"   Locked: {mirror.LockedMirrorCount}" : ""));
+    if (ImGui.Button("Clear stuck mirrors##mirclear"))
+        mirror.ClearAllMirrors();
+    EndIndentedDisabled();
 
-        DrawSectionBreak();
-        changed |= DrawToggle("Target-of-target", () => cfg.ShowTargetOfTargetBar, v => cfg.ShowTargetOfTargetBar = v,
-            "Shows who/what your target has targeted.");
-        BeginIndentedDisabled(cfg.ShowTargetOfTargetBar);
-        changed |= DrawToggle("Highlight if targeting me##aggro", () => cfg.HighlightIfTargetingMe, v => cfg.HighlightIfTargetingMe = v,
-            "Warns when your target targets you.");
-        ImGui.BeginDisabled(!cfg.HighlightIfTargetingMe);
-        changed |= DrawColorEdit("Warning color##aggroc", cfg.AggroWarningColor, v => cfg.AggroWarningColor = v, ColorPickerFlags);
-        ImGui.EndDisabled();
+    DrawSectionBreak();
+    changed |= DrawToggle("Target-of-target", () => cfg.ShowTargetOfTargetBar, v => cfg.ShowTargetOfTargetBar = v,
+        "Shows who/what your target has targeted.");
+    BeginIndentedDisabled(cfg.ShowTargetOfTargetBar);
+    changed |= DrawToggle("Highlight if targeting me##aggro", () => cfg.HighlightIfTargetingMe, v => cfg.HighlightIfTargetingMe = v,
+        "Warns when your target targets you.");
+    ImGui.BeginDisabled(!cfg.HighlightIfTargetingMe);
+    changed |= DrawColorEdit("Warning color##aggroc", cfg.AggroWarningColor, v => cfg.AggroWarningColor = v, ColorPickerFlags);
+    ImGui.EndDisabled();
 
-        changed |= DrawToggle("Show name##totname", () => cfg.ShowTargetOfTargetName, v => cfg.ShowTargetOfTargetName = v,
-            "Shows the target-of-target's name centered over their bar.");
-        BeginIndentedDisabled(cfg.ShowTargetOfTargetName);
-        changed |= DrawToggle("Only show first name##totfirstname", () => cfg.TargetOfTargetFirstNameOnly, v => cfg.TargetOfTargetFirstNameOnly = v,
-            "Trims multi-word names down to just the first word.");
-        changed |= DrawToggle("Show \"YOU\" for yourself##totyou", () => cfg.TargetOfTargetShowYou, v => cfg.TargetOfTargetShowYou = v,
-            "Displays \"YOU\" instead of your character name when you are the target-of-target.");
-        EndIndentedDisabled();
-        EndIndentedDisabled();
+    changed |= DrawToggle("Show name##totname", () => cfg.ShowTargetOfTargetName, v => cfg.ShowTargetOfTargetName = v,
+        "Shows the target-of-target's name centered over their bar.");
+    BeginIndentedDisabled(cfg.ShowTargetOfTargetName);
+    changed |= DrawToggle("Only show first name##totfirstname", () => cfg.TargetOfTargetFirstNameOnly, v => cfg.TargetOfTargetFirstNameOnly = v,
+        "Trims multi-word names down to just the first word.");
+    changed |= DrawToggle("Show \"YOU\" for yourself##totyou", () => cfg.TargetOfTargetShowYou, v => cfg.TargetOfTargetShowYou = v,
+        "Displays \"YOU\" instead of your character name when you are the target-of-target.");
+    EndIndentedDisabled();
+    EndIndentedDisabled();
 
-        ImGui.EndTabItem();
-        return changed;
-    }
+    ImGui.EndTabItem();
+    return changed;
+}
 
     // ── NPCs tab ─────────────────────────────────────────────────────────────
     private static bool DrawNpcsTab(Configuration cfg)

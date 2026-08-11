@@ -81,8 +81,12 @@ public sealed class CompassHud : IDisposable
     // Target status buffer (reused)
     private readonly List<(float Remaining, int Icon, string Name, string Desc, System.Guid Guid, int Stacks)> targetStatusBuffer = new();
 
-    // Duration tracker for Moodles/Loci
-    private readonly Dictionary<System.Guid, (float FirstSeen, long TotalMs)> statusDurationTracker = new();
+    // Duration tracker for Moodles/Loci — kept as two separate dictionaries
+    // (rather than one shared by GUID) so a presence sweep run against one
+    // plugin's payload can never evict an entry that belongs to the other.
+    private readonly Dictionary<System.Guid, (float FirstSeen, long TotalMs)> moodlesDurationTracker = new();
+    private readonly Dictionary<System.Guid, (float FirstSeen, long TotalMs)> lociDurationTracker = new();
+    private readonly HashSet<System.Guid> presentGuidScratch = new();
     private float nextDurationTrackerPruneAt;
 
     // Cached payloads (throttled)
@@ -917,11 +921,11 @@ private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float
     {
         if (includeMoodles && targetStatusBuffer.Count < max && IsPluginActive(moodlesIpc, now) && IsVersionCompatible(moodlesIpc, now))
             AppendPluginStatuses(character.Address, max, now, moodlesGetStatusesByPtr, ref cachedMoodles,
-                ref cachedMoodlesTarget, ref cachedMoodlesFetchedAt, s => s.GUID, s => s.IconID,
+                ref cachedMoodlesTarget, ref cachedMoodlesFetchedAt, moodlesDurationTracker, s => s.GUID, s => s.IconID,
                 s => (s.Title, s.Description), s => s.ExpireTicks, s => s.Stacks);
         if (includeLoci && targetStatusBuffer.Count < max && IsPluginActive(lociIpc, now) && IsVersionCompatible(lociIpc, now))
             AppendPluginStatuses(character.Address, max, now, lociGetStatusesByPtr, ref cachedLoci,
-                ref cachedLociTarget, ref cachedLociFetchedAt, s => s.GUID, s => (int)s.IconID,
+                ref cachedLociTarget, ref cachedLociFetchedAt, lociDurationTracker, s => s.GUID, s => (int)s.IconID,
                 s => (s.Title, s.Description), s => s.ExpireTicks, s => s.Stacks);
     }
 
@@ -958,7 +962,7 @@ private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float
         }
 
         string? durationLabel = remaining <= 0f ? null
-            : remaining < 60f ? $"{(int)remaining}"
+            : remaining < 60f ? $"{(int)MathF.Ceiling(remaining)}"
             : remaining < 3600f ? $"{(int)(remaining / 60f)}m"
             : remaining < 86400f ? $"{(int)(remaining / 3600f)}h"
             : remaining < 777600f ? $"{(int)(remaining / 86400f)}d"
@@ -1024,6 +1028,7 @@ private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float
         nint targetAddress, int max, float now,
         ICallGateSubscriber<nint, List<T>> getter,
         ref List<T>? cache, ref nint cachedTarget, ref float fetchedAt,
+        Dictionary<System.Guid, (float FirstSeen, long TotalMs)> tracker,
         Func<T, System.Guid> guidSelector,
         Func<T, int> iconSelector,
         Func<T, (string Name, string Desc)> textSelector,
@@ -1036,6 +1041,28 @@ private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float
             fetchedAt = now;
             try { cache = getter.InvokeFunc(targetAddress); }
             catch { cache = null; }
+
+            // Moodles/Loci report each status's *configured* duration (e.g. "this
+            // moodle lasts 60s"), not a live per-application countdown and not a
+            // unique per-application timestamp — so a status that got reapplied
+            // looks identical (same GUID, same ExpireTicks) to one that's still
+            // running out its original application. The only evidence we get of
+            // a genuine reapplication is that the GUID disappeared from this list
+            // (the previous instance fully expired and was removed) and has now
+            // come back. Sweep out anything we're tracking that this fresh fetch
+            // no longer reports, so the next sighting starts a new timer instead
+            // of resuming a stale anchor from long before it expired.
+            if (cache != null && tracker.Count > 0)
+            {
+                presentGuidScratch.Clear();
+                foreach (var s in cache) presentGuidScratch.Add(guidSelector(s));
+
+                var stale = new List<System.Guid>();
+                foreach (var guid in tracker.Keys)
+                    if (!presentGuidScratch.Contains(guid))
+                        stale.Add(guid);
+                foreach (var guid in stale) tracker.Remove(guid);
+            }
         }
         if (cache == null) return;
 
@@ -1048,19 +1075,20 @@ private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float
             if (targetStatusBuffer.Exists(e => e.Guid == guid)) continue;
             var (name, desc) = textSelector(s);
             long expire = expireTicksSelector(s);
-            float remaining = EstimateRemainingSeconds(guid, expire, now);
+            float remaining = EstimateRemainingSeconds(tracker, guid, expire, now);
             int stacks = stacksSelector(s);
             targetStatusBuffer.Add((remaining, icon, name, desc, guid, stacks));
         }
     }
 
-    private float EstimateRemainingSeconds(System.Guid guid, long expireMs, float now)
+    private static float EstimateRemainingSeconds(Dictionary<System.Guid, (float FirstSeen, long TotalMs)> tracker,
+        System.Guid guid, long expireMs, float now)
     {
         if (expireMs < 0) return 0f;
-        if (!statusDurationTracker.TryGetValue(guid, out var tracked) || tracked.TotalMs != expireMs)
+        if (!tracker.TryGetValue(guid, out var tracked) || tracked.TotalMs != expireMs)
         {
             tracked = (now, expireMs);
-            statusDurationTracker[guid] = tracked;
+            tracker[guid] = tracked;
         }
         return MathF.Max(0f, expireMs / 1000f - (now - tracked.FirstSeen));
     }
@@ -1069,12 +1097,18 @@ private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float
     {
         if (now < nextDurationTrackerPruneAt) return;
         nextDurationTrackerPruneAt = now + 60f;
-        if (statusDurationTracker.Count == 0) return;
+        PruneStaleTrackerEntries(moodlesDurationTracker, now);
+        PruneStaleTrackerEntries(lociDurationTracker, now);
+    }
+
+    private static void PruneStaleTrackerEntries(Dictionary<System.Guid, (float FirstSeen, long TotalMs)> tracker, float now)
+    {
+        if (tracker.Count == 0) return;
         var stale = new List<System.Guid>();
-        foreach (var (guid, tracked) in statusDurationTracker)
+        foreach (var (guid, tracked) in tracker)
             if (now - tracked.FirstSeen > tracked.TotalMs / 1000f + 30f)
                 stale.Add(guid);
-        foreach (var guid in stale) statusDurationTracker.Remove(guid);
+        foreach (var guid in stale) tracker.Remove(guid);
     }
 
     // ─── Tooltip formatting ────────────────────────────────────────

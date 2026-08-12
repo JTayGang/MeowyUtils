@@ -23,17 +23,17 @@
     "Name": "StatusBridge",
     "Description": "Currently Non functional and only useful if you like looking at broken code",
     "InternalName": "StatusBridge",
-    "AssemblyVersion": "1.0.0.2",
+    "AssemblyVersion": "1.0.0.5",
     "TestingAssemblyVersion": null,
     "RepoUrl": "https://github.com/JTayGang/MeowyUtils",
     "ApplicableVersion": "any",
     "DalamudApiLevel": 15,
-    "Punchline": "Non-Functional. Use SkyrimCompass instead, it fixed most of the problems.",
+    "Punchline": "Non-Functional. Use SkyrimCompass instead.",
     "IsHide": false,
     "IsTestingExclusive": false,
-    "DownloadLinkInstall": "https://github.com/JTayGang/MeowyUtils/releases/download/StatusBridge1.0.0.2/latest.zip",
-    "DownloadLinkTesting": "https://github.com/JTayGang/MeowyUtils/releases/download/StatusBridge1.0.0.2/latest.zip",
-    "DownloadLinkUpdate": "https://github.com/JTayGang/MeowyUtils/releases/download/StatusBridge1.0.0.2/latest.zip",
+    "DownloadLinkInstall": "https://github.com/JTayGang/MeowyUtils/releases/download/StatusBridge1.0.0.5/latest.zip",
+    "DownloadLinkTesting": "https://github.com/JTayGang/MeowyUtils/releases/download/StatusBridge1.0.0.5/latest.zip",
+    "DownloadLinkUpdate": "https://github.com/JTayGang/MeowyUtils/releases/download/StatusBridge1.0.0.5/latest.zip",
     "LastUpdate": "1783720009"
   }
 ]

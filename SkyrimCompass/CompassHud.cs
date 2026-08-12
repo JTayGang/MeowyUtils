@@ -77,6 +77,7 @@ public sealed class CompassHud : IDisposable
     private float displayedTargetHpFrac = 1f;
     private float lastRawTargetHpFrac   = 1f;
     private float targetBarFlashAlpha   = 0f;
+    private float displayedTargetShieldFrac = 0f;
 
     // Target status buffer (reused)
     private readonly List<(float Remaining, int Icon, string Name, string Desc, System.Guid Guid, int Stacks)> targetStatusBuffer = new();
@@ -599,15 +600,27 @@ public sealed class CompassHud : IDisposable
         const float inset = 2f;
         float innerH = h - inset * 2f;
         float innerTaper = taper * (innerH / h);
-        if (fillFrac > 0f)
+        float clampedFill = Math.Clamp(fillFrac, 0f, 1f);
+        if (clampedFill > 0f)
         {
-            var (fTl, fTr, fBr, fBl) = TrapezoidFill(x + inset, y + inset, w - inset * 2f, innerH, innerTaper, fillFrac, fromRight);
+            var (fTl, fTr, fBr, fBl) = TrapezoidFill(x + inset, y + inset, w - inset * 2f, innerH, innerTaper, clampedFill, fromRight);
             dl.AddQuadFilled(fTl, fTr, fBr, fBl, WithAlpha(fill, alpha));
         }
         if (shieldFrac.HasValue && shieldFrac.Value > 0f && shieldCol.HasValue)
         {
-            var (sTl, sTr, sBr, sBl) = TrapezoidFill(x + inset, y + inset, w - inset * 2f, innerH, innerTaper, shieldFrac.Value, !fromRight);
-            dl.AddQuadFilled(sTl, sTr, sBr, sBl, WithAlpha(shieldCol.Value, alpha));
+            // Second bar stacked immediately past the current fill edge (not an
+            // independent overlay sized off the far edge of the whole bar), so
+            // it shrinks toward the fill as the shield is depleted and vanishes
+            // once there's none left. If the fill is already at/near the far
+            // edge there's no room left to show it, so it's clipped rather than
+            // drawn past the bar's bounds.
+            float shieldLo = fromRight ? MathF.Max(0f, 1f - clampedFill - shieldFrac.Value) : clampedFill;
+            float shieldHi = fromRight ? 1f - clampedFill : MathF.Min(1f, clampedFill + shieldFrac.Value);
+            if (shieldHi > shieldLo)
+            {
+                var (sTl, sTr, sBr, sBl) = TrapezoidSlice(x + inset, y + inset, w - inset * 2f, innerH, innerTaper, shieldLo, shieldHi);
+                dl.AddQuadFilled(sTl, sTr, sBr, sBl, WithAlpha(shieldCol.Value, alpha));
+            }
         }
         dl.AddLine(V(x + 1f, y + 1f), V(x + w - 1f, y + 1f), WithAlpha(0x1AFFFFFFu, alpha), 1f);
         dl.AddQuad(bTl, bTr, bBr, bBl, WithAlpha(C(config.BorderColor), alpha), 1.5f);
@@ -655,6 +668,7 @@ private float RenderTargetBar(ImDrawListPtr dl, float tbX, float tbW, float tbY,
     {
         var chara = (ICharacter)currentTarget;
         float rawFrac = chara.MaxHp > 0f ? Math.Clamp((float)chara.CurrentHp / chara.MaxHp, 0f, 1f) : 0f;
+        float rawShieldFrac = config.ShowTargetBarShield ? chara.ShieldPercentage / 100f : 0f;
 
         // ─── Minion detection: force full health bar ────────────────
 bool isMinion = currentTarget.ObjectKind == ObjectKind.Companion;
@@ -664,6 +678,8 @@ if (isMinion)
     displayedTargetHpFrac = 1f;
     lastRawTargetHpFrac = 1f;
     targetBarFlashAlpha = 0f;
+    rawShieldFrac = 0f;
+    displayedTargetShieldFrac = 0f;
 }
 
         float dt = ImGui.GetIO().DeltaTime;
@@ -673,6 +689,7 @@ if (isMinion)
             displayedTargetHpFrac = rawFrac;
             lastRawTargetHpFrac = rawFrac;
             targetBarFlashAlpha = 0f;
+            displayedTargetShieldFrac = rawShieldFrac;
         }
         else
         {
@@ -680,13 +697,17 @@ if (isMinion)
                 targetBarFlashAlpha = 1f;
             lastRawTargetHpFrac = rawFrac;
             displayedTargetHpFrac += (rawFrac - displayedTargetHpFrac) * (1f - MathF.Exp(-dt * 14f));
+            displayedTargetShieldFrac += (rawShieldFrac - displayedTargetShieldFrac) * (1f - MathF.Exp(-dt * 14f));
         }
         if (!isMinion)
             targetBarFlashAlpha = MathF.Max(0f, targetBarFlashAlpha - dt / 0.4f);
 
+        // Shield is drawn stacked immediately past the current HP fill inside
+        // DrawTrapezoidBar — a second bar continuing from where HP leaves off —
+        // rather than as an independent overlay sized off the far edge.
         DrawTrapezoidBar(dl, tbX, tbY, tbW, tbH, displayedTargetHpFrac, bgCol, fillCol, barAlpha,
-            (!isMinion && config.ShowTargetBarShield) ? chara.ShieldPercentage / 100f : null,
-            (!isMinion && config.ShowTargetBarShield) ? C(config.TargetBarShieldColor) : null);
+            (!isMinion && displayedTargetShieldFrac > 0f) ? displayedTargetShieldFrac : null,
+            (!isMinion && displayedTargetShieldFrac > 0f) ? C(config.TargetBarShieldColor) : null);
 
         if (!isMinion && targetBarFlashAlpha > 0f)
         {

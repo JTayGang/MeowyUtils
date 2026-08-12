@@ -15,7 +15,7 @@ In order to apply moodles, you MUST tick these boxes in Moodles settings
 
 
 ## KNOWN ISSUES
--MY NEGATIVE STATUSES DONT SHOW UP DURING COMBAT!!!
+- MY NEGATIVE STATUSES DONT SHOW UP DURING COMBAT!!!
 
   THIS IS A KNOWN MOODLES AND LOCI BUG. It only happens when using the single element status display for the player. TO FIX: Either use the split player status element OR Enable "Disable Moodles whilst in combat" AND "Disable in: Combat" checkboxes in Moodles and Loci respectively. 
 

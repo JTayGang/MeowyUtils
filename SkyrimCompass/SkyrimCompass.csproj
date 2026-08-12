@@ -14,6 +14,6 @@
       Bump this before every release to trigger an update
       in Dalamud 
     -->
-    <Version>2.0.0.6</Version>
+    <Version>2.0.0.7</Version>
   </PropertyGroup>
 </Project>

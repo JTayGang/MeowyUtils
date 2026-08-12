@@ -325,7 +325,7 @@ public sealed class ConfigWindow : Window
         // ── Target Health Bar ──────────────────────────────────────────
         if (ImGui.CollapsingHeader("Target Health Bar", ImGuiTreeNodeFlags.DefaultOpen))
         {
-            changed |= DrawToggle("Target Health Bar", () => cfg.ShowTargetBar, v => cfg.ShowTargetBar = v,
+            changed |= DrawToggle("Target health bar", () => cfg.ShowTargetBar, v => cfg.ShowTargetBar = v,
                 "Name+HP readout docked beneath compass.");
             BeginIndentedDisabled(cfg.ShowTargetBar);
             changed |= DrawSliderFloat("Width (fraction of compass)##tbwf", 0.3f, 1.0f,

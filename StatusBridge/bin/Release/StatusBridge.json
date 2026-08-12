@@ -1,0 +1,21 @@
+{
+  "Author": "Meowmeowmeow Cat",
+  "Name": "StatusBridge",
+  "InternalName": "StatusBridge",
+  "AssemblyVersion": "1.0.0.5",
+  "Description": "Paused pending a rework. This update deletes its own persisted files and otherwise does nothing - no reflection, no IPC, no mirroring.",
+  "ApplicableVersion": "any",
+  "Tags": [
+    "Moodles",
+    "Loci",
+    "Status",
+    "Sync"
+  ],
+  "DalamudApiLevel": 15,
+  "LoadRequiredState": 0,
+  "LoadSync": false,
+  "CanUnloadAsync": false,
+  "LoadPriority": 0,
+  "Punchline": "Paused for a rework - this update just cleans up after itself.",
+  "AcceptsFeedback": true
+}

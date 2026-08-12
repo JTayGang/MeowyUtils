@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Dalamud.NET.Sdk/15.0.0">
+    <PropertyGroup>
+        <Authors>Meowmeowmeow Cat</Authors>
+        <Company>Meowy Inc</Company>
+        <Version>1.0.0.5</Version>
+        <Description>Paused pending a rework. This update deletes its own persisted files and otherwise does nothing - no reflection, no IPC, no mirroring.</Description>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+    </PropertyGroup>
+
+    <!--
+        No explicit <TargetFramework> here on purpose. Neither Moodles' nor Loci's own .csproj
+        declares one either (verified directly against both repos) - Dalamud.NET.Sdk injects
+        whatever framework moniker the current Dalamud build actually targets. Hardcoding
+        net9.0-windows here previously fought that and broke the build the moment a fresh
+        restore pulled a Dalamud build compiled against .NET 10 (CS1705 System.Runtime mismatch).
+    -->
+
+    <PropertyGroup>
+        <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
+        <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+        <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+        <OutputPath>bin\$(Configuration)\</OutputPath>
+        <EnableWindowsTargeting>true</EnableWindowsTargeting>
+        <NoWarn>CS1591</NoWarn>
+    </PropertyGroup>
+
+    <!--
+        1.0.0.5 strips this down to a placeholder: it no longer mirrors Moodles/Loci statuses, so
+        the IPC interop layer (CallGate subscribers into both plugins) and everything that
+        depended on it - the bridge engine, its persisted state, the config window - are gone.
+        Experimental/MoodlesOffsetPatch.cs (the one place this plugin ever reflected into another
+        plugin's assembly) is deleted too, not just unused - the upcoming server update forces a
+        full client restart for everyone, which is all that field ever needed to reset to
+        Moodles' own default, so there's nothing left for this build to revert. All that remains
+        is Plugin.cs/Svc.cs deleting this plugin's own old files. No external package or
+        ProjectReference is needed for that, so this stays exactly as dependency-free as before -
+        just the Dalamud SDK, nothing else. Full previous implementation is in git history.
+    -->
+
+    <ItemGroup>
+        <None Include="StatusBridge.json" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+</Project>

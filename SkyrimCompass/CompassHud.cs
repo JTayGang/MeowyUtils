@@ -122,10 +122,6 @@ public sealed class CompassHud : IDisposable
     // Icon aspect cache
     private readonly Dictionary<int, float> iconAspectCache = new();
 
-    // Cached target label
-    private string cachedTargetLabel = "";
-    private ulong cachedTargetLabelId = 0;
-
     // Player override dictionary with versioning
     private Dictionary<string, PlayerIconOverride>? playerOverrideDict;
     private int playerOverrideDictVersion = -1;
@@ -741,17 +737,13 @@ private float RenderTargetBar(ImDrawListPtr dl, float tbX, float tbW, float tbY,
     string? castName = currentTarget is IBattleChara castingChara && castingChara.IsCasting && castingChara.TotalCastTime > 0f
         ? GetCastActionName(castingChara) : null;
 
-    // ─── Cache formatted name ──────────────────────────────────────
-    if (currentTarget.GameObjectId != cachedTargetLabelId)
-    {
-        string baseLabel = castName ?? currentTarget.Name.TextValue;
-        if (castName == null && config.ShowTargetLevel && currentTarget is ICharacter lvlChar && lvlChar.Level > 0)
-            cachedTargetLabel = $"Lv{lvlChar.Level}  {baseLabel}";
-        else
-            cachedTargetLabel = baseLabel;
-        cachedTargetLabelId = currentTarget.GameObjectId;
-    }
-    string label = cachedTargetLabel;
+    // ─── Formatted name ──────────────────────────────────────────────
+    // Built fresh every frame so it tracks live cast state (and level) on the
+    // current target — this is a single cheap string, not worth caching.
+    string baseLabel = castName ?? currentTarget.Name.TextValue;
+    string label = (castName == null && config.ShowTargetLevel && currentTarget is ICharacter lvlChar && lvlChar.Level > 0)
+        ? $"Lv{lvlChar.Level}  {baseLabel}"
+        : baseLabel;
 
     var tsz = ImGui.CalcTextSize(label) * config.TargetBarFontScale;
     float nameGap = MathF.Max(6f, tbH * 0.5f);

@@ -15,19 +15,18 @@ In order to apply moodles, you MUST tick these boxes in Moodles settings
 
 
 ## KNOWN ISSUES
-- MY NEGATIVE STATUSES DONT SHOW UP DURING COMBAT!!!
-
-  THIS IS A KNOWN MOODLES AND LOCI BUG. It only happens when using the single element status display for the player. TO FIX: Either use the split player status element OR Enable "Disable Moodles whilst in combat" AND "Disable in: Combat" checkboxes in Moodles and Loci respectively. 
-
 - Moodles and Loci show the vfx twice when applying a status, like its applying them twice.
 
-   Thats because it IS. It copies your moodles and locis so that they show for both, and hides the extra copy. TO FIX: unchecking "Enable Moodle VFX" and "Enable Fly/Popup Text" in Moodles options.
-- After using /xlkill some statuses may randomly reappear on next login.
+   Thats because it IS. It copies your moodles and locis so that they show for both, and hides the extra copy. 
+- After using /xlkill some statuses randomly reappear on next login.
 
    TO FIX: Close the game normally once to save your character's "state".
-- When a timer countdown is enabled for a moodles/loci, reapplying it to reset the time breaks the countdown bit on the target status bar.
+- Moodle timers do not display a countdown unless "persist expire time" is enabled for the moodle.
 
-  TO FIX: remove the moodle/loci entirely before re-applying
+   I couldnt find a fix for this. (The timer still works fine, just doesnt display)
+- When "persist expire time" is enabled for a moodle, reapplying that moodle breaks a bit.
+
+  TO FIX: remove the moodle before re-applying
 
 - BUT WHAT ABOUT STATUS BRIDGE????
 

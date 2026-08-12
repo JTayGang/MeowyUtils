@@ -471,7 +471,7 @@ public sealed class CompassHud : IDisposable
         float phase = t * flowSpeed * flowDir;
         float phase2 = phase * 1.4f + 1.3f;
 
-        int samples = Math.Clamp((int)(len / (waveLen * 0.5f) * 4f) + 2, 3, 48);
+        int samples = Math.Clamp((int)(len / (waveLen * 0.5f) * 4f) + 2, 3, 24);
         Span<Vector2> pts = stackalloc Vector2[96];
         Span<float> fades = stackalloc float[96];
         for (int i = 0; i < samples; i++)

@@ -45,7 +45,7 @@ public sealed class ConfigWindow : Window
             changed |= DrawAppearanceTab(cfg);
             changed |= DrawMarkersTab(cfg);
             changed |= DrawCombatTab(cfg);
-            changed |= DrawAdvancedTab(cfg);
+            changed |= DrawAdvancedTab(cfg);   // <-- returns bool (includes override changes)
             ImGui.EndTabBar();
         }
 
@@ -106,7 +106,6 @@ public sealed class ConfigWindow : Window
         // ── Colors & Theme ──────────────────────────────────────────────
         if (ImGui.CollapsingHeader("Colors & Theme", ImGuiTreeNodeFlags.DefaultOpen))
         {
-            // All color pickers now use ColorPickerFlags for a compact swatch with alpha bar
             changed |= DrawColorEdit("Background##bgc", cfg.BackgroundColor, v => cfg.BackgroundColor = v, ColorPickerFlags);
             changed |= DrawColorEdit("Border##bdc", cfg.BorderColor, v => cfg.BorderColor = v, ColorPickerFlags);
             changed |= DrawColorEdit("Cardinal (N/S/E/W)##cdc", cfg.CardinalColor, v => cfg.CardinalColor = v, ColorPickerFlags);
@@ -124,7 +123,6 @@ public sealed class ConfigWindow : Window
         }
 
         // ── Camera ──────────────────────────────────────────────────────
-        // Now open by default
         if (ImGui.CollapsingHeader("Camera & Direction", ImGuiTreeNodeFlags.DefaultOpen))
         {
             changed |= DrawToggle("Use camera direction (not character facing)",
@@ -337,11 +335,11 @@ public sealed class ConfigWindow : Window
                 () => cfg.TargetBarFontScale, v => cfg.TargetBarFontScale = v);
             changed |= DrawToggle("Show target level##tblvl", () => cfg.ShowTargetLevel, v => cfg.ShowTargetLevel = v);
             changed |= DrawToggle("Show HP percentage##tbhpp", () => cfg.ShowTargetHealthPercent, v => cfg.ShowTargetHealthPercent = v,
-        	"Shows percentage under the health bar.");
-	    BeginIndentedDisabled(cfg.ShowTargetHealthPercent);
-	    changed |= DrawToggle("Show on target‑of‑target##tbtothpp", () => cfg.ShowTargetOfTargetHealthPercent, v => cfg.ShowTargetOfTargetHealthPercent = v,
-        	"Also shows percentage on the target‑of‑target bar.");
-    	    EndIndentedDisabled();
+                "Shows percentage under the health bar.");
+            BeginIndentedDisabled(cfg.ShowTargetHealthPercent);
+            changed |= DrawToggle("Show on target‑of‑target##tbtothpp", () => cfg.ShowTargetOfTargetHealthPercent, v => cfg.ShowTargetOfTargetHealthPercent = v,
+                "Also shows percentage on the target‑of‑target bar.");
+            EndIndentedDisabled();
             changed |= DrawEnableAndColor("tbshd", "Show shield overlay",
                 () => cfg.ShowTargetBarShield, v => cfg.ShowTargetBarShield = v,
                 () => cfg.TargetBarShieldColor, v => cfg.TargetBarShieldColor = v,
@@ -409,6 +407,7 @@ public sealed class ConfigWindow : Window
     {
         if (!ImGui.BeginTabItem("Advanced")) return false;
         bool changed = false;
+        bool overridesChanged = false;
 
         // ── Player Icon Overrides ─────────────────────────────────────
         if (ImGui.CollapsingHeader("Player Icon Overrides", ImGuiTreeNodeFlags.DefaultOpen))
@@ -423,15 +422,21 @@ public sealed class ConfigWindow : Window
                 ImGui.PushID(i);
                 if (ImGui.Button("X##rmov")) removeAt = i;
                 ImGui.SameLine();
-                changed |= DrawOverrideRow(cfg.PlayerIconOverrides[i], "ov", 110f);
+                if (DrawOverrideRow(cfg.PlayerIconOverrides[i], "ov", 110f))
+                    overridesChanged = true;
                 ImGui.PopID();
             }
-            if (removeAt >= 0) { cfg.PlayerIconOverrides.RemoveAt(removeAt); changed = true; }
+            if (removeAt >= 0)
+            {
+                cfg.PlayerIconOverrides.RemoveAt(removeAt);
+                overridesChanged = true;
+            }
 
             ImGui.Separator();
             ImGui.TextDisabled("Add new override:");
             ImGui.SameLine();
-            DrawOverrideRow(_newOverride, "newov", 120f);
+            // Editing the new override does NOT affect the list yet, so we don't set overridesChanged
+            changed |= DrawOverrideRow(_newOverride, "newov", 120f);
             ImGui.SameLine();
 
             bool canAdd = !string.IsNullOrWhiteSpace(_newOverride.PlayerName) && _newOverride.IconBaseId > 0;
@@ -440,6 +445,8 @@ public sealed class ConfigWindow : Window
             {
                 _newOverride.PlayerName = _newOverride.PlayerName.Trim();
                 cfg.PlayerIconOverrides.Add(_newOverride);
+                overridesChanged = true;
+                // Reset the builder object for next addition
                 _newOverride = new PlayerIconOverride
                 {
                     ShowBorder = _newOverride.ShowBorder,
@@ -452,6 +459,10 @@ public sealed class ConfigWindow : Window
                 changed = true;
             }
             ImGui.EndDisabled();
+
+            // If any override-specific change occurred, increment the version
+            if (overridesChanged)
+                cfg.IncrementOverrideVersion();
         }
 
         // ── Moodles ↔ Loci Mirror ────────────────────────────────────
@@ -473,14 +484,14 @@ public sealed class ConfigWindow : Window
         }
 
         ImGui.EndTabItem();
-        return changed;
+        return changed || overridesChanged;
     }
 
     // ───────────────────────────────────────────────────────────────────────────
-    // Shared UI helpers (unchanged from original)
+    // Shared UI helpers
     // ───────────────────────────────────────────────────────────────────────────
 
-    // ── Color themes (copied from original) ──────────────────────────────
+    // ── Color themes ──────────────────────────────────────────────
     private sealed record ColorTheme(
         string Name, Vector4 Background, Vector4 Border, Vector4 Cardinal, Vector4 Intercardinal, Vector4 Tick,
         Vector4 Player, Vector4 Enemy, Vector4 Npc, Vector4 Gathering, Vector4 Treasure, Vector4 Aetheryte, Vector4 Fate);
@@ -522,7 +533,7 @@ public sealed class ConfigWindow : Window
         cfg.FateColor = t.Fate;
     }
 
-    // ── Override row (used in Advanced tab) ────────────────────────────
+    // ── Override row ────────────────────────────────────────────────
     private static bool DrawOverrideRow(PlayerIconOverride ov, string idSuffix, float nameWidth)
     {
         bool changed = false;

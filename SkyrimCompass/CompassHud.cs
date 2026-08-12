@@ -27,7 +27,7 @@ using Lumina.Excel.Sheets;
 // Moodles/Loci IPC tuples (shape-only copies)
 using MoodlesStatusInfo = (int Version, System.Guid GUID, int IconID, string Title, string Description, string CustomVFXPath,
     long ExpireTicks, int Type, int Stacks, int StackSteps, uint Modifiers, System.Guid ChainedStatus,
-    int ChainTrigger, string Applier, string Dispeller, bool Permanent);
+    int ChainTrigger, string Applier, string Dispeller);
 using LociStatusInfo = (int Version, System.Guid GUID, uint IconID, string Title, string Description, string CustomVFXPath,
     long ExpireTicks, byte Type, int Stacks, int StackSteps, int StackToChain, uint Modifiers,
     System.Guid ChainedGUID, byte ChainType, int ChainTrigger, string Applier, string Dispeller);
@@ -83,11 +83,10 @@ public sealed class CompassHud : IDisposable
     private readonly List<(float Remaining, int Icon, string Name, string Desc, System.Guid Guid, int Stacks)> targetStatusBuffer = new();
 
     // Duration tracker for Moodles/Loci — kept as two separate dictionaries
-    // (rather than one shared by GUID) so a presence sweep run against one
-    // plugin's payload can never evict an entry that belongs to the other.
     private readonly Dictionary<System.Guid, (float FirstSeen, long TotalMs)> moodlesDurationTracker = new();
     private readonly Dictionary<System.Guid, (float FirstSeen, long TotalMs)> lociDurationTracker = new();
-    private readonly HashSet<System.Guid> presentGuidScratch = new();
+    private readonly HashSet<System.Guid> presentGuidScratch = new();       // reused
+    private readonly List<System.Guid> staleGuids = new();                 // reused for pruning
     private float nextDurationTrackerPruneAt;
 
     // Cached payloads (throttled)
@@ -99,8 +98,8 @@ public sealed class CompassHud : IDisposable
     private float cachedLociFetchedAt = -1000f;
     private const float StatusPayloadCacheSeconds = 0.12f;
 
-    // Tooltip cache
-    private readonly Dictionary<(string Name, string Desc), byte[]> formattedTooltipCache = new();
+    // Tooltip cache – key is combined name\0desc to avoid tuple allocation
+    private readonly Dictionary<string, byte[]> formattedTooltipCache = new();
 
     // Context menu fade
     private bool  contextMenuWasOpen;
@@ -119,6 +118,17 @@ public sealed class CompassHud : IDisposable
     private readonly Dictionary<uint, uint> roleColorCache = new(); // RowId → RGBA (packed)
     private readonly Dictionary<uint, string> actionNameCache = new();
     private readonly Dictionary<uint, (string Name, string Desc)> statusTextCache = new();
+
+    // Icon aspect cache
+    private readonly Dictionary<int, float> iconAspectCache = new();
+
+    // Cached target label
+    private string cachedTargetLabel = "";
+    private ulong cachedTargetLabelId = 0;
+
+    // Player override dictionary with versioning
+    private Dictionary<string, PlayerIconOverride>? playerOverrideDict;
+    private int playerOverrideDictVersion = -1;
 
     private readonly ExcelSheet<GatheringPoint>     gatheringPointSheet;
     private readonly ExcelSheet<GatheringPointBase> gatheringPointBaseSheet;
@@ -150,9 +160,7 @@ public sealed class CompassHud : IDisposable
         (180f, "S",  true), (225f, "SW", false), (270f, "W",  true), (315f, "NW", false),
     ];
 
-    // 8-direction offsets for the drop-shadow/outline text pass. Shared instance —
-    // the old code built a fresh array literal on every call to each of the four
-    // shadowed-text sites below.
+    // 8-direction offsets for the drop-shadow/outline text pass.
     private static readonly (float dx, float dy)[] ShadowOffsets8 =
     [
         (-1f,-1f), (0f,-1f), (1f,-1f), (-1f,0f), (1f,0f), (-1f,1f), (0f,1f), (1f,1f),
@@ -172,7 +180,7 @@ public sealed class CompassHud : IDisposable
         public PluginIpcState(string name, int minVer, PluginIpcKind kind) { Name = name; MinimumVersion = minVer; Kind = kind; }
     }
 
-    private const float PluginActiveCacheSeconds = 5f;  // <-- added missing constant
+    private const float PluginActiveCacheSeconds = 5f;
 
     public CompassHud(IClientState clientState, IObjectTable objectTable, ITargetManager targetManager,
         INamePlateGui namePlateGui, ITextureProvider textureProvider, IFateTable fateTable,
@@ -617,12 +625,6 @@ public sealed class CompassHud : IDisposable
         }
         if (shieldFrac.HasValue && shieldFrac.Value > 0f && shieldCol.HasValue)
         {
-            // Second bar stacked immediately past the current fill edge (not an
-            // independent overlay sized off the far edge of the whole bar), so
-            // it shrinks toward the fill as the shield is depleted and vanishes
-            // once there's none left. If the fill is already at/near the far
-            // edge there's no room left to show it, so it's clipped rather than
-            // drawn past the bar's bounds.
             float shieldLo = fromRight ? MathF.Max(0f, 1f - clampedFill - shieldFrac.Value) : clampedFill;
             float shieldHi = fromRight ? 1f - clampedFill : MathF.Min(1f, clampedFill + shieldFrac.Value);
             if (shieldHi > shieldLo)
@@ -680,16 +682,16 @@ private float RenderTargetBar(ImDrawListPtr dl, float tbX, float tbW, float tbY,
         float rawShieldFrac = config.ShowTargetBarShield ? chara.ShieldPercentage / 100f : 0f;
 
         // ─── Minion detection: force full health bar ────────────────
-bool isMinion = currentTarget.ObjectKind == ObjectKind.Companion;
-if (isMinion)
-{
-    rawFrac = 1f;
-    displayedTargetHpFrac = 1f;
-    lastRawTargetHpFrac = 1f;
-    targetBarFlashAlpha = 0f;
-    rawShieldFrac = 0f;
-    displayedTargetShieldFrac = 0f;
-}
+        bool isMinion = currentTarget.ObjectKind == ObjectKind.Companion;
+        if (isMinion)
+        {
+            rawFrac = 1f;
+            displayedTargetHpFrac = 1f;
+            lastRawTargetHpFrac = 1f;
+            targetBarFlashAlpha = 0f;
+            rawShieldFrac = 0f;
+            displayedTargetShieldFrac = 0f;
+        }
 
         float dt = ImGui.GetIO().DeltaTime;
         if (currentTarget.GameObjectId != lastTargetBarObjectId)
@@ -711,9 +713,6 @@ if (isMinion)
         if (!isMinion)
             targetBarFlashAlpha = MathF.Max(0f, targetBarFlashAlpha - dt / 0.4f);
 
-        // Shield is drawn stacked immediately past the current HP fill inside
-        // DrawTrapezoidBar — a second bar continuing from where HP leaves off —
-        // rather than as an independent overlay sized off the far edge.
         DrawTrapezoidBar(dl, tbX, tbY, tbW, tbH, displayedTargetHpFrac, bgCol, fillCol, barAlpha,
             (!isMinion && displayedTargetShieldFrac > 0f) ? displayedTargetShieldFrac : null,
             (!isMinion && displayedTargetShieldFrac > 0f) ? C(config.TargetBarShieldColor) : null);
@@ -742,9 +741,17 @@ if (isMinion)
     string? castName = currentTarget is IBattleChara castingChara && castingChara.IsCasting && castingChara.TotalCastTime > 0f
         ? GetCastActionName(castingChara) : null;
 
-    string label = castName ?? currentTarget.Name.TextValue;
-    if (castName == null && config.ShowTargetLevel && currentTarget is ICharacter lvlChar && lvlChar.Level > 0)
-        label = $"Lv{lvlChar.Level}  {label}";
+    // ─── Cache formatted name ──────────────────────────────────────
+    if (currentTarget.GameObjectId != cachedTargetLabelId)
+    {
+        string baseLabel = castName ?? currentTarget.Name.TextValue;
+        if (castName == null && config.ShowTargetLevel && currentTarget is ICharacter lvlChar && lvlChar.Level > 0)
+            cachedTargetLabel = $"Lv{lvlChar.Level}  {baseLabel}";
+        else
+            cachedTargetLabel = baseLabel;
+        cachedTargetLabelId = currentTarget.GameObjectId;
+    }
+    string label = cachedTargetLabel;
 
     var tsz = ImGui.CalcTextSize(label) * config.TargetBarFontScale;
     float nameGap = MathF.Max(6f, tbH * 0.5f);
@@ -786,7 +793,7 @@ if (isMinion)
         foreach (var (edge, target, col, tMul, tOff) in ribbons)
             DrawGlowLine(dl, V(edge, textCy), V(target, textCy), col, 1f, glowT * tMul + tOff, true, 0f, 0f);
 
-        // Cast ribbon (unchanged)
+        // Cast ribbon
         if (currentTarget.GameObjectId != castWipeTargetId)
         {
             castWipeTargetId = currentTarget.GameObjectId;
@@ -835,7 +842,6 @@ if (isMinion)
         uint pctCol = WithAlpha(C(config.CardinalColor), barAlpha);
         uint pctShadow = WithAlpha(0xCC000000u, barAlpha);
 
-        // Left-aligned under the left slanted edge
         float px = bottomLeftX;
         foreach (var (dx, dy) in ShadowOffsets8)
             dl.AddText(font, pctFontSize, V(px + dx, py + dy), pctShadow, pctText);
@@ -981,15 +987,15 @@ private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float
         int displayIcon = icon;
         if (guid != System.Guid.Empty && stacks > 1)
         {
-            // Assume stack icons are sequential: base + (stacks - 1)
             displayIcon = icon + stacks - 1;
         }
 
         // Try drawing with adjusted icon; fallback to base if it fails
-        if (!TryDrawIcon(dl, displayIcon, sx, scy, size, barAlpha))
+        // Status icons are drawn outside the clipped compass area, so we don't need unclip
+        if (!TryDrawIcon(dl, displayIcon, sx, scy, size, barAlpha, false, 1.0f, unclip: false))
         {
             if (displayIcon != icon)
-                TryDrawIcon(dl, icon, sx, scy, size, barAlpha);
+                TryDrawIcon(dl, icon, sx, scy, size, barAlpha, false, 1.0f, unclip: false);
         }
 
         string? durationLabel = remaining <= 0f ? null
@@ -1073,26 +1079,17 @@ private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float
             try { cache = getter.InvokeFunc(targetAddress); }
             catch { cache = null; }
 
-            // Moodles/Loci report each status's *configured* duration (e.g. "this
-            // moodle lasts 60s"), not a live per-application countdown and not a
-            // unique per-application timestamp — so a status that got reapplied
-            // looks identical (same GUID, same ExpireTicks) to one that's still
-            // running out its original application. The only evidence we get of
-            // a genuine reapplication is that the GUID disappeared from this list
-            // (the previous instance fully expired and was removed) and has now
-            // come back. Sweep out anything we're tracking that this fresh fetch
-            // no longer reports, so the next sighting starts a new timer instead
-            // of resuming a stale anchor from long before it expired.
+            // Sweep stale GUIDs from tracker
             if (cache != null && tracker.Count > 0)
             {
                 presentGuidScratch.Clear();
                 foreach (var s in cache) presentGuidScratch.Add(guidSelector(s));
 
-                var stale = new List<System.Guid>();
+                staleGuids.Clear();
                 foreach (var guid in tracker.Keys)
                     if (!presentGuidScratch.Contains(guid))
-                        stale.Add(guid);
-                foreach (var guid in stale) tracker.Remove(guid);
+                        staleGuids.Add(guid);
+                foreach (var guid in staleGuids) tracker.Remove(guid);
             }
         }
         if (cache == null) return;
@@ -1112,8 +1109,6 @@ private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float
         }
     }
 
-    // Plain loop instead of List.Exists(guid => ...) — that lambda would capture
-    // a fresh `guid` and allocate a new closure on every call in the hot loop above.
     private static bool ContainsGuid(List<(float Remaining, int Icon, string Name, string Desc, System.Guid Guid, int Stacks)> buffer, System.Guid guid)
     {
         for (int i = 0; i < buffer.Count; i++)
@@ -1141,14 +1136,14 @@ private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float
         PruneStaleTrackerEntries(lociDurationTracker, now);
     }
 
-    private static void PruneStaleTrackerEntries(Dictionary<System.Guid, (float FirstSeen, long TotalMs)> tracker, float now)
+    private void PruneStaleTrackerEntries(Dictionary<System.Guid, (float FirstSeen, long TotalMs)> tracker, float now)
     {
         if (tracker.Count == 0) return;
-        var stale = new List<System.Guid>();
+        staleGuids.Clear();
         foreach (var (guid, tracked) in tracker)
             if (now - tracked.FirstSeen > tracked.TotalMs / 1000f + 30f)
-                stale.Add(guid);
-        foreach (var guid in stale) tracker.Remove(guid);
+                staleGuids.Add(guid);
+        foreach (var guid in staleGuids) tracker.Remove(guid);
     }
 
     // ─── Tooltip formatting ────────────────────────────────────────
@@ -1190,7 +1185,8 @@ private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float
 
     private byte[] GetFormattedTooltipBytes(string name, string desc)
     {
-        var key = (name, desc);
+        // Use combined key to avoid tuple allocation
+        string key = $"{name}\0{desc}";
         if (formattedTooltipCache.TryGetValue(key, out var cached))
             return cached;
 
@@ -1257,7 +1253,7 @@ private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float
             if (cand.Fate is { } fate)
             {
                 float size = Lerp(config.FateIconMinSize, config.FateIconMaxSize, t);
-                if (!(fate.IconId > 0 && TryDrawIcon(dl, (int)fate.IconId, sx, cy, size, alpha)))
+                if (!(fate.IconId > 0 && TryDrawIcon(dl, (int)fate.IconId, sx, cy, size, alpha, false, 1.0f, unclip: true)))
                     DrawFilledDot(dl, sx, cy, (3f + 7f * t) * 2f, C(config.FateColor), alpha);
                 continue;
             }
@@ -1289,7 +1285,7 @@ private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float
                 iconSize = Lerp(config.TreasureMinSize, config.TreasureMaxSize, t);
             }
 
-            bool drewIcon = iconId > 0 && TryDrawIcon(dl, iconId, sx, cy, iconSize, alpha);
+            bool drewIcon = iconId > 0 && TryDrawIcon(dl, iconId, sx, cy, iconSize, alpha, false, 1.0f, unclip: true);
 
             if (!drewIcon)
             {
@@ -1305,7 +1301,7 @@ private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float
                             float drawSize = playerSize * IconSizeMultiplier;
                             uint roleCol = GetRoleColor(ch);
                             DrawIconRingAndShadow(dl, sx, cy, drawSize * 0.5f, roleCol, roleCol, alpha);
-                            TryDrawIcon(dl, jobIcon, sx, cy, drawSize, alpha);
+                            TryDrawIcon(dl, jobIcon, sx, cy, drawSize, alpha, false, 1.0f, unclip: true);
                             drewJob = true;
                         }
                     }
@@ -1319,7 +1315,7 @@ private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float
                             DrawIconRingAndShadow(dl, sx, cy, half,
                                 ov.ShowBorder ? C(ov.BorderColor) : null,
                                 ov.ShowFill ? C(ov.FillColor) : null, alpha);
-                            if (!(ov.IconBaseId > 0 && TryDrawIcon(dl, ov.IconBaseId, sx, cy, overrideSize, alpha, ov.ClipToCircle, ov.SizeMultiplier)))
+                            if (!(ov.IconBaseId > 0 && TryDrawIcon(dl, ov.IconBaseId, sx, cy, overrideSize, alpha, ov.ClipToCircle, ov.SizeMultiplier, unclip: true)))
                                 DrawFilledDot(dl, sx, cy, playerSize, ov.ShowBorder ? C(ov.BorderColor) : col, alpha);
                         }
                         else
@@ -1354,8 +1350,9 @@ private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float
     }
 
     // ─── Icon drawing ──────────────────────────────────────────────
+    // Added 'unclip' parameter to avoid unnecessary state changes for status icons
     private bool TryDrawIcon(ImDrawListPtr dl, int iconId, float sx, float cy, float size, float alpha,
-        bool clipCircle = false, float uvZoom = 1.0f)
+        bool clipCircle = false, float uvZoom = 1.0f, bool unclip = true)
     {
         if (!textureProvider.TryGetFromGameIcon(new GameIconLookup((uint)iconId), out var sharedTex)) return false;
         var tex = sharedTex.GetWrapOrEmpty();
@@ -1375,18 +1372,23 @@ private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float
             halfH = halfW * (tex.Size.X > 0f ? tex.Size.Y / tex.Size.X : 1f);
             uvMin = Vector2.Zero; uvMax = Vector2.One;
         }
-        PushUnclip(dl);
+        if (unclip) PushUnclip(dl);
         dl.AddImageRounded(tex.Handle, V(sx - halfW, cy - halfH), V(sx + halfW, cy + halfH),
             uvMin, uvMax, tint, clipCircle ? halfW : 0f, ImDrawFlags.RoundCornersAll);
-        PopUnclip(dl);
+        if (unclip) PopUnclip(dl);
         return true;
     }
 
     private float GetIconAspect(int iconId)
     {
-        if (!textureProvider.TryGetFromGameIcon(new GameIconLookup((uint)iconId), out var sharedTex)) return 1f;
+        if (iconAspectCache.TryGetValue(iconId, out float aspect))
+            return aspect;
+        if (!textureProvider.TryGetFromGameIcon(new GameIconLookup((uint)iconId), out var sharedTex))
+            return 1f;
         var size = sharedTex.GetWrapOrEmpty().Size;
-        return size.X > 0f ? size.Y / size.X : 1f;
+        aspect = size.X > 0f ? size.Y / size.X : 1f;
+        iconAspectCache[iconId] = aspect;
+        return aspect;
     }
 
     // ─── Static data lookups ──────────────────────────────────────
@@ -1402,19 +1404,18 @@ private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float
         return icon;
     }
 
-    // Plain loop instead of List.Find(name => ...) — that lambda captures the
-    // per-candidate `obj` and would allocate a new closure for every nearby
-    // player, every frame.
     private PlayerIconOverride? FindPlayerIconOverride(string playerName)
     {
-        var overrides = config.PlayerIconOverrides;
-        for (int i = 0; i < overrides.Count; i++)
+        if (playerOverrideDict == null || playerOverrideDictVersion != config.PlayerIconOverridesVersion)
         {
-            var o = overrides[i];
-            if (o.PlayerName.Length > 0 && string.Equals(o.PlayerName, playerName, StringComparison.OrdinalIgnoreCase))
-                return o;
+            playerOverrideDict = new Dictionary<string, PlayerIconOverride>(StringComparer.OrdinalIgnoreCase);
+            foreach (var entry in config.PlayerIconOverrides)
+                if (!string.IsNullOrEmpty(entry.PlayerName))
+                    playerOverrideDict[entry.PlayerName] = entry;
+            playerOverrideDictVersion = config.PlayerIconOverridesVersion;
         }
-        return null;
+        playerOverrideDict.TryGetValue(playerName, out var found);
+        return found;
     }
 
     private uint GetRoleColor(ICharacter ch)
@@ -1453,10 +1454,6 @@ private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float
         return v;
     }
 
-    // Status name/description are Lumina SeStrings — ToString() parses payloads
-    // and allocates, so it's worth caching per status ID. Without this, every
-    // status on the target gets re-parsed every single frame even though the
-    // text is only ever displayed for the one icon (if any) under the mouse.
     private (string Name, string Desc) GetStatusText(Lumina.Excel.Sheets.Status row)
     {
         if (statusTextCache.TryGetValue(row.RowId, out var cached)) return cached;

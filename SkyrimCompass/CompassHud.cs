@@ -118,6 +118,7 @@ public sealed class CompassHud : IDisposable
     private readonly Dictionary<uint, string> singularCache = new();
     private readonly Dictionary<uint, uint> roleColorCache = new(); // RowId → RGBA (packed)
     private readonly Dictionary<uint, string> actionNameCache = new();
+    private readonly Dictionary<uint, (string Name, string Desc)> statusTextCache = new();
 
     private readonly ExcelSheet<GatheringPoint>     gatheringPointSheet;
     private readonly ExcelSheet<GatheringPointBase> gatheringPointBaseSheet;
@@ -147,6 +148,14 @@ public sealed class CompassHud : IDisposable
     [
         (0f,   "N",  true), (45f,  "NE", false), (90f,  "E",  true), (135f, "SE", false),
         (180f, "S",  true), (225f, "SW", false), (270f, "W",  true), (315f, "NW", false),
+    ];
+
+    // 8-direction offsets for the drop-shadow/outline text pass. Shared instance —
+    // the old code built a fresh array literal on every call to each of the four
+    // shadowed-text sites below.
+    private static readonly (float dx, float dy)[] ShadowOffsets8 =
+    [
+        (-1f,-1f), (0f,-1f), (1f,-1f), (-1f,0f), (1f,0f), (-1f,1f), (0f,1f), (1f,1f),
     ];
 
     // IPC helper enums / struct
@@ -743,7 +752,7 @@ if (isMinion)
     float tx = cx - tsz.X * 0.5f;
 
     uint shadowCol = WithAlpha(0xCC000000u, barAlpha);
-    foreach (var (dx, dy) in new[] { (-1f,-1f), (0f,-1f), (1f,-1f), (-1f,0f), (1f,0f), (-1f,1f), (0f,1f), (1f,1f) })
+    foreach (var (dx, dy) in ShadowOffsets8)
         dl.AddText(font, fontSize, V(tx + dx, nameY + dy), shadowCol, label);
     dl.AddText(font, fontSize, V(tx, nameY), nameCol, label);
 
@@ -828,7 +837,7 @@ if (isMinion)
 
         // Left-aligned under the left slanted edge
         float px = bottomLeftX;
-        foreach (var (dx, dy) in new[] { (-1f,-1f), (0f,-1f), (1f,-1f), (-1f,0f), (1f,0f), (-1f,1f), (0f,1f), (1f,1f) })
+        foreach (var (dx, dy) in ShadowOffsets8)
             dl.AddText(font, pctFontSize, V(px + dx, py + dy), pctShadow, pctText);
         dl.AddText(font, pctFontSize, V(px, py), pctCol, pctText);
     }
@@ -881,7 +890,7 @@ if (isMinion)
         uint pctShadow = WithAlpha(0xCC000000u, barAlpha);
 
         float px = bottomRightX - pctSz.X;
-        foreach (var (dx, dy) in new[] { (-1f,-1f), (0f,-1f), (1f,-1f), (-1f,0f), (1f,0f), (-1f,1f), (0f,1f), (1f,1f) })
+        foreach (var (dx, dy) in ShadowOffsets8)
             dl.AddText(font, pctFontSize, V(px + dx, py + dy), pctShadow, pctText);
         dl.AddText(font, pctFontSize, V(px, py), pctCol, pctText);
     }
@@ -909,7 +918,7 @@ if (isMinion)
 
         uint totNameCol = WithAlpha(C(config.CardinalColor), barAlpha);
         uint totShadowCol = WithAlpha(0xCC000000u, barAlpha);
-        foreach (var (dx, dy) in new[] { (-1f,-1f), (0f,-1f), (1f,-1f), (-1f,0f), (1f,0f), (-1f,1f), (0f,1f), (1f,1f) })
+        foreach (var (dx, dy) in ShadowOffsets8)
             dl.AddText(font, totFontSize, V(totTx + dx, totTy + dy), totShadowCol, totLabel);
         dl.AddText(font, totFontSize, V(totTx, totTy), totNameCol, totLabel);
     }
@@ -935,7 +944,8 @@ private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float
         if (status.StatusId == 0) continue;
         if (status.GameData.ValueNullable is not { } row || row.Icon == 0) continue;
         float remaining = (row.IsPermanent || row.IsFcBuff) ? 0f : status.RemainingTime;
-        targetStatusBuffer.Add((remaining, (int)row.Icon, row.Name.ToString(), row.Description.ToString(), System.Guid.Empty, (int)status.Param));
+        var (statusName, statusDesc) = GetStatusText(row);
+        targetStatusBuffer.Add((remaining, (int)row.Icon, statusName, statusDesc, System.Guid.Empty, (int)status.Param));
     }
 
     if (character.Address != IntPtr.Zero)
@@ -1093,13 +1103,22 @@ private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float
             var guid = guidSelector(s);
             int icon = iconSelector(s);
             if (icon <= 0) continue;
-            if (targetStatusBuffer.Exists(e => e.Guid == guid)) continue;
+            if (ContainsGuid(targetStatusBuffer, guid)) continue;
             var (name, desc) = textSelector(s);
             long expire = expireTicksSelector(s);
             float remaining = EstimateRemainingSeconds(tracker, guid, expire, now);
             int stacks = stacksSelector(s);
             targetStatusBuffer.Add((remaining, icon, name, desc, guid, stacks));
         }
+    }
+
+    // Plain loop instead of List.Exists(guid => ...) — that lambda would capture
+    // a fresh `guid` and allocate a new closure on every call in the hot loop above.
+    private static bool ContainsGuid(List<(float Remaining, int Icon, string Name, string Desc, System.Guid Guid, int Stacks)> buffer, System.Guid guid)
+    {
+        for (int i = 0; i < buffer.Count; i++)
+            if (buffer[i].Guid == guid) return true;
+        return false;
     }
 
     private static float EstimateRemainingSeconds(Dictionary<System.Guid, (float FirstSeen, long TotalMs)> tracker,
@@ -1292,8 +1311,7 @@ private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float
                     }
                     if (!drewJob)
                     {
-                        var ov = config.PlayerIconOverrides.Find(o => o.PlayerName.Length > 0 &&
-                            string.Equals(o.PlayerName, obj.Name.TextValue, StringComparison.OrdinalIgnoreCase));
+                        var ov = FindPlayerIconOverride(obj.Name.TextValue);
                         if (ov != null)
                         {
                             float overrideSize = playerSize * IconSizeMultiplier;
@@ -1384,6 +1402,21 @@ private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float
         return icon;
     }
 
+    // Plain loop instead of List.Find(name => ...) — that lambda captures the
+    // per-candidate `obj` and would allocate a new closure for every nearby
+    // player, every frame.
+    private PlayerIconOverride? FindPlayerIconOverride(string playerName)
+    {
+        var overrides = config.PlayerIconOverrides;
+        for (int i = 0; i < overrides.Count; i++)
+        {
+            var o = overrides[i];
+            if (o.PlayerName.Length > 0 && string.Equals(o.PlayerName, playerName, StringComparison.OrdinalIgnoreCase))
+                return o;
+        }
+        return null;
+    }
+
     private uint GetRoleColor(ICharacter ch)
     {
         uint rowId = ch.ClassJob.RowId;
@@ -1417,6 +1450,18 @@ private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float
         if (singularCache.TryGetValue(baseId, out var cached)) return cached;
         string v = npcSheet.GetRowOrDefault(baseId) is { } row ? row.Singular.ToString() : "";
         singularCache[baseId] = v;
+        return v;
+    }
+
+    // Status name/description are Lumina SeStrings — ToString() parses payloads
+    // and allocates, so it's worth caching per status ID. Without this, every
+    // status on the target gets re-parsed every single frame even though the
+    // text is only ever displayed for the one icon (if any) under the mouse.
+    private (string Name, string Desc) GetStatusText(Lumina.Excel.Sheets.Status row)
+    {
+        if (statusTextCache.TryGetValue(row.RowId, out var cached)) return cached;
+        var v = (row.Name.ToString(), row.Description.ToString());
+        statusTextCache[row.RowId] = v;
         return v;
     }
 

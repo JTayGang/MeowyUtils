@@ -65,6 +65,11 @@ public sealed class CompassHud : IDisposable
     private const float LbFadeOutDuration = 2f;
     private const float LbDropThreshold   = 0.4f;
 
+    // Reusable scratch buffers for per-frame glow-layer data (avoids re-allocating
+    // a small array every RenderBar/RenderTargetBar call).
+    private readonly (float bar, float tMul, float tOff, Vector4 col)[] lbGlowLayersBuf = new (float, float, float, Vector4)[3];
+    private readonly (float edge, float target, uint col, float tMul, float tOff)[] ribbonsBuf = new (float, float, uint, float, float)[4];
+
     private ulong castWipeTargetId     = 0;
     private float castTrackedProgress  = 0f;
     private float castFrozenProgress   = 0f;
@@ -100,6 +105,11 @@ public sealed class CompassHud : IDisposable
 
     // Tooltip cache – key is combined name\0desc to avoid tuple allocation
     private readonly Dictionary<string, byte[]> formattedTooltipCache = new();
+
+    // Status duration label cache – keyed on (tier, integer value), not the raw float,
+    // so it stays a small, pure, collision-free cache (well under 150 possible keys,
+    // never needs pruning).
+    private readonly Dictionary<int, string> durationLabelCache = new();
 
     // Context menu fade
     private bool  contextMenuWasOpen;
@@ -160,6 +170,13 @@ public sealed class CompassHud : IDisposable
     private static readonly (float dx, float dy)[] ShadowOffsets8 =
     [
         (-1f,-1f), (0f,-1f), (1f,-1f), (-1f,0f), (1f,0f), (-1f,1f), (0f,1f), (1f,1f),
+    ];
+
+    // Layer weights for the glow-line wave effect. All values are constants, so this is
+    // shared by every DrawGlowLine call instead of being reallocated each time.
+    private static readonly (float alpha, float thickness)[] GlowLineLayers =
+    [
+        (0.05f, 14f), (0.10f, 10f), (0.18f, 6f), (0.32f, 3.5f), (0.70f, 1.8f),
     ];
 
     // IPC helper enums / struct
@@ -291,9 +308,9 @@ public sealed class CompassHud : IDisposable
 
         float targetNameBottom = tbRowY;
         if (config.ShowTargetBar)
-            targetNameBottom = RenderTargetBar(dl, mainX, mainW, tbRowY, nameCx, rowW, now, barAlpha, inDutyOrPvp);
+            targetNameBottom = RenderTargetBar(dl, mainX, mainW, tbRowY, nameCx, rowW, now, barAlpha, inDutyOrPvp, curTarget);
         if (hasTot)
-            RenderTargetOfTargetBar(dl, totX, totW, tbRowY, player, now, barAlpha, inDutyOrPvp);
+            RenderTargetOfTargetBar(dl, totX, totW, tbRowY, player, now, barAlpha, inDutyOrPvp, curTarget!, curTot!);
 
         if (config.ShowTargetStatuses && curTarget is IBattleChara targetChara)
             RenderTargetStatuses(dl, targetChara, nameCx, targetNameBottom, barAlpha);
@@ -365,13 +382,10 @@ public sealed class CompassHud : IDisposable
         if (lbProgress > 0f)
         {
             float glowT = now;
-            (float bar, float tMul, float tOff, Vector4 col)[] layers =
-            {
-                (Math.Clamp(lbProgress, 0f, 1f), 1.00f, 0.0f, config.LimitBreakGlowColor),
-                (Math.Clamp(lbProgress - 1f, 0f, 1f), 1.60f, 3.7f, config.LimitBreakGlowColor2),
-                (Math.Clamp(lbProgress - 2f, 0f, 1f), 0.65f, 7.1f, config.LimitBreakGlowColor3),
-            };
-            foreach (var (bar, tMul, tOff, col) in layers)
+            lbGlowLayersBuf[0] = (Math.Clamp(lbProgress, 0f, 1f), 1.00f, 0.0f, config.LimitBreakGlowColor);
+            lbGlowLayersBuf[1] = (Math.Clamp(lbProgress - 1f, 0f, 1f), 1.60f, 3.7f, config.LimitBreakGlowColor2);
+            lbGlowLayersBuf[2] = (Math.Clamp(lbProgress - 2f, 0f, 1f), 0.65f, 7.1f, config.LimitBreakGlowColor3);
+            foreach (var (bar, tMul, tOff, col) in lbGlowLayersBuf)
             {
                 if (bar <= 0f) continue;
                 float segW = bw * 0.5f * bar;
@@ -492,8 +506,7 @@ public sealed class CompassHud : IDisposable
             fades[i] = tipFade * wipeFade;
         }
 
-        (float alpha, float thickness)[] layers = { (0.05f, 14f), (0.10f, 10f), (0.18f, 6f), (0.32f, 3.5f), (0.70f, 1.8f) };
-        foreach (var (alpha, thick) in layers)
+        foreach (var (alpha, thick) in GlowLineLayers)
             for (int i = 0; i < samples - 1; i++)
             {
                 float segFade = (fades[i] + fades[i + 1]) * 0.5f;
@@ -635,7 +648,9 @@ public sealed class CompassHud : IDisposable
 
     private void HandleTargetFrameClick(Vector2 min, Vector2 max, IGameObject obj, bool allowLeftToTarget)
     {
-        if (IsVanillaContextMenuOpen()) return;
+        // contextMenuWasOpen is already refreshed for this frame by UpdateContextMenuFadeAlpha,
+        // which always runs earlier in Draw() before either target bar is rendered.
+        if (contextMenuWasOpen) return;
         if (!ImGui.IsMouseHoveringRect(min, max, false)) return;
         var io = ImGui.GetIO();
         io.WantCaptureMouse = true;
@@ -657,9 +672,8 @@ public sealed class CompassHud : IDisposable
     }
 
 private float RenderTargetBar(ImDrawListPtr dl, float tbX, float tbW, float tbY, float nameCx,
-    float nameRowW, float now, float barAlpha, bool inDutyOrPvp)
+    float nameRowW, float now, float barAlpha, bool inDutyOrPvp, IGameObject? currentTarget)
 {
-    var currentTarget = targetManager.Target;
     if (currentTarget == null) return tbY;
 
     uint borderCol = WithAlpha(C(config.BorderColor), barAlpha);
@@ -775,14 +789,11 @@ private float RenderTargetBar(ImDrawListPtr dl, float tbX, float tbW, float tbY,
         float ribbonR = MathF.Max(rowRight - inset, rightEdge + 24f);
         float glowT = now;
 
-        (float edge, float target, uint col, float tMul, float tOff)[] ribbons =
-        {
-            (leftEdge, ribbonL, shadowCol, 0.65f, 7.1f),
-            (leftEdge, ribbonL, borderCol, 1.00f, 0.0f),
-            (rightEdge, ribbonR, shadowCol, 1.15f, 5.3f),
-            (rightEdge, ribbonR, borderCol, 1.60f, 3.7f),
-        };
-        foreach (var (edge, target, col, tMul, tOff) in ribbons)
+        ribbonsBuf[0] = (leftEdge, ribbonL, shadowCol, 0.65f, 7.1f);
+        ribbonsBuf[1] = (leftEdge, ribbonL, borderCol, 1.00f, 0.0f);
+        ribbonsBuf[2] = (rightEdge, ribbonR, shadowCol, 1.15f, 5.3f);
+        ribbonsBuf[3] = (rightEdge, ribbonR, borderCol, 1.60f, 3.7f);
+        foreach (var (edge, target, col, tMul, tOff) in ribbonsBuf)
             DrawGlowLine(dl, V(edge, textCy), V(target, textCy), col, 1f, glowT * tMul + tOff, true, 0f, 0f);
 
         // Cast ribbon
@@ -849,11 +860,11 @@ private float RenderTargetBar(ImDrawListPtr dl, float tbX, float tbW, float tbY,
 }
 
     private void RenderTargetOfTargetBar(ImDrawListPtr dl, float tbX, float tbW, float tbY,
-    IPlayerCharacter player, float now, float barAlpha, bool inDutyOrPvp)
+    IPlayerCharacter player, float now, float barAlpha, bool inDutyOrPvp, IGameObject currentTarget, IGameObject tot)
 {
-    var currentTarget = targetManager.Target;
-    var tot = currentTarget?.TargetObject;
-    if (currentTarget == null || tot == null || tot.GameObjectId == currentTarget.GameObjectId || tot is not ICharacter chara) return;
+    // currentTarget/tot are non-null, distinct, and tot passed an ICharacter check already
+    // in Draw()'s hasTot computation — only the pattern match (needed to bind chara) remains.
+    if (tot is not ICharacter chara) return;
 
     bool targetingMe = config.HighlightIfTargetingMe && currentTarget.TargetObjectId == player.GameObjectId;
     float tbH = MathF.Max(4f, config.TargetBarHeight);
@@ -990,12 +1001,7 @@ private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float
                 TryDrawIcon(dl, icon, sx, scy, size, barAlpha, false, 1.0f, unclip: false);
         }
 
-        string? durationLabel = remaining <= 0f ? null
-            : remaining < 60f ? $"{(int)MathF.Ceiling(remaining)}"
-            : remaining < 3600f ? $"{(int)(remaining / 60f)}m"
-            : remaining < 86400f ? $"{(int)(remaining / 3600f)}h"
-            : remaining < 777600f ? $"{(int)(remaining / 86400f)}d"
-            : "9+d";
+        string? durationLabel = GetDurationLabel(remaining);
 
         float hoverBottom = scy + halfH;
         if (durationLabel != null)
@@ -1020,6 +1026,25 @@ private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float
         }
     }
 }
+
+    // Formats (and caches) the short duration label shown under a status icon. Keyed on
+    // the displayed tier + integer value rather than the raw float, so repeated frames
+    // showing the same text ("12", "3m", ...) hit the cache instead of reformatting.
+    private string? GetDurationLabel(float remaining)
+    {
+        if (remaining <= 0f) return null;
+        int tier, value;
+        if (remaining < 60f)          { tier = 0; value = (int)MathF.Ceiling(remaining); }
+        else if (remaining < 3600f)   { tier = 1; value = (int)(remaining / 60f); }
+        else if (remaining < 86400f)  { tier = 2; value = (int)(remaining / 3600f); }
+        else if (remaining < 777600f) { tier = 3; value = (int)(remaining / 86400f); }
+        else return "9+d";
+
+        int key = tier * 100_000 + value;
+        if (!durationLabelCache.TryGetValue(key, out var s))
+            durationLabelCache[key] = s = tier switch { 0 => $"{value}", 1 => $"{value}m", 2 => $"{value}h", _ => $"{value}d" };
+        return s;
+    }
 
     private void RenderTargetStatuses(ImDrawListPtr dl, IBattleChara target, float cx, float y, float barAlpha) =>
         RenderStatusIconRow(dl, target, cx, y, barAlpha, config.TargetStatusIconSize, config.TargetStatusMaxIcons, true, true);

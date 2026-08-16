@@ -21,6 +21,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly WindowSystem windowSystem = new("SkyrimCompass");
     private readonly CompassHud compassHud;
     private readonly ConfigWindow configWindow;
+    private readonly FirstTimeSetupWindow firstTimeSetupWindow;
     private readonly IFontHandle jupiterFontHandle;
 
     public Plugin(
@@ -33,6 +34,11 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface = pluginInterface;
         this.commandManager = commandManager;
         this.pluginLog = pluginLog;
+
+        // Checked before GetPluginConfig() so upgrades from an older version (which already
+        // have a config file on disk, just missing the new field) don't retroactively see the
+        // welcome wizard - only a genuinely fresh install does.
+        bool isNewInstall = !pluginInterface.ConfigFile.Exists;
         Config = pluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
 
         // FFXIV's serif font, loaded once, shared with CompassHud
@@ -47,10 +53,15 @@ public sealed class Plugin : IDalamudPlugin
         configWindow = new ConfigWindow(this);
         windowSystem.AddWindow(configWindow);
 
+        firstTimeSetupWindow = new FirstTimeSetupWindow(this);
+        windowSystem.AddWindow(firstTimeSetupWindow);
+        if (isNewInstall && !Config.HasCompletedFirstTimeSetup)
+            firstTimeSetupWindow.IsOpen = true;
+
         commandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "'/compass on'/'off' to set explicitly, 'config' for settings, 'debug' " +
-                          "to log nearby objects (/xllog to view)."
+            HelpMessage = "'/compass on'/'off' to set explicitly, 'config' for settings, 'setup' " +
+                          "for the first-time setup wizard, 'debug' to log nearby objects (/xllog to view)."
         });
 
         pluginInterface.UiBuilder.Draw += OnDraw;
@@ -73,6 +84,7 @@ public sealed class Plugin : IDalamudPlugin
         switch (args.Trim().ToLowerInvariant())
         {
             case "config":   configWindow.IsOpen = !configWindow.IsOpen; break;
+            case "setup":    firstTimeSetupWindow.IsOpen = true; break;
             case "debug":    compassHud.DumpNearbyObjects(); break;
             case "on":       SetEnabled(true); break;
             case "off":      SetEnabled(false); break;
@@ -101,4 +113,6 @@ public sealed class Plugin : IDalamudPlugin
     }
 
     private void OnOpenConfig() => configWindow.IsOpen = true;
+
+    public void OpenFirstTimeSetup() => firstTimeSetupWindow.IsOpen = true;
 }

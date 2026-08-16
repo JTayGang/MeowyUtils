@@ -986,9 +986,13 @@ private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float
         var (remaining, icon, name, desc, guid, stacks) = targetStatusBuffer[i];
         float sx = startX + i * (size + hGap) + size * 0.5f;
 
-        // ─── Adjust icon for plugin statuses with stacks ──────────
+        // ─── Adjust icon for statuses with stacks ──────────────────
+        // Vanilla FFXIV statuses (e.g. Inner Release) and Moodles/Loci statuses all use
+        // sequential icon IDs per stack level, so the same offset applies to both - this
+        // used to be gated to guid != Guid.Empty (Moodles/Loci only), which meant vanilla
+        // statuses always rendered their 1-stack icon regardless of actual stack count.
         int displayIcon = icon;
-        if (guid != System.Guid.Empty && stacks > 1)
+        if (stacks > 1)
         {
             displayIcon = icon + stacks - 1;
         }

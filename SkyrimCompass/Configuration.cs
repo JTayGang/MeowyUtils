@@ -26,6 +26,12 @@ public class Configuration : IPluginConfiguration
     public int  Version { get; set; } = 1;
     public bool Enabled { get; set; } = true;
 
+    // First-time setup wizard: set once the welcome popup has been finished or dismissed.
+    // Plugin.cs only offers to show the popup on a brand-new install (no config file yet),
+    // so upgrading users never see it pop up unprompted; they can still reach it from
+    // ConfigWindow's "Setup Wizard" button or "/compass setup".
+    public bool HasCompletedFirstTimeSetup { get; set; } = false;
+
     // Layout
     public float CompassWidth  { get; set; } = 570f;
     public float CompassHeight { get; set; } = 35f;

@@ -52,6 +52,11 @@ public sealed class ConfigWindow : Window
         ImGui.Separator();
         if (ImGui.Button("Close", new Vector2(80, 0)))
             IsOpen = false;
+        ImGui.SameLine();
+        if (ImGui.Button("Setup Wizard"))
+            plugin.OpenFirstTimeSetup();
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Re-open the \"Give me everything\" / \"Moodles + Loci only\" quick setup.");
 
         if (changed)
             _configDirty = true;

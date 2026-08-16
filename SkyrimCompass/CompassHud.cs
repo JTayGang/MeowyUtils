@@ -89,6 +89,9 @@ public sealed class CompassHud : IDisposable
     private readonly Dictionary<string, byte[]> _tooltipCache = new();
     private readonly Dictionary<int, string> _durationCache = new();
 
+    // Cache for icon → status text (used to fix tooltips for stacked vanilla statuses)
+    private readonly Dictionary<int, (string Name, string Desc)> _iconToStatusText = new();
+
     private bool _ctxMenuWasOpen;
     private float _ctxFadeChange = -1000f;
     private const float CtxFadeSecs = 0.15f, CtxDimAlpha = 0.33f;
@@ -182,6 +185,23 @@ public sealed class CompassHud : IDisposable
         _actionSheet = dm.GetExcelSheet<Lumina.Excel.Sheets.Action>();
 
         _npg.OnDataUpdate += OnNamePlateUpdate;
+
+        // Build icon → status text cache for vanilla statuses
+        var statusSheet = dm.GetExcelSheet<Lumina.Excel.Sheets.Status>();
+        if (statusSheet != null)
+        {
+            foreach (var row in statusSheet)
+            {
+                var icon = (int)row.Icon;
+                if (icon > 0 && !_iconToStatusText.ContainsKey(icon))
+                {
+                    var name = row.Name.ToString();
+                    var desc = row.Description.ToString();
+                    if (!string.IsNullOrEmpty(name))
+                        _iconToStatusText[icon] = (name, desc);
+                }
+            }
+        }
     }
 
     public void Dispose() => _npg.OnDataUpdate -= OnNamePlateUpdate;
@@ -784,78 +804,77 @@ public sealed class CompassHud : IDisposable
         return nameY + sz.Y;
     }
 
-private void RenderTotBar(ImDrawListPtr dl, float x, float w, float y,
-    IPlayerCharacter player, float now, float alpha, bool inDuty, IGameObject curTarget, IGameObject tot)
-{
-    if (tot is not ICharacter ch) return;
-
-    bool targetingMe = _cfg.HighlightIfTargetingMe && curTarget.TargetObjectId == player.GameObjectId;
-    float h = MathF.Max(4f, _cfg.TargetBarHeight);
-    uint fill = targetingMe ? C(_cfg.AggroWarningColor) : TargetFillColor(tot, inDuty);
-    float frac = ch.MaxHp > 0f ? Math.Clamp((float)ch.CurrentHp / ch.MaxHp, 0f, 1f) : 0f;
-    float pulse = targetingMe ? 0.82f + 0.18f * MathF.Sin(now * 5f) : 1f;
-
-    DrawTrapBar(dl, x, y, w, h, frac,
-        WithAlpha(C(_cfg.BackgroundColor), alpha),
-        WithAlpha(fill, pulse * alpha),
-        alpha);
-
-    // ── Font scope for Jupiter font ──
-    using var totFontScope = _font.Available ? _font.Push() : null;
-    var font = ImGui.GetFont();
-
-    if (_cfg.ShowTargetHealthPercent && _cfg.ShowTargetOfTargetHealthPercent)
+    private void RenderTotBar(ImDrawListPtr dl, float x, float w, float y,
+        IPlayerCharacter player, float now, float alpha, bool inDuty, IGameObject curTarget, IGameObject tot)
     {
-        float taper = MathF.Min(h * 0.9f, w * 0.35f);
-        float rightX = x + w - taper;
-        float bottomY = y + h;
+        if (tot is not ICharacter ch) return;
 
-        float pctSize = ImGui.GetFontSize() * _cfg.TargetBarFontScale;
-        float pgap = MathF.Max(4f, pctSize * 0.25f);
-        float py = bottomY + pgap;
+        bool targetingMe = _cfg.HighlightIfTargetingMe && curTarget.TargetObjectId == player.GameObjectId;
+        float h = MathF.Max(4f, _cfg.TargetBarHeight);
+        uint fill = targetingMe ? C(_cfg.AggroWarningColor) : TargetFillColor(tot, inDuty);
+        float frac = ch.MaxHp > 0f ? Math.Clamp((float)ch.CurrentHp / ch.MaxHp, 0f, 1f) : 0f;
+        float pulse = targetingMe ? 0.82f + 0.18f * MathF.Sin(now * 5f) : 1f;
 
-        string pct = $"{(int)(frac * 100)}%";
-        Vector2 psz = ImGui.CalcTextSize(pct) * (pctSize / ImGui.GetFontSize());
+        DrawTrapBar(dl, x, y, w, h, frac,
+            WithAlpha(C(_cfg.BackgroundColor), alpha),
+            WithAlpha(fill, pulse * alpha),
+            alpha);
 
-        uint pCol = WithAlpha(C(_cfg.CardinalColor), alpha);
-        uint pShadow = WithAlpha(0xCC000000u, alpha);
+        using var totFontScope = _font.Available ? _font.Push() : null;
+        var font = ImGui.GetFont();
 
-        float px = rightX - psz.X;
-        foreach (var (dx, dy) in ShadowOffsets8)
-            dl.AddText(font, pctSize, V(px + dx, py + dy), pShadow, pct);
-        dl.AddText(font, pctSize, V(px, py), pCol, pct);
-    }
-
-    if (_cfg.ShowTargetOfTargetName)
-    {
-        bool isPlayer = ch.GameObjectId == player.GameObjectId;
-        string label = (isPlayer && _cfg.TargetOfTargetShowYou) ? "YOU" : ch.Name.TextValue;
-        if (_cfg.TargetOfTargetFirstNameOnly)
+        if (_cfg.ShowTargetHealthPercent && _cfg.ShowTargetOfTargetHealthPercent)
         {
-            int sp = label.IndexOf(' ');
-            if (sp > 0) label = label[..sp];
+            float taper = MathF.Min(h * 0.9f, w * 0.35f);
+            float rightX = x + w - taper;
+            float bottomY = y + h;
+
+            float pctSize = ImGui.GetFontSize() * _cfg.TargetBarFontScale;
+            float pgap = MathF.Max(4f, pctSize * 0.25f);
+            float py = bottomY + pgap;
+
+            string pct = $"{(int)(frac * 100)}%";
+            Vector2 psz = ImGui.CalcTextSize(pct) * (pctSize / ImGui.GetFontSize());
+
+            uint pCol = WithAlpha(C(_cfg.CardinalColor), alpha);
+            uint pShadow = WithAlpha(0xCC000000u, alpha);
+
+            float px = rightX - psz.X;
+            foreach (var (dx, dy) in ShadowOffsets8)
+                dl.AddText(font, pctSize, V(px + dx, py + dy), pShadow, pct);
+            dl.AddText(font, pctSize, V(px, py), pCol, pct);
         }
 
-        float scale = _cfg.TargetBarFontScale;
-        var baseSz = ImGui.CalcTextSize(label);
-        float maxW = MathF.Max(4f, w - 4f);
-        if (baseSz.X > 0f && baseSz.X * scale > maxW)
-            scale = maxW / baseSz.X;
+        if (_cfg.ShowTargetOfTargetName)
+        {
+            bool isPlayer = ch.GameObjectId == player.GameObjectId;
+            string label = (isPlayer && _cfg.TargetOfTargetShowYou) ? "YOU" : ch.Name.TextValue;
+            if (_cfg.TargetOfTargetFirstNameOnly)
+            {
+                int sp = label.IndexOf(' ');
+                if (sp > 0) label = label[..sp];
+            }
 
-        float fSize = ImGui.GetFontSize() * scale;
-        var sz = baseSz * scale;
-        float tx = x + (w - sz.X) * 0.5f;
-        float ty = y + (h - sz.Y) * 0.5f;
+            float scale = _cfg.TargetBarFontScale;
+            var baseSz = ImGui.CalcTextSize(label);
+            float maxW = MathF.Max(4f, w - 4f);
+            if (baseSz.X > 0f && baseSz.X * scale > maxW)
+                scale = maxW / baseSz.X;
 
-        uint nameCol = WithAlpha(C(_cfg.CardinalColor), alpha);
-        uint shadow = WithAlpha(0xCC000000u, alpha);
-        foreach (var (dx, dy) in ShadowOffsets8)
-            dl.AddText(font, fSize, V(tx + dx, ty + dy), shadow, label);
-        dl.AddText(font, fSize, V(tx, ty), nameCol, label);
+            float fSize = ImGui.GetFontSize() * scale;
+            var sz = baseSz * scale;
+            float tx = x + (w - sz.X) * 0.5f;
+            float ty = y + (h - sz.Y) * 0.5f;
+
+            uint nameCol = WithAlpha(C(_cfg.CardinalColor), alpha);
+            uint shadow = WithAlpha(0xCC000000u, alpha);
+            foreach (var (dx, dy) in ShadowOffsets8)
+                dl.AddText(font, fSize, V(tx + dx, ty + dy), shadow, label);
+            dl.AddText(font, fSize, V(tx, ty), nameCol, label);
+        }
+
+        HandleTargetClick(V(x, y), V(x + w, y + h), ch!, true);
     }
-
-    HandleTargetClick(V(x, y), V(x + w, y + h), ch!, true);
-}
 
     private void RenderStatuses(ImDrawListPtr dl, IBattleChara ch, float cx, float y, float alpha)
     {
@@ -909,6 +928,18 @@ private void RenderTotBar(ImDrawListPtr dl, float x, float w, float y,
             int displayIcon = icon;
             if (stacks > 1) displayIcon = icon + stacks - 1;
 
+            // For vanilla statuses (guid == Guid.Empty), if we changed the icon, try to get the correct text.
+            string displayName = name;
+            string displayDesc = desc;
+            if (displayIcon != icon && guid == System.Guid.Empty)
+            {
+                if (_iconToStatusText.TryGetValue(displayIcon, out var data))
+                {
+                    displayName = data.Name;
+                    displayDesc = data.Desc;
+                }
+            }
+
             if (!TryDrawIcon(dl, displayIcon, sx, scy, size, alpha, false, 1.0f, false))
             {
                 if (displayIcon != icon)
@@ -934,7 +965,7 @@ private void RenderTotBar(ImDrawListPtr dl, float x, float w, float y,
                 var tipBg = _cfg.BackgroundColor;
                 ImGui.PushStyleColor(ImGuiCol.PopupBg, new Vector4(tipBg.X, tipBg.Y, tipBg.Z, tipBg.W * alpha));
                 ImGui.BeginTooltip();
-                ImGuiHelpers.SeStringWrapped(GetFormattedTooltip(name, desc), new SeStringDrawParams { WrapWidth = 345f });
+                ImGuiHelpers.SeStringWrapped(GetFormattedTooltip(displayName, displayDesc), new SeStringDrawParams { WrapWidth = 345f });
                 ImGui.EndTooltip();
                 ImGui.PopStyleColor();
             }

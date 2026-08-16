@@ -24,7 +24,6 @@ using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using Lumina.Excel;
 using Lumina.Excel.Sheets;
 
-// Moodles/Loci IPC tuples (shape-only copies)
 using MoodlesStatusInfo = (int Version, System.Guid GUID, int IconID, string Title, string Description, string CustomVFXPath,
     long ExpireTicks, int Type, int Stacks, int StackSteps, uint Modifiers, System.Guid ChainedStatus,
     int ChainTrigger, string Applier, string Dispeller);
@@ -36,419 +35,362 @@ namespace SkyrimCompass;
 
 public sealed class CompassHud : IDisposable
 {
-    private readonly IClientState clientState;
-    private readonly IObjectTable objectTable;
-    private readonly ITargetManager targetManager;
-    private readonly INamePlateGui namePlateGui;
-    private readonly ITextureProvider textureProvider;
-    private readonly IFateTable fateTable;
-    private readonly ICondition condition;
-    private readonly IGameGui gameGui;
-    private readonly Configuration config;
-    private readonly IPluginLog log;
-    private readonly IFontHandle jupiterFont;
-    private readonly IDalamudPluginInterface pluginInterface;
+    private readonly IClientState _cs;
+    private readonly IObjectTable _ot;
+    private readonly ITargetManager _tm;
+    private readonly INamePlateGui _npg;
+    private readonly ITextureProvider _tp;
+    private readonly IFateTable _ft;
+    private readonly ICondition _cond;
+    private readonly IGameGui _gg;
+    private readonly Configuration _cfg;
+    private readonly IPluginLog _log;
+    private readonly IFontHandle _font;
+    private readonly IDalamudPluginInterface _pi;
 
-    // IPC subscribers & version gates (unified via generic helpers)
-    private readonly ICallGateSubscriber<nint, List<MoodlesStatusInfo>> moodlesGetStatusesByPtr;
-    private readonly ICallGateSubscriber<nint, List<LociStatusInfo>>    lociGetStatusesByPtr;
-    private readonly ICallGateSubscriber<int>        moodlesVersion;
-    private readonly ICallGateSubscriber<(int, int)> lociApiVersion;
+    private readonly ICallGateSubscriber<nint, List<MoodlesStatusInfo>> _moodlesGet;
+    private readonly ICallGateSubscriber<nint, List<LociStatusInfo>> _lociGet;
+    private readonly ICallGateSubscriber<int> _moodlesVer;
+    private readonly ICallGateSubscriber<(int, int)> _lociVer;
 
-    private PluginIpcState moodlesIpc = new("Moodles", 4, PluginIpcKind.Moodles);
-    private PluginIpcState lociIpc   = new("Loci",    0, PluginIpcKind.Loci);
+    private PluginIpcState _moodlesIpc = new("Moodles", 4, PluginIpcKind.Moodles);
+    private PluginIpcState _lociIpc = new("Loci", 0, PluginIpcKind.Loci);
 
-    // Fade-out states (LB and cast) unified by UpdateFadeOut
-    private float lbTrackedProgress  = 0f;
-    private float lbFrozenProgress   = 0f;
-    private float lbFadeOutStartTime = -1f;
-    private const float LbFadeOutDuration = 2f;
-    private const float LbDropThreshold   = 0.4f;
+    private float _lbTracked = 0f, _lbFrozen = 0f, _lbFadeStart = -1f;
+    private const float LbFadeDur = 2f, LbDropThresh = 0.4f;
 
-    // Reusable scratch buffers for per-frame glow-layer data (avoids re-allocating
-    // a small array every RenderBar/RenderTargetBar call).
-    private readonly (float bar, float tMul, float tOff, Vector4 col)[] lbGlowLayersBuf = new (float, float, float, Vector4)[3];
-    private readonly (float edge, float target, uint col, float tMul, float tOff)[] ribbonsBuf = new (float, float, uint, float, float)[4];
+    private readonly (float bar, float tMul, float tOff, Vector4 col)[] _lbLayers = new (float, float, float, Vector4)[3];
+    private readonly (float edge, float target, uint col, float tMul, float tOff)[] _ribbons = new (float, float, uint, float, float)[4];
 
-    private ulong castWipeTargetId     = 0;
-    private float castTrackedProgress  = 0f;
-    private float castFrozenProgress   = 0f;
-    private float castFadeOutStartTime = -1f;
-    private const float CastFadeOutDuration = 0.4f;
-    private const int MaxTooltipCacheSize = 200;
+    private ulong _castTarget = 0;
+    private float _castTracked = 0f, _castFrozen = 0f, _castFadeStart = -1f;
+    private const float CastFadeDur = 0.4f;
+    private const int MaxTooltipCache = 200;
 
-    // Target HP bar
-    private ulong lastTargetBarObjectId = 0;
-    private float displayedTargetHpFrac = 1f;
-    private float lastRawTargetHpFrac   = 1f;
-    private float targetBarFlashAlpha   = 0f;
-    private float displayedTargetShieldFrac = 0f;
+    private ulong _lastTargetId = 0;
+    private float _dispTargetHp = 1f, _lastRawHp = 1f, _flashAlpha = 0f, _dispShield = 0f;
 
-    // Target status buffer (reused)
-    private readonly List<(float Remaining, int Icon, string Name, string Desc, System.Guid Guid, int Stacks)> targetStatusBuffer = new();
+    private readonly List<(float Remaining, int Icon, string Name, string Desc, System.Guid Guid, int Stacks)> _statusBuf = new();
 
-    // Duration tracker for Moodles/Loci — kept as two separate dictionaries
-    private readonly Dictionary<System.Guid, (float FirstSeen, long TotalMs)> moodlesDurationTracker = new();
-    private readonly Dictionary<System.Guid, (float FirstSeen, long TotalMs)> lociDurationTracker = new();
-    private readonly HashSet<System.Guid> presentGuidScratch = new();       // reused
-    private readonly List<System.Guid> staleGuids = new();                 // reused for pruning
-    private float nextDurationTrackerPruneAt;
+    private readonly Dictionary<System.Guid, (float FirstSeen, long TotalMs)> _moodleTrack = new();
+    private readonly Dictionary<System.Guid, (float FirstSeen, long TotalMs)> _lociTrack = new();
+    private readonly HashSet<System.Guid> _presentScratch = new();
+    private readonly List<System.Guid> _staleGuids = new();
+    private float _nextPruneAt;
 
-    // Cached payloads (throttled)
-    private List<MoodlesStatusInfo>? cachedMoodles;
-    private nint  cachedMoodlesTarget = IntPtr.Zero;
-    private float cachedMoodlesFetchedAt = -1000f;
-    private List<LociStatusInfo>? cachedLoci;
-    private nint  cachedLociTarget = IntPtr.Zero;
-    private float cachedLociFetchedAt = -1000f;
-    private const float StatusPayloadCacheSeconds = 0.12f;
+    private List<MoodlesStatusInfo>? _cachedMoodles;
+    private nint _cachedMoodlesTarget = IntPtr.Zero;
+    private float _cachedMoodlesAt = -1000f;
+    private List<LociStatusInfo>? _cachedLoci;
+    private nint _cachedLociTarget = IntPtr.Zero;
+    private float _cachedLociAt = -1000f;
+    private const float StatusCacheSecs = 0.12f;
 
-    // Tooltip cache – key is combined name\0desc to avoid tuple allocation
-    private readonly Dictionary<string, byte[]> formattedTooltipCache = new();
+    private readonly Dictionary<string, byte[]> _tooltipCache = new();
+    private readonly Dictionary<int, string> _durationCache = new();
 
-    // Status duration label cache – keyed on (tier, integer value), not the raw float,
-    // so it stays a small, pure, collision-free cache (well under 150 possible keys,
-    // never needs pruning).
-    private readonly Dictionary<int, string> durationLabelCache = new();
+    private bool _ctxMenuWasOpen;
+    private float _ctxFadeChange = -1000f;
+    private const float CtxFadeSecs = 0.15f, CtxDimAlpha = 0.33f;
 
-    // Context menu fade
-    private bool  contextMenuWasOpen;
-    private float contextMenuFadeChangeTime = -1000f;
-    private const float ContextMenuFadeSeconds = 0.15f;
-    private const float ContextMenuDimmedAlpha = 0.33f;
+    private readonly Dictionary<ulong, int> _npcMarkers = new();
 
-    // Nameplate marker icons
-    private readonly Dictionary<ulong, int> npcMarkerIcons = new();
+    private readonly Dictionary<uint, int> _gathIconCache = new();
+    private readonly Dictionary<uint, NpcCategory> _npcCatCache = new();
+    private readonly Dictionary<uint, string> _titleCache = new();
+    private readonly Dictionary<uint, string> _singularCache = new();
+    private readonly Dictionary<uint, uint> _roleColorCache = new();
+    private readonly Dictionary<uint, string> _actionNameCache = new();
+    private readonly Dictionary<uint, (string Name, string Desc)> _statusTextCache = new();
+    private readonly Dictionary<int, float> _iconAspectCache = new();
 
-    // Static data caches
-    private readonly Dictionary<uint, int> gatheringIconCache = new();
-    private readonly Dictionary<uint, NpcCategory> npcCategoryCache = new();
-    private readonly Dictionary<uint, string> titleCache = new();
-    private readonly Dictionary<uint, string> singularCache = new();
-    private readonly Dictionary<uint, uint> roleColorCache = new(); // RowId → RGBA (packed)
-    private readonly Dictionary<uint, string> actionNameCache = new();
-    private readonly Dictionary<uint, (string Name, string Desc)> statusTextCache = new();
+    private Dictionary<string, PlayerIconOverride>? _overrideDict;
+    private int _overrideDictVer = -1;
 
-    // Icon aspect cache
-    private readonly Dictionary<int, float> iconAspectCache = new();
+    private readonly ExcelSheet<GatheringPoint> _gathPtSheet;
+    private readonly ExcelSheet<GatheringPointBase> _gathPtBaseSheet;
+    private readonly ExcelSheet<GatheringType> _gathTypeSheet;
+    private readonly ExcelSheet<ENpcResident> _npcSheet;
+    private readonly ExcelSheet<ClassJob> _classJobSheet;
+    private readonly ExcelSheet<Lumina.Excel.Sheets.Action> _actionSheet;
 
-    // Player override dictionary with versioning
-    private Dictionary<string, PlayerIconOverride>? playerOverrideDict;
-    private int playerOverrideDictVersion = -1;
-
-    private readonly ExcelSheet<GatheringPoint>     gatheringPointSheet;
-    private readonly ExcelSheet<GatheringPointBase> gatheringPointBaseSheet;
-    private readonly ExcelSheet<GatheringType>      gatheringTypeSheet;
-    private readonly ExcelSheet<ENpcResident>        npcSheet;
-    private readonly ExcelSheet<ClassJob>            classJobSheet;
-    private readonly ExcelSheet<Lumina.Excel.Sheets.Action> actionSheet;
-
-    private static readonly string[] MenderKeywords    = { "Mender", "Tinker", "Repairman" };
-    private static readonly string[] ShopKeywords = { "Merchant", "Vendor", "Trader", "Sutler", "Supplier", "Junkmonger",
+    private static readonly string[] MenderKw = { "Mender", "Tinker", "Repairman" };
+    private static readonly string[] ShopKw = { "Merchant", "Vendor", "Trader", "Sutler", "Supplier", "Junkmonger",
         "Fishmonger", "Dyemonger", "Jeweler", "Apothecary", "Culinarian", "Salvager", "Exchange", "Clothier",
         "Outfitter", "Peddler", "Dealer", "Armorer", "Shopkeep", "Stallkeeper", "Pawnbroker", "Provisioner",
         "Broker", "Proprietor", "Proprietress", "Marketeer", "Weaponsmith", "Tailor", "Herbalist", "Craftsman", "Appraiser" };
-    private static readonly string[] SkipperKeywords   = { "Skipper", "Ferryman" };
-    private static readonly string[] TicketerKeywords  = { "Ticketer", "Pilot", "Crewman", "Steward" };
-    private static readonly string[] ChocoboKeepKeywords = { "Chocobokeep", "Falcon Porter" };
+    private static readonly string[] SkipperKw = { "Skipper", "Ferryman" };
+    private static readonly string[] TicketerKw = { "Ticketer", "Pilot", "Crewman", "Steward" };
+    private static readonly string[] ChocoboKeepKw = { "Chocobokeep", "Falcon Porter" };
 
-    private readonly List<(IGameObject? Obj, IFate? Fate, float Dist, float Delta, float T, uint Col, AetheryteNameKind AetheryteKind)> allCandidates = new();
-    private static readonly Comparison<(IGameObject? Obj, IFate? Fate, float Dist, float Delta, float T, uint Col, AetheryteNameKind AetheryteKind)> DistFarFirst = (a, b) => b.Dist.CompareTo(a.Dist);
+    private readonly List<(IGameObject? Obj, IFate? Fate, float Dist, float Delta, float T, uint Col, AetheryteNameKind Kind)> _candidates = new();
+    private static readonly Comparison<(IGameObject? Obj, IFate? Fate, float Dist, float Delta, float T, uint Col, AetheryteNameKind Kind)> _cmpDistFar = (a, b) => b.Dist.CompareTo(a.Dist);
 
-    private const float IconSizeMultiplier          = 1.5f;
-    private const float AetheryteIconSizeMultiplier = 1.75f;
+    private const float IconSizeMul = 1.5f;
+    private const float AetheryteIconSizeMul = 1.75f;
     private const float MainBarShareWithTot = 0.65f;
-    private const float TargetBarRowGapFraction = 0.03f;
+    private const float TargetBarRowGapFrac = 0.03f;
 
     private static readonly (float Deg, string Label, bool IsMajor)[] Directions =
     [
-        (0f,   "N",  true), (45f,  "NE", false), (90f,  "E",  true), (135f, "SE", false),
-        (180f, "S",  true), (225f, "SW", false), (270f, "W",  true), (315f, "NW", false),
+        (0f, "N", true), (45f, "NE", false), (90f, "E", true), (135f, "SE", false),
+        (180f, "S", true), (225f, "SW", false), (270f, "W", true), (315f, "NW", false),
     ];
 
-    // 8-direction offsets for the drop-shadow/outline text pass.
     private static readonly (float dx, float dy)[] ShadowOffsets8 =
     [
         (-1f,-1f), (0f,-1f), (1f,-1f), (-1f,0f), (1f,0f), (-1f,1f), (0f,1f), (1f,1f),
     ];
 
-    // Layer weights for the glow-line wave effect. All values are constants, so this is
-    // shared by every DrawGlowLine call instead of being reallocated each time.
-    private static readonly (float alpha, float thickness)[] GlowLineLayers =
+    private static readonly (float alpha, float thickness)[] GlowLayers =
     [
         (0.05f, 14f), (0.10f, 10f), (0.18f, 6f), (0.32f, 3.5f), (0.70f, 1.8f),
     ];
 
-    // IPC helper enums / struct
     private enum PluginIpcKind { Moodles, Loci }
     private class PluginIpcState
     {
         public string Name;
-        public int MinimumVersion;
+        public int MinVer;
         public PluginIpcKind Kind;
         public bool Active;
         public float ActiveCheckedAt = -1000f;
-        public bool VersionOk;
-        public float VersionCheckedAt = -1000f;
-        public PluginIpcState(string name, int minVer, PluginIpcKind kind) { Name = name; MinimumVersion = minVer; Kind = kind; }
+        public bool VerOk;
+        public float VerCheckedAt = -1000f;
+        public PluginIpcState(string name, int minVer, PluginIpcKind kind) { Name = name; MinVer = minVer; Kind = kind; }
     }
 
-    private const float PluginActiveCacheSeconds = 5f;
+    private const float PluginActiveCacheSecs = 5f;
 
-    public CompassHud(IClientState clientState, IObjectTable objectTable, ITargetManager targetManager,
-        INamePlateGui namePlateGui, ITextureProvider textureProvider, IFateTable fateTable,
-        ICondition condition, IGameGui gameGui, IDataManager dataManager, Configuration config,
-        IPluginLog log, IFontHandle jupiterFont, IDalamudPluginInterface pluginInterface)
+    public CompassHud(IClientState cs, IObjectTable ot, ITargetManager tm, INamePlateGui npg,
+        ITextureProvider tp, IFateTable ft, ICondition cond, IGameGui gg, IDataManager dm,
+        Configuration cfg, IPluginLog log, IFontHandle font, IDalamudPluginInterface pi)
     {
-        this.clientState = clientState;
-        this.objectTable = objectTable;
-        this.targetManager = targetManager;
-        this.namePlateGui = namePlateGui;
-        this.textureProvider = textureProvider;
-        this.fateTable = fateTable;
-        this.condition = condition;
-        this.gameGui = gameGui;
-        this.config = config;
-        this.log = log;
-        this.jupiterFont = jupiterFont;
-        this.pluginInterface = pluginInterface;
+        _cs = cs; _ot = ot; _tm = tm; _npg = npg; _tp = tp; _ft = ft;
+        _cond = cond; _gg = gg; _cfg = cfg; _log = log; _font = font; _pi = pi;
 
-        moodlesGetStatusesByPtr = pluginInterface.GetIpcSubscriber<nint, List<MoodlesStatusInfo>>("Moodles.GetStatusManagerInfoByPtrV2");
-        lociGetStatusesByPtr = pluginInterface.GetIpcSubscriber<nint, List<LociStatusInfo>>("Loci.GetManagerInfoByPtr");
-        moodlesVersion = pluginInterface.GetIpcSubscriber<int>("Moodles.Version");
-        lociApiVersion = pluginInterface.GetIpcSubscriber<(int, int)>("Loci.ApiVersion");
+        _moodlesGet = pi.GetIpcSubscriber<nint, List<MoodlesStatusInfo>>("Moodles.GetStatusManagerInfoByPtrV2");
+        _lociGet = pi.GetIpcSubscriber<nint, List<LociStatusInfo>>("Loci.GetManagerInfoByPtr");
+        _moodlesVer = pi.GetIpcSubscriber<int>("Moodles.Version");
+        _lociVer = pi.GetIpcSubscriber<(int, int)>("Loci.ApiVersion");
 
-        gatheringPointSheet = dataManager.GetExcelSheet<GatheringPoint>();
-        gatheringPointBaseSheet = dataManager.GetExcelSheet<GatheringPointBase>();
-        gatheringTypeSheet = dataManager.GetExcelSheet<GatheringType>();
-        npcSheet = dataManager.GetExcelSheet<ENpcResident>(ClientLanguage.English);
-        classJobSheet = dataManager.GetExcelSheet<ClassJob>();
-        actionSheet = dataManager.GetExcelSheet<Lumina.Excel.Sheets.Action>();
+        _gathPtSheet = dm.GetExcelSheet<GatheringPoint>();
+        _gathPtBaseSheet = dm.GetExcelSheet<GatheringPointBase>();
+        _gathTypeSheet = dm.GetExcelSheet<GatheringType>();
+        _npcSheet = dm.GetExcelSheet<ENpcResident>(ClientLanguage.English);
+        _classJobSheet = dm.GetExcelSheet<ClassJob>();
+        _actionSheet = dm.GetExcelSheet<Lumina.Excel.Sheets.Action>();
 
-        namePlateGui.OnDataUpdate += OnNamePlateDataUpdate;
+        _npg.OnDataUpdate += OnNamePlateUpdate;
     }
 
-    public void Dispose() => namePlateGui.OnDataUpdate -= OnNamePlateDataUpdate;
+    public void Dispose() => _npg.OnDataUpdate -= OnNamePlateUpdate;
 
-    private void OnNamePlateDataUpdate(INamePlateUpdateContext ctx, IReadOnlyList<INamePlateUpdateHandler> handlers)
+    private void OnNamePlateUpdate(INamePlateUpdateContext ctx, IReadOnlyList<INamePlateUpdateHandler> handlers)
     {
-        npcMarkerIcons.Clear();
+        _npcMarkers.Clear();
         foreach (var h in handlers)
             if (h.MarkerIconId > 0)
-                npcMarkerIcons[h.GameObjectId] = h.MarkerIconId;
+                _npcMarkers[h.GameObjectId] = h.MarkerIconId;
     }
 
-    // ─── Public entry ────────────────────────────────────────────────
     public unsafe void Draw()
     {
-        if (!config.Enabled) return;
-        if (config.HideDuringCutscenes && (condition[ConditionFlag.OccupiedInCutSceneEvent] ||
-            condition[ConditionFlag.WatchingCutscene] || condition[ConditionFlag.WatchingCutscene78]))
+        if (!_cfg.Enabled) return;
+        if (_cfg.HideDuringCutscenes && (_cond[ConditionFlag.OccupiedInCutSceneEvent] ||
+            _cond[ConditionFlag.WatchingCutscene] || _cond[ConditionFlag.WatchingCutscene78]))
             return;
 
-        var player = objectTable.LocalPlayer;
+        var player = _ot.LocalPlayer;
         if (player == null) return;
 
-        float headingRad = 0f;
-        var originPos = player.Position;
-        bool gotHeading = false;
+        float hRad = 0f;
+        var oPos = player.Position;
+        bool gotH = false;
 
-        if (config.UseCameraDirection)
+        if (_cfg.UseCameraDirection)
         {
             var cm = CameraManager.Instance();
-            var camera = cm != null ? cm->Camera : null;
-            if (camera != null && !float.IsNaN(camera->DirH))
+            var cam = cm != null ? cm->Camera : null;
+            if (cam != null && !float.IsNaN(cam->DirH))
             {
-                headingRad = -camera->DirH;
-                if (camera->ZoomMode == CameraZoomMode.FirstPerson)
-                    headingRad += MathF.PI;
-                if (config.UseCameraPosition)
+                hRad = -cam->DirH;
+                if (cam->ZoomMode == CameraZoomMode.FirstPerson) hRad += MathF.PI;
+                if (_cfg.UseCameraPosition)
                 {
-                    var camPos = camera->LastPosition;
-                    if (!float.IsNaN(camPos.X) && !float.IsNaN(camPos.Y) && !float.IsNaN(camPos.Z))
-                        originPos = camPos;
+                    var cp = cam->LastPosition;
+                    if (!float.IsNaN(cp.X) && !float.IsNaN(cp.Y) && !float.IsNaN(cp.Z))
+                        oPos = cp;
                 }
-                gotHeading = true;
+                gotH = true;
             }
         }
-        if (!gotHeading)
+        if (!gotH)
         {
             if (float.IsNaN(player.Rotation)) return;
-            headingRad = MathF.PI - player.Rotation;
+            hRad = MathF.PI - player.Rotation;
         }
 
-        float heading = Normalize(headingRad * (180f / MathF.PI) + config.RotationOffset);
+        float heading = Normalize(hRad * (180f / MathF.PI) + _cfg.RotationOffset);
 
         var io = ImGui.GetIO();
         var dl = ImGui.GetForegroundDrawList();
         float now = (float)ImGui.GetTime();
 
-        float bw = config.CompassWidth;
-        float bh = config.CompassHeight;
-        float bx = (io.DisplaySize.X - bw) * 0.5f + config.XOffset;
-        float by = config.YOffset;
+        float bw = _cfg.CompassWidth;
+        float bh = _cfg.CompassHeight;
+        float bx = (io.DisplaySize.X - bw) * 0.5f + _cfg.XOffset;
+        float by = _cfg.YOffset;
 
-        // Cache duty/pvp state once per frame
-        bool inDutyOrPvp = IsInDutyOrPvp();
+        bool inDuty = IsInDutyOrPvp();
 
-        if (config.ShowCompassBar)
-            RenderBar(dl, bx, by, bw, bh, heading, player, originPos, now, inDutyOrPvp);
+        if (_cfg.ShowCompassBar)
+            RenderBar(dl, bx, by, bw, bh, heading, player, oPos, now, inDuty);
 
-        float barAlpha = UpdateContextMenuFadeAlpha(now);
+        float barAlpha = UpdateCtxFade(now);
 
-        var curTarget = targetManager.Target;
+        var curTarget = _tm.Target;
         var curTot = curTarget?.TargetObject;
-        bool hasTot = config.ShowTargetBar && config.ShowTargetOfTargetBar && curTarget != null && curTot != null
+        bool hasTot = _cfg.ShowTargetBar && _cfg.ShowTargetOfTargetBar && curTarget != null && curTot != null
             && curTot.GameObjectId != curTarget.GameObjectId && curTot is ICharacter;
 
-        var (mainX, mainW, totX, totW, rowW) = SplitTargetBarRow(bx, bw, hasTot);
+        var (mainX, mainW, totX, totW, rowW) = SplitTargetRow(bx, bw, hasTot);
         float rowGap = MathF.Max(2f, bh * 0.12f);
-        float tbRowY = by + bh + rowGap;
+        float tbY = by + bh + rowGap;
         float nameCx = bx + bw * 0.5f;
 
-        float targetNameBottom = tbRowY;
-        if (config.ShowTargetBar)
-            targetNameBottom = RenderTargetBar(dl, mainX, mainW, tbRowY, nameCx, rowW, now, barAlpha, inDutyOrPvp, curTarget);
+        float nameBottom = tbY;
+        if (_cfg.ShowTargetBar)
+            nameBottom = RenderTargetBar(dl, mainX, mainW, tbY, nameCx, rowW, now, barAlpha, inDuty, curTarget);
         if (hasTot)
-            RenderTargetOfTargetBar(dl, totX, totW, tbRowY, player, now, barAlpha, inDutyOrPvp, curTarget!, curTot!);
+            RenderTotBar(dl, totX, totW, tbY, player, now, barAlpha, inDuty, curTarget!, curTot!);
 
-        if (config.ShowTargetStatuses && curTarget is IBattleChara targetChara)
-            RenderTargetStatuses(dl, targetChara, nameCx, targetNameBottom, barAlpha);
+        if (_cfg.ShowTargetStatuses && curTarget is IBattleChara targetChara)
+            RenderStatuses(dl, targetChara, nameCx, nameBottom, barAlpha);
     }
 
-    // ─── Context menu fade ──────────────────────────────────────────
-    private float UpdateContextMenuFadeAlpha(float now)
+    private float UpdateCtxFade(float now)
     {
-        bool menuOpen = IsVanillaContextMenuOpen();
-        if (menuOpen != contextMenuWasOpen) { contextMenuFadeChangeTime = now; contextMenuWasOpen = menuOpen; }
-        float t = ContextMenuFadeSeconds > 0f ? Math.Clamp((now - contextMenuFadeChangeTime) / ContextMenuFadeSeconds, 0f, 1f) : 1f;
-        float from = menuOpen ? 1f : ContextMenuDimmedAlpha;
-        float to   = menuOpen ? ContextMenuDimmedAlpha : 1f;
+        bool open = IsCtxMenuOpen();
+        if (open != _ctxMenuWasOpen) { _ctxFadeChange = now; _ctxMenuWasOpen = open; }
+        float t = CtxFadeSecs > 0f ? Math.Clamp((now - _ctxFadeChange) / CtxFadeSecs, 0f, 1f) : 1f;
+        float from = open ? 1f : CtxDimAlpha;
+        float to = open ? CtxDimAlpha : 1f;
         return Lerp(from, to, SmoothStep(t));
     }
 
-    private bool IsVanillaContextMenuOpen() =>
-        gameGui.GetAddonByName("ContextMenu").IsVisible || gameGui.GetAddonByName("AddonContextSub").IsVisible;
+    private bool IsCtxMenuOpen() =>
+        _gg.GetAddonByName("ContextMenu").IsVisible || _gg.GetAddonByName("AddonContextSub").IsVisible;
 
-    // ─── Lens projection ────────────────────────────────────────────
-    private static float Project(float delta, float halfVis, float barHalfW, float lensStr)
+    private static float Project(float d, float halfVis, float halfW, float lens)
     {
-        float extHalf = halfVis * lensStr;
-        float absD = MathF.Min(MathF.Abs(delta), extHalf);
-        float u = absD / extHalf;
-        float f = 1f - MathF.Pow(1f - u, lensStr);
-        return (delta >= 0f ? 1f : -1f) * barHalfW * f;
+        float ext = halfVis * lens;
+        float absD = MathF.Min(MathF.Abs(d), ext);
+        float u = absD / ext;
+        float f = 1f - MathF.Pow(1f - u, lens);
+        return (d >= 0f ? 1f : -1f) * halfW * f;
     }
 
-    // ─── Main bar render ────────────────────────────────────────────
     private void RenderBar(ImDrawListPtr dl, float bx, float by, float bw, float bh, float heading,
-        IPlayerCharacter player, Vector3 originPos, float now, bool inDutyOrPvp)
+        IPlayerCharacter player, Vector3 origin, float now, bool inDuty)
     {
         float cx = bx + bw * 0.5f, cy = by + bh * 0.5f;
-        float barHalfW = bw * 0.5f;
-        float halfVis = config.VisibleDegrees * 0.5f;
-        float lensStr = config.LensStrength;
-        float extHalf = halfVis * lensStr;
+        float halfW = bw * 0.5f;
+        float halfVis = _cfg.VisibleDegrees * 0.5f;
+        float lens = _cfg.LensStrength;
+        float ext = halfVis * lens;
 
-        uint bgCol = C(config.BackgroundColor);
-        uint borderCol = C(config.BorderColor);
-        uint tickCol = C(config.TickColor);
-        uint cardCol = C(config.CardinalColor);
-        uint ixCol = C(config.IntercardinalColor);
-        uint solidBgCol = (bgCol & 0x00FFFFFFu) | 0xFF000000u;
+        uint bg = C(_cfg.BackgroundColor);
+        uint border = C(_cfg.BorderColor);
+        uint tick = C(_cfg.TickColor);
+        uint card = C(_cfg.CardinalColor);
+        uint inter = C(_cfg.IntercardinalColor);
+        uint solidBg = (bg & 0x00FFFFFFu) | 0xFF000000u;
 
         float capHW = bh * 0.44f, capHH = bh * 0.64f;
 
-        // Limit break glow
-        float rawLb = GetLimitBreakProgress();
-        float displayedLb = UpdateFadeOut(ref lbTrackedProgress, ref lbFrozenProgress, ref lbFadeOutStartTime,
-            rawLb, rawLb < lbTrackedProgress - LbDropThreshold, false, true, now, LbFadeOutDuration, out float lbWipe);
-        float lbProgress = config.ShowLimitBreakGlow ? displayedLb : 0f;
-        if (!config.ShowLimitBreakGlow) lbWipe = 0f;
+        float rawLb = GetLB();
+        float dispLb = UpdateFadeOut(ref _lbTracked, ref _lbFrozen, ref _lbFadeStart,
+            rawLb, rawLb < _lbTracked - LbDropThresh, false, true, now, LbFadeDur, out float lbWipe);
+        float lbProg = _cfg.ShowLimitBreakGlow ? dispLb : 0f;
+        if (!_cfg.ShowLimitBreakGlow) lbWipe = 0f;
 
-        // Background and vignette
-        dl.AddRectFilled(V(bx, by), V(bx + bw, by + bh), bgCol);
-        uint warmGlow = ImGui.ColorConvertFloat4ToU32(new Vector4(0.9f, 0.70f, 0.35f, 0.08f));
+        dl.AddRectFilled(V(bx, by), V(bx + bw, by + bh), bg);
+        uint warm = ImGui.ColorConvertFloat4ToU32(new Vector4(0.9f, 0.70f, 0.35f, 0.08f));
         float gw = bw * 0.22f;
-        dl.AddRectFilledMultiColor(V(cx - gw, by), V(cx, by + bh), 0u, warmGlow, warmGlow, 0u);
-        dl.AddRectFilledMultiColor(V(cx, by), V(cx + gw, by + bh), warmGlow, 0u, 0u, warmGlow);
+        dl.AddRectFilledMultiColor(V(cx - gw, by), V(cx, by + bh), 0u, warm, warm, 0u);
+        dl.AddRectFilledMultiColor(V(cx, by), V(cx + gw, by + bh), warm, 0u, 0u, warm);
         dl.AddRectFilledMultiColor(V(bx, by), V(bx + bw * 0.14f, by + bh), 0xAA000000u, 0u, 0u, 0xAA000000u);
         dl.AddRectFilledMultiColor(V(bx + bw * 0.86f, by), V(bx + bw, by + bh), 0u, 0xAA000000u, 0xAA000000u, 0u);
         dl.AddLine(V(bx + 1f, by + 1f), V(bx + bw - 1f, by + 1f), 0x1AFFFFFF, 1f);
+        dl.AddRect(V(bx, by), V(bx + bw, by + bh), border, 0f, ImDrawFlags.None, 1.5f);
 
-        dl.AddRect(V(bx, by), V(bx + bw, by + bh), borderCol, 0f, ImDrawFlags.None, 1.5f);
-
-        // LB glow layers
-        if (lbProgress > 0f)
+        if (lbProg > 0f)
         {
-            float glowT = now;
-            lbGlowLayersBuf[0] = (Math.Clamp(lbProgress, 0f, 1f), 1.00f, 0.0f, config.LimitBreakGlowColor);
-            lbGlowLayersBuf[1] = (Math.Clamp(lbProgress - 1f, 0f, 1f), 1.60f, 3.7f, config.LimitBreakGlowColor2);
-            lbGlowLayersBuf[2] = (Math.Clamp(lbProgress - 2f, 0f, 1f), 0.65f, 7.1f, config.LimitBreakGlowColor3);
-            foreach (var (bar, tMul, tOff, col) in lbGlowLayersBuf)
+            float t = now;
+            _lbLayers[0] = (Math.Clamp(lbProg, 0f, 1f), 1.00f, 0.0f, _cfg.LimitBreakGlowColor);
+            _lbLayers[1] = (Math.Clamp(lbProg - 1f, 0f, 1f), 1.60f, 3.7f, _cfg.LimitBreakGlowColor2);
+            _lbLayers[2] = (Math.Clamp(lbProg - 2f, 0f, 1f), 0.65f, 7.1f, _cfg.LimitBreakGlowColor3);
+            foreach (var (bar, tMul, tOff, col) in _lbLayers)
             {
                 if (bar <= 0f) continue;
                 float segW = bw * 0.5f * bar;
                 uint c = C(col);
-                float i = PulseIntensity(glowT * tMul + tOff);
-                DrawBorderGlowBracket(dl, bx, by, bw, bh, segW, c, i, glowT * tMul + tOff, lbWipe, bar, true);
-                DrawBorderGlowBracket(dl, bx, by, bw, bh, segW, c, i, glowT * tMul + tOff, lbWipe, bar, false);
+                float i = PulseIntensity(t * tMul + tOff);
+                DrawGlowBracket(dl, bx, by, bw, bh, segW, c, i, t * tMul + tOff, lbWipe, bar, true);
+                DrawGlowBracket(dl, bx, by, bw, bh, segW, c, i, t * tMul + tOff, lbWipe, bar, false);
             }
         }
 
         dl.PushClipRect(V(bx + 1f, by), V(bx + bw - 1f, by + bh), true);
-        using var jupiterScope = jupiterFont.Available ? jupiterFont.Push() : null;
-        float fontSize = ImGui.GetFontSize() * config.FontScale;
+        using var fontScope = _font.Available ? _font.Push() : null;
+        float fontSize = ImGui.GetFontSize() * _cfg.FontScale;
         var font = ImGui.GetFont();
         float labelTop = by + bh * 0.12f;
-        float labelHeight = ImGui.CalcTextSize("N").Y * config.FontScale;
-        float maxTickHeight = MathF.Max(2f, (by + bh - 1f) - (labelTop + labelHeight));
+        float labelH = ImGui.CalcTextSize("N").Y * _cfg.FontScale;
+        float maxTickH = MathF.Max(2f, (by + bh - 1f) - (labelTop + labelH));
 
-        // Ticks
         for (int d = 0; d < 360; d += 5)
         {
             float delta = Delta(heading, d);
-            if (MathF.Abs(delta) > extHalf + 2f) continue;
-            float sx = cx + Project(delta, halfVis, barHalfW, lensStr);
+            if (MathF.Abs(delta) > ext + 2f) continue;
+            float sx = cx + Project(delta, halfVis, halfW, lens);
             bool is90 = d % 90 == 0, is45 = d % 45 == 0, is10 = d % 10 == 0;
             float th = is90 ? bh * 0.52f : is45 ? bh * 0.36f : is10 ? bh * 0.22f : bh * 0.13f;
-            th = MathF.Min(th, maxTickHeight);
-            float lensA = LensEdgeAlpha(delta, halfVis, extHalf);
-            uint tickDraw = WithAlpha(is90 ? cardCol : tickCol, lensA);
+            th = MathF.Min(th, maxTickH);
+            float la = LensEdgeAlpha(delta, halfVis, ext);
+            uint tickDraw = WithAlpha(is90 ? card : tick, la);
             dl.AddLine(V(sx, by + bh - th - 1f), V(sx, by + bh - 1f), tickDraw, is90 ? 2f : 1f);
         }
 
-        // Direction labels
         foreach (var (deg, label, isMajor) in Directions)
         {
             float delta = Delta(heading, deg);
-            if (MathF.Abs(delta) > extHalf + 10f) continue;
-            float sx = cx + Project(delta, halfVis, barHalfW, lensStr);
-            var tsz = ImGui.CalcTextSize(label) * config.FontScale;
-            float tx = sx - tsz.X * 0.5f;
-            float lensA = LensEdgeAlpha(delta, halfVis * 0.88f, extHalf);
-            uint col = WithAlpha(isMajor ? cardCol : ixCol, lensA);
-            uint shadow = WithAlpha(0xBB000000u, lensA);
+            if (MathF.Abs(delta) > ext + 10f) continue;
+            float sx = cx + Project(delta, halfVis, halfW, lens);
+            var sz = ImGui.CalcTextSize(label) * _cfg.FontScale;
+            float tx = sx - sz.X * 0.5f;
+            float la = LensEdgeAlpha(delta, halfVis * 0.88f, ext);
+            uint col = WithAlpha(isMajor ? card : inter, la);
+            uint shadow = WithAlpha(0xBB000000u, la);
             dl.AddText(font, fontSize, V(tx + 1f, labelTop + 1f), shadow, label);
             dl.AddText(font, fontSize, V(tx, labelTop), col, label);
         }
 
-        RenderAllMarkers(dl, cx, cy, halfVis, barHalfW, lensStr, heading, player, originPos, inDutyOrPvp);
+        RenderMarkers(dl, cx, cy, halfVis, halfW, lens, heading, player, origin, inDuty);
 
         dl.PopClipRect();
 
-        // End caps
-        dl.AddQuadFilled(V(bx, cy - capHH), V(bx + capHW, cy), V(bx, cy + capHH), V(bx - capHW, cy), solidBgCol);
-        dl.AddQuadFilled(V(bx + bw, cy - capHH), V(bx + bw + capHW, cy), V(bx + bw, cy + capHH), V(bx + bw - capHW, cy), solidBgCol);
-        DrawEndCapOutlines(dl, bx, cy, capHW, capHH, borderCol);
-        DrawEndCapOutlines(dl, bx + bw, cy, capHW, capHH, borderCol);
+        dl.AddQuadFilled(V(bx, cy - capHH), V(bx + capHW, cy), V(bx, cy + capHH), V(bx - capHW, cy), solidBg);
+        dl.AddQuadFilled(V(bx + bw, cy - capHH), V(bx + bw + capHW, cy), V(bx + bw, cy + capHH), V(bx + bw - capHW, cy), solidBg);
+        DrawCapOutlines(dl, bx, cy, capHW, capHH, border);
+        DrawCapOutlines(dl, bx + bw, cy, capHW, capHH, border);
 
-        // Centre notch
         const float nH = 10f, nW = 6f;
         dl.AddTriangleFilled(V(cx + 1f, by + nH + 2f), V(cx - nW + 1f, by + 1f), V(cx + nW + 1f, by + 1f), 0x55000000u);
         dl.AddTriangleFilled(V(cx, by + nH + 1f), V(cx - nW, by), V(cx + nW, by), 0xF2FFFFFFu);
 
-        if (config.ShowHeadingText)
+        if (_cfg.ShowHeadingText)
         {
             string txt = $"{(int)heading:000}°";
             var sz = ImGui.CalcTextSize(txt);
@@ -456,37 +398,36 @@ public sealed class CompassHud : IDisposable
         }
     }
 
-    private static void DrawEndCapOutlines(ImDrawListPtr dl, float cx, float cy, float hw, float hh, uint color, float dotR = 2.5f)
+    private static void DrawCapOutlines(ImDrawListPtr dl, float cx, float cy, float hw, float hh, uint col, float dotR = 2.5f)
     {
-        dl.AddQuad(V(cx, cy - hh), V(cx + hw, cy), V(cx, cy + hh), V(cx - hw, cy), color, 1.5f);
-        uint inner = (color & 0x00FFFFFFu) | (((color >> 24) * 6 / 10) << 24);
+        dl.AddQuad(V(cx, cy - hh), V(cx + hw, cy), V(cx, cy + hh), V(cx - hw, cy), col, 1.5f);
+        uint inner = (col & 0x00FFFFFFu) | (((col >> 24) * 6 / 10) << 24);
         float s = 0.52f;
         dl.AddQuad(V(cx, cy - hh * s), V(cx + hw * s, cy), V(cx, cy + hh * s), V(cx - hw * s, cy), inner, 1f);
-        dl.AddCircleFilled(V(cx, cy), dotR, color);
+        dl.AddCircleFilled(V(cx, cy), dotR, col);
     }
 
-    private static void DrawFilledDiamond(ImDrawListPtr dl, float cx, float cy, float hw, float hh, uint color) =>
-        dl.AddQuadFilled(V(cx, cy - hh), V(cx + hw, cy), V(cx, cy + hh), V(cx - hw, cy), color);
+    private static void DrawDiamond(ImDrawListPtr dl, float cx, float cy, float hw, float hh, uint col) =>
+        dl.AddQuadFilled(V(cx, cy - hh), V(cx + hw, cy), V(cx, cy + hh), V(cx - hw, cy), col);
 
-    // ─── Glow helpers ───────────────────────────────────────────────
     private static float PulseIntensity(float t) =>
         (0.75f + 0.25f * MathF.Sin(t * 0.79f)) * (0.92f + 0.08f * MathF.Sin(t * 3.23f + 1.17f));
 
     private static void DrawGlowLine(ImDrawListPtr dl, Vector2 a, Vector2 b, uint col, float intensity, float t,
-        bool fromLeft, float wipe, float fill, bool wipeReversed = false)
+        bool fromLeft, float wipe, float fill, bool wipeRev = false)
     {
-        Vector2 delta = b - a;
-        float len = delta.Length();
+        Vector2 d = b - a;
+        float len = d.Length();
         if (len < 1f) return;
-        Vector2 dir = delta / len;
+        Vector2 dir = d / len;
         Vector2 perp = new(-dir.Y, dir.X);
-        const float amp = 5f, waveLen = 26f, flowSpeed = 2f, wipeHalf = 0.2f, harmWeight = 0.33f;
-        float tipFadeStart = Lerp(0.6f, 1.0f, Math.Clamp(fill, 0f, 1f));
+        const float amp = 5f, waveLen = 26f, flow = 2f, wipeHalf = 0.2f, harm = 0.33f;
+        float tipStart = Lerp(0.6f, 1.0f, Math.Clamp(fill, 0f, 1f));
         float flowDir = fromLeft ? -1f : 1f;
         float wipeCentre = Lerp(1f + wipeHalf, -wipeHalf, wipe);
         float freq = 2f * MathF.PI / waveLen;
         float freq2 = freq * 2f;
-        float phase = t * flowSpeed * flowDir;
+        float phase = t * flow * flowDir;
         float phase2 = phase * 1.4f + 1.3f;
 
         int samples = Math.Clamp((int)(len / (waveLen * 0.5f) * 4f) + 2, 3, 24);
@@ -496,26 +437,26 @@ public sealed class CompassHud : IDisposable
         {
             float along = len * i / (samples - 1);
             float u = fromLeft ? along / len : 1f - along / len;
-            float envelope = u * u * (3f - 2f * u);
-            float wave = MathF.Sin(along * freq + phase) * (1f - harmWeight * u)
-                       + MathF.Sin(along * freq2 + phase2) * (harmWeight * u);
-            pts[i] = a + dir * along + perp * (amp * envelope * wave);
-            float tipFade = 1f - SmoothStep(Math.Clamp((u - tipFadeStart) / (1f - tipFadeStart + 1e-4f), 0f, 1f));
-            float wipeU = wipeReversed ? 1f - u : u;
-            float wipeFade = 1f - SmoothStep(Math.Clamp((wipeU - (wipeCentre - wipeHalf)) / (2f * wipeHalf), 0f, 1f));
-            fades[i] = tipFade * wipeFade;
+            float env = u * u * (3f - 2f * u);
+            float wave = MathF.Sin(along * freq + phase) * (1f - harm * u)
+                       + MathF.Sin(along * freq2 + phase2) * (harm * u);
+            pts[i] = a + dir * along + perp * (amp * env * wave);
+            float tip = 1f - SmoothStep(Math.Clamp((u - tipStart) / (1f - tipStart + 1e-4f), 0f, 1f));
+            float wipeU = wipeRev ? 1f - u : u;
+            float wf = 1f - SmoothStep(Math.Clamp((wipeU - (wipeCentre - wipeHalf)) / (2f * wipeHalf), 0f, 1f));
+            fades[i] = tip * wf;
         }
 
-        foreach (var (alpha, thick) in GlowLineLayers)
+        foreach (var (alpha, thick) in GlowLayers)
             for (int i = 0; i < samples - 1; i++)
             {
-                float segFade = (fades[i] + fades[i + 1]) * 0.5f;
-                if (segFade <= 0.002f) continue;
-                dl.AddLine(pts[i], pts[i + 1], WithAlpha(col, alpha * intensity * segFade), thick);
+                float seg = (fades[i] + fades[i + 1]) * 0.5f;
+                if (seg <= 0.002f) continue;
+                dl.AddLine(pts[i], pts[i + 1], WithAlpha(col, alpha * intensity * seg), thick);
             }
     }
 
-    private static void DrawBorderGlowBracket(ImDrawListPtr dl, float bx, float by, float bw, float bh,
+    private static void DrawGlowBracket(ImDrawListPtr dl, float bx, float by, float bw, float bh,
         float segW, uint col, float intensity, float t, float wipe, float fill, bool fromLeft)
     {
         float x0 = fromLeft ? bx : bx + bw - segW;
@@ -524,9 +465,8 @@ public sealed class CompassHud : IDisposable
         DrawGlowLine(dl, V(x0, by + bh), V(x1, by + bh), col, intensity, t, fromLeft, wipe, fill);
     }
 
-    // ─── Fade-out engine ──────────────────────────────────────────────
     private static float UpdateFadeOut(ref float tracked, ref float frozen, ref float start,
-        float real, bool trigger, bool extResync, bool resyncIfExceeds, float now, float duration, out float wipe)
+        float real, bool trigger, bool extResync, bool resyncIfExceeds, float now, float dur, out float wipe)
     {
         if (start < 0f)
         {
@@ -536,69 +476,67 @@ public sealed class CompassHud : IDisposable
         if (start >= 0f)
         {
             float elapsed = now - start;
-            if (extResync || (resyncIfExceeds && real > frozen) || elapsed >= duration)
+            if (extResync || (resyncIfExceeds && real > frozen) || elapsed >= dur)
             {
                 start = -1f;
                 tracked = real;
                 wipe = 0f;
                 return tracked;
             }
-            wipe = elapsed / duration;
+            wipe = elapsed / dur;
             return frozen;
         }
         wipe = 0f;
         return tracked;
     }
 
-    private static unsafe float GetLimitBreakProgress()
+    private static unsafe float GetLB()
     {
-        var uiState = UIState.Instance();
-        if (uiState == null) return 0f;
-        var lb = uiState->LimitBreakController;
+        var ui = UIState.Instance();
+        if (ui == null) return 0f;
+        var lb = ui->LimitBreakController;
         return lb.BarUnits <= 0 ? 0f : Math.Clamp((float)lb.CurrentUnits / lb.BarUnits, 0f, 3f);
     }
 
-    private string? GetCastActionName(IBattleChara caster)
+    private string? GetCastName(IBattleChara caster)
     {
         if (caster.CastActionType != 1) return null;
-        if (!actionNameCache.TryGetValue(caster.CastActionId, out var name))
+        if (!_actionNameCache.TryGetValue(caster.CastActionId, out var name))
         {
-            var row = actionSheet.GetRowOrDefault(caster.CastActionId);
+            var row = _actionSheet.GetRowOrDefault(caster.CastActionId);
             name = row.HasValue ? row.Value.Name.ToString() : string.Empty;
-            actionNameCache[caster.CastActionId] = name;
+            _actionNameCache[caster.CastActionId] = name;
         }
         return string.IsNullOrEmpty(name) ? null : name;
     }
 
     private bool IsInDutyOrPvp() =>
-        condition[ConditionFlag.BoundByDuty] || condition[ConditionFlag.BoundByDuty56] ||
-        condition[ConditionFlag.BoundByDuty95] || condition[ConditionFlag.InDeepDungeon] ||
-        clientState.IsPvP;
+        _cond[ConditionFlag.BoundByDuty] || _cond[ConditionFlag.BoundByDuty56] ||
+        _cond[ConditionFlag.BoundByDuty95] || _cond[ConditionFlag.InDeepDungeon] ||
+        _cs.IsPvP;
 
-    // ─── Target bar ─────────────────────────────────────────────────
-    private (float x, float w, float totX, float totW, float rowW) SplitTargetBarRow(float compassX, float compassW, bool hasTot)
+    private (float x, float w, float totX, float totW, float rowW) SplitTargetRow(float cx, float cw, bool hasTot)
     {
-        float cx = compassX + compassW * 0.5f;
-        float rowW = compassW * Math.Clamp(config.TargetBarWidthFraction, 0.1f, 1f);
-        float rowX = cx - rowW * 0.5f;
+        float rowW = cw * Math.Clamp(_cfg.TargetBarWidthFraction, 0.1f, 1f);
+        float rowX = cx + cw * 0.5f - rowW * 0.5f;
         if (!hasTot) return (rowX, rowW, 0f, 0f, rowW);
         float mainW = rowW * MainBarShareWithTot;
-        float gap = MathF.Max(10f, rowW * TargetBarRowGapFraction);
+        float gap = MathF.Max(10f, rowW * TargetBarRowGapFrac);
         float totW = rowW - mainW - gap;
         float totX = rowX + mainW + gap;
         return (rowX, mainW, totX, totW, rowW);
     }
 
-    private uint TargetBarFillColor(IGameObject obj, bool inDutyOrPvp)
+    private uint TargetFillColor(IGameObject obj, bool inDuty)
     {
         if (obj is ICharacter ch && (ch.StatusFlags & StatusFlags.PartyMember) != 0
-            && config.ShowPartyRoleIcons && (!config.PartyRoleIconsOnlyInDuty || inDutyOrPvp))
+            && _cfg.ShowPartyRoleIcons && (!_cfg.PartyRoleIconsOnlyInDuty || inDuty))
             return GetRoleColor(ch);
         uint baseCol = MarkerBaseColor(obj);
-        return baseCol != 0u ? baseCol : C(config.NpcColor);
+        return baseCol != 0u ? baseCol : C(_cfg.NpcColor);
     }
 
-    private (Vector2 tl, Vector2 tr, Vector2 br, Vector2 bl) TrapezoidSlice(float x, float y, float w, float h, float taper, float lo, float hi)
+    private (Vector2 tl, Vector2 tr, Vector2 br, Vector2 bl) TrapSlice(float x, float y, float w, float h, float taper, float lo, float hi)
     {
         lo = Math.Clamp(lo, 0f, 1f);
         hi = Math.Clamp(hi, 0f, 1f);
@@ -608,674 +546,627 @@ public sealed class CompassHud : IDisposable
         return (new Vector2(topA, y), new Vector2(topB, y), new Vector2(botB, y + h), new Vector2(botA, y + h));
     }
 
-    private (Vector2 tl, Vector2 tr, Vector2 br, Vector2 bl) TrapezoidFill(float x, float y, float w, float h, float taper, float frac, bool fromRight = false)
+    private (Vector2 tl, Vector2 tr, Vector2 br, Vector2 bl) TrapFill(float x, float y, float w, float h, float taper, float frac, bool fromRight = false)
     {
         frac = Math.Clamp(frac, 0f, 1f);
         return fromRight
-            ? TrapezoidSlice(x, y, w, h, taper, 1f - frac, 1f)
-            : TrapezoidSlice(x, y, w, h, taper, 0f, frac);
+            ? TrapSlice(x, y, w, h, taper, 1f - frac, 1f)
+            : TrapSlice(x, y, w, h, taper, 0f, frac);
     }
 
-    private void DrawTrapezoidBar(ImDrawListPtr dl, float x, float y, float w, float h, float fillFrac,
-        uint bg, uint fill, float alpha, float? shieldFrac = null, uint? shieldCol = null, bool fromRight = false)
+    private void DrawTrapBar(ImDrawListPtr dl, float x, float y, float w, float h, float fill,
+        uint bg, uint fg, float alpha, float? shieldFrac = null, uint? shieldCol = null, bool fromRight = false)
     {
         float taper = MathF.Min(h * 0.9f, w * 0.35f);
-        var (bTl, bTr, bBr, bBl) = TrapezoidFill(x, y, w, h, taper, 1f);
-        dl.AddQuadFilled(bTl, bTr, bBr, bBl, WithAlpha(bg, alpha));
+        var (bTL, bTR, bBR, bBL) = TrapFill(x, y, w, h, taper, 1f);
+        dl.AddQuadFilled(bTL, bTR, bBR, bBL, WithAlpha(bg, alpha));
 
         const float inset = 2f;
         float innerH = h - inset * 2f;
         float innerTaper = taper * (innerH / h);
-        float clampedFill = Math.Clamp(fillFrac, 0f, 1f);
-        if (clampedFill > 0f)
+        float cf = Math.Clamp(fill, 0f, 1f);
+        if (cf > 0f)
         {
-            var (fTl, fTr, fBr, fBl) = TrapezoidFill(x + inset, y + inset, w - inset * 2f, innerH, innerTaper, clampedFill, fromRight);
-            dl.AddQuadFilled(fTl, fTr, fBr, fBl, WithAlpha(fill, alpha));
+            var (fTL, fTR, fBR, fBL) = TrapFill(x + inset, y + inset, w - inset * 2f, innerH, innerTaper, cf, fromRight);
+            dl.AddQuadFilled(fTL, fTR, fBR, fBL, WithAlpha(fg, alpha));
         }
         if (shieldFrac.HasValue && shieldFrac.Value > 0f && shieldCol.HasValue)
         {
-            float shieldLo = fromRight ? MathF.Max(0f, 1f - clampedFill - shieldFrac.Value) : clampedFill;
-            float shieldHi = fromRight ? 1f - clampedFill : MathF.Min(1f, clampedFill + shieldFrac.Value);
-            if (shieldHi > shieldLo)
+            float sLo = fromRight ? MathF.Max(0f, 1f - cf - shieldFrac.Value) : cf;
+            float sHi = fromRight ? 1f - cf : MathF.Min(1f, cf + shieldFrac.Value);
+            if (sHi > sLo)
             {
-                var (sTl, sTr, sBr, sBl) = TrapezoidSlice(x + inset, y + inset, w - inset * 2f, innerH, innerTaper, shieldLo, shieldHi);
-                dl.AddQuadFilled(sTl, sTr, sBr, sBl, WithAlpha(shieldCol.Value, alpha));
+                var (sTL, sTR, sBR, sBL) = TrapSlice(x + inset, y + inset, w - inset * 2f, innerH, innerTaper, sLo, sHi);
+                dl.AddQuadFilled(sTL, sTR, sBR, sBL, WithAlpha(shieldCol.Value, alpha));
             }
         }
         dl.AddLine(V(x + 1f, y + 1f), V(x + w - 1f, y + 1f), WithAlpha(0x1AFFFFFFu, alpha), 1f);
-        dl.AddQuad(bTl, bTr, bBr, bBl, WithAlpha(C(config.BorderColor), alpha), 1.5f);
+        dl.AddQuad(bTL, bTR, bBR, bBL, WithAlpha(C(_cfg.BorderColor), alpha), 1.5f);
     }
 
-    private void HandleTargetFrameClick(Vector2 min, Vector2 max, IGameObject obj, bool allowLeftToTarget)
+    private void HandleTargetClick(Vector2 min, Vector2 max, IGameObject obj, bool allowLeft)
     {
-        // contextMenuWasOpen is already refreshed for this frame by UpdateContextMenuFadeAlpha,
-        // which always runs earlier in Draw() before either target bar is rendered.
-        if (contextMenuWasOpen) return;
+        if (_ctxMenuWasOpen) return;
         if (!ImGui.IsMouseHoveringRect(min, max, false)) return;
         var io = ImGui.GetIO();
         io.WantCaptureMouse = true;
-        if (allowLeftToTarget && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
-        { targetManager.Target = obj; return; }
+        if (allowLeft && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+        { _tm.Target = obj; return; }
         if (ImGui.IsMouseClicked(ImGuiMouseButton.Right))
-            TryOpenVanillaTargetContextMenu(obj);
+            OpenCtxMenu(obj);
     }
 
-    private unsafe void TryOpenVanillaTargetContextMenu(IGameObject obj)
+    private unsafe void OpenCtxMenu(IGameObject obj)
     {
         if (obj.Address == IntPtr.Zero) return;
-        var agentModule = FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentModule.Instance();
-        if (agentModule == null) return;
-        var hudAgent = (FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentHUD*)
-            agentModule->GetAgentByInternalId(FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentId.Hud);
-        if (hudAgent == null) return;
-        hudAgent->OpenContextMenuFromTarget((FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)obj.Address);
+        var mod = FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentModule.Instance();
+        if (mod == null) return;
+        var hud = (FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentHUD*)
+            mod->GetAgentByInternalId(FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentId.Hud);
+        if (hud == null) return;
+        hud->OpenContextMenuFromTarget((FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)obj.Address);
     }
 
-private float RenderTargetBar(ImDrawListPtr dl, float tbX, float tbW, float tbY, float nameCx,
-    float nameRowW, float now, float barAlpha, bool inDutyOrPvp, IGameObject? currentTarget)
-{
-    if (currentTarget == null) return tbY;
-
-    uint borderCol = WithAlpha(C(config.BorderColor), barAlpha);
-    uint bgCol = WithAlpha(C(config.BackgroundColor), barAlpha);
-    uint nameCol = WithAlpha(C(config.CardinalColor), barAlpha);
-
-    float cx = nameCx;
-    bool isChara = currentTarget is ICharacter;
-    float tbH = isChara ? MathF.Max(4f, config.TargetBarHeight) : 0f;
-    uint fillCol = WithAlpha(TargetBarFillColor(currentTarget, inDutyOrPvp), barAlpha);
-
-    if (isChara)
+    private float RenderTargetBar(ImDrawListPtr dl, float x, float w, float y, float nameCx,
+        float nameRowW, float now, float alpha, bool inDuty, IGameObject? curTarget)
     {
-        var chara = (ICharacter)currentTarget;
-        float rawFrac = chara.MaxHp > 0f ? Math.Clamp((float)chara.CurrentHp / chara.MaxHp, 0f, 1f) : 0f;
-        float rawShieldFrac = config.ShowTargetBarShield ? chara.ShieldPercentage / 100f : 0f;
+        if (curTarget == null) return y;
 
-        // ─── Minion detection: force full health bar ────────────────
-        bool isMinion = currentTarget.ObjectKind == ObjectKind.Companion;
-        if (isMinion)
-        {
-            rawFrac = 1f;
-            displayedTargetHpFrac = 1f;
-            lastRawTargetHpFrac = 1f;
-            targetBarFlashAlpha = 0f;
-            rawShieldFrac = 0f;
-            displayedTargetShieldFrac = 0f;
-        }
+        uint border = WithAlpha(C(_cfg.BorderColor), alpha);
+        uint bg = WithAlpha(C(_cfg.BackgroundColor), alpha);
+        uint nameCol = WithAlpha(C(_cfg.CardinalColor), alpha);
 
-        float dt = ImGui.GetIO().DeltaTime;
-        if (currentTarget.GameObjectId != lastTargetBarObjectId)
-        {
-            lastTargetBarObjectId = currentTarget.GameObjectId;
-            displayedTargetHpFrac = rawFrac;
-            lastRawTargetHpFrac = rawFrac;
-            targetBarFlashAlpha = 0f;
-            displayedTargetShieldFrac = rawShieldFrac;
-        }
-        else
-        {
-            if (!isMinion && rawFrac < lastRawTargetHpFrac - 0.001f)
-                targetBarFlashAlpha = 1f;
-            lastRawTargetHpFrac = rawFrac;
-            displayedTargetHpFrac += (rawFrac - displayedTargetHpFrac) * (1f - MathF.Exp(-dt * 14f));
-            displayedTargetShieldFrac += (rawShieldFrac - displayedTargetShieldFrac) * (1f - MathF.Exp(-dt * 14f));
-        }
-        if (!isMinion)
-            targetBarFlashAlpha = MathF.Max(0f, targetBarFlashAlpha - dt / 0.4f);
+        float cx = nameCx;
+        bool isChara = curTarget is ICharacter;
+        float h = isChara ? MathF.Max(4f, _cfg.TargetBarHeight) : 0f;
+        uint fill = WithAlpha(TargetFillColor(curTarget, inDuty), alpha);
 
-        DrawTrapezoidBar(dl, tbX, tbY, tbW, tbH, displayedTargetHpFrac, bgCol, fillCol, barAlpha,
-            (!isMinion && displayedTargetShieldFrac > 0f) ? displayedTargetShieldFrac : null,
-            (!isMinion && displayedTargetShieldFrac > 0f) ? C(config.TargetBarShieldColor) : null);
-
-        if (!isMinion && targetBarFlashAlpha > 0f)
+        if (isChara)
         {
-            float lo = MathF.Min(rawFrac, displayedTargetHpFrac);
-            float hi = MathF.Max(rawFrac, displayedTargetHpFrac);
-            if (hi > lo)
+            var ch = (ICharacter)curTarget;
+            float raw = ch.MaxHp > 0f ? Math.Clamp((float)ch.CurrentHp / ch.MaxHp, 0f, 1f) : 0f;
+            float rawShield = _cfg.ShowTargetBarShield ? ch.ShieldPercentage / 100f : 0f;
+
+            bool isMinion = curTarget.ObjectKind == ObjectKind.Companion;
+            if (isMinion)
             {
-                float taper = MathF.Min(tbH * 0.9f, tbW * 0.35f);
-                const float inset = 2f;
-                float innerH = tbH - inset * 2f;
-                float innerTaper = taper * (innerH / tbH);
-                var (fTl, fTr, fBr, fBl) = TrapezoidSlice(tbX + inset, tbY + inset, tbW - inset * 2f, innerH, innerTaper, lo, hi);
-                dl.AddQuadFilled(fTl, fTr, fBr, fBl, WithAlpha(0xFFFFFFFFu, targetBarFlashAlpha * 0.5f * barAlpha));
+                raw = 1f;
+                _dispTargetHp = 1f;
+                _lastRawHp = 1f;
+                _flashAlpha = 0f;
+                rawShield = 0f;
+                _dispShield = 0f;
+            }
+
+            float dt = ImGui.GetIO().DeltaTime;
+            if (curTarget.GameObjectId != _lastTargetId)
+            {
+                _lastTargetId = curTarget.GameObjectId;
+                _dispTargetHp = raw;
+                _lastRawHp = raw;
+                _flashAlpha = 0f;
+                _dispShield = rawShield;
+            }
+            else
+            {
+                if (!isMinion && raw < _lastRawHp - 0.001f) _flashAlpha = 1f;
+                _lastRawHp = raw;
+                _dispTargetHp += (raw - _dispTargetHp) * (1f - MathF.Exp(-dt * 14f));
+                _dispShield += (rawShield - _dispShield) * (1f - MathF.Exp(-dt * 14f));
+            }
+            if (!isMinion)
+                _flashAlpha = MathF.Max(0f, _flashAlpha - dt / 0.4f);
+
+            DrawTrapBar(dl, x, y, w, h, _dispTargetHp, bg, fill, alpha,
+                (!isMinion && _dispShield > 0f) ? _dispShield : null,
+                (!isMinion && _dispShield > 0f) ? C(_cfg.TargetBarShieldColor) : null);
+
+            if (!isMinion && _flashAlpha > 0f)
+            {
+                float lo = MathF.Min(raw, _dispTargetHp);
+                float hi = MathF.Max(raw, _dispTargetHp);
+                if (hi > lo)
+                {
+                    float taper = MathF.Min(h * 0.9f, w * 0.35f);
+                    const float inset = 2f;
+                    float innerH = h - inset * 2f;
+                    float innerTaper = taper * (innerH / h);
+                    var (fTL, fTR, fBR, fBL) = TrapSlice(x + inset, y + inset, w - inset * 2f, innerH, innerTaper, lo, hi);
+                    dl.AddQuadFilled(fTL, fTR, fBR, fBL, WithAlpha(0xFFFFFFFFu, _flashAlpha * 0.5f * alpha));
+                }
+            }
+        }
+
+        using var fontScope = _font.Available ? _font.Push() : null;
+        float fontSize = ImGui.GetFontSize() * _cfg.TargetBarFontScale;
+        var font = ImGui.GetFont();
+
+        string? castName = curTarget is IBattleChara casting && casting.IsCasting && casting.TotalCastTime > 0f
+            ? GetCastName(casting) : null;
+
+        string baseLabel = castName ?? curTarget.Name.TextValue;
+        string label = (castName == null && _cfg.ShowTargetLevel && curTarget is ICharacter lv && lv.Level > 0)
+            ? $"Lv{lv.Level}  {baseLabel}"
+            : baseLabel;
+
+        var sz = ImGui.CalcTextSize(label) * _cfg.TargetBarFontScale;
+        float nameGap = MathF.Max(6f, h * 0.5f);
+        float nameY = y + h + nameGap;
+        float tx = cx - sz.X * 0.5f;
+
+        uint shadow = WithAlpha(0xCC000000u, alpha);
+        foreach (var (dx, dy) in ShadowOffsets8)
+            dl.AddText(font, fontSize, V(tx + dx, nameY + dy), shadow, label);
+        dl.AddText(font, fontSize, V(tx, nameY), nameCol, label);
+
+        float ornHH = fontSize * 0.46f, ornHW = ornHH * 0.69f;
+        float ornGap = 6f;
+        float textCy = nameY + sz.Y * 0.5f;
+        float leftX = tx - ornGap - ornHW, rightX = tx + sz.X + ornGap + ornHW;
+        float shHW = ornHW + 2f, shHH = ornHH + 2f;
+        DrawDiamond(dl, leftX, textCy, shHW, shHH, shadow);
+        DrawDiamond(dl, rightX, textCy, shHW, shHH, shadow);
+        DrawCapOutlines(dl, leftX, textCy, ornHW, ornHH, border, ornHW * 0.28f);
+        DrawCapOutlines(dl, rightX, textCy, ornHW, ornHH, border, ornHW * 0.28f);
+
+        if (isChara && _cfg.ShowTargetBarRibbons)
+        {
+            float leftEdge = leftX - ornHW, rightEdge = rightX + ornHW;
+            float rowLeft = nameCx - nameRowW * 0.5f, rowRight = nameCx + nameRowW * 0.5f;
+            float inset = MathF.Max(8f, nameRowW * 0.06f);
+            float rL = MathF.Min(rowLeft + inset, leftEdge - 24f);
+            float rR = MathF.Max(rowRight - inset, rightEdge + 24f);
+            float t = now;
+
+            _ribbons[0] = (leftEdge, rL, shadow, 0.65f, 7.1f);
+            _ribbons[1] = (leftEdge, rL, border, 1.00f, 0.0f);
+            _ribbons[2] = (rightEdge, rR, shadow, 1.15f, 5.3f);
+            _ribbons[3] = (rightEdge, rR, border, 1.60f, 3.7f);
+            foreach (var (edge, target, col, tMul, tOff) in _ribbons)
+                DrawGlowLine(dl, V(edge, textCy), V(target, textCy), col, 1f, t * tMul + tOff, true, 0f, 0f);
+
+            if (curTarget.GameObjectId != _castTarget)
+            {
+                _castTarget = curTarget.GameObjectId;
+                _castTracked = 0f;
+                _castFadeStart = -1f;
+            }
+
+            var bt = curTarget as IBattleChara;
+            bool isCasting = bt?.IsCasting ?? false;
+            float totalCast = bt?.TotalCastTime ?? 0f;
+            float castReal = 0f;
+            if (isCasting && totalCast > 0f)
+                castReal = Math.Clamp((bt?.CurrentCastTime ?? 0f) / totalCast, 0f, 1f);
+
+            float castDisp = UpdateFadeOut(ref _castTracked, ref _castFrozen, ref _castFadeStart,
+                castReal, !isCasting && _castTracked > 0f, isCasting,
+                false, t, CastFadeDur, out float castWipe);
+
+            if (castDisp > 0f)
+            {
+                uint castCol = WithAlpha(C(_cfg.AggroWarningColor), alpha);
+                float ci = PulseIntensity(t);
+                DrawGlowLine(dl, V(leftEdge, textCy), V(Lerp(leftEdge, rL, castDisp), textCy),
+                    castCol, ci, t, true, castWipe, 0f, true);
+                DrawGlowLine(dl, V(rightEdge, textCy), V(Lerp(rightEdge, rR, castDisp), textCy),
+                    castCol, ci, t, true, castWipe, 0f, true);
+            }
+        }
+
+        if (_cfg.ShowTargetHealthPercent && isChara && h > 0f)
+        {
+            float taper = MathF.Min(h * 0.9f, w * 0.35f);
+            float bottomX = x + taper;
+            float bottomY = y + h;
+
+            float pctSize = ImGui.GetFontSize() * _cfg.TargetBarFontScale;
+            float pgap = MathF.Max(4f, pctSize * 0.25f);
+            float py = bottomY + pgap;
+
+            string pct = $"{(int)(_dispTargetHp * 100)}%";
+            Vector2 psz = ImGui.CalcTextSize(pct) * (pctSize / ImGui.GetFontSize());
+
+            uint pCol = WithAlpha(C(_cfg.CardinalColor), alpha);
+            uint pShadow = WithAlpha(0xCC000000u, alpha);
+
+            float px = bottomX;
+            foreach (var (dx, dy) in ShadowOffsets8)
+                dl.AddText(font, pctSize, V(px + dx, py + dy), pShadow, pct);
+            dl.AddText(font, pctSize, V(px, py), pCol, pct);
+        }
+
+        float clickTop = y, clickBottom = nameY + sz.Y;
+        float clickLeft = MathF.Min(x, leftX - shHW);
+        float clickRight = MathF.Max(x + w, rightX + shHW);
+        HandleTargetClick(V(clickLeft, clickTop), V(clickRight, clickBottom), curTarget!, false);
+
+        return nameY + sz.Y;
+    }
+
+private void RenderTotBar(ImDrawListPtr dl, float x, float w, float y,
+    IPlayerCharacter player, float now, float alpha, bool inDuty, IGameObject curTarget, IGameObject tot)
+{
+    if (tot is not ICharacter ch) return;
+
+    bool targetingMe = _cfg.HighlightIfTargetingMe && curTarget.TargetObjectId == player.GameObjectId;
+    float h = MathF.Max(4f, _cfg.TargetBarHeight);
+    uint fill = targetingMe ? C(_cfg.AggroWarningColor) : TargetFillColor(tot, inDuty);
+    float frac = ch.MaxHp > 0f ? Math.Clamp((float)ch.CurrentHp / ch.MaxHp, 0f, 1f) : 0f;
+    float pulse = targetingMe ? 0.82f + 0.18f * MathF.Sin(now * 5f) : 1f;
+
+    DrawTrapBar(dl, x, y, w, h, frac,
+        WithAlpha(C(_cfg.BackgroundColor), alpha),
+        WithAlpha(fill, pulse * alpha),
+        alpha);
+
+    // ── Font scope for Jupiter font ──
+    using var totFontScope = _font.Available ? _font.Push() : null;
+    var font = ImGui.GetFont();
+
+    if (_cfg.ShowTargetHealthPercent && _cfg.ShowTargetOfTargetHealthPercent)
+    {
+        float taper = MathF.Min(h * 0.9f, w * 0.35f);
+        float rightX = x + w - taper;
+        float bottomY = y + h;
+
+        float pctSize = ImGui.GetFontSize() * _cfg.TargetBarFontScale;
+        float pgap = MathF.Max(4f, pctSize * 0.25f);
+        float py = bottomY + pgap;
+
+        string pct = $"{(int)(frac * 100)}%";
+        Vector2 psz = ImGui.CalcTextSize(pct) * (pctSize / ImGui.GetFontSize());
+
+        uint pCol = WithAlpha(C(_cfg.CardinalColor), alpha);
+        uint pShadow = WithAlpha(0xCC000000u, alpha);
+
+        float px = rightX - psz.X;
+        foreach (var (dx, dy) in ShadowOffsets8)
+            dl.AddText(font, pctSize, V(px + dx, py + dy), pShadow, pct);
+        dl.AddText(font, pctSize, V(px, py), pCol, pct);
+    }
+
+    if (_cfg.ShowTargetOfTargetName)
+    {
+        bool isPlayer = ch.GameObjectId == player.GameObjectId;
+        string label = (isPlayer && _cfg.TargetOfTargetShowYou) ? "YOU" : ch.Name.TextValue;
+        if (_cfg.TargetOfTargetFirstNameOnly)
+        {
+            int sp = label.IndexOf(' ');
+            if (sp > 0) label = label[..sp];
+        }
+
+        float scale = _cfg.TargetBarFontScale;
+        var baseSz = ImGui.CalcTextSize(label);
+        float maxW = MathF.Max(4f, w - 4f);
+        if (baseSz.X > 0f && baseSz.X * scale > maxW)
+            scale = maxW / baseSz.X;
+
+        float fSize = ImGui.GetFontSize() * scale;
+        var sz = baseSz * scale;
+        float tx = x + (w - sz.X) * 0.5f;
+        float ty = y + (h - sz.Y) * 0.5f;
+
+        uint nameCol = WithAlpha(C(_cfg.CardinalColor), alpha);
+        uint shadow = WithAlpha(0xCC000000u, alpha);
+        foreach (var (dx, dy) in ShadowOffsets8)
+            dl.AddText(font, fSize, V(tx + dx, ty + dy), shadow, label);
+        dl.AddText(font, fSize, V(tx, ty), nameCol, label);
+    }
+
+    HandleTargetClick(V(x, y), V(x + w, y + h), ch!, true);
+}
+
+    private void RenderStatuses(ImDrawListPtr dl, IBattleChara ch, float cx, float y, float alpha)
+    {
+        float size = MathF.Max(8f, _cfg.TargetStatusIconSize);
+        float hGap = size * 0.25f;
+        int max = Math.Max(1, _cfg.TargetStatusMaxIcons);
+        float now = (float)ImGui.GetTime();
+
+        PruneTrackers(now);
+        _statusBuf.Clear();
+
+        foreach (var st in ch.StatusList)
+        {
+            if (_statusBuf.Count >= max) break;
+            if (st.StatusId == 0) continue;
+            if (st.GameData.ValueNullable is not { } row || row.Icon == 0) continue;
+            float rem = (row.IsPermanent || row.IsFcBuff) ? 0f : st.RemainingTime;
+            var (name, desc) = GetStatusText(row);
+            _statusBuf.Add((rem, (int)row.Icon, name, desc, System.Guid.Empty, (int)st.Param));
+        }
+
+        if (ch.Address != IntPtr.Zero)
+        {
+            if (_statusBuf.Count < max && IsPluginActive(_moodlesIpc, now) && IsVerOk(_moodlesIpc, now))
+                AppendPluginStatuses(ch.Address, max, now, _moodlesGet, ref _cachedMoodles,
+                    ref _cachedMoodlesTarget, ref _cachedMoodlesAt, _moodleTrack, s => s.GUID, s => s.IconID,
+                    s => (s.Title, s.Description), s => s.ExpireTicks, s => s.Stacks);
+            if (_statusBuf.Count < max && IsPluginActive(_lociIpc, now) && IsVerOk(_lociIpc, now))
+                AppendPluginStatuses(ch.Address, max, now, _lociGet, ref _cachedLoci,
+                    ref _cachedLociTarget, ref _cachedLociAt, _lociTrack, s => s.GUID, s => (int)s.IconID,
+                    s => (s.Title, s.Description), s => s.ExpireTicks, s => s.Stacks);
+        }
+
+        if (_statusBuf.Count == 0) return;
+
+        int n = _statusBuf.Count;
+        float startX = cx - (n * size + (n - 1) * hGap) * 0.5f;
+        float topGap = size * 0.15f;
+        float halfH = size * 0.5f * GetIconAspect(_statusBuf[0].Icon);
+        float scy = y + topGap + halfH;
+        float fSize = MathF.Max(9f, size * 0.8f);
+        var font = ImGui.GetFont();
+        float textGap = -size * 0.12f;
+        float tipGap = MathF.Max(4f, size * 0.15f);
+
+        for (int i = 0; i < n; i++)
+        {
+            var (rem, icon, name, desc, guid, stacks) = _statusBuf[i];
+            float sx = startX + i * (size + hGap) + size * 0.5f;
+
+            int displayIcon = icon;
+            if (stacks > 1) displayIcon = icon + stacks - 1;
+
+            if (!TryDrawIcon(dl, displayIcon, sx, scy, size, alpha, false, 1.0f, false))
+            {
+                if (displayIcon != icon)
+                    TryDrawIcon(dl, icon, sx, scy, size, alpha, false, 1.0f, false);
+            }
+
+            string? durLabel = GetDurationLabel(rem);
+
+            float hoverBottom = scy + halfH;
+            if (durLabel != null)
+            {
+                Vector2 lsz = ImGui.CalcTextSize(durLabel) * (fSize / ImGui.GetFontSize());
+                float lx = sx - lsz.X * 0.5f;
+                float ly = scy + halfH + textGap;
+                dl.AddText(font, fSize, V(lx + 1f, ly + 1f), WithAlpha(0xCC000000u, alpha), durLabel);
+                dl.AddText(font, fSize, V(lx, ly), WithAlpha(0xFFFFFFFFu, alpha), durLabel);
+                hoverBottom = ly + lsz.Y;
+            }
+
+            if (ImGui.IsMouseHoveringRect(V(sx - size * 0.5f, scy - halfH), V(sx + size * 0.5f, hoverBottom), false))
+            {
+                ImGui.SetNextWindowPos(V(sx, hoverBottom + tipGap), ImGuiCond.Always, V(0.5f, 0f));
+                var tipBg = _cfg.BackgroundColor;
+                ImGui.PushStyleColor(ImGuiCol.PopupBg, new Vector4(tipBg.X, tipBg.Y, tipBg.Z, tipBg.W * alpha));
+                ImGui.BeginTooltip();
+                ImGuiHelpers.SeStringWrapped(GetFormattedTooltip(name, desc), new SeStringDrawParams { WrapWidth = 345f });
+                ImGui.EndTooltip();
+                ImGui.PopStyleColor();
             }
         }
     }
 
-    // ─── Name row ──────────────────────────────────────────────────────
-    using var jupiterScope = jupiterFont.Available ? jupiterFont.Push() : null;
-    float fontSize = ImGui.GetFontSize() * config.TargetBarFontScale;
-    var font = ImGui.GetFont();
-
-    string? castName = currentTarget is IBattleChara castingChara && castingChara.IsCasting && castingChara.TotalCastTime > 0f
-        ? GetCastActionName(castingChara) : null;
-
-    // ─── Formatted name ──────────────────────────────────────────────
-    // Built fresh every frame so it tracks live cast state (and level) on the
-    // current target — this is a single cheap string, not worth caching.
-    string baseLabel = castName ?? currentTarget.Name.TextValue;
-    string label = (castName == null && config.ShowTargetLevel && currentTarget is ICharacter lvlChar && lvlChar.Level > 0)
-        ? $"Lv{lvlChar.Level}  {baseLabel}"
-        : baseLabel;
-
-    var tsz = ImGui.CalcTextSize(label) * config.TargetBarFontScale;
-    float nameGap = MathF.Max(6f, tbH * 0.5f);
-    float nameY = tbY + tbH + nameGap;
-    float tx = cx - tsz.X * 0.5f;
-
-    uint shadowCol = WithAlpha(0xCC000000u, barAlpha);
-    foreach (var (dx, dy) in ShadowOffsets8)
-        dl.AddText(font, fontSize, V(tx + dx, nameY + dy), shadowCol, label);
-    dl.AddText(font, fontSize, V(tx, nameY), nameCol, label);
-
-    float ornHH = fontSize * 0.46f, ornHW = ornHH * 0.69f;
-    float ornGap = 6f;
-    float textCy = nameY + tsz.Y * 0.5f;
-    float leftOrnX = tx - ornGap - ornHW, rightOrnX = tx + tsz.X + ornGap + ornHW;
-    float shHW = ornHW + 2f, shHH = ornHH + 2f;
-    DrawFilledDiamond(dl, leftOrnX, textCy, shHW, shHH, shadowCol);
-    DrawFilledDiamond(dl, rightOrnX, textCy, shHW, shHH, shadowCol);
-    DrawEndCapOutlines(dl, leftOrnX, textCy, ornHW, ornHH, borderCol, ornHW * 0.28f);
-    DrawEndCapOutlines(dl, rightOrnX, textCy, ornHW, ornHH, borderCol, ornHW * 0.28f);
-
-    // ─── Ribbons ────────────────────────────────────────────────────────
-    if (isChara && config.ShowTargetBarRibbons)
+    private string? GetDurationLabel(float rem)
     {
-        float leftEdge = leftOrnX - ornHW, rightEdge = rightOrnX + ornHW;
-        float rowLeft = nameCx - nameRowW * 0.5f, rowRight = nameCx + nameRowW * 0.5f;
-        float inset = MathF.Max(8f, nameRowW * 0.06f);
-        float ribbonL = MathF.Min(rowLeft + inset, leftEdge - 24f);
-        float ribbonR = MathF.Max(rowRight - inset, rightEdge + 24f);
-        float glowT = now;
-
-        ribbonsBuf[0] = (leftEdge, ribbonL, shadowCol, 0.65f, 7.1f);
-        ribbonsBuf[1] = (leftEdge, ribbonL, borderCol, 1.00f, 0.0f);
-        ribbonsBuf[2] = (rightEdge, ribbonR, shadowCol, 1.15f, 5.3f);
-        ribbonsBuf[3] = (rightEdge, ribbonR, borderCol, 1.60f, 3.7f);
-        foreach (var (edge, target, col, tMul, tOff) in ribbonsBuf)
-            DrawGlowLine(dl, V(edge, textCy), V(target, textCy), col, 1f, glowT * tMul + tOff, true, 0f, 0f);
-
-        // Cast ribbon
-        if (currentTarget.GameObjectId != castWipeTargetId)
-        {
-            castWipeTargetId = currentTarget.GameObjectId;
-            castTrackedProgress = 0f;
-            castFadeOutStartTime = -1f;
-        }
-
-        var battleChara = currentTarget as IBattleChara;
-        bool isCasting = battleChara?.IsCasting ?? false;
-        float totalCastTime = battleChara?.TotalCastTime ?? 0f;
-        float castReal = 0f;
-        if (isCasting && totalCastTime > 0f)
-        {
-            castReal = Math.Clamp((battleChara?.CurrentCastTime ?? 0f) / totalCastTime, 0f, 1f);
-        }
-
-        float castDisp = UpdateFadeOut(ref castTrackedProgress, ref castFrozenProgress, ref castFadeOutStartTime,
-            castReal, !isCasting && castTrackedProgress > 0f, isCasting,
-            false, glowT, CastFadeOutDuration, out float castWipe);
-
-        if (castDisp > 0f)
-        {
-            uint castCol = WithAlpha(C(config.AggroWarningColor), barAlpha);
-            float ci = PulseIntensity(glowT);
-            DrawGlowLine(dl, V(leftEdge, textCy), V(Lerp(leftEdge, ribbonL, castDisp), textCy),
-                castCol, ci, glowT, true, castWipe, 0f, true);
-            DrawGlowLine(dl, V(rightEdge, textCy), V(Lerp(rightEdge, ribbonR, castDisp), textCy),
-                castCol, ci, glowT, true, castWipe, 0f, true);
-        }
-    }
-
-    // ─── HP Percentage ──────────────────────────────────────────
-    if (config.ShowTargetHealthPercent && isChara && tbH > 0f)
-    {
-        float taper = MathF.Min(tbH * 0.9f, tbW * 0.35f);
-        float bottomLeftX = tbX + taper;
-        float bottomY = tbY + tbH;
-
-        float pctFontSize = ImGui.GetFontSize() * config.TargetBarFontScale;
-        float percentGap = MathF.Max(4f, pctFontSize * 0.25f);
-        float py = bottomY + percentGap;
-
-        string pctText = $"{(int)(displayedTargetHpFrac * 100)}%";
-        Vector2 pctSz = ImGui.CalcTextSize(pctText) * (pctFontSize / ImGui.GetFontSize());
-
-        uint pctCol = WithAlpha(C(config.CardinalColor), barAlpha);
-        uint pctShadow = WithAlpha(0xCC000000u, barAlpha);
-
-        float px = bottomLeftX;
-        foreach (var (dx, dy) in ShadowOffsets8)
-            dl.AddText(font, pctFontSize, V(px + dx, py + dy), pctShadow, pctText);
-        dl.AddText(font, pctFontSize, V(px, py), pctCol, pctText);
-    }
-
-    float clickTop = tbY, clickBottom = nameY + tsz.Y;
-    float clickLeft = MathF.Min(tbX, leftOrnX - shHW);
-    float clickRight = MathF.Max(tbX + tbW, rightOrnX + shHW);
-    HandleTargetFrameClick(V(clickLeft, clickTop), V(clickRight, clickBottom), currentTarget!, false);
-
-    return nameY + tsz.Y;
-}
-
-    private void RenderTargetOfTargetBar(ImDrawListPtr dl, float tbX, float tbW, float tbY,
-    IPlayerCharacter player, float now, float barAlpha, bool inDutyOrPvp, IGameObject currentTarget, IGameObject tot)
-{
-    // currentTarget/tot are non-null, distinct, and tot passed an ICharacter check already
-    // in Draw()'s hasTot computation — only the pattern match (needed to bind chara) remains.
-    if (tot is not ICharacter chara) return;
-
-    bool targetingMe = config.HighlightIfTargetingMe && currentTarget.TargetObjectId == player.GameObjectId;
-    float tbH = MathF.Max(4f, config.TargetBarHeight);
-    uint fillCol = targetingMe ? C(config.AggroWarningColor) : TargetBarFillColor(tot, inDutyOrPvp);
-    float frac = chara.MaxHp > 0f ? Math.Clamp((float)chara.CurrentHp / chara.MaxHp, 0f, 1f) : 0f;
-    float pulse = targetingMe ? 0.82f + 0.18f * MathF.Sin(now * 5f) : 1f;
-
-    DrawTrapezoidBar(dl, tbX, tbY, tbW, tbH, frac,
-        WithAlpha(C(config.BackgroundColor), barAlpha),
-        WithAlpha(fillCol, pulse * barAlpha),
-        barAlpha);
-
-    // ─── ToT name, centered over the bar ──────────────────────────
-    using var totFontScope = jupiterFont.Available ? jupiterFont.Push() : null;
-    var font = ImGui.GetFont();
-
-    // ─── HP Percentage ──────────────────────────────────────────
-    if (config.ShowTargetHealthPercent && config.ShowTargetOfTargetHealthPercent)
-    {
-        float taper = MathF.Min(tbH * 0.9f, tbW * 0.35f);
-        float bottomRightX = tbX + tbW - taper;
-        float bottomY = tbY + tbH;
-
-        float pctFontSize = ImGui.GetFontSize() * config.TargetBarFontScale;
-        float percentGap = MathF.Max(4f, pctFontSize * 0.25f);
-        float py = bottomY + percentGap;
-
-        string pctText = $"{(int)(frac * 100)}%";
-        Vector2 pctSz = ImGui.CalcTextSize(pctText) * (pctFontSize / ImGui.GetFontSize());
-
-        uint pctCol = WithAlpha(C(config.CardinalColor), barAlpha);
-        uint pctShadow = WithAlpha(0xCC000000u, barAlpha);
-
-        float px = bottomRightX - pctSz.X;
-        foreach (var (dx, dy) in ShadowOffsets8)
-            dl.AddText(font, pctFontSize, V(px + dx, py + dy), pctShadow, pctText);
-        dl.AddText(font, pctFontSize, V(px, py), pctCol, pctText);
-    }
-
-    if (config.ShowTargetOfTargetName)
-    {
-        bool totIsPlayer = chara.GameObjectId == player.GameObjectId;
-        string totLabel = (totIsPlayer && config.TargetOfTargetShowYou) ? "YOU" : chara.Name.TextValue;
-        if (config.TargetOfTargetFirstNameOnly)
-        {
-            int sp = totLabel.IndexOf(' ');
-            if (sp > 0) totLabel = totLabel[..sp];
-        }
-
-        float totScale = config.TargetBarFontScale;
-        var totBaseSz = ImGui.CalcTextSize(totLabel);
-        float totMaxTextW = MathF.Max(4f, tbW - 4f);
-        if (totBaseSz.X > 0f && totBaseSz.X * totScale > totMaxTextW)
-            totScale = totMaxTextW / totBaseSz.X;
-
-        float totFontSize = ImGui.GetFontSize() * totScale;
-        var totTsz = totBaseSz * totScale;
-        float totTx = tbX + (tbW - totTsz.X) * 0.5f;
-        float totTy = tbY + (tbH - totTsz.Y) * 0.5f;
-
-        uint totNameCol = WithAlpha(C(config.CardinalColor), barAlpha);
-        uint totShadowCol = WithAlpha(0xCC000000u, barAlpha);
-        foreach (var (dx, dy) in ShadowOffsets8)
-            dl.AddText(font, totFontSize, V(totTx + dx, totTy + dy), totShadowCol, totLabel);
-        dl.AddText(font, totFontSize, V(totTx, totTy), totNameCol, totLabel);
-    }
-
-    HandleTargetFrameClick(V(tbX, tbY), V(tbX + tbW, tbY + tbH), chara!, true);
-}
-
-    // ─── Status icons ──────────────────────────────────────────────
-private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float cx, float y, float barAlpha,
-    float iconSize, int maxIcons, bool includeMoodles, bool includeLoci)
-{
-    float size = MathF.Max(8f, iconSize);
-    float hGap = size * 0.25f;
-    int max = Math.Max(1, maxIcons);
-    float now = (float)ImGui.GetTime();
-
-    PruneDurationTrackerIfDue(now);
-    targetStatusBuffer.Clear();
-
-    foreach (var status in character.StatusList)
-    {
-        if (targetStatusBuffer.Count >= max) break;
-        if (status.StatusId == 0) continue;
-        if (status.GameData.ValueNullable is not { } row || row.Icon == 0) continue;
-        float remaining = (row.IsPermanent || row.IsFcBuff) ? 0f : status.RemainingTime;
-        var (statusName, statusDesc) = GetStatusText(row);
-        targetStatusBuffer.Add((remaining, (int)row.Icon, statusName, statusDesc, System.Guid.Empty, (int)status.Param));
-    }
-
-    if (character.Address != IntPtr.Zero)
-    {
-        if (includeMoodles && targetStatusBuffer.Count < max && IsPluginActive(moodlesIpc, now) && IsVersionCompatible(moodlesIpc, now))
-            AppendPluginStatuses(character.Address, max, now, moodlesGetStatusesByPtr, ref cachedMoodles,
-                ref cachedMoodlesTarget, ref cachedMoodlesFetchedAt, moodlesDurationTracker, s => s.GUID, s => s.IconID,
-                s => (s.Title, s.Description), s => s.ExpireTicks, s => s.Stacks);
-        if (includeLoci && targetStatusBuffer.Count < max && IsPluginActive(lociIpc, now) && IsVersionCompatible(lociIpc, now))
-            AppendPluginStatuses(character.Address, max, now, lociGetStatusesByPtr, ref cachedLoci,
-                ref cachedLociTarget, ref cachedLociFetchedAt, lociDurationTracker, s => s.GUID, s => (int)s.IconID,
-                s => (s.Title, s.Description), s => s.ExpireTicks, s => s.Stacks);
-    }
-
-    if (targetStatusBuffer.Count == 0) return;
-
-    int n = targetStatusBuffer.Count;
-    float startX = cx - (n * size + (n - 1) * hGap) * 0.5f;
-    float topGap = size * 0.15f;
-    float halfH = size * 0.5f * GetIconAspect(targetStatusBuffer[0].Icon);
-    float scy = y + topGap + halfH;
-    float fontSize = MathF.Max(9f, size * 0.8f);
-    var font = ImGui.GetFont();
-    float textGap = -size * 0.12f;
-    float tooltipGap = MathF.Max(4f, size * 0.15f);
-
-    for (int i = 0; i < n; i++)
-    {
-        var (remaining, icon, name, desc, guid, stacks) = targetStatusBuffer[i];
-        float sx = startX + i * (size + hGap) + size * 0.5f;
-
-        // ─── Adjust icon for statuses with stacks ──────────────────
-        // Vanilla FFXIV statuses (e.g. Inner Release) and Moodles/Loci statuses all use
-        // sequential icon IDs per stack level, so the same offset applies to both - this
-        // used to be gated to guid != Guid.Empty (Moodles/Loci only), which meant vanilla
-        // statuses always rendered their 1-stack icon regardless of actual stack count.
-        int displayIcon = icon;
-        if (stacks > 1)
-        {
-            displayIcon = icon + stacks - 1;
-        }
-
-        // Try drawing with adjusted icon; fallback to base if it fails
-        // Status icons are drawn outside the clipped compass area, so we don't need unclip
-        if (!TryDrawIcon(dl, displayIcon, sx, scy, size, barAlpha, false, 1.0f, unclip: false))
-        {
-            if (displayIcon != icon)
-                TryDrawIcon(dl, icon, sx, scy, size, barAlpha, false, 1.0f, unclip: false);
-        }
-
-        string? durationLabel = GetDurationLabel(remaining);
-
-        float hoverBottom = scy + halfH;
-        if (durationLabel != null)
-        {
-            Vector2 lsz = ImGui.CalcTextSize(durationLabel) * (fontSize / ImGui.GetFontSize());
-            float lx = sx - lsz.X * 0.5f;
-            float ly = scy + halfH + textGap;
-            dl.AddText(font, fontSize, V(lx + 1f, ly + 1f), WithAlpha(0xCC000000u, barAlpha), durationLabel);
-            dl.AddText(font, fontSize, V(lx, ly), WithAlpha(0xFFFFFFFFu, barAlpha), durationLabel);
-            hoverBottom = ly + lsz.Y;
-        }
-
-        if (ImGui.IsMouseHoveringRect(V(sx - size * 0.5f, scy - halfH), V(sx + size * 0.5f, hoverBottom), false))
-        {
-            ImGui.SetNextWindowPos(V(sx, hoverBottom + tooltipGap), ImGuiCond.Always, V(0.5f, 0f));
-            var tooltipBg = config.BackgroundColor;
-            ImGui.PushStyleColor(ImGuiCol.PopupBg, new Vector4(tooltipBg.X, tooltipBg.Y, tooltipBg.Z, tooltipBg.W * barAlpha));
-            ImGui.BeginTooltip();
-            ImGuiHelpers.SeStringWrapped(GetFormattedTooltipBytes(name, desc), new SeStringDrawParams { WrapWidth = 345f });
-            ImGui.EndTooltip();
-            ImGui.PopStyleColor();
-        }
-    }
-}
-
-    // Formats (and caches) the short duration label shown under a status icon. Keyed on
-    // the displayed tier + integer value rather than the raw float, so repeated frames
-    // showing the same text ("12", "3m", ...) hit the cache instead of reformatting.
-    private string? GetDurationLabel(float remaining)
-    {
-        if (remaining <= 0f) return null;
-        int tier, value;
-        if (remaining < 60f)          { tier = 0; value = (int)MathF.Ceiling(remaining); }
-        else if (remaining < 3600f)   { tier = 1; value = (int)(remaining / 60f); }
-        else if (remaining < 86400f)  { tier = 2; value = (int)(remaining / 3600f); }
-        else if (remaining < 777600f) { tier = 3; value = (int)(remaining / 86400f); }
+        if (rem <= 0f) return null;
+        int tier, val;
+        if (rem < 60f) { tier = 0; val = (int)MathF.Ceiling(rem); }
+        else if (rem < 3600f) { tier = 1; val = (int)(rem / 60f); }
+        else if (rem < 86400f) { tier = 2; val = (int)(rem / 3600f); }
+        else if (rem < 777600f) { tier = 3; val = (int)(rem / 86400f); }
         else return "9+d";
-
-        int key = tier * 100_000 + value;
-        if (!durationLabelCache.TryGetValue(key, out var s))
-            durationLabelCache[key] = s = tier switch { 0 => $"{value}", 1 => $"{value}m", 2 => $"{value}h", _ => $"{value}d" };
+        int key = tier * 100_000 + val;
+        if (!_durationCache.TryGetValue(key, out var s))
+            _durationCache[key] = s = tier switch { 0 => $"{val}", 1 => $"{val}m", 2 => $"{val}h", _ => $"{val}d" };
         return s;
     }
 
-    private void RenderTargetStatuses(ImDrawListPtr dl, IBattleChara target, float cx, float y, float barAlpha) =>
-        RenderStatusIconRow(dl, target, cx, y, barAlpha, config.TargetStatusIconSize, config.TargetStatusMaxIcons, true, true);
-
-    // ─── IPC helpers (unified) ─────────────────────────────────────
-    private bool IsPluginActive(PluginIpcState state, float now)
+    private bool IsPluginActive(PluginIpcState st, float now)
     {
-        if (now - state.ActiveCheckedAt < PluginActiveCacheSeconds) return state.Active;
-        state.ActiveCheckedAt = now;
-        state.Active = false;
-        foreach (var p in pluginInterface.InstalledPlugins)
-            if (p.IsLoaded && p.InternalName == state.Name) { state.Active = true; break; }
-        return state.Active;
+        if (now - st.ActiveCheckedAt < PluginActiveCacheSecs) return st.Active;
+        st.ActiveCheckedAt = now;
+        st.Active = false;
+        foreach (var p in _pi.InstalledPlugins)
+            if (p.IsLoaded && p.InternalName == st.Name) { st.Active = true; break; }
+        return st.Active;
     }
 
-    private bool IsVersionCompatible(PluginIpcState state, float now)
+    private bool IsVerOk(PluginIpcState st, float now)
     {
-        if (now - state.VersionCheckedAt < PluginActiveCacheSeconds) return state.VersionOk;
-        state.VersionCheckedAt = now;
-        bool wasOk = state.VersionOk;
+        if (now - st.VerCheckedAt < PluginActiveCacheSecs) return st.VerOk;
+        st.VerCheckedAt = now;
+        bool was = st.VerOk;
         try
         {
-            if (state.Kind == PluginIpcKind.Moodles)
-                state.VersionOk = moodlesVersion.InvokeFunc() >= state.MinimumVersion;
+            if (st.Kind == PluginIpcKind.Moodles)
+                st.VerOk = _moodlesVer.InvokeFunc() >= st.MinVer;
             else
-            { lociApiVersion.InvokeFunc(); state.VersionOk = true; } // Loci just needs no throw
+            { _lociVer.InvokeFunc(); st.VerOk = true; }
         }
-        catch { state.VersionOk = false; }
-        if (wasOk && !state.VersionOk)
-            log.Warning($"[SkyrimCompass] {state.Name} IPC version no longer compatible – status icons disabled.");
-        return state.VersionOk;
+        catch { st.VerOk = false; }
+        if (was && !st.VerOk)
+            _log.Warning($"[SkyrimCompass] {st.Name} IPC version no longer compatible – status icons disabled.");
+        return st.VerOk;
     }
 
     private void AppendPluginStatuses<T>(
-        nint targetAddress, int max, float now,
+        nint addr, int max, float now,
         ICallGateSubscriber<nint, List<T>> getter,
-        ref List<T>? cache, ref nint cachedTarget, ref float fetchedAt,
+        ref List<T>? cache, ref nint cacheTarget, ref float cacheAt,
         Dictionary<System.Guid, (float FirstSeen, long TotalMs)> tracker,
-        Func<T, System.Guid> guidSelector,
-        Func<T, int> iconSelector,
-        Func<T, (string Name, string Desc)> textSelector,
-        Func<T, long> expireTicksSelector,
-        Func<T, int> stacksSelector)
+        Func<T, System.Guid> guidSel,
+        Func<T, int> iconSel,
+        Func<T, (string Name, string Desc)> textSel,
+        Func<T, long> expireSel,
+        Func<T, int> stacksSel)
     {
-        if (cache == null || targetAddress != cachedTarget || now - fetchedAt >= StatusPayloadCacheSeconds)
+        if (cache == null || addr != cacheTarget || now - cacheAt >= StatusCacheSecs)
         {
-            cachedTarget = targetAddress;
-            fetchedAt = now;
-            try { cache = getter.InvokeFunc(targetAddress); }
+            cacheTarget = addr;
+            cacheAt = now;
+            try { cache = getter.InvokeFunc(addr); }
             catch { cache = null; }
 
-            // Sweep stale GUIDs from tracker
             if (cache != null && tracker.Count > 0)
             {
-                presentGuidScratch.Clear();
-                foreach (var s in cache) presentGuidScratch.Add(guidSelector(s));
-
-                staleGuids.Clear();
-                foreach (var guid in tracker.Keys)
-                    if (!presentGuidScratch.Contains(guid))
-                        staleGuids.Add(guid);
-                foreach (var guid in staleGuids) tracker.Remove(guid);
+                _presentScratch.Clear();
+                foreach (var s in cache) _presentScratch.Add(guidSel(s));
+                _staleGuids.Clear();
+                foreach (var g in tracker.Keys)
+                    if (!_presentScratch.Contains(g)) _staleGuids.Add(g);
+                foreach (var g in _staleGuids) tracker.Remove(g);
             }
         }
         if (cache == null) return;
 
         foreach (var s in cache)
         {
-            if (targetStatusBuffer.Count >= max) break;
-            var guid = guidSelector(s);
-            int icon = iconSelector(s);
+            if (_statusBuf.Count >= max) break;
+            var g = guidSel(s);
+            int icon = iconSel(s);
             if (icon <= 0) continue;
-            if (ContainsGuid(targetStatusBuffer, guid)) continue;
-            var (name, desc) = textSelector(s);
-            long expire = expireTicksSelector(s);
-            float remaining = EstimateRemainingSeconds(tracker, guid, expire, now);
-            int stacks = stacksSelector(s);
-            targetStatusBuffer.Add((remaining, icon, name, desc, guid, stacks));
+            if (GuidInBuffer(g)) continue;
+            var (name, desc) = textSel(s);
+            long expire = expireSel(s);
+            float rem = EstimateRemaining(tracker, g, expire, now);
+            int stacks = stacksSel(s);
+            _statusBuf.Add((rem, icon, name, desc, g, stacks));
         }
     }
 
-    private static bool ContainsGuid(List<(float Remaining, int Icon, string Name, string Desc, System.Guid Guid, int Stacks)> buffer, System.Guid guid)
+    private bool GuidInBuffer(System.Guid g)
     {
-        for (int i = 0; i < buffer.Count; i++)
-            if (buffer[i].Guid == guid) return true;
+        for (int i = 0; i < _statusBuf.Count; i++)
+            if (_statusBuf[i].Guid == g) return true;
         return false;
     }
 
-    private static float EstimateRemainingSeconds(Dictionary<System.Guid, (float FirstSeen, long TotalMs)> tracker,
-        System.Guid guid, long expireMs, float now)
+    private static float EstimateRemaining(Dictionary<System.Guid, (float FirstSeen, long TotalMs)> tracker,
+        System.Guid g, long expireMs, float now)
     {
         if (expireMs < 0) return 0f;
-        if (!tracker.TryGetValue(guid, out var tracked) || tracked.TotalMs != expireMs)
+        if (!tracker.TryGetValue(g, out var tracked) || tracked.TotalMs != expireMs)
         {
             tracked = (now, expireMs);
-            tracker[guid] = tracked;
+            tracker[g] = tracked;
         }
         return MathF.Max(0f, expireMs / 1000f - (now - tracked.FirstSeen));
     }
 
-    private void PruneDurationTrackerIfDue(float now)
+    private void PruneTrackers(float now)
     {
-        if (now < nextDurationTrackerPruneAt) return;
-        nextDurationTrackerPruneAt = now + 60f;
-        PruneStaleTrackerEntries(moodlesDurationTracker, now);
-        PruneStaleTrackerEntries(lociDurationTracker, now);
+        if (now < _nextPruneAt) return;
+        _nextPruneAt = now + 60f;
+        PruneTracker(_moodleTrack, now);
+        PruneTracker(_lociTrack, now);
     }
 
-    private void PruneStaleTrackerEntries(Dictionary<System.Guid, (float FirstSeen, long TotalMs)> tracker, float now)
+    private void PruneTracker(Dictionary<System.Guid, (float FirstSeen, long TotalMs)> tracker, float now)
     {
         if (tracker.Count == 0) return;
-        staleGuids.Clear();
-        foreach (var (guid, tracked) in tracker)
+        _staleGuids.Clear();
+        foreach (var (g, tracked) in tracker)
             if (now - tracked.FirstSeen > tracked.TotalMs / 1000f + 30f)
-                staleGuids.Add(guid);
-        foreach (var guid in staleGuids) tracker.Remove(guid);
+                _staleGuids.Add(g);
+        foreach (var g in _staleGuids) tracker.Remove(g);
     }
 
-    // ─── Tooltip formatting ────────────────────────────────────────
-    private static readonly Dictionary<string, ushort> NamedUiColors = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly Dictionary<string, ushort> _namedColors = new(StringComparer.OrdinalIgnoreCase)
     {
         ["WhiteNormal"] = 0, ["White"] = 1, ["Grey1"]=2, ["Grey2"]=3, ["Grey3"]=4, ["Grey4"]=5,
         ["Grey5"]=6, ["Black"]=7, ["LightYellow"]=8, ["Red"]=17, ["DarkRed"]=19, ["Green"]=45,
         ["DarkGreen"]=47, ["WarmSeaBlue"]=52, ["Orange"]=500, ["LightBlue"]=502, ["Yellow"]=514,
         ["Gold"]=540, ["DarkBlue"]=543, ["LightGreen"]=551, ["Pink"]=561,
     };
-    private static readonly Regex FormatTagRegex = new(@"(\[color=[0-9a-zA-Z]+\])|(\[/color\])|(\[glow=[0-9a-zA-Z]+\])|(\[/glow\])|(\[i\])|(\[/i\])", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex _formatTagRegex = new(@"(\[color=[0-9a-zA-Z]+\])|(\[/color\])|(\[glow=[0-9a-zA-Z]+\])|(\[/glow\])|(\[i\])|(\[/i\])", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    private static bool TryResolveUiColor(string val, out ushort key) =>
-        ushort.TryParse(val, out key) || NamedUiColors.TryGetValue(val, out key);
+    private static bool TryResolveColor(string val, out ushort key) =>
+        ushort.TryParse(val, out key) || _namedColors.TryGetValue(val, out key);
 
-    private static void AppendFormattedSegment(SeStringBuilder builder, string raw)
+    private static void AppendFormat(SeStringBuilder sb, string raw)
     {
-        bool color=false, glow=false, italics=false;
+        bool col=false, glow=false, ital=false;
         int last=0;
-        foreach (Match m in FormatTagRegex.Matches(raw))
+        foreach (Match m in _formatTagRegex.Matches(raw))
         {
-            if (m.Index > last) builder.AddText(raw[last..m.Index]);
+            if (m.Index > last) sb.AddText(raw[last..m.Index]);
             last = m.Index + m.Length;
             var tag = m.Value;
             if (tag.StartsWith("[color=", StringComparison.OrdinalIgnoreCase))
-            { if (TryResolveUiColor(tag[7..^1], out var id)) { builder.AddUiForeground(id); color = true; } }
-            else if (tag == "[/color]") { if (color) { builder.AddUiForegroundOff(); color = false; } }
+            { if (TryResolveColor(tag[7..^1], out var id)) { sb.AddUiForeground(id); col = true; } }
+            else if (tag == "[/color]") { if (col) { sb.AddUiForegroundOff(); col = false; } }
             else if (tag.StartsWith("[glow=", StringComparison.OrdinalIgnoreCase))
-            { if (TryResolveUiColor(tag[6..^1], out var id)) { builder.AddUiGlow(id); glow = true; } }
-            else if (tag == "[/glow]") { if (glow) { builder.AddUiGlowOff(); glow = false; } }
-            else if (tag == "[i]") { builder.AddItalicsOn(); italics = true; }
-            else if (italics) { builder.AddItalicsOff(); italics = false; }
+            { if (TryResolveColor(tag[6..^1], out var id)) { sb.AddUiGlow(id); glow = true; } }
+            else if (tag == "[/glow]") { if (glow) { sb.AddUiGlowOff(); glow = false; } }
+            else if (tag == "[i]") { sb.AddItalicsOn(); ital = true; }
+            else if (ital) { sb.AddItalicsOff(); ital = false; }
         }
-        if (last < raw.Length) builder.AddText(raw[last..]);
-        if (color) builder.AddUiForegroundOff();
-        if (glow) builder.AddUiGlowOff();
-        if (italics) builder.AddItalicsOff();
+        if (last < raw.Length) sb.AddText(raw[last..]);
+        if (col) sb.AddUiForegroundOff();
+        if (glow) sb.AddUiGlowOff();
+        if (ital) sb.AddItalicsOff();
     }
 
-    private byte[] GetFormattedTooltipBytes(string name, string desc)
+    private byte[] GetFormattedTooltip(string name, string desc)
     {
-        // Use combined key to avoid tuple allocation
         string key = $"{name}\0{desc}";
-        if (formattedTooltipCache.TryGetValue(key, out var cached))
-            return cached;
-
-        // Prune if too large
-        if (formattedTooltipCache.Count >= MaxTooltipCacheSize)
-            formattedTooltipCache.Clear();
-
-        var b = new SeStringBuilder();
-        AppendFormattedSegment(b, name);
+        if (_tooltipCache.TryGetValue(key, out var cached)) return cached;
+        if (_tooltipCache.Count >= MaxTooltipCache) _tooltipCache.Clear();
+        var sb = new SeStringBuilder();
+        AppendFormat(sb, name);
         if (!string.IsNullOrWhiteSpace(desc))
         {
-            b.AddText("\n");
-            AppendFormattedSegment(b, desc);
+            sb.AddText("\n");
+            AppendFormat(sb, desc);
         }
-        var bytes = b.Encode();
-        formattedTooltipCache[key] = bytes;
+        var bytes = sb.Encode();
+        _tooltipCache[key] = bytes;
         return bytes;
     }
 
-    // ─── Marker rendering ──────────────────────────────────────────
-    private void RenderAllMarkers(ImDrawListPtr dl, float cx, float cy, float halfVis, float barHalfW,
-        float lensStr, float heading, IPlayerCharacter player, Vector3 originPos, bool inDutyOrPvp)
+    private void RenderMarkers(ImDrawListPtr dl, float cx, float cy, float halfVis, float halfW,
+        float lens, float heading, IPlayerCharacter player, Vector3 origin, bool inDuty)
     {
-        float maxDist = config.MaxMarkerDistance;
+        float maxDist = _cfg.MaxMarkerDistance;
         float maxDistSq = maxDist * maxDist;
-        float fateMax = maxDist * config.FateDistanceMultiplier;
+        float fateMax = maxDist * _cfg.FateDistanceMultiplier;
         float fateMaxSq = fateMax * fateMax;
-        float extHalf = halfVis * lensStr;
-        bool showPartyRole = config.ShowPartyRoleIcons && (!config.PartyRoleIconsOnlyInDuty || inDutyOrPvp);
+        float ext = halfVis * lens;
+        bool showRole = _cfg.ShowPartyRoleIcons && (!_cfg.PartyRoleIconsOnlyInDuty || inDuty);
 
-        allCandidates.Clear();
+        _candidates.Clear();
 
-        if (config.ShowAnyMarkers)
+        if (_cfg.ShowAnyMarkers)
         {
-            foreach (var obj in objectTable)
+            foreach (var obj in _ot)
             {
                 if (obj == null || obj.EntityId == player.EntityId) continue;
-                if (!TryComputeBearing(obj.Position, originPos, heading, maxDistSq, extHalf, out float dist, out float delta)) continue;
-                uint col = MarkerColor(obj, player, out var kind, inDutyOrPvp);
+                if (!TryBearing(obj.Position, origin, heading, maxDistSq, ext, out float dist, out float delta)) continue;
+                uint col = MarkerColor(obj, player, out var kind, inDuty);
                 if (col == 0) continue;
-                allCandidates.Add((obj, null, dist, delta, 1f - dist / maxDist, col, kind));
+                _candidates.Add((obj, null, dist, delta, 1f - dist / maxDist, col, kind));
             }
         }
 
-        if (config.ShowFates)
+        if (_cfg.ShowFates)
         {
-            foreach (var fate in fateTable)
+            foreach (var fate in _ft)
             {
                 if (fate == null || (fate.State != FateState.Running && fate.State != FateState.Preparing)) continue;
-                if (!TryComputeBearing(fate.Position, originPos, heading, fateMaxSq, extHalf, out float dist, out float delta)) continue;
-                allCandidates.Add((null, fate, dist, delta, 1f - dist / fateMax, 0u, AetheryteNameKind.None));
+                if (!TryBearing(fate.Position, origin, heading, fateMaxSq, ext, out float dist, out float delta)) continue;
+                _candidates.Add((null, fate, dist, delta, 1f - dist / fateMax, 0u, AetheryteNameKind.None));
             }
         }
 
-        if (allCandidates.Count == 0) return;
-        allCandidates.Sort(DistFarFirst);
+        if (_candidates.Count == 0) return;
+        _candidates.Sort(_cmpDistFar);
 
-        foreach (var cand in allCandidates)
+        foreach (var cand in _candidates)
         {
             float delta = cand.Delta, t = cand.T;
-            float sx = cx + Project(delta, halfVis, barHalfW, lensStr);
-            float alpha = ComputeFadeAlpha(t) * LensEdgeAlpha(delta, halfVis, extHalf);
+            float sx = cx + Project(delta, halfVis, halfW, lens);
+            float alpha = ComputeFade(t) * LensEdgeAlpha(delta, halfVis, ext);
 
             if (cand.Fate is { } fate)
             {
-                float size = Lerp(config.FateIconMinSize, config.FateIconMaxSize, t);
-                if (!(fate.IconId > 0 && TryDrawIcon(dl, (int)fate.IconId, sx, cy, size, alpha, false, 1.0f, unclip: true)))
-                    DrawFilledDot(dl, sx, cy, (3f + 7f * t) * 2f, C(config.FateColor), alpha);
+                float size = Lerp(_cfg.FateIconMinSize, _cfg.FateIconMaxSize, t);
+                if (!(fate.IconId > 0 && TryDrawIcon(dl, (int)fate.IconId, sx, cy, size, alpha, false, 1.0f, true)))
+                    DrawDotFilled(dl, sx, cy, (3f + 7f * t) * 2f, C(_cfg.FateColor), alpha);
                 continue;
             }
 
@@ -1283,170 +1174,165 @@ private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float
             uint col = cand.Col;
             int iconId = 0;
             float iconSize = 0f;
-            bool isAetheryte = cand.AetheryteKind != AetheryteNameKind.None;
+            bool isAetheryte = cand.Kind != AetheryteNameKind.None;
 
-            if (config.ShowAetheryteIcons && isAetheryte)
+            if (_cfg.ShowAetheryteIcons && isAetheryte)
             {
-                iconId = GetAetheryteIconId(cand.AetheryteKind);
-                iconSize = Lerp(config.AetheryteIconMinSize, config.AetheryteIconMaxSize, t) * AetheryteIconSizeMultiplier;
+                iconId = GetAetheryteIconId(cand.Kind);
+                iconSize = Lerp(_cfg.AetheryteIconMinSize, _cfg.AetheryteIconMaxSize, t) * AetheryteIconSizeMul;
             }
             else if (obj.ObjectKind == ObjectKind.EventNpc && TryGetNpcIcon(obj, out int npcIcon))
             {
                 iconId = npcIcon;
-                iconSize = Lerp(config.NpcQuestIconMinSize, config.NpcQuestIconMaxSize, t) * IconSizeMultiplier;
+                iconSize = Lerp(_cfg.NpcQuestIconMinSize, _cfg.NpcQuestIconMaxSize, t) * IconSizeMul;
             }
-            else if (config.ShowGatheringIcons && obj.ObjectKind == ObjectKind.GatheringPoint)
+            else if (_cfg.ShowGatheringIcons && obj.ObjectKind == ObjectKind.GatheringPoint)
             {
-                int gIcon = GetGatheringIconId(obj.BaseId);
-                if (gIcon > 0) { iconId = gIcon; iconSize = Lerp(config.GatheringIconMinSize, config.GatheringIconMaxSize, t); }
+                int gIcon = GetGatheringIcon(obj.BaseId);
+                if (gIcon > 0) { iconId = gIcon; iconSize = Lerp(_cfg.GatheringIconMinSize, _cfg.GatheringIconMaxSize, t); }
             }
-            else if (config.ShowTreasureIcons && obj.ObjectKind == ObjectKind.Treasure)
+            else if (_cfg.ShowTreasureIcons && obj.ObjectKind == ObjectKind.Treasure)
             {
-                iconId = config.TreasureIconId;
-                iconSize = Lerp(config.TreasureMinSize, config.TreasureMaxSize, t);
+                iconId = _cfg.TreasureIconId;
+                iconSize = Lerp(_cfg.TreasureMinSize, _cfg.TreasureMaxSize, t);
             }
 
-            bool drewIcon = iconId > 0 && TryDrawIcon(dl, iconId, sx, cy, iconSize, alpha, false, 1.0f, unclip: true);
+            bool drew = iconId > 0 && TryDrawIcon(dl, iconId, sx, cy, iconSize, alpha, false, 1.0f, true);
 
-            if (!drewIcon)
+            if (!drew)
             {
                 if (obj.ObjectKind == ObjectKind.Pc)
                 {
-                    float playerSize = Lerp(config.PartyRoleIconMinSize, config.PartyRoleIconMaxSize, t);
+                    float pSize = Lerp(_cfg.PartyRoleIconMinSize, _cfg.PartyRoleIconMaxSize, t);
                     bool drewJob = false;
-                    if (showPartyRole && obj is ICharacter ch && (ch.StatusFlags & StatusFlags.PartyMember) != 0)
+                    if (showRole && obj is ICharacter ch && (ch.StatusFlags & StatusFlags.PartyMember) != 0)
                     {
                         int jobIcon = ch.ClassJob.RowId > 0 ? (int)(62000 + ch.ClassJob.RowId) : 0;
                         if (jobIcon > 0)
                         {
-                            float drawSize = playerSize * IconSizeMultiplier;
+                            float drawSize = pSize * IconSizeMul;
                             uint roleCol = GetRoleColor(ch);
-                            DrawIconRingAndShadow(dl, sx, cy, drawSize * 0.5f, roleCol, roleCol, alpha);
-                            TryDrawIcon(dl, jobIcon, sx, cy, drawSize, alpha, false, 1.0f, unclip: true);
+                            DrawRingShadow(dl, sx, cy, drawSize * 0.5f, roleCol, roleCol, alpha);
+                            TryDrawIcon(dl, jobIcon, sx, cy, drawSize, alpha, false, 1.0f, true);
                             drewJob = true;
                         }
                     }
                     if (!drewJob)
                     {
-                        var ov = FindPlayerIconOverride(obj.Name.TextValue);
+                        var ov = FindOverride(obj.Name.TextValue);
                         if (ov != null)
                         {
-                            float overrideSize = playerSize * IconSizeMultiplier;
-                            float half = overrideSize * 0.5f;
-                            DrawIconRingAndShadow(dl, sx, cy, half,
+                            float ovSize = pSize * IconSizeMul;
+                            float half = ovSize * 0.5f;
+                            DrawRingShadow(dl, sx, cy, half,
                                 ov.ShowBorder ? C(ov.BorderColor) : null,
                                 ov.ShowFill ? C(ov.FillColor) : null, alpha);
-                            if (!(ov.IconBaseId > 0 && TryDrawIcon(dl, ov.IconBaseId, sx, cy, overrideSize, alpha, ov.ClipToCircle, ov.SizeMultiplier, unclip: true)))
-                                DrawFilledDot(dl, sx, cy, playerSize, ov.ShowBorder ? C(ov.BorderColor) : col, alpha);
+                            if (!(ov.IconBaseId > 0 && TryDrawIcon(dl, ov.IconBaseId, sx, cy, ovSize, alpha, ov.ClipToCircle, ov.SizeMultiplier, true)))
+                                DrawDotFilled(dl, sx, cy, pSize, ov.ShowBorder ? C(ov.BorderColor) : col, alpha);
                         }
                         else
                         {
-                            bool isFriend = config.SolidFriendDots && obj is ICharacter ch2 && (ch2.StatusFlags & StatusFlags.Friend) != 0;
-                            if (isFriend) DrawFilledDot(dl, sx, cy, playerSize, col, alpha);
-                            else DrawHollowDot(dl, sx, cy, playerSize, col, alpha);
+                            bool isFriend = _cfg.SolidFriendDots && obj is ICharacter ch2 && (ch2.StatusFlags & StatusFlags.Friend) != 0;
+                            if (isFriend) DrawDotFilled(dl, sx, cy, pSize, col, alpha);
+                            else DrawDotHollow(dl, sx, cy, pSize, col, alpha);
                         }
                     }
                 }
                 else
                 {
-                    (float min, float max, bool filled) dot = isAetheryte ? (config.AetheryteIconMinSize, config.AetheryteIconMaxSize, true)
-                        : obj.ObjectKind == ObjectKind.EventNpc ? (config.NpcQuestIconMinSize, config.NpcQuestIconMaxSize, false)
-                        : obj.ObjectKind == ObjectKind.BattleNpc ? (config.EnemyMinSize, config.EnemyMaxSize, true)
-                        : obj.ObjectKind == ObjectKind.Treasure ? (config.TreasureMinSize, config.TreasureMaxSize, true)
+                    (float min, float max, bool filled) dot = isAetheryte ? (_cfg.AetheryteIconMinSize, _cfg.AetheryteIconMaxSize, true)
+                        : obj.ObjectKind == ObjectKind.EventNpc ? (_cfg.NpcQuestIconMinSize, _cfg.NpcQuestIconMaxSize, false)
+                        : obj.ObjectKind == ObjectKind.BattleNpc ? (_cfg.EnemyMinSize, _cfg.EnemyMaxSize, true)
+                        : obj.ObjectKind == ObjectKind.Treasure ? (_cfg.TreasureMinSize, _cfg.TreasureMaxSize, true)
                         : (6f, 20f, true);
-                    float dotSize = Lerp(dot.min, dot.max, t);
-                    if (dot.filled) DrawFilledDot(dl, sx, cy, dotSize, col, alpha);
-                    else DrawHollowDot(dl, sx, cy, dotSize, col, alpha);
+                    float ds = Lerp(dot.min, dot.max, t);
+                    if (dot.filled) DrawDotFilled(dl, sx, cy, ds, col, alpha);
+                    else DrawDotHollow(dl, sx, cy, ds, col, alpha);
                 }
             }
         }
     }
 
-    private float ComputeFadeAlpha(float t)
+    private float ComputeFade(float t)
     {
-        float near = config.DotNearZone, far = config.DotFarZone, midAlpha = config.DotMidAlpha;
+        float near = _cfg.DotNearZone, far = _cfg.DotFarZone, mid = _cfg.DotMidAlpha;
         if (t >= near) return 1f;
-        if (t >= far) return midAlpha + (1f - midAlpha) * SmoothStep((t - far) / (near - far));
-        return midAlpha * SmoothStep(t / far);
+        if (t >= far) return mid + (1f - mid) * SmoothStep((t - far) / (near - far));
+        return mid * SmoothStep(t / far);
     }
 
-    // ─── Icon drawing ──────────────────────────────────────────────
-    // Added 'unclip' parameter to avoid unnecessary state changes for status icons
     private bool TryDrawIcon(ImDrawListPtr dl, int iconId, float sx, float cy, float size, float alpha,
-        bool clipCircle = false, float uvZoom = 1.0f, bool unclip = true)
+        bool clipCircle = false, float zoom = 1.0f, bool unclip = true)
     {
-        if (!textureProvider.TryGetFromGameIcon(new GameIconLookup((uint)iconId), out var sharedTex)) return false;
-        var tex = sharedTex.GetWrapOrEmpty();
+        if (!_tp.TryGetFromGameIcon(new GameIconLookup((uint)iconId), out var shared)) return false;
+        var tex = shared.GetWrapOrEmpty();
         uint tint = WithAlpha(0xFFFFFFFFu, alpha);
-        float halfW, halfH;
+        float hw, hh;
         Vector2 uvMin, uvMax;
         if (clipCircle)
         {
-            halfW = halfH = size * 0.5f;
-            float uvHalf = 0.5f / Math.Max(0.01f, uvZoom);
+            hw = hh = size * 0.5f;
+            float uvHalf = 0.5f / Math.Max(0.01f, zoom);
             uvMin = new(0.5f - uvHalf, 0.5f - uvHalf);
             uvMax = new(0.5f + uvHalf, 0.5f + uvHalf);
         }
         else
         {
-            halfW = size * 0.5f * Math.Max(0.01f, uvZoom);
-            halfH = halfW * (tex.Size.X > 0f ? tex.Size.Y / tex.Size.X : 1f);
+            hw = size * 0.5f * Math.Max(0.01f, zoom);
+            hh = hw * (tex.Size.X > 0f ? tex.Size.Y / tex.Size.X : 1f);
             uvMin = Vector2.Zero; uvMax = Vector2.One;
         }
         if (unclip) PushUnclip(dl);
-        dl.AddImageRounded(tex.Handle, V(sx - halfW, cy - halfH), V(sx + halfW, cy + halfH),
-            uvMin, uvMax, tint, clipCircle ? halfW : 0f, ImDrawFlags.RoundCornersAll);
+        dl.AddImageRounded(tex.Handle, V(sx - hw, cy - hh), V(sx + hw, cy + hh),
+            uvMin, uvMax, tint, clipCircle ? hw : 0f, ImDrawFlags.RoundCornersAll);
         if (unclip) PopUnclip(dl);
         return true;
     }
 
     private float GetIconAspect(int iconId)
     {
-        if (iconAspectCache.TryGetValue(iconId, out float aspect))
-            return aspect;
-        if (!textureProvider.TryGetFromGameIcon(new GameIconLookup((uint)iconId), out var sharedTex))
-            return 1f;
-        var size = sharedTex.GetWrapOrEmpty().Size;
-        aspect = size.X > 0f ? size.Y / size.X : 1f;
-        iconAspectCache[iconId] = aspect;
-        return aspect;
+        if (_iconAspectCache.TryGetValue(iconId, out float asp)) return asp;
+        if (!_tp.TryGetFromGameIcon(new GameIconLookup((uint)iconId), out var shared)) return 1f;
+        var size = shared.GetWrapOrEmpty().Size;
+        asp = size.X > 0f ? size.Y / size.X : 1f;
+        _iconAspectCache[iconId] = asp;
+        return asp;
     }
 
-    // ─── Static data lookups ──────────────────────────────────────
-    private int GetGatheringIconId(uint baseId)
+    private int GetGatheringIcon(uint baseId)
     {
-        if (gatheringIconCache.TryGetValue(baseId, out int cached)) return cached;
+        if (_gathIconCache.TryGetValue(baseId, out int cached)) return cached;
         int icon = 0;
-        if (gatheringPointSheet.GetRowOrDefault(baseId) is { } gp &&
-            gatheringPointBaseSheet.GetRowOrDefault(gp.GatheringPointBase.RowId) is { } gpb &&
-            gatheringTypeSheet.GetRowOrDefault(gpb.GatheringType.RowId) is { } gt)
+        if (_gathPtSheet.GetRowOrDefault(baseId) is { } gp &&
+            _gathPtBaseSheet.GetRowOrDefault(gp.GatheringPointBase.RowId) is { } gpb &&
+            _gathTypeSheet.GetRowOrDefault(gpb.GatheringType.RowId) is { } gt)
             icon = gt.IconMain;
-        gatheringIconCache[baseId] = icon;
+        _gathIconCache[baseId] = icon;
         return icon;
     }
 
-    private PlayerIconOverride? FindPlayerIconOverride(string playerName)
+    private PlayerIconOverride? FindOverride(string name)
     {
-        if (playerOverrideDict == null || playerOverrideDictVersion != config.PlayerIconOverridesVersion)
+        if (_overrideDict == null || _overrideDictVer != _cfg.PlayerIconOverridesVersion)
         {
-            playerOverrideDict = new Dictionary<string, PlayerIconOverride>(StringComparer.OrdinalIgnoreCase);
-            foreach (var entry in config.PlayerIconOverrides)
-                if (!string.IsNullOrEmpty(entry.PlayerName))
-                    playerOverrideDict[entry.PlayerName] = entry;
-            playerOverrideDictVersion = config.PlayerIconOverridesVersion;
+            _overrideDict = new Dictionary<string, PlayerIconOverride>(StringComparer.OrdinalIgnoreCase);
+            foreach (var e in _cfg.PlayerIconOverrides)
+                if (!string.IsNullOrEmpty(e.PlayerName))
+                    _overrideDict[e.PlayerName] = e;
+            _overrideDictVer = _cfg.PlayerIconOverridesVersion;
         }
-        playerOverrideDict.TryGetValue(playerName, out var found);
+        _overrideDict.TryGetValue(name, out var found);
         return found;
     }
 
     private uint GetRoleColor(ICharacter ch)
     {
         uint rowId = ch.ClassJob.RowId;
-        if (roleColorCache.TryGetValue(rowId, out uint packed)) return packed;
-        uint color = 0u;
-        if (classJobSheet.GetRowOrDefault(rowId) is { } row)
+        if (_roleColorCache.TryGetValue(rowId, out uint packed)) return packed;
+        uint col = 0u;
+        if (_classJobSheet.GetRowOrDefault(rowId) is { } row)
         {
-            color = row.Role switch
+            col = row.Role switch
             {
                 1 => C(new Vector4(0.36f, 0.48f, 0.76f, 0.90f)),
                 2 or 3 => C(new Vector4(0.84f, 0.30f, 0.30f, 0.90f)),
@@ -1454,70 +1340,70 @@ private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float
                 _ => C(new Vector4(0.54f, 0.54f, 0.54f, 0.85f)),
             };
         }
-        else color = C(new Vector4(0.54f, 0.54f, 0.54f, 0.85f));
-        roleColorCache[rowId] = color;
-        return color;
+        else col = C(new Vector4(0.54f, 0.54f, 0.54f, 0.85f));
+        _roleColorCache[rowId] = col;
+        return col;
     }
 
     private string GetTitle(uint baseId)
     {
-        if (titleCache.TryGetValue(baseId, out var cached)) return cached;
-        string v = npcSheet.GetRowOrDefault(baseId) is { } row ? row.Title.ToString() : "";
-        titleCache[baseId] = v;
+        if (_titleCache.TryGetValue(baseId, out var cached)) return cached;
+        string v = _npcSheet.GetRowOrDefault(baseId) is { } row ? row.Title.ToString() : "";
+        _titleCache[baseId] = v;
         return v;
     }
 
     private string GetSingular(uint baseId)
     {
-        if (singularCache.TryGetValue(baseId, out var cached)) return cached;
-        string v = npcSheet.GetRowOrDefault(baseId) is { } row ? row.Singular.ToString() : "";
-        singularCache[baseId] = v;
+        if (_singularCache.TryGetValue(baseId, out var cached)) return cached;
+        string v = _npcSheet.GetRowOrDefault(baseId) is { } row ? row.Singular.ToString() : "";
+        _singularCache[baseId] = v;
         return v;
     }
 
     private (string Name, string Desc) GetStatusText(Lumina.Excel.Sheets.Status row)
     {
-        if (statusTextCache.TryGetValue(row.RowId, out var cached)) return cached;
+        if (_statusTextCache.TryGetValue(row.RowId, out var cached)) return cached;
         var v = (row.Name.ToString(), row.Description.ToString());
-        statusTextCache[row.RowId] = v;
+        _statusTextCache[row.RowId] = v;
         return v;
     }
 
-    private static bool HasKeyword(string text, string[] keywords)
+    private static bool HasKw(string text, string[] kw)
     {
         if (string.IsNullOrEmpty(text)) return false;
-        foreach (var kw in keywords) if (text.Contains(kw, StringComparison.OrdinalIgnoreCase)) return true;
+        foreach (var k in kw) if (text.Contains(k, StringComparison.OrdinalIgnoreCase)) return true;
         return false;
     }
 
-    private bool MatchesKeyword(uint baseId, string[] keywords) =>
-        HasKeyword(GetTitle(baseId), keywords) || HasKeyword(GetSingular(baseId), keywords);
+    private bool MatchesKw(uint baseId, string[] kw) =>
+        HasKw(GetTitle(baseId), kw) || HasKw(GetSingular(baseId), kw);
 
     private enum NpcCategory { None, Mender, Shop, Skipper, Ticketer, ChocoboKeep }
 
     private NpcCategory ClassifyNpc(uint baseId)
     {
-        if (npcCategoryCache.TryGetValue(baseId, out var cached)) return cached;
-        var cat = MatchesKeyword(baseId, MenderKeywords) ? NpcCategory.Mender
-            : MatchesKeyword(baseId, ShopKeywords) ? NpcCategory.Shop
-            : MatchesKeyword(baseId, SkipperKeywords) ? NpcCategory.Skipper
-            : MatchesKeyword(baseId, TicketerKeywords) ? NpcCategory.Ticketer
-            : MatchesKeyword(baseId, ChocoboKeepKeywords) ? NpcCategory.ChocoboKeep
+        if (_npcCatCache.TryGetValue(baseId, out var cached)) return cached;
+        var cat = MatchesKw(baseId, MenderKw) ? NpcCategory.Mender
+            : MatchesKw(baseId, ShopKw) ? NpcCategory.Shop
+            : MatchesKw(baseId, SkipperKw) ? NpcCategory.Skipper
+            : MatchesKw(baseId, TicketerKw) ? NpcCategory.Ticketer
+            : MatchesKw(baseId, ChocoboKeepKw) ? NpcCategory.ChocoboKeep
             : NpcCategory.None;
-        npcCategoryCache[baseId] = cat;
+        _npcCatCache[baseId] = cat;
         return cat;
     }
 
     private bool TryGetNpcIcon(IGameObject obj, out int iconId)
     {
-        if (config.ShowNpcQuestIcons && npcMarkerIcons.TryGetValue(obj.GameObjectId, out iconId)) return true;
+        if (_cfg.ShowNpcQuestIcons && _npcMarkers.TryGetValue(obj.GameObjectId, out iconId)) return true;
         switch (ClassifyNpc(obj.BaseId))
         {
-            case NpcCategory.Mender when config.ShowMenderIcons: iconId = config.MenderIconId; return true;
-            case NpcCategory.Shop when config.ShowShopIcons: iconId = config.ShopIconId; return true;
-            case NpcCategory.Skipper when config.ShowFastTravelIcons: iconId = config.FastTravelIconId; return true;
-            case NpcCategory.Ticketer when config.ShowFastTravelIcons: iconId = config.FastTravelTicketerIconId; return true;
-            case NpcCategory.ChocoboKeep when config.ShowFastTravelIcons: iconId = config.ChocoboKeepIconId; return true;
+            case NpcCategory.Mender when _cfg.ShowMenderIcons: iconId = _cfg.MenderIconId; return true;
+            case NpcCategory.Shop when _cfg.ShowShopIcons: iconId = _cfg.ShopIconId; return true;
+            case NpcCategory.Skipper when _cfg.ShowFastTravelIcons: iconId = _cfg.FastTravelIconId; return true;
+            case NpcCategory.Ticketer when _cfg.ShowFastTravelIcons: iconId = _cfg.FastTravelTicketerIconId; return true;
+            case NpcCategory.ChocoboKeep when _cfg.ShowFastTravelIcons: iconId = _cfg.ChocoboKeepIconId; return true;
             default: iconId = 0; return false;
         }
     }
@@ -1526,71 +1412,70 @@ private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float
 
     private AetheryteNameKind ClassifyAetheryte(IGameObject obj)
     {
-        bool shard = !string.IsNullOrEmpty(config.AethernetShardName)
-            && obj.Name.TextValue.Contains(config.AethernetShardName, StringComparison.OrdinalIgnoreCase);
+        bool shard = !string.IsNullOrEmpty(_cfg.AethernetShardName)
+            && obj.Name.TextValue.Contains(_cfg.AethernetShardName, StringComparison.OrdinalIgnoreCase);
         if (obj.ObjectKind == ObjectKind.Aetheryte) return shard ? AetheryteNameKind.Shard : AetheryteNameKind.Big;
         return shard ? AetheryteNameKind.Shard : AetheryteNameKind.None;
     }
 
     private int GetAetheryteIconId(AetheryteNameKind kind) =>
-        kind == AetheryteNameKind.Shard ? config.AethernetShardIconId : config.AetheryteIconId;
+        kind == AetheryteNameKind.Shard ? _cfg.AethernetShardIconId : _cfg.AetheryteIconId;
 
-    private uint MarkerColor(IGameObject obj, IPlayerCharacter player, out AetheryteNameKind kind, bool inDutyOrPvp)
+    private uint MarkerColor(IGameObject obj, IPlayerCharacter player, out AetheryteNameKind kind, bool inDuty)
     {
         kind = AetheryteNameKind.None;
         switch (obj.ObjectKind)
         {
-            case ObjectKind.Pc: return config.ShowPlayers ? MarkerBaseColor(obj) : 0u;
+            case ObjectKind.Pc: return _cfg.ShowPlayers ? MarkerBaseColor(obj) : 0u;
             case ObjectKind.BattleNpc:
-                if (!config.ShowEnemies) return 0u;
+                if (!_cfg.ShowEnemies) return 0u;
                 if (obj is not IBattleNpc bnpc || bnpc.BattleNpcKind != BattleNpcSubKind.Combatant) return 0u;
-                if (config.EnemiesOnlyIfEngaged && !(bnpc.StatusFlags.HasFlag(StatusFlags.InCombat) && player.StatusFlags.HasFlag(StatusFlags.InCombat)))
+                if (_cfg.EnemiesOnlyIfEngaged && !(bnpc.StatusFlags.HasFlag(StatusFlags.InCombat) && player.StatusFlags.HasFlag(StatusFlags.InCombat)))
                     return 0u;
                 return MarkerBaseColor(obj);
             case ObjectKind.EventNpc:
-                if (TryGetAetheryteMarkerColor(obj, out uint col, out kind)) return col;
-                if (!config.ShowNpcs) return 0u;
-                if (config.NpcsOnlyIfTargetable && !obj.IsTargetable) return 0u;
+                if (TryAetheryteColor(obj, out uint col, out kind)) return col;
+                if (!_cfg.ShowNpcs) return 0u;
+                if (_cfg.NpcsOnlyIfTargetable && !obj.IsTargetable) return 0u;
                 return MarkerBaseColor(obj);
             case ObjectKind.EventObj:
-                if (TryGetAetheryteMarkerColor(obj, out col, out kind)) return col;
+                if (TryAetheryteColor(obj, out col, out kind)) return col;
                 return 0u;
             case ObjectKind.GatheringPoint:
-                if (!config.ShowGatheringNodes) return 0u;
-                if (config.GatheringOnlyIfTargetable && !obj.IsTargetable) return 0u;
+                if (!_cfg.ShowGatheringNodes) return 0u;
+                if (_cfg.GatheringOnlyIfTargetable && !obj.IsTargetable) return 0u;
                 return MarkerBaseColor(obj);
             case ObjectKind.Treasure:
-                return config.ShowTreasure ? MarkerBaseColor(obj) : 0u;
+                return _cfg.ShowTreasure ? MarkerBaseColor(obj) : 0u;
             case ObjectKind.Aetheryte:
-                TryGetAetheryteMarkerColor(obj, out uint aetherCol, out kind);
-                return aetherCol;
+                TryAetheryteColor(obj, out uint aCol, out kind);
+                return aCol;
             default: return 0u;
         }
     }
 
-    private bool TryGetAetheryteMarkerColor(IGameObject obj, out uint color, out AetheryteNameKind kind)
+    private bool TryAetheryteColor(IGameObject obj, out uint col, out AetheryteNameKind kind)
     {
         kind = ClassifyAetheryte(obj);
-        if (kind == AetheryteNameKind.None) { color = 0u; return false; }
-        bool hidden = !config.ShowAetherytes || (kind == AetheryteNameKind.Shard && !config.ShowAethernetShards);
-        color = hidden ? 0u : C(config.AetheryteColor);
+        if (kind == AetheryteNameKind.None) { col = 0u; return false; }
+        bool hidden = !_cfg.ShowAetherytes || (kind == AetheryteNameKind.Shard && !_cfg.ShowAethernetShards);
+        col = hidden ? 0u : C(_cfg.AetheryteColor);
         return true;
     }
 
     private uint MarkerBaseColor(IGameObject obj) => obj.ObjectKind switch
     {
-        ObjectKind.Pc => C(config.PlayerColor),
-        ObjectKind.BattleNpc when obj is IBattleNpc b && b.BattleNpcKind == BattleNpcSubKind.Combatant => C(config.EnemyColor),
-        ObjectKind.EventNpc => C(config.NpcColor),
-        ObjectKind.GatheringPoint => C(config.GatheringColor),
-        ObjectKind.Treasure => C(config.TreasureColor),
+        ObjectKind.Pc => C(_cfg.PlayerColor),
+        ObjectKind.BattleNpc when obj is IBattleNpc b && b.BattleNpcKind == BattleNpcSubKind.Combatant => C(_cfg.EnemyColor),
+        ObjectKind.EventNpc => C(_cfg.NpcColor),
+        ObjectKind.GatheringPoint => C(_cfg.GatheringColor),
+        ObjectKind.Treasure => C(_cfg.TreasureColor),
         _ => 0u,
     };
 
-    // ─── Dot drawing ──────────────────────────────────────────────
-    private static void DrawFilledDot(ImDrawListPtr dl, float sx, float cy, float size, uint col, float alpha) =>
+    private static void DrawDotFilled(ImDrawListPtr dl, float sx, float cy, float size, uint col, float alpha) =>
         DrawDot(dl, sx, cy, size, col, alpha, true);
-    private static void DrawHollowDot(ImDrawListPtr dl, float sx, float cy, float size, uint col, float alpha) =>
+    private static void DrawDotHollow(ImDrawListPtr dl, float sx, float cy, float size, uint col, float alpha) =>
         DrawDot(dl, sx, cy, size, col, alpha, false);
 
     private static void DrawDot(ImDrawListPtr dl, float sx, float cy, float size, uint col, float alpha, bool filled)
@@ -1601,7 +1486,7 @@ private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float
         dl.AddCircle(V(sx, cy), r + 0.8f, WithAlpha(filled ? 0x66000000u : 0x33000000u, alpha));
     }
 
-    private static void DrawIconRingAndShadow(ImDrawListPtr dl, float sx, float cy, float half,
+    private static void DrawRingShadow(ImDrawListPtr dl, float sx, float cy, float half,
         uint? ring, uint? shadow, float alpha)
     {
         if (ring == null && shadow == null) return;
@@ -1613,7 +1498,6 @@ private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float
         PopUnclip(dl);
     }
 
-    // ─── Helpers ──────────────────────────────────────────────────
     private static float SmoothStep(float x) => x * x * (3f - 2f * x);
     private static float Normalize(float a) { a %= 360f; return a < 0f ? a + 360f : a; }
     private static float Delta(float from, float to)
@@ -1624,13 +1508,13 @@ private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float
         return d;
     }
 
-    private static bool TryComputeBearing(Vector3 target, Vector3 origin, float heading,
-        float maxDistSq, float extHalf, out float dist, out float delta)
+    private static bool TryBearing(Vector3 target, Vector3 origin, float heading,
+        float maxSq, float extHalf, out float dist, out float delta)
     {
         float dx = target.X - origin.X, dy = target.Y - origin.Y, dz = target.Z - origin.Z;
         float dsq = dx*dx + dy*dy + dz*dz;
         dist = 0f; delta = 0f;
-        if (dsq > maxDistSq || dsq < 0.25f) return false;
+        if (dsq > maxSq || dsq < 0.25f) return false;
         float bearing = Normalize(MathF.Atan2(dx, -dz) * (180f / MathF.PI));
         delta = Delta(heading, bearing);
         if (MathF.Abs(delta) > extHalf) return false;
@@ -1641,44 +1525,43 @@ private void RenderStatusIconRow(ImDrawListPtr dl, IBattleChara character, float
     private static Vector2 V(float x, float y) => new(x, y);
     private static uint C(Vector4 v) => ImGui.ColorConvertFloat4ToU32(v);
     private static float Lerp(float a, float b, float t) => a + (b - a) * t;
-    private static float LensEdgeAlpha(float delta, float linearHalf, float extHalf)
+    private static float LensEdgeAlpha(float d, float linearHalf, float extHalf)
     {
-        float absD = MathF.Abs(delta);
+        float absD = MathF.Abs(d);
         if (absD <= linearHalf) return 1f;
         return 1f - SmoothStep(MathF.Min(1f, (absD - linearHalf) / (extHalf - linearHalf)));
     }
 
-    private static uint WithAlpha(uint color, float mul)
+    private static uint WithAlpha(uint col, float mul)
     {
-        uint a = (uint)(((color >> 24) & 0xFFu) * Math.Clamp(mul, 0f, 1f));
-        return (color & 0x00FFFFFFu) | (a << 24);
+        uint a = (uint)(((col >> 24) & 0xFFu) * Math.Clamp(mul, 0f, 1f));
+        return (col & 0x00FFFFFFu) | (a << 24);
     }
 
     private static void PushUnclip(ImDrawListPtr dl) =>
         dl.PushClipRect(Vector2.Zero, ImGui.GetIO().DisplaySize, false);
     private static void PopUnclip(ImDrawListPtr dl) => dl.PopClipRect();
 
-    // ─── Debug dump ───────────────────────────────────────────────
     public void DumpNearbyObjects(float radius = 50f)
     {
-        var player = objectTable.LocalPlayer;
-        if (player == null) { log.Info("[SkyrimCompass debug] No local player."); return; }
+        var player = _ot.LocalPlayer;
+        if (player == null) { _log.Info("[SkyrimCompass debug] No local player."); return; }
         var pp = player.Position;
         var nearby = new List<(float dist, IGameObject obj)>();
-        foreach (var obj in objectTable)
+        foreach (var obj in _ot)
         {
             if (obj == null || obj.EntityId == player.EntityId) continue;
             float d = Vector3.Distance(obj.Position, pp);
             if (d <= radius) nearby.Add((d, obj));
         }
         nearby.Sort((a,b) => a.dist.CompareTo(b.dist));
-        log.Info($"[SkyrimCompass debug] {nearby.Count} objects within {radius}y:");
+        _log.Info($"[SkyrimCompass debug] {nearby.Count} objects within {radius}y:");
         foreach (var (dist, obj) in nearby)
         {
             string extra = "";
-            if (obj.ObjectKind == ObjectKind.EventNpc && npcSheet.GetRowOrDefault(obj.BaseId) is { } row)
+            if (obj.ObjectKind == ObjectKind.EventNpc && _npcSheet.GetRowOrDefault(obj.BaseId) is { } row)
                 extra = $" | Singular=\"{row.Singular}\" | Plural=\"{row.Plural}\"";
-            log.Info($"[SkyrimCompass debug] {dist,6:F1}y | Kind={obj.ObjectKind,-19} | BaseId={obj.BaseId,-8} | Name=\"{obj.Name}\"{extra}");
+            _log.Info($"[SkyrimCompass debug] {dist,6:F1}y | Kind={obj.ObjectKind,-19} | BaseId={obj.BaseId,-8} | Name=\"{obj.Name}\"{extra}");
         }
     }
 }

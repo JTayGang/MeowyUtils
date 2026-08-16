@@ -16,66 +16,59 @@ public sealed class Plugin : IDalamudPlugin
     public Configuration Config { get; }
     public StatusMirrorEngine StatusMirror { get; }
 
-    private readonly ICommandManager commandManager;
-    private readonly IPluginLog pluginLog;
-    private readonly WindowSystem windowSystem = new("SkyrimCompass");
-    private readonly CompassHud compassHud;
-    private readonly ConfigWindow configWindow;
-    private readonly FirstTimeSetupWindow firstTimeSetupWindow;
-    private readonly IFontHandle jupiterFontHandle;
+    private readonly ICommandManager _cmd;
+    private readonly IPluginLog _log;
+    private readonly WindowSystem _ws = new("SkyrimCompass");
+    private readonly CompassHud _hud;
+    private readonly ConfigWindow _cfgWin;
+    private readonly FirstTimeSetupWindow _ftsw;
+    private readonly IFontHandle _font;
 
     public Plugin(
-        IDalamudPluginInterface pluginInterface, ICommandManager commandManager,
-        IClientState clientState, IObjectTable objectTable, ITargetManager targetManager,
-        INamePlateGui namePlateGui, ITextureProvider textureProvider, IFateTable fateTable,
-        ICondition condition, IGameGui gameGui, IDataManager dataManager, IFramework framework,
-        IPluginLog pluginLog)
+        IDalamudPluginInterface pi, ICommandManager cmd,
+        IClientState cs, IObjectTable ot, ITargetManager tm,
+        INamePlateGui npg, ITextureProvider tp, IFateTable ft,
+        ICondition cond, IGameGui gg, IDataManager dm, IFramework fw,
+        IPluginLog log)
     {
-        PluginInterface = pluginInterface;
-        this.commandManager = commandManager;
-        this.pluginLog = pluginLog;
+        PluginInterface = pi;
+        _cmd = cmd;
+        _log = log;
 
-        // Checked before GetPluginConfig() so upgrades from an older version (which already
-        // have a config file on disk, just missing the new field) don't retroactively see the
-        // welcome wizard - only a genuinely fresh install does.
-        bool isNewInstall = !pluginInterface.ConfigFile.Exists;
-        Config = pluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
+        bool isNew = !pi.ConfigFile.Exists;
+        Config = pi.GetPluginConfig() as Configuration ?? new Configuration();
 
-        // FFXIV's serif font, loaded once, shared with CompassHud
-        jupiterFontHandle = pluginInterface.UiBuilder.FontAtlas.NewGameFontHandle(
-            new GameFontStyle(GameFontFamily.Jupiter, 18));
+        _font = pi.UiBuilder.FontAtlas.NewGameFontHandle(new GameFontStyle(GameFontFamily.Jupiter, 18));
 
-        StatusMirror = new StatusMirrorEngine(pluginInterface, framework, objectTable, pluginLog, Config);
+        StatusMirror = new StatusMirrorEngine(pi, fw, ot, log, Config);
 
-        compassHud = new CompassHud(
-            clientState, objectTable, targetManager, namePlateGui, textureProvider, fateTable,
-            condition, gameGui, dataManager, Config, pluginLog, jupiterFontHandle, pluginInterface);
-        configWindow = new ConfigWindow(this);
-        windowSystem.AddWindow(configWindow);
+        _hud = new CompassHud(cs, ot, tm, npg, tp, ft, cond, gg, dm, Config, log, _font, pi);
+        _cfgWin = new ConfigWindow(this);
+        _ws.AddWindow(_cfgWin);
 
-        firstTimeSetupWindow = new FirstTimeSetupWindow(this);
-        windowSystem.AddWindow(firstTimeSetupWindow);
-        if (isNewInstall && !Config.HasCompletedFirstTimeSetup)
-            firstTimeSetupWindow.IsOpen = true;
+        _ftsw = new FirstTimeSetupWindow(this);
+        _ws.AddWindow(_ftsw);
+        if (isNew && !Config.HasCompletedFirstTimeSetup)
+            _ftsw.IsOpen = true;
 
-        commandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
+        cmd.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
             HelpMessage = "'/compass on'/'off' to set explicitly, 'config' for settings, 'setup' " +
                           "for the first-time setup wizard, 'debug' to log nearby objects (/xllog to view)."
         });
 
-        pluginInterface.UiBuilder.Draw += OnDraw;
-        pluginInterface.UiBuilder.OpenConfigUi += OnOpenConfig;
+        pi.UiBuilder.Draw += OnDraw;
+        pi.UiBuilder.OpenConfigUi += OnOpenConfig;
     }
 
     public void Dispose()
     {
-        windowSystem.RemoveAllWindows();
-        commandManager.RemoveHandler(CommandName);
+        _ws.RemoveAllWindows();
+        _cmd.RemoveHandler(CommandName);
         PluginInterface.UiBuilder.Draw -= OnDraw;
         PluginInterface.UiBuilder.OpenConfigUi -= OnOpenConfig;
-        jupiterFontHandle.Dispose();
-        compassHud.Dispose();
+        _font.Dispose();
+        _hud.Dispose();
         StatusMirror.Dispose();
     }
 
@@ -83,16 +76,15 @@ public sealed class Plugin : IDalamudPlugin
     {
         switch (args.Trim().ToLowerInvariant())
         {
-            case "config":   configWindow.IsOpen = !configWindow.IsOpen; break;
-            case "setup":    firstTimeSetupWindow.IsOpen = true; break;
-            case "debug":    compassHud.DumpNearbyObjects(); break;
-            case "on":       SetEnabled(true); break;
-            case "off":      SetEnabled(false); break;
-            default:         SetEnabled(!Config.Enabled); break;
+            case "config": _cfgWin.IsOpen = !_cfgWin.IsOpen; break;
+            case "setup": _ftsw.IsOpen = true; break;
+            case "debug": _hud.DumpNearbyObjects(); break;
+            case "on": SetEnabled(true); break;
+            case "off": SetEnabled(false); break;
+            default: SetEnabled(!Config.Enabled); break;
         }
     }
 
-    // Idempotent: repeated "on" stays on, unlike bare toggle
     private void SetEnabled(bool enabled)
     {
         Config.Enabled = enabled;
@@ -103,16 +95,16 @@ public sealed class Plugin : IDalamudPlugin
     {
         try
         {
-            windowSystem.Draw();
-            compassHud.Draw();
+            _ws.Draw();
+            _hud.Draw();
         }
         catch (Exception ex)
         {
-            pluginLog.Error(ex, "SkyrimCompass: unhandled exception in draw");
+            _log.Error(ex, "SkyrimCompass: unhandled exception in draw");
         }
     }
 
-    private void OnOpenConfig() => configWindow.IsOpen = true;
+    private void OnOpenConfig() => _cfgWin.IsOpen = true;
 
-    public void OpenFirstTimeSetup() => firstTimeSetupWindow.IsOpen = true;
+    public void OpenFirstTimeSetup() => _ftsw.IsOpen = true;
 }

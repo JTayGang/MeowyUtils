@@ -2,7 +2,7 @@
   "Author": "Meowmeowmeow Cat",
   "Name": "Skyrim Compass",
   "InternalName": "SkyrimCompass",
-  "AssemblyVersion": "2.0.0.91",
+  "AssemblyVersion": "2.0.0.92",
   "Description": "Adds a Skyrim-style compass bar at the top of your screen. Shows cardinal directions, nearby entity markers, (players, enemies, gathering nodes, etc.) as well as several combat hug replacements. Use /compass to toggle and /compass config to open settings.",
   "ApplicableVersion": "any",
   "RepoUrl": "https://github.com/JTayGang/MeowyUtils",

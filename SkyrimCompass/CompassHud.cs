@@ -876,101 +876,121 @@ public sealed class CompassHud : IDisposable
         HandleTargetClick(V(x, y), V(x + w, y + h), ch!, true);
     }
 
-    private void RenderStatuses(ImDrawListPtr dl, IBattleChara ch, float cx, float y, float alpha)
+private void RenderStatuses(ImDrawListPtr dl, IBattleChara ch, float cx, float y, float alpha)
+{
+    float size = MathF.Max(8f, _cfg.TargetStatusIconSize);
+    float hGap = size * 0.25f;
+    int max = Math.Max(1, _cfg.TargetStatusMaxIcons);
+    float now = (float)ImGui.GetTime();
+
+    PruneTrackers(now);
+    _statusBuf.Clear();
+
+    // Collect vanilla statuses from the target
+    foreach (var st in ch.StatusList)
     {
-        float size = MathF.Max(8f, _cfg.TargetStatusIconSize);
-        float hGap = size * 0.25f;
-        int max = Math.Max(1, _cfg.TargetStatusMaxIcons);
-        float now = (float)ImGui.GetTime();
+        if (_statusBuf.Count >= max) break;
+        if (st.StatusId == 0) continue;
+        if (st.GameData.ValueNullable is not { } row || row.Icon == 0) continue;
+        float rem = (row.IsPermanent || row.IsFcBuff) ? 0f : st.RemainingTime;
+        var (name, desc) = GetStatusText(row);
+        _statusBuf.Add((rem, (int)row.Icon, name, desc, System.Guid.Empty, (int)st.Param));
+    }
 
-        PruneTrackers(now);
-        _statusBuf.Clear();
+    // Collect Moodles/Loci statuses
+    if (ch.Address != IntPtr.Zero)
+    {
+        if (_statusBuf.Count < max && IsPluginActive(_moodlesIpc, now) && IsVerOk(_moodlesIpc, now))
+            AppendPluginStatuses(ch.Address, max, now, _moodlesGet, ref _cachedMoodles,
+                ref _cachedMoodlesTarget, ref _cachedMoodlesAt, _moodleTrack, s => s.GUID, s => s.IconID,
+                s => (s.Title, s.Description), s => s.ExpireTicks, s => s.Stacks);
+        if (_statusBuf.Count < max && IsPluginActive(_lociIpc, now) && IsVerOk(_lociIpc, now))
+            AppendPluginStatuses(ch.Address, max, now, _lociGet, ref _cachedLoci,
+                ref _cachedLociTarget, ref _cachedLociAt, _lociTrack, s => s.GUID, s => (int)s.IconID,
+                s => (s.Title, s.Description), s => s.ExpireTicks, s => s.Stacks);
+    }
 
-        foreach (var st in ch.StatusList)
+    if (_statusBuf.Count == 0) return;
+
+    int n = _statusBuf.Count;
+    float startX = cx - (n * size + (n - 1) * hGap) * 0.5f;
+    float topGap = size * 0.15f;
+    float halfH = size * 0.5f * GetIconAspect(_statusBuf[0].Icon);
+    float scy = y + topGap + halfH;
+    float fSize = MathF.Max(9f, size * 0.8f);
+    var font = ImGui.GetFont();
+    float textGap = -size * 0.12f;
+    float tipGap = MathF.Max(4f, size * 0.15f);
+
+    for (int i = 0; i < n; i++)
+    {
+        var (rem, icon, name, desc, guid, stacks) = _statusBuf[i];
+        float sx = startX + i * (size + hGap) + size * 0.5f;
+
+        int displayIcon = icon;
+        string displayName = name;
+        string displayDesc = desc;
+
+        if (stacks > 1)
         {
-            if (_statusBuf.Count >= max) break;
-            if (st.StatusId == 0) continue;
-            if (st.GameData.ValueNullable is not { } row || row.Icon == 0) continue;
-            float rem = (row.IsPermanent || row.IsFcBuff) ? 0f : st.RemainingTime;
-            var (name, desc) = GetStatusText(row);
-            _statusBuf.Add((rem, (int)row.Icon, name, desc, System.Guid.Empty, (int)st.Param));
-        }
+            int candidateIcon = icon + stacks - 1;
 
-        if (ch.Address != IntPtr.Zero)
-        {
-            if (_statusBuf.Count < max && IsPluginActive(_moodlesIpc, now) && IsVerOk(_moodlesIpc, now))
-                AppendPluginStatuses(ch.Address, max, now, _moodlesGet, ref _cachedMoodles,
-                    ref _cachedMoodlesTarget, ref _cachedMoodlesAt, _moodleTrack, s => s.GUID, s => s.IconID,
-                    s => (s.Title, s.Description), s => s.ExpireTicks, s => s.Stacks);
-            if (_statusBuf.Count < max && IsPluginActive(_lociIpc, now) && IsVerOk(_lociIpc, now))
-                AppendPluginStatuses(ch.Address, max, now, _lociGet, ref _cachedLoci,
-                    ref _cachedLociTarget, ref _cachedLociAt, _lociTrack, s => s.GUID, s => (int)s.IconID,
-                    s => (s.Title, s.Description), s => s.ExpireTicks, s => s.Stacks);
-        }
-
-        if (_statusBuf.Count == 0) return;
-
-        int n = _statusBuf.Count;
-        float startX = cx - (n * size + (n - 1) * hGap) * 0.5f;
-        float topGap = size * 0.15f;
-        float halfH = size * 0.5f * GetIconAspect(_statusBuf[0].Icon);
-        float scy = y + topGap + halfH;
-        float fSize = MathF.Max(9f, size * 0.8f);
-        var font = ImGui.GetFont();
-        float textGap = -size * 0.12f;
-        float tipGap = MathF.Max(4f, size * 0.15f);
-
-        for (int i = 0; i < n; i++)
-        {
-            var (rem, icon, name, desc, guid, stacks) = _statusBuf[i];
-            float sx = startX + i * (size + hGap) + size * 0.5f;
-
-            int displayIcon = icon;
-            if (stacks > 1) displayIcon = icon + stacks - 1;
-
-            // For vanilla statuses (guid == Guid.Empty), if we changed the icon, try to get the correct text.
-            string displayName = name;
-            string displayDesc = desc;
-            if (displayIcon != icon && guid == System.Guid.Empty)
+            if (guid != System.Guid.Empty)
             {
-                if (_iconToStatusText.TryGetValue(displayIcon, out var data))
+                // Moodles/Loci – always apply the offset (they use sequential icons)
+                displayIcon = candidateIcon;
+                // Keep the plugin-supplied name/desc (they are already correct)
+            }
+            else
+            {
+                // Vanilla status – only apply the offset if the candidate icon
+                // exists and belongs to the same status (same name)
+                if (_iconToStatusText.TryGetValue(candidateIcon, out var data))
                 {
-                    displayName = data.Name;
-                    displayDesc = data.Desc;
+                    if (string.Equals(data.Name, name, StringComparison.OrdinalIgnoreCase))
+                    {
+                        displayIcon = candidateIcon;
+                        displayName = data.Name;
+                        displayDesc = data.Desc;
+                    }
+                    // else the candidate icon belongs to a different status – ignore it
                 }
             }
+        }
 
-            if (!TryDrawIcon(dl, displayIcon, sx, scy, size, alpha, false, 1.0f, false))
-            {
-                if (displayIcon != icon)
-                    TryDrawIcon(dl, icon, sx, scy, size, alpha, false, 1.0f, false);
-            }
+        // Draw the icon
+        if (!TryDrawIcon(dl, displayIcon, sx, scy, size, alpha, false, 1.0f, false))
+        {
+            if (displayIcon != icon)
+                TryDrawIcon(dl, icon, sx, scy, size, alpha, false, 1.0f, false);
+        }
 
-            string? durLabel = GetDurationLabel(rem);
+        // Duration label
+        string? durLabel = GetDurationLabel(rem);
+        float hoverBottom = scy + halfH;
+        if (durLabel != null)
+        {
+            Vector2 lsz = ImGui.CalcTextSize(durLabel) * (fSize / ImGui.GetFontSize());
+            float lx = sx - lsz.X * 0.5f;
+            float ly = scy + halfH + textGap;
+            dl.AddText(font, fSize, V(lx + 1f, ly + 1f), WithAlpha(0xCC000000u, alpha), durLabel);
+            dl.AddText(font, fSize, V(lx, ly), WithAlpha(0xFFFFFFFFu, alpha), durLabel);
+            hoverBottom = ly + lsz.Y;
+        }
 
-            float hoverBottom = scy + halfH;
-            if (durLabel != null)
-            {
-                Vector2 lsz = ImGui.CalcTextSize(durLabel) * (fSize / ImGui.GetFontSize());
-                float lx = sx - lsz.X * 0.5f;
-                float ly = scy + halfH + textGap;
-                dl.AddText(font, fSize, V(lx + 1f, ly + 1f), WithAlpha(0xCC000000u, alpha), durLabel);
-                dl.AddText(font, fSize, V(lx, ly), WithAlpha(0xFFFFFFFFu, alpha), durLabel);
-                hoverBottom = ly + lsz.Y;
-            }
-
-            if (ImGui.IsMouseHoveringRect(V(sx - size * 0.5f, scy - halfH), V(sx + size * 0.5f, hoverBottom), false))
-            {
-                ImGui.SetNextWindowPos(V(sx, hoverBottom + tipGap), ImGuiCond.Always, V(0.5f, 0f));
-                var tipBg = _cfg.BackgroundColor;
-                ImGui.PushStyleColor(ImGuiCol.PopupBg, new Vector4(tipBg.X, tipBg.Y, tipBg.Z, tipBg.W * alpha));
-                ImGui.BeginTooltip();
-                ImGuiHelpers.SeStringWrapped(GetFormattedTooltip(displayName, displayDesc), new SeStringDrawParams { WrapWidth = 345f });
-                ImGui.EndTooltip();
-                ImGui.PopStyleColor();
-            }
+        // Tooltip
+        if (ImGui.IsMouseHoveringRect(V(sx - size * 0.5f, scy - halfH), V(sx + size * 0.5f, hoverBottom), false))
+        {
+            ImGui.SetNextWindowPos(V(sx, hoverBottom + tipGap), ImGuiCond.Always, V(0.5f, 0f));
+            var tipBg = _cfg.BackgroundColor;
+            ImGui.PushStyleColor(ImGuiCol.PopupBg, new Vector4(tipBg.X, tipBg.Y, tipBg.Z, tipBg.W * alpha));
+            ImGui.BeginTooltip();
+            ImGuiHelpers.SeStringWrapped(GetFormattedTooltip(displayName, displayDesc), new SeStringDrawParams { WrapWidth = 345f });
+            ImGui.EndTooltip();
+            ImGui.PopStyleColor();
         }
     }
+}
 
     private string? GetDurationLabel(float rem)
     {

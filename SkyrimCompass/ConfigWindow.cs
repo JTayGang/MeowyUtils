@@ -94,7 +94,6 @@ public sealed class ConfigWindow : Window
             ImGui.Spacing();
             ch |= DrawToggle("Show Compass Bar", () => cfg.ShowCompassBar, v => cfg.ShowCompassBar = v,
                 "Hide the main compass strip while keeping target bars and status icons.");
-            ch |= DrawToggle("Show numeric heading", () => cfg.ShowHeadingText, v => cfg.ShowHeadingText = v);
             ch |= DrawToggle("Hide during cutscenes", () => cfg.HideDuringCutscenes, v => cfg.HideDuringCutscenes = v,
                 "Hides in any cinematics and group pose.");
         }
@@ -202,10 +201,8 @@ public sealed class ConfigWindow : Window
                 "Filters placeholder/empty slot NPCs.");
             ch |= DrawToggle("Show quest marker icons##qicon", () => cfg.ShowNpcQuestIcons, v => cfg.ShowNpcQuestIcons = v,
                 "Shows quest '!' / '?' icons on NPCs.");
-            ch |= DrawToggle("Show Mender icon##micon", () => cfg.ShowMenderIcons, v => cfg.ShowMenderIcons = v,
-                "Gear repair vendors.");
-            ch |= DrawToggle("Show Shop/Trader icon##sicon", () => cfg.ShowShopIcons, v => cfg.ShowShopIcons = v,
-                "Merchant/Vendor NPCs.");
+            ch |= DrawToggle("Show Shops/Menders##sicon", () => cfg.ShowShopIcons, v => cfg.ShowShopIcons = v,
+                "Merchant/Vendor and gear repair NPCs.");
             ch |= DrawToggle("Show Fast Travel icons##fticon", () => cfg.ShowFastTravelIcons, v => cfg.ShowFastTravelIcons = v,
                 "Ferry, airship, Chocobo Keep, etc.");
             ch |= DrawSizeSliders(
@@ -446,8 +443,6 @@ public sealed class ConfigWindow : Window
             ImGui.TextDisabled($"Mirrored into Loci: {mirror.MirroredIntoLociCount}   " +
                                $"Mirrored into Moodles: {mirror.MirroredIntoMoodlesCount}" +
                                (mirror.LockedMirrorCount > 0 ? $"   Locked: {mirror.LockedMirrorCount}" : ""));
-            if (ImGui.Button("Clear stuck mirrors##mirclear"))
-                mirror.ClearAllMirrors();
             EndIndentedDisabled();
         }
 

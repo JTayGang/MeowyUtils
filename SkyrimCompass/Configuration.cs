@@ -38,7 +38,6 @@ public class Configuration : IPluginConfiguration
     public bool UseCameraDirection { get; set; } = true;
     public bool UseCameraPosition { get; set; } = true;
     public float FontScale { get; set; } = 1.0f;
-    public bool ShowHeadingText { get; set; } = false;
     public bool HideDuringCutscenes { get; set; } = true;
 
     public Vector4 BackgroundColor { get; set; } = new(0.05f, 0.04f, 0.03f, 0.82f);
@@ -98,7 +97,6 @@ public class Configuration : IPluginConfiguration
     public float NpcQuestIconMinSize { get; set; } = 8f;
     public float NpcQuestIconMaxSize { get; set; } = 40f;
 
-    public bool ShowMenderIcons { get; set; } = true;
     public int MenderIconId { get; set; } = 60434;
     public bool ShowShopIcons { get; set; } = true;
     public int ShopIconId { get; set; } = 60412;

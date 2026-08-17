@@ -409,13 +409,6 @@ public sealed class CompassHud : IDisposable
         const float nH = 10f, nW = 6f;
         dl.AddTriangleFilled(V(cx + 1f, by + nH + 2f), V(cx - nW + 1f, by + 1f), V(cx + nW + 1f, by + 1f), 0x55000000u);
         dl.AddTriangleFilled(V(cx, by + nH + 1f), V(cx - nW, by), V(cx + nW, by), 0xF2FFFFFFu);
-
-        if (_cfg.ShowHeadingText)
-        {
-            string txt = $"{(int)heading:000}°";
-            var sz = ImGui.CalcTextSize(txt);
-            dl.AddText(V(cx - sz.X * 0.5f, by + bh + 3f), 0xBBCCBB99u, txt);
-        }
     }
 
     private static void DrawCapOutlines(ImDrawListPtr dl, float cx, float cy, float hw, float hh, uint col, float dotR = 2.5f)
@@ -1472,7 +1465,7 @@ private void RenderStatuses(ImDrawListPtr dl, IBattleChara ch, float cx, float y
         if (_cfg.ShowNpcQuestIcons && _npcMarkers.TryGetValue(obj.GameObjectId, out iconId)) return true;
         switch (ClassifyNpc(obj.BaseId))
         {
-            case NpcCategory.Mender when _cfg.ShowMenderIcons: iconId = _cfg.MenderIconId; return true;
+            case NpcCategory.Mender when _cfg.ShowShopIcons: iconId = _cfg.MenderIconId; return true;
             case NpcCategory.Shop when _cfg.ShowShopIcons: iconId = _cfg.ShopIconId; return true;
             case NpcCategory.Skipper when _cfg.ShowFastTravelIcons: iconId = _cfg.FastTravelIconId; return true;
             case NpcCategory.Ticketer when _cfg.ShowFastTravelIcons: iconId = _cfg.FastTravelTicketerIconId; return true;

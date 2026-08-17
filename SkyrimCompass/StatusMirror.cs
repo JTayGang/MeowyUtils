@@ -494,34 +494,6 @@ public sealed class StatusMirrorEngine : IDisposable
         }
     }
 
-    public void ClearAllMirrors()
-    {
-        var keysLoci = new List<Guid>(MirroredIntoLoci.Keys);
-        foreach (var g in keysLoci) _loci.TryRemove(g);
-        var lociStill = new HashSet<Guid>();
-        foreach (var l in _loci.GetLocalStatuses()) lociStill.Add(l.GUID);
-        var toRemoveLoci = new List<Guid>();
-        foreach (var kv in MirroredIntoLoci)
-            if (!lociStill.Contains(kv.Key)) toRemoveLoci.Add(kv.Key);
-        foreach (var g in toRemoveLoci) { MirroredIntoLoci.Remove(g); MarkDirty(); _locked.Remove(g); }
-
-        if (_ot.LocalPlayer is { } local)
-        {
-            var keysMoodles = new List<Guid>(MirroredIntoMoodles.Keys);
-            foreach (var g in keysMoodles) _moodles.TryRemove(g, local);
-        }
-        var moodlesStill = new HashSet<Guid>();
-        foreach (var m in _moodles.GetLocalStatuses()) moodlesStill.Add(m.GUID);
-        var toRemoveMoodles = new List<Guid>();
-        foreach (var kv in MirroredIntoMoodles)
-            if (!moodlesStill.Contains(kv.Key)) toRemoveMoodles.Add(kv.Key);
-        foreach (var g in toRemoveMoodles) { MirroredIntoMoodles.Remove(g); MarkDirty(); }
-        _recentRemoved.Clear();
-        _supersededMoodleGhosts.Clear();
-        _supersededLociGhosts.Clear();
-        _log.Information("[SkyrimCompass] Cleared all mirrored statuses.");
-    }
-
     public void Dispose()
     {
         _fw.Update -= OnUpdate;

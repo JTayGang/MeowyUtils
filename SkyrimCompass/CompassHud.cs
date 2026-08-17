@@ -927,16 +927,42 @@ private void RenderStatuses(ImDrawListPtr dl, IBattleChara ch, float cx, float y
         var (rem, icon, name, desc, guid, stacks) = _statusBuf[i];
         float sx = startX + i * (size + hGap) + size * 0.5f;
 
-        // ---- Correct icon for stacked statuses (vanilla AND Moodles/Loci) ----
         int displayIcon = icon;
-        if (stacks > 1)
-            displayIcon = icon + stacks - 1;
-
-        // ---- Tooltip text: always use the buffer's name/desc ----
-        // For vanilla: this is the base status text (correct for all stacks).
-        // For Moodles/Loci: this is the plugin-provided text (correct for that GUID).
         string displayName = name;
         string displayDesc = desc;
+
+        if (stacks > 1)
+        {
+            int candidateIcon = icon + stacks - 1;
+
+            if (guid != System.Guid.Empty)
+            {
+                // Moodles/Loci – always use the offset
+                displayIcon = candidateIcon;
+                // Keep plugin-supplied name/desc
+            }
+            else
+            {
+                // Vanilla – check if the candidate icon is known in the cache
+                if (_iconToStatusText.TryGetValue(candidateIcon, out var data))
+                {
+                    // If the name matches, it's safe to use the candidate
+                    if (string.Equals(data.Name, name, StringComparison.OrdinalIgnoreCase))
+                    {
+                        displayIcon = candidateIcon;
+                        displayName = data.Name;
+                        displayDesc = data.Desc;
+                    }
+                    // else: candidate exists but belongs to a different status – don't use it
+                }
+                else
+                {
+                    // Candidate not in the cache – assume it's a legitimate stacked icon
+                    displayIcon = candidateIcon;
+                    // Keep original name/desc (they are correct for this status)
+                }
+            }
+        }
 
         // Draw the icon
         if (!TryDrawIcon(dl, displayIcon, sx, scy, size, alpha, false, 1.0f, false))

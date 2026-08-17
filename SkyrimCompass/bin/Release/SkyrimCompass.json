@@ -2,7 +2,7 @@
   "Author": "Meowmeowmeow Cat",
   "Name": "Skyrim Compass",
   "InternalName": "SkyrimCompass",
-  "AssemblyVersion": "2.0.0.92",
+  "AssemblyVersion": "2.0.0.94",
   "Description": "Fixes Moodles and Loci compatibility. Also adds an Skyrim-style compass bar at the top of your screen (which you can disable). Shows cardinal directions, nearby entity markers, and several combat hud replacements. Commands: /compass, /compass config, /compass off (or on), /compass setup",
   "ApplicableVersion": "any",
   "RepoUrl": "https://github.com/JTayGang/MeowyUtils",

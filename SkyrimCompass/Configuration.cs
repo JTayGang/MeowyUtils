@@ -30,6 +30,7 @@ public class Configuration : IPluginConfiguration
     public float CompassHeight { get; set; } = 35f;
     public float YOffset { get; set; } = 10f;
     public float XOffset { get; set; } = 0f;
+    public bool LockPosition { get; set; } = true;
     public bool ShowCompassBar { get; set; } = true;
 
     public float VisibleDegrees { get; set; } = 90f;

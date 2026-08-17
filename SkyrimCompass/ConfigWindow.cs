@@ -78,13 +78,16 @@ public sealed class ConfigWindow : Window
             ImGui.SetNextItemWidth(120f);
             ch |= DrawSliderInt("Height##h", 20, 80, () => (int)cfg.CompassHeight, v => cfg.CompassHeight = v);
 
-            var io = ImGui.GetIO();
-            int yMax = (int)MathF.Max(0f, io.DisplaySize.Y - cfg.CompassHeight);
-            ch |= DrawSliderInt("Y Offset (from top)##yo", 0, yMax, () => (int)cfg.YOffset, v => cfg.YOffset = v);
-
-            int xRange = (int)MathF.Max(0f, (io.DisplaySize.X - cfg.CompassWidth) * 0.5f);
-            ch |= DrawSliderInt("X Offset (from center)##xo", -xRange, xRange, () => (int)cfg.XOffset, v => cfg.XOffset = v,
-                "Shifts compass (and status bar)");
+            ch |= DrawToggle("Lock position##lockpos", () => cfg.LockPosition, v => cfg.LockPosition = v,
+                "When unlocked, click and drag the compass, target bars, or target's status icons to move the whole HUD group.");
+            ImGui.SameLine();
+            if (ImGui.Button("Center##centerpos"))
+            {
+                cfg.XOffset = 0f;
+                ch = true;
+            }
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Recenters the compass horizontally.");
 
             ImGui.Spacing();
             ch |= DrawSliderInt("Visible Degrees##vd", 30, 180, () => (int)cfg.VisibleDegrees, v => cfg.VisibleDegrees = v);

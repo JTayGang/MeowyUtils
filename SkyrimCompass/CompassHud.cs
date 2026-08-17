@@ -96,6 +96,11 @@ public sealed class CompassHud : IDisposable
     private float _ctxFadeChange = -1000f;
     private const float CtxFadeSecs = 0.15f, CtxDimAlpha = 0.33f;
 
+    private bool _isDraggingCompass;
+    private Vector2 _dragStartMouse;
+    private float _dragStartXOffset;
+    private float _dragStartYOffset;
+
     private readonly Dictionary<ulong, int> _npcMarkers = new();
 
     private readonly Dictionary<uint, int> _gathIconCache = new();
@@ -257,6 +262,8 @@ public sealed class CompassHud : IDisposable
         var dl = ImGui.GetForegroundDrawList();
         float now = (float)ImGui.GetTime();
 
+        UpdateCompassDrag();
+
         float bw = _cfg.CompassWidth;
         float bh = _cfg.CompassHeight;
         float bx = (io.DisplaySize.X - bw) * 0.5f + _cfg.XOffset;
@@ -265,7 +272,10 @@ public sealed class CompassHud : IDisposable
         bool inDuty = IsInDutyOrPvp();
 
         if (_cfg.ShowCompassBar)
+        {
             RenderBar(dl, bx, by, bw, bh, heading, player, oPos, now, inDuty);
+            TryStartCompassDrag(V(bx, by), V(bx + bw, by + bh));
+        }
 
         float barAlpha = UpdateCtxFade(now);
 
@@ -609,6 +619,48 @@ public sealed class CompassHud : IDisposable
             OpenCtxMenu(obj);
     }
 
+    private void UpdateCompassDrag()
+    {
+        if (!_isDraggingCompass) return;
+
+        var io = ImGui.GetIO();
+        io.WantCaptureMouse = true;
+        ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeAll);
+
+        var delta = ImGui.GetMousePos() - _dragStartMouse;
+        float xRange = MathF.Max(0f, (io.DisplaySize.X - _cfg.CompassWidth) * 0.5f);
+        float yMax = MathF.Max(0f, io.DisplaySize.Y - _cfg.CompassHeight);
+        _cfg.XOffset = Math.Clamp(_dragStartXOffset + delta.X, -xRange, xRange);
+        _cfg.YOffset = Math.Clamp(_dragStartYOffset + delta.Y, 0f, yMax);
+
+        if (ImGui.IsMouseReleased(ImGuiMouseButton.Left))
+        {
+            _isDraggingCompass = false;
+            _cfg.Save(_pi);
+        }
+    }
+
+    // Lets any currently-drawn HUD region (compass bar, target bars, status icons) act as a drag
+    // handle when unlocked. Callers must only invoke this from a code path that is already known
+    // to be drawing that element this frame, so there's never a hit-box for something not on screen.
+    private void TryStartCompassDrag(Vector2 min, Vector2 max)
+    {
+        if (_isDraggingCompass || _cfg.LockPosition) return;
+        if (!ImGui.IsMouseHoveringRect(min, max, false)) return;
+
+        var io = ImGui.GetIO();
+        io.WantCaptureMouse = true;
+        ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeAll);
+
+        if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+        {
+            _isDraggingCompass = true;
+            _dragStartMouse = ImGui.GetMousePos();
+            _dragStartXOffset = _cfg.XOffset;
+            _dragStartYOffset = _cfg.YOffset;
+        }
+    }
+
     private unsafe void OpenCtxMenu(IGameObject obj)
     {
         if (obj.Address == IntPtr.Zero) return;
@@ -793,6 +845,7 @@ public sealed class CompassHud : IDisposable
         float clickLeft = MathF.Min(x, leftX - shHW);
         float clickRight = MathF.Max(x + w, rightX + shHW);
         HandleTargetClick(V(clickLeft, clickTop), V(clickRight, clickBottom), curTarget!, false);
+        TryStartCompassDrag(V(clickLeft, clickTop), V(clickRight, clickBottom));
 
         return nameY + sz.Y;
     }
@@ -867,6 +920,7 @@ public sealed class CompassHud : IDisposable
         }
 
         HandleTargetClick(V(x, y), V(x + w, y + h), ch!, true);
+        TryStartCompassDrag(V(x, y), V(x + w, y + h));
     }
 
 private void RenderStatuses(ImDrawListPtr dl, IBattleChara ch, float cx, float y, float alpha)
@@ -918,6 +972,8 @@ private void RenderStatuses(ImDrawListPtr dl, IBattleChara ch, float cx, float y
     var font = ImGui.GetFont();
     float textGap = -size * 0.12f;
     float tipGap = MathF.Max(4f, size * 0.15f);
+
+    TryStartCompassDrag(V(startX, y), V(startX + n * size + (n - 1) * hGap, scy + halfH + fSize + tipGap));
 
     for (int i = 0; i < n; i++)
     {

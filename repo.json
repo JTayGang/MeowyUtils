@@ -5,7 +5,7 @@
     "IconUrl": "https://raw.githubusercontent.com/JTayGang/MeowyUtils/main/SkyrimCompass/images/icon.png",
     "Description": "Adds a Skyrim-style compass bar at the top of your screen. Shows cardinal directions, tick marks, and nearby entity markers (players, enemies, gathering nodes, and more). Use /compass to toggle and /compass config to open settings.",
     "InternalName": "SkyrimCompass",
-    "AssemblyVersion": "2.0.0.94",
+    "AssemblyVersion": "2.0.0.95",
     "TestingAssemblyVersion": null,
     "RepoUrl": "https://github.com/JTayGang/MeowyUtils",
     "ApplicableVersion": "any",
@@ -13,9 +13,9 @@
     "Punchline": "I got Moodles + Loci playing (somewhat) nice. Oh and theres a compass, too.",
     "IsHide": false,
     "IsTestingExclusive": false,
-    "DownloadLinkInstall": "https://github.com/JTayGang/MeowyUtils/releases/download/SkyrimCompass2.0.0.94/latest.zip",
-    "DownloadLinkTesting": "https://github.com/JTayGang/MeowyUtils/releases/download/SkyrimCompass2.0.0.94/latest.zip",
-    "DownloadLinkUpdate": "https://github.com/JTayGang/MeowyUtils/releases/download/SkyrimCompass2.0.0.94/latest.zip",
+    "DownloadLinkInstall": "https://github.com/JTayGang/MeowyUtils/releases/download/SkyrimCompas2.0.0.95/latest.zip",
+    "DownloadLinkTesting": "https://github.com/JTayGang/MeowyUtils/releases/download/SkyrimCompas2.0.0.95/latest.zip",
+    "DownloadLinkUpdate": "https://github.com/JTayGang/MeowyUtils/releases/download/SkyrimCompas2.0.0.95/latest.zip",
     "LastUpdate": "1750000000"
   },
   {

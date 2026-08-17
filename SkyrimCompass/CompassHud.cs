@@ -886,7 +886,7 @@ private void RenderStatuses(ImDrawListPtr dl, IBattleChara ch, float cx, float y
     PruneTrackers(now);
     _statusBuf.Clear();
 
-    // Collect vanilla statuses from the target
+    // Vanilla statuses
     foreach (var st in ch.StatusList)
     {
         if (_statusBuf.Count >= max) break;
@@ -897,7 +897,7 @@ private void RenderStatuses(ImDrawListPtr dl, IBattleChara ch, float cx, float y
         _statusBuf.Add((rem, (int)row.Icon, name, desc, System.Guid.Empty, (int)st.Param));
     }
 
-    // Collect Moodles/Loci statuses
+    // Moodles / Loci
     if (ch.Address != IntPtr.Zero)
     {
         if (_statusBuf.Count < max && IsPluginActive(_moodlesIpc, now) && IsVerOk(_moodlesIpc, now))
@@ -927,36 +927,16 @@ private void RenderStatuses(ImDrawListPtr dl, IBattleChara ch, float cx, float y
         var (rem, icon, name, desc, guid, stacks) = _statusBuf[i];
         float sx = startX + i * (size + hGap) + size * 0.5f;
 
+        // ---- Correct icon for stacked statuses (vanilla AND Moodles/Loci) ----
         int displayIcon = icon;
+        if (stacks > 1)
+            displayIcon = icon + stacks - 1;
+
+        // ---- Tooltip text: always use the buffer's name/desc ----
+        // For vanilla: this is the base status text (correct for all stacks).
+        // For Moodles/Loci: this is the plugin-provided text (correct for that GUID).
         string displayName = name;
         string displayDesc = desc;
-
-        if (stacks > 1)
-        {
-            int candidateIcon = icon + stacks - 1;
-
-            if (guid != System.Guid.Empty)
-            {
-                // Moodles/Loci – always apply the offset (they use sequential icons)
-                displayIcon = candidateIcon;
-                // Keep the plugin-supplied name/desc (they are already correct)
-            }
-            else
-            {
-                // Vanilla status – only apply the offset if the candidate icon
-                // exists and belongs to the same status (same name)
-                if (_iconToStatusText.TryGetValue(candidateIcon, out var data))
-                {
-                    if (string.Equals(data.Name, name, StringComparison.OrdinalIgnoreCase))
-                    {
-                        displayIcon = candidateIcon;
-                        displayName = data.Name;
-                        displayDesc = data.Desc;
-                    }
-                    // else the candidate icon belongs to a different status – ignore it
-                }
-            }
-        }
 
         // Draw the icon
         if (!TryDrawIcon(dl, displayIcon, sx, scy, size, alpha, false, 1.0f, false))

@@ -31,9 +31,14 @@ public sealed class ConfigWindow : Window
         var cfg = plugin.Config;
         bool ch = false;
 
-        ch |= DrawToggle("##enabled", () => cfg.Enabled, v => cfg.Enabled = v);
+        ch |= DrawToggle("Compass##topcompass", () => cfg.ShowCompassBar, v => cfg.ShowCompassBar = v,
+            "The compass strip itself. Full options in the Appearance tab.");
         ImGui.SameLine();
-        ImGui.Text("Enable Compass");
+        ch |= DrawToggle("HP bars##tophp", () => cfg.ShowTargetBar, v => cfg.ShowTargetBar = v,
+            "Name+HP readout beneath the compass. Full options in Targeting & Combat.");
+        ImGui.SameLine();
+        ch |= DrawToggle("Statuses##topstatus", () => cfg.ShowTargetStatuses, v => cfg.ShowTargetStatuses = v,
+            "Target's buff/debuff icons. Full options in Targeting & Combat.");
         ImGui.Separator();
 
         if (ImGui.BeginTabBar("##tabs"))
@@ -95,10 +100,7 @@ public sealed class ConfigWindow : Window
             ch |= DrawSliderFloat("Font Scale##fs", 0.5f, 2.5f, () => cfg.FontScale, v => cfg.FontScale = v);
 
             ImGui.Spacing();
-            ch |= DrawToggle("Show Compass Bar", () => cfg.ShowCompassBar, v => cfg.ShowCompassBar = v,
-                "Hide the main compass strip while keeping target bars and status icons.");
-            ch |= DrawToggle("Hide during cutscenes", () => cfg.HideDuringCutscenes, v => cfg.HideDuringCutscenes = v,
-                "Hides in any cinematics and group pose.");
+            ch |= DrawToggle("Hide during cutscenes and Gpose", () => cfg.HideDuringCutscenes, v => cfg.HideDuringCutscenes = v);
         }
 
         if (ImGui.CollapsingHeader("Colors & Theme", ImGuiTreeNodeFlags.DefaultOpen))
@@ -122,12 +124,10 @@ public sealed class ConfigWindow : Window
         if (ImGui.CollapsingHeader("Camera & Direction", ImGuiTreeNodeFlags.DefaultOpen))
         {
             ch |= DrawToggle("Use camera direction (not character facing)",
-                () => cfg.UseCameraDirection, v => cfg.UseCameraDirection = v,
-                "Follows camera orientation instead of character facing.");
+                () => cfg.UseCameraDirection, v => cfg.UseCameraDirection = v);
             BeginIndentedDisabled(cfg.UseCameraDirection);
-            ch |= DrawToggle("Also use camera location for distances##ucp",
-                () => cfg.UseCameraPosition, v => cfg.UseCameraPosition = v,
-                "Measures distances from camera position.");
+            ch |= DrawToggle("Also measure distances from camera location##ucp",
+                () => cfg.UseCameraPosition, v => cfg.UseCameraPosition = v);
             EndIndentedDisabled();
 
             ImGui.Spacing();
@@ -169,13 +169,10 @@ public sealed class ConfigWindow : Window
                 () => cfg.PartyRoleIconMaxSize, v => cfg.PartyRoleIconMaxSize = v, 50, 60, "pr");
 
             ImGui.Spacing();
-            ch |= DrawToggle("Solid dot for friends##sfr", () => cfg.SolidFriendDots, v => cfg.SolidFriendDots = v,
-                "Friends show as solid dot instead of hollow ring.");
-            ch |= DrawToggle("Show job icon for party members##pri", () => cfg.ShowPartyRoleIcons, v => cfg.ShowPartyRoleIcons = v,
-                "Party members show class/job icon on role‑colored dot.");
+            ch |= DrawToggle("Solid dot for friends##sfr", () => cfg.SolidFriendDots, v => cfg.SolidFriendDots = v);
+            ch |= DrawToggle("Show job icon for party members##pri", () => cfg.ShowPartyRoleIcons, v => cfg.ShowPartyRoleIcons = v);
             BeginIndentedDisabled(cfg.ShowPartyRoleIcons);
-            ch |= DrawToggle("Only in duty / PvP##pridonly", () => cfg.PartyRoleIconsOnlyInDuty, v => cfg.PartyRoleIconsOnlyInDuty = v,
-                "Limit job icons to duties/PvP; off = always show.");
+            ch |= DrawToggle("Only in duty / PvP##pridonly", () => cfg.PartyRoleIconsOnlyInDuty, v => cfg.PartyRoleIconsOnlyInDuty = v);
             EndIndentedDisabled();
             EndIndentedDisabled();
         }
@@ -186,8 +183,7 @@ public sealed class ConfigWindow : Window
                 () => cfg.EnemyColor, v => cfg.EnemyColor = v);
 
             BeginIndentedDisabled(cfg.ShowEnemies);
-            ch |= DrawToggle("Only show engaged enemies##eng", () => cfg.EnemiesOnlyIfEngaged, v => cfg.EnemiesOnlyIfEngaged = v,
-                "Only hostiles in combat with you/your party.");
+            ch |= DrawToggle("Only show aggro'ed enemies##eng", () => cfg.EnemiesOnlyIfEngaged, v => cfg.EnemiesOnlyIfEngaged = v);
             ch |= DrawSizeSliders(
                 () => cfg.EnemyMinSize, v => cfg.EnemyMinSize = v, () => cfg.EnemyMaxSize, v => cfg.EnemyMaxSize = v,
                 50, 60, "en");
@@ -200,12 +196,10 @@ public sealed class ConfigWindow : Window
                 () => cfg.NpcColor, v => cfg.NpcColor = v);
 
             BeginIndentedDisabled(cfg.ShowNpcs);
-            ch |= DrawToggle("Hide non‑targetable \"ghost\" NPCs##tgt", () => cfg.NpcsOnlyIfTargetable, v => cfg.NpcsOnlyIfTargetable = v,
+            ch |= DrawToggle("Hide untargetable \"ghost\" NPCs##tgt", () => cfg.NpcsOnlyIfTargetable, v => cfg.NpcsOnlyIfTargetable = v,
                 "Filters placeholder/empty slot NPCs.");
-            ch |= DrawToggle("Show quest marker icons##qicon", () => cfg.ShowNpcQuestIcons, v => cfg.ShowNpcQuestIcons = v,
-                "Shows quest '!' / '?' icons on NPCs.");
-            ch |= DrawToggle("Show Shops/Menders##sicon", () => cfg.ShowShopIcons, v => cfg.ShowShopIcons = v,
-                "Merchant/Vendor and gear repair NPCs.");
+            ch |= DrawToggle("Show quest marker icons##qicon", () => cfg.ShowNpcQuestIcons, v => cfg.ShowNpcQuestIcons = v);
+            ch |= DrawToggle("Show Shops/Menders##sicon", () => cfg.ShowShopIcons, v => cfg.ShowShopIcons = v);
             ch |= DrawToggle("Show Fast Travel icons##fticon", () => cfg.ShowFastTravelIcons, v => cfg.ShowFastTravelIcons = v,
                 "Ferry, airship, Chocobo Keep, etc.");
             ch |= DrawSizeSliders(
@@ -220,10 +214,9 @@ public sealed class ConfigWindow : Window
                 () => cfg.GatheringColor, v => cfg.GatheringColor = v);
 
             BeginIndentedDisabled(cfg.ShowGatheringNodes);
-            ch |= DrawToggle("Hide non‑targetable \"ghost\" nodes##gtgt", () => cfg.GatheringOnlyIfTargetable, v => cfg.GatheringOnlyIfTargetable = v,
-                "Filters depleted/not‑yet‑spawned nodes.");
-            ch |= DrawToggle("Show Mining/Botany icons##gicon", () => cfg.ShowGatheringIcons, v => cfg.ShowGatheringIcons = v,
-                "Shows node type icon.");
+            ch |= DrawToggle("Hide untargetable \"ghost\" nodes##gtgt", () => cfg.GatheringOnlyIfTargetable, v => cfg.GatheringOnlyIfTargetable = v,
+                "Filters depleted/not yet spawned nodes.");
+            ch |= DrawToggle("Show node type icons##gicon", () => cfg.ShowGatheringIcons, v => cfg.ShowGatheringIcons = v);
             BeginIndentedDisabled(cfg.ShowGatheringIcons);
             ch |= DrawSizeSliders(
                 () => cfg.GatheringIconMinSize, v => cfg.GatheringIconMinSize = v,
@@ -243,8 +236,7 @@ public sealed class ConfigWindow : Window
                 () => cfg.TreasureMaxSize, v => cfg.TreasureMaxSize = v, 50, 60, "tr");
             ImGui.Spacing();
 
-            ch |= DrawToggle("Show chest icon##tricon", () => cfg.ShowTreasureIcons, v => cfg.ShowTreasureIcons = v,
-                "Uses a single icon (below) for all treasure coffers.");
+            ch |= DrawToggle("Show chest icon##tricon", () => cfg.ShowTreasureIcons, v => cfg.ShowTreasureIcons = v);
             BeginIndentedDisabled(cfg.ShowTreasureIcons);
             int trIconId = cfg.TreasureIconId;
             ImGui.SetNextItemWidth(90f);
@@ -260,10 +252,8 @@ public sealed class ConfigWindow : Window
                 () => cfg.AetheryteColor, v => cfg.AetheryteColor = v);
 
             BeginIndentedDisabled(cfg.ShowAetherytes);
-            ch |= DrawToggle("Show Aethernet shards##aethshards", () => cfg.ShowAethernetShards, v => cfg.ShowAethernetShards = v,
-                "Smaller waypoints in housing wards, Firmament, etc.");
-            ch |= DrawToggle("Show aetheryte icon##aicon", () => cfg.ShowAetheryteIcons, v => cfg.ShowAetheryteIcons = v,
-                "Falls back to dot if icon not resolved.");
+            ch |= DrawToggle("Show Aethernet shards##aethshards", () => cfg.ShowAethernetShards, v => cfg.ShowAethernetShards = v);
+            ch |= DrawToggle("Show Aetheryte icon##aicon", () => cfg.ShowAetheryteIcons, v => cfg.ShowAetheryteIcons = v);
             ch |= DrawSizeSliders(
                 () => cfg.AetheryteIconMinSize, v => cfg.AetheryteIconMinSize = v,
                 () => cfg.AetheryteIconMaxSize, v => cfg.AetheryteIconMaxSize = v, 50, 60, "a");
@@ -281,7 +271,7 @@ public sealed class ConfigWindow : Window
         {
             ch |= DrawEnableAndColor("fates", "Show FATEs", () => cfg.ShowFates, v => cfg.ShowFates = v,
                 () => cfg.FateColor, v => cfg.FateColor = v,
-                "Shows active/about‑to‑start FATEs; range = General range × multiplier.");
+                "Shows active/about to start FATEs; range = General range × multiplier.");
 
             BeginIndentedDisabled(cfg.ShowFates);
             ch |= DrawSliderFloat("Distance multiplier##fatemul", 0.5f, 5.0f,
@@ -316,8 +306,7 @@ public sealed class ConfigWindow : Window
             ch |= DrawToggle("Show HP percentage##tbhpp", () => cfg.ShowTargetHealthPercent, v => cfg.ShowTargetHealthPercent = v,
                 "Shows percentage under the health bar.");
             BeginIndentedDisabled(cfg.ShowTargetHealthPercent);
-            ch |= DrawToggle("Show on target‑of‑target##tbtothpp", () => cfg.ShowTargetOfTargetHealthPercent, v => cfg.ShowTargetOfTargetHealthPercent = v,
-                "Also shows percentage on the target‑of‑target bar.");
+            ch |= DrawToggle("Show on target of target##tbtothpp", () => cfg.ShowTargetOfTargetHealthPercent, v => cfg.ShowTargetOfTargetHealthPercent = v);
             EndIndentedDisabled();
             ch |= DrawEnableAndColor("tbshd", "Show shield overlay",
                 () => cfg.ShowTargetBarShield, v => cfg.ShowTargetBarShield = v,
@@ -340,28 +329,29 @@ public sealed class ConfigWindow : Window
 
         if (ImGui.CollapsingHeader("Target-of-Target"))
         {
+            BeginIndentedDisabled(cfg.ShowTargetBar);
             ch |= DrawToggle("Target-of-target bar", () => cfg.ShowTargetOfTargetBar, v => cfg.ShowTargetOfTargetBar = v,
                 "Shows who/what your target has targeted.");
             BeginIndentedDisabled(cfg.ShowTargetOfTargetBar);
-            ch |= DrawToggle("Highlight if targeting me##aggro", () => cfg.HighlightIfTargetingMe, v => cfg.HighlightIfTargetingMe = v,
-                "Warns when your target targets you.");
+            ch |= DrawToggle("Highlight if targeting me##aggro", () => cfg.HighlightIfTargetingMe, v => cfg.HighlightIfTargetingMe = v);
             ImGui.BeginDisabled(!cfg.HighlightIfTargetingMe);
             ch |= DrawColorEdit("Warning color##aggroc", cfg.AggroWarningColor, v => cfg.AggroWarningColor = v, ColorPickerFlags);
             ImGui.EndDisabled();
 
             ch |= DrawToggle("Show name##totname", () => cfg.ShowTargetOfTargetName, v => cfg.ShowTargetOfTargetName = v,
-                "Shows the target‑of‑target's name centered over their bar.");
+                "Shows the target of target's name centered over their bar.");
             BeginIndentedDisabled(cfg.ShowTargetOfTargetName);
-            ch |= DrawToggle("Only show first name##totfirstname", () => cfg.TargetOfTargetFirstNameOnly, v => cfg.TargetOfTargetFirstNameOnly = v,
-                "Trims multi‑word names down to just the first word.");
+            ch |= DrawToggle("Only show first name##totfirstname", () => cfg.TargetOfTargetFirstNameOnly, v => cfg.TargetOfTargetFirstNameOnly = v);
             ch |= DrawToggle("Show \"YOU\" for yourself##totyou", () => cfg.TargetOfTargetShowYou, v => cfg.TargetOfTargetShowYou = v,
-                "Displays \"YOU\" instead of your character name when you are the target‑of‑target.");
+                "Displays \"YOU\" instead of your character name when you are the target of target.");
+            EndIndentedDisabled();
             EndIndentedDisabled();
             EndIndentedDisabled();
         }
 
         if (ImGui.CollapsingHeader("Limit Break Glow"))
         {
+            BeginIndentedDisabled(cfg.ShowCompassBar);
             ch |= DrawEnableAndColor("lbglow", "Limit break glow (bar 1 color)",
                 () => cfg.ShowLimitBreakGlow, v => cfg.ShowLimitBreakGlow = v,
                 () => cfg.LimitBreakGlowColor, v => cfg.LimitBreakGlowColor = v,
@@ -369,6 +359,7 @@ public sealed class ConfigWindow : Window
             BeginIndentedDisabled(cfg.ShowLimitBreakGlow);
             ch |= DrawColorEdit("Bar 2 color##lbc2", cfg.LimitBreakGlowColor2, v => cfg.LimitBreakGlowColor2 = v, ColorPickerFlags);
             ch |= DrawColorEdit("Bar 3 color##lbc3", cfg.LimitBreakGlowColor3, v => cfg.LimitBreakGlowColor3 = v, ColorPickerFlags);
+            EndIndentedDisabled();
             EndIndentedDisabled();
         }
 

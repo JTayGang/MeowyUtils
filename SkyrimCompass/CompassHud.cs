@@ -640,9 +640,6 @@ public sealed class CompassHud : IDisposable
         }
     }
 
-    // Lets any currently-drawn HUD region (compass bar, target bars, status icons) act as a drag
-    // handle when unlocked. Callers must only invoke this from a code path that is already known
-    // to be drawing that element this frame, so there's never a hit-box for something not on screen.
     private void TryStartCompassDrag(Vector2 min, Vector2 max)
     {
         if (_isDraggingCompass || _cfg.LockPosition) return;
@@ -941,10 +938,6 @@ private void RenderStatuses(ImDrawListPtr dl, IBattleChara ch, float cx, float y
         if (st.GameData.ValueNullable is not { } row || row.Icon == 0) continue;
         float rem = (row.IsPermanent || row.IsFcBuff) ? 0f : st.RemainingTime;
         var (name, desc) = GetStatusText(row);
-        // MaxStacks is the game's own signal for "this status has sequential per-stack icon
-        // frames" (e.g. Aetherflow, Perfect Balance). When it's 0/1, Param means something else
-        // entirely for that status (often unrelated internal data, e.g. Phantom Job statuses use
-        // it for something other than a visual stack tier) and must NOT be added to the icon.
         _statusBuf.Add((rem, (int)row.Icon, name, desc, System.Guid.Empty, (int)st.Param, (int)row.MaxStacks));
     }
 
@@ -966,9 +959,6 @@ private void RenderStatuses(ImDrawListPtr dl, IBattleChara ch, float cx, float y
     int n = _statusBuf.Count;
     float width = n * size + (n - 1) * hGap;
     float maxWidth = max * size + (max - 1) * hGap;
-    // Left/right align anchor to the full max-icon envelope (not the current count) so the
-    // strip doesn't shift position every time a status is added or falls off; center keeps
-    // the original behavior of hugging the midpoint regardless of icon count.
     float startX = _cfg.TargetStatusIconAlignLeft ? cx - maxWidth * 0.5f
                   : _cfg.TargetStatusIconAlignRight ? cx + maxWidth * 0.5f - width
                   : cx - width * 0.5f;
@@ -1001,16 +991,8 @@ private void RenderStatuses(ImDrawListPtr dl, IBattleChara ch, float cx, float y
             }
             else if (maxStacks > 1)
             {
-                // Vanilla – MaxStacks (from the game's own Status sheet) confirms this status
-                // actually has sequential per-stack icon frames, so an offset makes sense at
-                // all. Statuses where MaxStacks is 0/1 (e.g. every Phantom Job status – Knight,
-                // Berserker, Monk, Mystic Knight, etc.) use Param for something unrelated to a
-                // visual stack tier, and offsetting their icon by that value produces a bogus or
-                // completely unrelated icon ID. Those are left untouched below.
                 int candidateIcon = icon + Math.Min(stacks, maxStacks) - 1;
 
-                // Still cross-check against the cache: if some other real status already owns
-                // that icon under a different name, don't borrow it.
                 if (_iconToStatusText.TryGetValue(candidateIcon, out var data))
                 {
                     // If the name matches, it's safe to use the candidate
@@ -1020,18 +1002,12 @@ private void RenderStatuses(ImDrawListPtr dl, IBattleChara ch, float cx, float y
                         displayName = data.Name;
                         displayDesc = data.Desc;
                     }
-                    // else: candidate exists but belongs to a different status – don't use it
                 }
                 else
                 {
-                    // Candidate not in the cache – expected for genuine stack-tier icons, since
-                    // only the base (1-stack) icon typically has its own sheet row.
                     displayIcon = candidateIcon;
-                    // Keep original name/desc (they are correct for this status)
                 }
             }
-            // else: vanilla status with MaxStacks <= 1 – Param isn't a visual stack tier here,
-            // so displayIcon/displayName/displayDesc stay at the base (correct) values.
         }
 
         // Draw the icon
@@ -1152,8 +1128,6 @@ private void RenderStatuses(ImDrawListPtr dl, IBattleChara ch, float cx, float y
             long expire = expireSel(s);
             float rem = EstimateRemaining(tracker, g, expire, now);
             int stacks = stacksSel(s);
-            // MaxStacks doesn't apply to Moodles/Loci (non-vanilla) statuses; the icon-selection
-            // logic below never consults it for these since they're already keyed off Guid != Empty.
             _statusBuf.Add((rem, icon, name, desc, g, stacks, 0));
         }
     }

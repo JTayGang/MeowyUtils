@@ -32,10 +32,10 @@ public sealed class ConfigWindow : Window
         bool ch = false;
 
         ch |= DrawToggle("Compass##topcompass", () => cfg.ShowCompassBar, v => cfg.ShowCompassBar = v,
-            "The compass strip itself. Full options in the Compass tab.");
+            "The compass element. Full options in Compass tab.");
         ImGui.SameLine();
         ch |= DrawToggle("HP bars##tophp", () => cfg.ShowTargetBar, v => cfg.ShowTargetBar = v,
-            "Name+HP readout beneath the compass. Full options in HP Bars & Statuses tab.");
+            "Name+HP bars beneath the compass. Full options in HP Bars & Statuses tab.");
         ImGui.SameLine();
         ch |= DrawToggle("Statuses##topstatus", () => cfg.ShowTargetStatuses, v => cfg.ShowTargetStatuses = v,
             "Target's buff/debuff icons. Full options in HP Bars & Statuses tab.");
@@ -84,7 +84,7 @@ public sealed class ConfigWindow : Window
             ch |= DrawSliderInt("Height##h", 20, 80, () => (int)cfg.CompassHeight, v => cfg.CompassHeight = v);
 
             ch |= DrawToggle("Lock position##lockpos", () => cfg.LockPosition, v => cfg.LockPosition = v,
-                "When unlocked, click and drag the compass, target bars, or target's status icons to move the whole HUD group.");
+                "When unlocked, click and drag the compass, target bars, or target's status icons to move it all.");
             ImGui.SameLine();
             if (ImGui.Button("Center##centerpos"))
             {
@@ -128,10 +128,9 @@ public sealed class ConfigWindow : Window
         if (!ImGui.BeginTabItem("Compass")) return false;
         bool ch = false;
 
-        BeginIndentedDisabled(cfg.ShowCompassBar);
-
-        if (ImGui.CollapsingHeader("Compass Settings", ImGuiTreeNodeFlags.DefaultOpen))
+        if (DrawDisableableHeader("Compass Settings", cfg.ShowCompassBar, ImGuiTreeNodeFlags.DefaultOpen))
         {
+            ImGui.BeginDisabled(!cfg.ShowCompassBar);
             ch |= DrawSliderInt("Detection range (yalms)##maxd", 10, 200, () => (int)cfg.MaxMarkerDistance, v => cfg.MaxMarkerDistance = v,
                 "Maximum distance for all markers (FATEs use a multiplier).");
             ch |= DrawSliderInt("Visible Degrees##vd", 30, 180, () => (int)cfg.VisibleDegrees, v => cfg.VisibleDegrees = v);
@@ -144,10 +143,12 @@ public sealed class ConfigWindow : Window
                 tooltip: "Dots fade to invisible below this fraction of max range; 0.0 = no fade‑to‑zero.");
             ch |= DrawSliderFloat("Midrange opacity##ma", 0.0f, 1.0f, () => cfg.DotMidAlpha, v => cfg.DotMidAlpha = v,
                 tooltip: "Opacity of dots in the middle distance band.");
+            ImGui.EndDisabled();
         }
 
-        if (ImGui.CollapsingHeader("Camera & Direction", ImGuiTreeNodeFlags.DefaultOpen))
+        if (DrawDisableableHeader("Camera & Direction", cfg.ShowCompassBar, ImGuiTreeNodeFlags.DefaultOpen))
         {
+            ImGui.BeginDisabled(!cfg.ShowCompassBar);
             ch |= DrawToggle("Use camera direction (not character facing)",
                 () => cfg.UseCameraDirection, v => cfg.UseCameraDirection = v);
             BeginIndentedDisabled(cfg.UseCameraDirection);
@@ -158,10 +159,12 @@ public sealed class ConfigWindow : Window
             ImGui.Spacing();
             ImGui.TextDisabled("Rotation Offset (set 180 if N/S swapped)");
             ch |= DrawSliderInt("##rotoff", -180, 180, () => (int)cfg.RotationOffset, v => cfg.RotationOffset = v);
+            ImGui.EndDisabled();
         }
 
-        if (ImGui.CollapsingHeader("Players", ImGuiTreeNodeFlags.DefaultOpen))
+        if (DrawDisableableHeader("Players", cfg.ShowCompassBar, ImGuiTreeNodeFlags.DefaultOpen))
         {
+            ImGui.BeginDisabled(!cfg.ShowCompassBar);
             ch |= DrawEnableAndColor("players", "Players", () => cfg.ShowPlayers, v => cfg.ShowPlayers = v,
                 () => cfg.PlayerColor, v => cfg.PlayerColor = v);
 
@@ -177,10 +180,12 @@ public sealed class ConfigWindow : Window
             ch |= DrawToggle("Only in duty / PvP##pridonly", () => cfg.PartyRoleIconsOnlyInDuty, v => cfg.PartyRoleIconsOnlyInDuty = v);
             EndIndentedDisabled();
             EndIndentedDisabled();
+            ImGui.EndDisabled();
         }
 
-        if (ImGui.CollapsingHeader("Enemies"))
+        if (DrawDisableableHeader("Enemies", cfg.ShowCompassBar))
         {
+            ImGui.BeginDisabled(!cfg.ShowCompassBar);
             ch |= DrawEnableAndColor("enemies", "Enemies", () => cfg.ShowEnemies, v => cfg.ShowEnemies = v,
                 () => cfg.EnemyColor, v => cfg.EnemyColor = v);
 
@@ -190,10 +195,12 @@ public sealed class ConfigWindow : Window
                 () => cfg.EnemyMinSize, v => cfg.EnemyMinSize = v, () => cfg.EnemyMaxSize, v => cfg.EnemyMaxSize = v,
                 50, 60, "en");
             EndIndentedDisabled();
+            ImGui.EndDisabled();
         }
 
-        if (ImGui.CollapsingHeader("NPCs"))
+        if (DrawDisableableHeader("NPCs", cfg.ShowCompassBar))
         {
+            ImGui.BeginDisabled(!cfg.ShowCompassBar);
             ch |= DrawEnableAndColor("npcs", "NPCs", () => cfg.ShowNpcs, v => cfg.ShowNpcs = v,
                 () => cfg.NpcColor, v => cfg.NpcColor = v);
 
@@ -208,10 +215,12 @@ public sealed class ConfigWindow : Window
                 () => cfg.NpcQuestIconMinSize, v => cfg.NpcQuestIconMinSize = v,
                 () => cfg.NpcQuestIconMaxSize, v => cfg.NpcQuestIconMaxSize = v, 50, 60, "q");
             EndIndentedDisabled();
+            ImGui.EndDisabled();
         }
 
-        if (ImGui.CollapsingHeader("Gathering Nodes"))
+        if (DrawDisableableHeader("Gathering Nodes", cfg.ShowCompassBar))
         {
+            ImGui.BeginDisabled(!cfg.ShowCompassBar);
             ch |= DrawEnableAndColor("gath", "Gathering Nodes", () => cfg.ShowGatheringNodes, v => cfg.ShowGatheringNodes = v,
                 () => cfg.GatheringColor, v => cfg.GatheringColor = v);
 
@@ -225,10 +234,12 @@ public sealed class ConfigWindow : Window
                 () => cfg.GatheringIconMaxSize, v => cfg.GatheringIconMaxSize = v, 50, 60, "g");
             EndIndentedDisabled();
             EndIndentedDisabled();
+            ImGui.EndDisabled();
         }
 
-        if (ImGui.CollapsingHeader("Treasure Coffers"))
+        if (DrawDisableableHeader("Treasure Coffers", cfg.ShowCompassBar))
         {
+            ImGui.BeginDisabled(!cfg.ShowCompassBar);
             ch |= DrawEnableAndColor("tres", "Treasure", () => cfg.ShowTreasure, v => cfg.ShowTreasure = v,
                 () => cfg.TreasureColor, v => cfg.TreasureColor = v);
 
@@ -246,10 +257,12 @@ public sealed class ConfigWindow : Window
             { cfg.TreasureIconId = Math.Max(0, trIconId); ch = true; }
             EndIndentedDisabled();
             EndIndentedDisabled();
+            ImGui.EndDisabled();
         }
 
-        if (ImGui.CollapsingHeader("Aetherytes"))
+        if (DrawDisableableHeader("Aetherytes", cfg.ShowCompassBar))
         {
+            ImGui.BeginDisabled(!cfg.ShowCompassBar);
             ch |= DrawEnableAndColor("aeth", "Aetherytes", () => cfg.ShowAetherytes, v => cfg.ShowAetherytes = v,
                 () => cfg.AetheryteColor, v => cfg.AetheryteColor = v);
 
@@ -267,10 +280,12 @@ public sealed class ConfigWindow : Window
             if (ImGui.IsItemHovered())
                 ImGui.SetTooltip("Substring in shard names to identify them (e.g. \"Aethernet\").");
             EndIndentedDisabled();
+            ImGui.EndDisabled();
         }
 
-        if (ImGui.CollapsingHeader("FATEs"))
+        if (DrawDisableableHeader("FATEs", cfg.ShowCompassBar))
         {
+            ImGui.BeginDisabled(!cfg.ShowCompassBar);
             ch |= DrawEnableAndColor("fates", "Show FATEs", () => cfg.ShowFates, v => cfg.ShowFates = v,
                 () => cfg.FateColor, v => cfg.FateColor = v,
                 "Shows active/about to start FATEs; range = General range × multiplier.");
@@ -283,10 +298,12 @@ public sealed class ConfigWindow : Window
                 () => cfg.FateIconMinSize, v => cfg.FateIconMinSize = v,
                 () => cfg.FateIconMaxSize, v => cfg.FateIconMaxSize = v, 50, 64, "fate");
             EndIndentedDisabled();
+            ImGui.EndDisabled();
         }
 
-        if (ImGui.CollapsingHeader("Limit Break Glow"))
+        if (DrawDisableableHeader("Limit Break Glow", cfg.ShowCompassBar))
         {
+            ImGui.BeginDisabled(!cfg.ShowCompassBar);
             ch |= DrawEnableAndColor("lbglow", "Limit break glow (bar 1 color)",
                 () => cfg.ShowLimitBreakGlow, v => cfg.ShowLimitBreakGlow = v,
                 () => cfg.LimitBreakGlowColor, v => cfg.LimitBreakGlowColor = v,
@@ -295,9 +312,8 @@ public sealed class ConfigWindow : Window
             ch |= DrawColorEdit("Bar 2 color##lbc2", cfg.LimitBreakGlowColor2, v => cfg.LimitBreakGlowColor2 = v, ColorPickerFlags);
             ch |= DrawColorEdit("Bar 3 color##lbc3", cfg.LimitBreakGlowColor3, v => cfg.LimitBreakGlowColor3 = v, ColorPickerFlags);
             EndIndentedDisabled();
+            ImGui.EndDisabled();
         }
-
-        EndIndentedDisabled();
 
         ImGui.EndTabItem();
         return ch;
@@ -308,9 +324,9 @@ public sealed class ConfigWindow : Window
         if (!ImGui.BeginTabItem("HP Bars & Statuses")) return false;
         bool ch = false;
 
-        if (ImGui.CollapsingHeader("Target Health Bar", ImGuiTreeNodeFlags.DefaultOpen))
+        if (DrawDisableableHeader("Target Health Bar", cfg.ShowTargetBar, ImGuiTreeNodeFlags.DefaultOpen))
         {
-            BeginIndentedDisabled(cfg.ShowTargetBar);
+            ImGui.BeginDisabled(!cfg.ShowTargetBar);
             ch |= DrawSliderFloat("Width (fraction of compass)##tbwf", 0.3f, 1.0f,
                 () => cfg.TargetBarWidthFraction, v => cfg.TargetBarWidthFraction = v);
             ch |= DrawSliderInt("Bar thickness##tbh", 6, 30, () => (int)cfg.TargetBarHeight, v => cfg.TargetBarHeight = v);
@@ -328,27 +344,12 @@ public sealed class ConfigWindow : Window
                 "Light sheen over shielded portion of the bar.");
             ch |= DrawToggle("Show name ribbons##tbrib", () => cfg.ShowTargetBarRibbons, v => cfg.ShowTargetBarRibbons = v,
                 "Glowing ribbons from name ornaments.");
-            EndIndentedDisabled();
+            ImGui.EndDisabled();
         }
 
-        if (ImGui.CollapsingHeader("Target Status Icons", ImGuiTreeNodeFlags.DefaultOpen))
+        if (DrawDisableableHeader("Target-of-Target", cfg.ShowTargetBar))
         {
-            BeginIndentedDisabled(cfg.ShowTargetStatuses);
-            ch |= DrawSliderInt("Icon size##tssize", 12, 40, () => (int)cfg.TargetStatusIconSize, v => cfg.TargetStatusIconSize = v);
-            ch |= DrawSliderInt("Max icons##tsmax", 3, 20, () => cfg.TargetStatusMaxIcons, v => cfg.TargetStatusMaxIcons = v);
-            ch |= DrawToggle("Left align##tsalignl", () => cfg.TargetStatusIconAlignLeft,
-                v => { cfg.TargetStatusIconAlignLeft = v; if (v) cfg.TargetStatusIconAlignRight = false; },
-                "Icons anchor to the left edge and grow rightward, instead of staying centered.");
-            ImGui.SameLine();
-            ch |= DrawToggle("Right align##tsalignr", () => cfg.TargetStatusIconAlignRight,
-                v => { cfg.TargetStatusIconAlignRight = v; if (v) cfg.TargetStatusIconAlignLeft = false; },
-                "Icons anchor to the right edge and grow leftward, instead of staying centered.");
-            EndIndentedDisabled();
-        }
-
-        if (ImGui.CollapsingHeader("Target-of-Target"))
-        {
-            BeginIndentedDisabled(cfg.ShowTargetBar);
+            ImGui.BeginDisabled(!cfg.ShowTargetBar);
             ch |= DrawToggle("Target-of-target bar", () => cfg.ShowTargetOfTargetBar, v => cfg.ShowTargetOfTargetBar = v,
                 "Shows who/what your target has targeted.");
             BeginIndentedDisabled(cfg.ShowTargetOfTargetBar);
@@ -365,7 +366,22 @@ public sealed class ConfigWindow : Window
                 "Displays \"YOU\" instead of your character name when you are the target of target.");
             EndIndentedDisabled();
             EndIndentedDisabled();
-            EndIndentedDisabled();
+            ImGui.EndDisabled();
+        }
+
+        if (DrawDisableableHeader("Target Status Icons", cfg.ShowTargetStatuses, ImGuiTreeNodeFlags.DefaultOpen))
+        {
+            ImGui.BeginDisabled(!cfg.ShowTargetStatuses);
+            ch |= DrawSliderInt("Icon size##tssize", 12, 40, () => (int)cfg.TargetStatusIconSize, v => cfg.TargetStatusIconSize = v);
+            ch |= DrawSliderInt("Max icons##tsmax", 3, 20, () => cfg.TargetStatusMaxIcons, v => cfg.TargetStatusMaxIcons = v);
+            ch |= DrawToggle("Left align##tsalignl", () => cfg.TargetStatusIconAlignLeft,
+                v => { cfg.TargetStatusIconAlignLeft = v; if (v) cfg.TargetStatusIconAlignRight = false; },
+                "Icons anchor to the left edge and grow rightward, instead of staying centered.");
+            ImGui.SameLine();
+            ch |= DrawToggle("Right align##tsalignr", () => cfg.TargetStatusIconAlignRight,
+                v => { cfg.TargetStatusIconAlignRight = v; if (v) cfg.TargetStatusIconAlignLeft = false; },
+                "Icons anchor to the right edge and grow leftward, instead of staying centered.");
+            ImGui.EndDisabled();
         }
 
         ImGui.EndTabItem();
@@ -435,14 +451,14 @@ public sealed class ConfigWindow : Window
             ch |= DrawToggle("Mirror Moodles <-> Loci", () => cfg.MirrorMoodlesLoci, v => cfg.MirrorMoodlesLoci = v,
                 "Keep your own Moodles and Loci statuses mirrored onto each other.");
 
-            BeginIndentedDisabled(cfg.MirrorMoodlesLoci);
+            ImGui.BeginDisabled(!cfg.MirrorMoodlesLoci);
             var mirror = plugin.StatusMirror;
             ImGui.TextDisabled($"Moodles: {(mirror.MoodlesAvailable ? "connected" : "not found")}   " +
                                $"Loci: {(mirror.LociAvailable ? "connected" : "not found")}");
             ImGui.TextDisabled($"Mirrored into Loci: {mirror.MirroredIntoLociCount}   " +
                                $"Mirrored into Moodles: {mirror.MirroredIntoMoodlesCount}" +
                                (mirror.LockedMirrorCount > 0 ? $"   Locked: {mirror.LockedMirrorCount}" : ""));
-            EndIndentedDisabled();
+            ImGui.EndDisabled();
         }
 
         ImGui.EndTabItem();
@@ -536,6 +552,14 @@ public sealed class ConfigWindow : Window
     {
         ImGui.EndDisabled();
         ImGui.Unindent();
+    }
+
+    private static bool DrawDisableableHeader(string label, bool enabled, ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags.None)
+    {
+        ImGui.BeginDisabled(!enabled);
+        bool open = ImGui.CollapsingHeader(label, flags);
+        ImGui.EndDisabled();
+        return open;
     }
 
     private static bool DrawToggle(string label, Func<bool> get, Action<bool> set, string? tooltip = null)

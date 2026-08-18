@@ -32,7 +32,7 @@ public sealed class ConfigWindow : Window
         bool ch = false;
 
         ch |= DrawToggle("Compass##topcompass", () => cfg.ShowCompassBar, v => cfg.ShowCompassBar = v,
-            "The compass strip itself. Full options in the Appearance tab.");
+            "The compass strip itself. Full options in the Compass tab.");
         ImGui.SameLine();
         ch |= DrawToggle("HP bars##tophp", () => cfg.ShowTargetBar, v => cfg.ShowTargetBar = v,
             "Name+HP readout beneath the compass. Full options in Targeting & Combat.");
@@ -44,7 +44,7 @@ public sealed class ConfigWindow : Window
         if (ImGui.BeginTabBar("##tabs"))
         {
             ch |= DrawAppearanceTab(cfg);
-            ch |= DrawMarkersTab(cfg);
+            ch |= DrawCompassTab(cfg);
             ch |= DrawCombatTab(cfg);
             ch |= DrawAdvancedTab(cfg);
             ImGui.EndTabBar();
@@ -75,7 +75,7 @@ public sealed class ConfigWindow : Window
         if (!ImGui.BeginTabItem("Appearance")) return false;
         bool ch = false;
 
-        if (ImGui.CollapsingHeader("Compass Strip", ImGuiTreeNodeFlags.DefaultOpen))
+        if (ImGui.CollapsingHeader("Size+Position", ImGuiTreeNodeFlags.DefaultOpen))
         {
             ImGui.SetNextItemWidth(120f);
             ch |= DrawSliderInt("Width##w", 200, 1400, () => (int)cfg.CompassWidth, v => cfg.CompassWidth = v);
@@ -95,8 +95,6 @@ public sealed class ConfigWindow : Window
                 ImGui.SetTooltip("Recenters the compass horizontally.");
 
             ImGui.Spacing();
-            ch |= DrawSliderInt("Visible Degrees##vd", 30, 180, () => (int)cfg.VisibleDegrees, v => cfg.VisibleDegrees = v);
-            ch |= DrawSliderFloat("Lens Strength##ls", 1.0f, 3.0f, () => cfg.LensStrength, v => cfg.LensStrength = v);
             ch |= DrawSliderFloat("Font Scale##fs", 0.5f, 2.5f, () => cfg.FontScale, v => cfg.FontScale = v);
 
             ImGui.Spacing();
@@ -105,7 +103,7 @@ public sealed class ConfigWindow : Window
 
         if (ImGui.CollapsingHeader("Colors & Theme", ImGuiTreeNodeFlags.DefaultOpen))
         {
-            ch |= DrawColorEdit("Background##bgc", cfg.BackgroundColor, v => cfg.BackgroundColor = v, ColorPickerFlags);
+            ch |= DrawColorEdit("Compass Background, Status tooltips##bgc", cfg.BackgroundColor, v => cfg.BackgroundColor = v, ColorPickerFlags);
             ch |= DrawColorEdit("Border##bdc", cfg.BorderColor, v => cfg.BorderColor = v, ColorPickerFlags);
             ch |= DrawColorEdit("Cardinal (N/S/E/W)##cdc", cfg.CardinalColor, v => cfg.CardinalColor = v, ColorPickerFlags);
             ch |= DrawColorEdit("Intercardinal (NE/SW…)##icc", cfg.IntercardinalColor, v => cfg.IntercardinalColor = v, ColorPickerFlags);
@@ -121,6 +119,33 @@ public sealed class ConfigWindow : Window
                 ImGui.SetTooltip("Overwrites all colors; pick \"Original\" to restore defaults.");
         }
 
+        ImGui.EndTabItem();
+        return ch;
+    }
+
+    private bool DrawCompassTab(Configuration cfg)
+    {
+        if (!ImGui.BeginTabItem("Compass")) return false;
+        bool ch = false;
+
+        BeginIndentedDisabled(cfg.ShowCompassBar);
+
+        if (ImGui.CollapsingHeader("Compass Settings", ImGuiTreeNodeFlags.DefaultOpen))
+        {
+            ch |= DrawSliderInt("Detection range (yalms)##maxd", 10, 200, () => (int)cfg.MaxMarkerDistance, v => cfg.MaxMarkerDistance = v,
+                "Maximum distance for all markers (FATEs use a multiplier).");
+            ch |= DrawSliderInt("Visible Degrees##vd", 30, 180, () => (int)cfg.VisibleDegrees, v => cfg.VisibleDegrees = v);
+            ch |= DrawSliderFloat("Lens Strength##ls", 1.0f, 3.0f, () => cfg.LensStrength, v => cfg.LensStrength = v);
+            ImGui.Spacing();
+            ImGui.TextDisabled("Marker distance fade");
+            ch |= DrawSliderFloat("Full opacity zone##nz", 0.5f, 1.0f, () => cfg.DotNearZone, v => cfg.DotNearZone = v,
+                tooltip: "Dots fully opaque closer than this fraction of max range; 1.0 = always opaque.");
+            ch |= DrawSliderFloat("Fade to zero zone##fz", 0.0f, 0.5f, () => cfg.DotFarZone, v => cfg.DotFarZone = v,
+                tooltip: "Dots fade to invisible below this fraction of max range; 0.0 = no fade‑to‑zero.");
+            ch |= DrawSliderFloat("Midrange opacity##ma", 0.0f, 1.0f, () => cfg.DotMidAlpha, v => cfg.DotMidAlpha = v,
+                tooltip: "Opacity of dots in the middle distance band.");
+        }
+
         if (ImGui.CollapsingHeader("Camera & Direction", ImGuiTreeNodeFlags.DefaultOpen))
         {
             ch |= DrawToggle("Use camera direction (not character facing)",
@@ -133,29 +158,6 @@ public sealed class ConfigWindow : Window
             ImGui.Spacing();
             ImGui.TextDisabled("Rotation Offset (set 180 if N/S swapped)");
             ch |= DrawSliderInt("##rotoff", -180, 180, () => (int)cfg.RotationOffset, v => cfg.RotationOffset = v);
-        }
-
-        ImGui.EndTabItem();
-        return ch;
-    }
-
-    private bool DrawMarkersTab(Configuration cfg)
-    {
-        if (!ImGui.BeginTabItem("Markers")) return false;
-        bool ch = false;
-
-        if (ImGui.CollapsingHeader("Global Marker Settings", ImGuiTreeNodeFlags.DefaultOpen))
-        {
-            ch |= DrawSliderInt("Detection range (yalms)##maxd", 10, 200, () => (int)cfg.MaxMarkerDistance, v => cfg.MaxMarkerDistance = v,
-                "Maximum distance for all markers (FATEs use a multiplier).");
-            ImGui.Spacing();
-            ImGui.TextDisabled("Dot distance‑fade curve");
-            ch |= DrawSliderFloat("Full opacity zone##nz", 0.5f, 1.0f, () => cfg.DotNearZone, v => cfg.DotNearZone = v,
-                tooltip: "Dots fully opaque closer than this fraction of max range; 1.0 = always opaque.");
-            ch |= DrawSliderFloat("Fade‑to‑zero zone##fz", 0.0f, 0.5f, () => cfg.DotFarZone, v => cfg.DotFarZone = v,
-                tooltip: "Dots fade to invisible below this fraction of max range; 0.0 = no fade‑to‑zero.");
-            ch |= DrawSliderFloat("Mid‑range opacity##ma", 0.0f, 1.0f, () => cfg.DotMidAlpha, v => cfg.DotMidAlpha = v,
-                tooltip: "Opacity of dots in the middle distance band.");
         }
 
         if (ImGui.CollapsingHeader("Players", ImGuiTreeNodeFlags.DefaultOpen))
@@ -283,13 +285,27 @@ public sealed class ConfigWindow : Window
             EndIndentedDisabled();
         }
 
+        if (ImGui.CollapsingHeader("Limit Break Glow"))
+        {
+            ch |= DrawEnableAndColor("lbglow", "Limit break glow (bar 1 color)",
+                () => cfg.ShowLimitBreakGlow, v => cfg.ShowLimitBreakGlow = v,
+                () => cfg.LimitBreakGlowColor, v => cfg.LimitBreakGlowColor = v,
+                "Glowing border as LB charges – one layer per bar.");
+            BeginIndentedDisabled(cfg.ShowLimitBreakGlow);
+            ch |= DrawColorEdit("Bar 2 color##lbc2", cfg.LimitBreakGlowColor2, v => cfg.LimitBreakGlowColor2 = v, ColorPickerFlags);
+            ch |= DrawColorEdit("Bar 3 color##lbc3", cfg.LimitBreakGlowColor3, v => cfg.LimitBreakGlowColor3 = v, ColorPickerFlags);
+            EndIndentedDisabled();
+        }
+
+        EndIndentedDisabled();
+
         ImGui.EndTabItem();
         return ch;
     }
 
     private bool DrawCombatTab(Configuration cfg)
     {
-        if (!ImGui.BeginTabItem("Targeting & Combat")) return false;
+        if (!ImGui.BeginTabItem("HP Bars & Statuses")) return false;
         bool ch = false;
 
         if (ImGui.CollapsingHeader("Target Health Bar", ImGuiTreeNodeFlags.DefaultOpen))
@@ -345,20 +361,6 @@ public sealed class ConfigWindow : Window
             ch |= DrawToggle("Show \"YOU\" for yourself##totyou", () => cfg.TargetOfTargetShowYou, v => cfg.TargetOfTargetShowYou = v,
                 "Displays \"YOU\" instead of your character name when you are the target of target.");
             EndIndentedDisabled();
-            EndIndentedDisabled();
-            EndIndentedDisabled();
-        }
-
-        if (ImGui.CollapsingHeader("Limit Break Glow"))
-        {
-            BeginIndentedDisabled(cfg.ShowCompassBar);
-            ch |= DrawEnableAndColor("lbglow", "Limit break glow (bar 1 color)",
-                () => cfg.ShowLimitBreakGlow, v => cfg.ShowLimitBreakGlow = v,
-                () => cfg.LimitBreakGlowColor, v => cfg.LimitBreakGlowColor = v,
-                "Glowing border as LB charges – one layer per bar.");
-            BeginIndentedDisabled(cfg.ShowLimitBreakGlow);
-            ch |= DrawColorEdit("Bar 2 color##lbc2", cfg.LimitBreakGlowColor2, v => cfg.LimitBreakGlowColor2 = v, ColorPickerFlags);
-            ch |= DrawColorEdit("Bar 3 color##lbc3", cfg.LimitBreakGlowColor3, v => cfg.LimitBreakGlowColor3 = v, ColorPickerFlags);
             EndIndentedDisabled();
             EndIndentedDisabled();
         }
@@ -425,9 +427,9 @@ public sealed class ConfigWindow : Window
                 cfg.IncrementOverrideVersion();
         }
 
-        if (ImGui.CollapsingHeader("Moodles ↔ Loci Mirror", ImGuiTreeNodeFlags.DefaultOpen))
+        if (ImGui.CollapsingHeader("Moodles Loci Mirror", ImGuiTreeNodeFlags.DefaultOpen))
         {
-            ch |= DrawToggle("Mirror Moodles \u2194 Loci", () => cfg.MirrorMoodlesLoci, v => cfg.MirrorMoodlesLoci = v,
+            ch |= DrawToggle("Mirror Moodles <-> Loci", () => cfg.MirrorMoodlesLoci, v => cfg.MirrorMoodlesLoci = v,
                 "Keep your own Moodles and Loci statuses mirrored onto each other.");
 
             BeginIndentedDisabled(cfg.MirrorMoodlesLoci);
@@ -559,7 +561,7 @@ public sealed class ConfigWindow : Window
     private static bool DrawSizeSliders(
         Func<float> getMin, Action<float> setMin, Func<float> getMax, Action<float> setMax,
         int minHi, int maxHi, string idPrefix,
-        string minLabel = "Min size (far away)", string maxLabel = "Max size (close up)",
+        string minLabel = "Min size (far)", string maxLabel = "Max size (close)",
         int lo = 8, string? tooltip = null)
     {
         bool ch = false;

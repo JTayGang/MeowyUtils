@@ -964,7 +964,14 @@ private void RenderStatuses(ImDrawListPtr dl, IBattleChara ch, float cx, float y
     if (_statusBuf.Count == 0) return;
 
     int n = _statusBuf.Count;
-    float startX = cx - (n * size + (n - 1) * hGap) * 0.5f;
+    float width = n * size + (n - 1) * hGap;
+    float maxWidth = max * size + (max - 1) * hGap;
+    // Left/right align anchor to the full max-icon envelope (not the current count) so the
+    // strip doesn't shift position every time a status is added or falls off; center keeps
+    // the original behavior of hugging the midpoint regardless of icon count.
+    float startX = _cfg.TargetStatusIconAlignLeft ? cx - maxWidth * 0.5f
+                  : _cfg.TargetStatusIconAlignRight ? cx + maxWidth * 0.5f - width
+                  : cx - width * 0.5f;
     float topGap = size * 0.15f;
     float halfH = size * 0.5f * GetIconAspect(_statusBuf[0].Icon);
     float scy = y + topGap + halfH;
@@ -973,7 +980,7 @@ private void RenderStatuses(ImDrawListPtr dl, IBattleChara ch, float cx, float y
     float textGap = -size * 0.12f;
     float tipGap = MathF.Max(4f, size * 0.15f);
 
-    TryStartCompassDrag(V(startX, y), V(startX + n * size + (n - 1) * hGap, scy + halfH + fSize + tipGap));
+    TryStartCompassDrag(V(startX, y), V(startX + width, scy + halfH + fSize + tipGap));
 
     for (int i = 0; i < n; i++)
     {

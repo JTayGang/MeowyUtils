@@ -82,6 +82,8 @@ public class Configuration : IPluginConfiguration
     public bool ShowTargetStatuses { get; set; } = true;
     public float TargetStatusIconSize { get; set; } = 25f;
     public int TargetStatusMaxIcons { get; set; } = 10;
+    public bool TargetStatusIconAlignLeft { get; set; } = false;
+    public bool TargetStatusIconAlignRight { get; set; } = false;
 
     public bool MirrorMoodlesLoci { get; set; } = true;
 

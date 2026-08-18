@@ -35,10 +35,10 @@ public sealed class ConfigWindow : Window
             "The compass strip itself. Full options in the Compass tab.");
         ImGui.SameLine();
         ch |= DrawToggle("HP bars##tophp", () => cfg.ShowTargetBar, v => cfg.ShowTargetBar = v,
-            "Name+HP readout beneath the compass. Full options in Targeting & Combat.");
+            "Name+HP readout beneath the compass. Full options in HP Bars & Statuses tab.");
         ImGui.SameLine();
         ch |= DrawToggle("Statuses##topstatus", () => cfg.ShowTargetStatuses, v => cfg.ShowTargetStatuses = v,
-            "Target's buff/debuff icons. Full options in Targeting & Combat.");
+            "Target's buff/debuff icons. Full options in HP Bars & Statuses tab.");
         ImGui.Separator();
 
         if (ImGui.BeginTabBar("##tabs"))
@@ -103,12 +103,6 @@ public sealed class ConfigWindow : Window
 
         if (ImGui.CollapsingHeader("Colors & Theme", ImGuiTreeNodeFlags.DefaultOpen))
         {
-            ch |= DrawColorEdit("Compass Background, Status tooltips##bgc", cfg.BackgroundColor, v => cfg.BackgroundColor = v, ColorPickerFlags);
-            ch |= DrawColorEdit("Border##bdc", cfg.BorderColor, v => cfg.BorderColor = v, ColorPickerFlags);
-            ch |= DrawColorEdit("Cardinal (N/S/E/W)##cdc", cfg.CardinalColor, v => cfg.CardinalColor = v, ColorPickerFlags);
-            ch |= DrawColorEdit("Intercardinal (NE/SW…)##icc", cfg.IntercardinalColor, v => cfg.IntercardinalColor = v, ColorPickerFlags);
-            ch |= DrawColorEdit("Tick marks##tkc", cfg.TickColor, v => cfg.TickColor = v, ColorPickerFlags);
-
             ImGui.SetNextItemWidth(180);
             if (ImGui.Combo("Theme preset##colortheme", ref _selectedThemeIndex, ColorThemeNames, ColorThemeNames.Length))
             {
@@ -117,6 +111,12 @@ public sealed class ConfigWindow : Window
             }
             if (ImGui.IsItemHovered())
                 ImGui.SetTooltip("Overwrites all colors; pick \"Original\" to restore defaults.");
+
+            ch |= DrawColorEdit("Compass Background, Status tooltips##bgc", cfg.BackgroundColor, v => cfg.BackgroundColor = v, ColorPickerFlags);
+            ch |= DrawColorEdit("Border##bdc", cfg.BorderColor, v => cfg.BorderColor = v, ColorPickerFlags);
+            ch |= DrawColorEdit("Cardinal (N/S/E/W)##cdc", cfg.CardinalColor, v => cfg.CardinalColor = v, ColorPickerFlags);
+            ch |= DrawColorEdit("Intercardinal (NE/SW…)##icc", cfg.IntercardinalColor, v => cfg.IntercardinalColor = v, ColorPickerFlags);
+            ch |= DrawColorEdit("Tick marks##tkc", cfg.TickColor, v => cfg.TickColor = v, ColorPickerFlags);
         }
 
         ImGui.EndTabItem();
@@ -310,8 +310,6 @@ public sealed class ConfigWindow : Window
 
         if (ImGui.CollapsingHeader("Target Health Bar", ImGuiTreeNodeFlags.DefaultOpen))
         {
-            ch |= DrawToggle("Target health bar", () => cfg.ShowTargetBar, v => cfg.ShowTargetBar = v,
-                "Name+HP readout docked beneath compass.");
             BeginIndentedDisabled(cfg.ShowTargetBar);
             ch |= DrawSliderFloat("Width (fraction of compass)##tbwf", 0.3f, 1.0f,
                 () => cfg.TargetBarWidthFraction, v => cfg.TargetBarWidthFraction = v);
@@ -335,11 +333,16 @@ public sealed class ConfigWindow : Window
 
         if (ImGui.CollapsingHeader("Target Status Icons", ImGuiTreeNodeFlags.DefaultOpen))
         {
-            ch |= DrawToggle("Target status icons", () => cfg.ShowTargetStatuses, v => cfg.ShowTargetStatuses = v,
-                "Buff/debuff icons below target name.");
             BeginIndentedDisabled(cfg.ShowTargetStatuses);
             ch |= DrawSliderInt("Icon size##tssize", 12, 40, () => (int)cfg.TargetStatusIconSize, v => cfg.TargetStatusIconSize = v);
             ch |= DrawSliderInt("Max icons##tsmax", 3, 20, () => cfg.TargetStatusMaxIcons, v => cfg.TargetStatusMaxIcons = v);
+            ch |= DrawToggle("Left align##tsalignl", () => cfg.TargetStatusIconAlignLeft,
+                v => { cfg.TargetStatusIconAlignLeft = v; if (v) cfg.TargetStatusIconAlignRight = false; },
+                "Icons anchor to the left edge and grow rightward, instead of staying centered.");
+            ImGui.SameLine();
+            ch |= DrawToggle("Right align##tsalignr", () => cfg.TargetStatusIconAlignRight,
+                v => { cfg.TargetStatusIconAlignRight = v; if (v) cfg.TargetStatusIconAlignLeft = false; },
+                "Icons anchor to the right edge and grow leftward, instead of staying centered.");
             EndIndentedDisabled();
         }
 
@@ -562,14 +565,13 @@ public sealed class ConfigWindow : Window
         Func<float> getMin, Action<float> setMin, Func<float> getMax, Action<float> setMax,
         int minHi, int maxHi, string idPrefix,
         string minLabel = "Min size (far)", string maxLabel = "Max size (close)",
-        int lo = 8, string? tooltip = null)
+        int lo = 8)
     {
         bool ch = false;
         int mn = (int)getMin();
         if (ImGui.SliderInt($"{minLabel}##{idPrefix}min", ref mn, lo, minHi)) { setMin(mn); ch = true; }
         int mx = (int)getMax();
         if (ImGui.SliderInt($"{maxLabel}##{idPrefix}max", ref mx, lo, maxHi)) { setMax(mx); ch = true; }
-        if (tooltip != null && ImGui.IsItemHovered()) ImGui.SetTooltip(tooltip);
         return ch;
     }
 

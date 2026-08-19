@@ -60,7 +60,6 @@ public sealed class CompassHud : IDisposable
     private const float LbFadeDur = 2f, LbDropThresh = 0.4f;
 
     private readonly (float bar, float tMul, float tOff, Vector4 col)[] _lbLayers = new (float, float, float, Vector4)[3];
-    private readonly (float edge, float target, uint col, float tMul, float tOff)[] _ribbons = new (float, float, uint, float, float)[4];
 
     private ulong _castTarget = 0;
     private float _castTracked = 0f, _castFrozen = 0f, _castFadeStart = -1f;
@@ -436,57 +435,63 @@ public sealed class CompassHud : IDisposable
     private static float PulseIntensity(float t) =>
         (0.75f + 0.25f * MathF.Sin(t * 0.79f)) * (0.92f + 0.08f * MathF.Sin(t * 3.23f + 1.17f));
 
-    private static void DrawGlowLine(ImDrawListPtr dl, Vector2 a, Vector2 b, uint col, float intensity, float t,
-        bool fromLeft, float wipe, float fill, bool wipeRev = false)
-    {
-        Vector2 d = b - a;
-        float len = d.Length();
-        if (len < 1f) return;
-        Vector2 dir = d / len;
-        Vector2 perp = new(-dir.Y, dir.X);
-        const float amp = 5f, waveLen = 26f, flow = 2f, wipeHalf = 0.2f, harm = 0.33f;
-        float tipStart = Lerp(0.6f, 1.0f, Math.Clamp(fill, 0f, 1f));
-        float flowDir = fromLeft ? -1f : 1f;
-        float wipeCentre = Lerp(1f + wipeHalf, -wipeHalf, wipe);
-        float freq = 2f * MathF.PI / waveLen;
-        float freq2 = freq * 2f;
-        float phase = t * flow * flowDir;
-        float phase2 = phase * 1.4f + 1.3f;
+private static void DrawFlowingLine(ImDrawListPtr dl, Vector2 a, Vector2 b, uint col,
+    float time, float timeMul = 1f, float timeOff = 0f,
+    float intensity = 1f, bool fromLeft = true, float wipe = 0f, float fill = 0f, bool wipeRev = false)
+{
+    Vector2 d = b - a;
+    float len = d.Length();
+    if (len < 1f) return;
 
-        int samples = Math.Clamp((int)(len / (waveLen * 0.5f) * 4f) + 2, 3, 24);
-        Span<Vector2> pts = stackalloc Vector2[96];
-        Span<float> fades = stackalloc float[96];
-        for (int i = 0; i < samples; i++)
+    Vector2 dir = d / len;
+    Vector2 perp = new(-dir.Y, dir.X);
+    const float amp = 5f, waveLen = 26f, flow = 2f, wipeHalf = 0.2f;
+
+    float flowDir = fromLeft ? -1f : 1f;
+    float phase = (time * timeMul + timeOff) * flow * flowDir;
+    float tipStart = Lerp(0.6f, 1.0f, Math.Clamp(fill, 0f, 1f));
+    float wipeCentre = Lerp(1f + wipeHalf, -wipeHalf, wipe);
+
+    int samples = Math.Clamp((int)(len / (waveLen * 0.5f) * 4f) + 2, 3, 24);
+    Span<Vector2> pts = stackalloc Vector2[24];
+    Span<float> fades = stackalloc float[24];
+
+    float freq = 2f * MathF.PI / waveLen;
+    float freq2 = freq * 2f;
+
+    for (int i = 0; i < samples; i++)
+    {
+        float along = len * i / (samples - 1);
+        float u = fromLeft ? along / len : 1f - along / len;
+        float env = u * u * (3f - 2f * u);
+        float wave = MathF.Sin(along * freq + phase)
+                   + MathF.Sin(along * freq2 + phase * 1.4f + 1.3f) * 0.33f;
+        pts[i] = a + dir * along + perp * (amp * env * wave);
+
+        float tip = 1f - SmoothStep(Math.Clamp((u - tipStart) / (1f - tipStart + 1e-4f), 0f, 1f));
+        float wipeU = wipeRev ? 1f - u : u;
+        float wf = 1f - SmoothStep(Math.Clamp((wipeU - (wipeCentre - wipeHalf)) / (2f * wipeHalf), 0f, 1f));
+        fades[i] = tip * wf;
+    }
+
+    foreach (var (alpha, thick) in GlowLayers)
+        for (int i = 0; i < samples - 1; i++)
         {
-            float along = len * i / (samples - 1);
-            float u = fromLeft ? along / len : 1f - along / len;
-            float env = u * u * (3f - 2f * u);
-            float wave = MathF.Sin(along * freq + phase) * (1f - harm * u)
-                       + MathF.Sin(along * freq2 + phase2) * (harm * u);
-            pts[i] = a + dir * along + perp * (amp * env * wave);
-            float tip = 1f - SmoothStep(Math.Clamp((u - tipStart) / (1f - tipStart + 1e-4f), 0f, 1f));
-            float wipeU = wipeRev ? 1f - u : u;
-            float wf = 1f - SmoothStep(Math.Clamp((wipeU - (wipeCentre - wipeHalf)) / (2f * wipeHalf), 0f, 1f));
-            fades[i] = tip * wf;
+            float seg = (fades[i] + fades[i + 1]) * 0.5f;
+            if (seg <= 0.002f) continue;
+            dl.AddLine(pts[i], pts[i + 1], WithAlpha(col, alpha * intensity * seg), thick);
         }
+}
 
-        foreach (var (alpha, thick) in GlowLayers)
-            for (int i = 0; i < samples - 1; i++)
-            {
-                float seg = (fades[i] + fades[i + 1]) * 0.5f;
-                if (seg <= 0.002f) continue;
-                dl.AddLine(pts[i], pts[i + 1], WithAlpha(col, alpha * intensity * seg), thick);
-            }
-    }
-
-    private static void DrawGlowBracket(ImDrawListPtr dl, float bx, float by, float bw, float bh,
-        float segW, uint col, float intensity, float t, float wipe, float fill, bool fromLeft)
-    {
-        float x0 = fromLeft ? bx : bx + bw - segW;
-        float x1 = fromLeft ? bx + segW : bx + bw;
-        DrawGlowLine(dl, V(x0, by), V(x1, by), col, intensity, t, fromLeft, wipe, fill);
-        DrawGlowLine(dl, V(x0, by + bh), V(x1, by + bh), col, intensity, t, fromLeft, wipe, fill);
-    }
+private static void DrawGlowBracket(ImDrawListPtr dl, float bx, float by, float bw, float bh,
+    float segW, uint col, float intensity, float time, float wipe, float fill, bool fromLeft)
+{
+    float x0 = fromLeft ? bx : bx + bw - segW;
+    float x1 = fromLeft ? bx + segW : bx + bw;
+    // timeMul=1, timeOff=0 – matches the old behaviour
+    DrawFlowingLine(dl, V(x0, by), V(x1, by), col, time, 1f, 0f, intensity, fromLeft, wipe, fill);
+    DrawFlowingLine(dl, V(x0, by + bh), V(x1, by + bh), col, time, 1f, 0f, intensity, fromLeft, wipe, fill);
+}
 
     private static float UpdateFadeOut(ref float tracked, ref float frozen, ref float start,
         float real, bool trigger, bool extResync, bool resyncIfExceeds, float now, float dur, out float wipe)
@@ -780,12 +785,10 @@ public sealed class CompassHud : IDisposable
             float rR = MathF.Max(rowRight - inset, rightEdge + 24f);
             float t = now;
 
-            _ribbons[0] = (leftEdge, rL, shadow, 0.65f, 7.1f);
-            _ribbons[1] = (leftEdge, rL, border, 1.00f, 0.0f);
-            _ribbons[2] = (rightEdge, rR, shadow, 1.15f, 5.3f);
-            _ribbons[3] = (rightEdge, rR, border, 1.60f, 3.7f);
-            foreach (var (edge, target, col, tMul, tOff) in _ribbons)
-                DrawGlowLine(dl, V(edge, textCy), V(target, textCy), col, 1f, t * tMul + tOff, true, 0f, 0f);
+DrawFlowingLine(dl, V(leftEdge, textCy), V(rL, textCy), shadow, t, 0.65f, 7.1f);
+DrawFlowingLine(dl, V(leftEdge, textCy), V(rL, textCy), border, t, 1.00f, 0.0f);
+DrawFlowingLine(dl, V(rightEdge, textCy), V(rR, textCy), shadow, t, 1.15f, 5.3f);
+DrawFlowingLine(dl, V(rightEdge, textCy), V(rR, textCy), border, t, 1.60f, 3.7f);
 
             if (curTarget.GameObjectId != _castTarget)
             {
@@ -809,10 +812,10 @@ public sealed class CompassHud : IDisposable
             {
                 uint castCol = WithAlpha(C(_cfg.AggroWarningColor), alpha);
                 float ci = PulseIntensity(t);
-                DrawGlowLine(dl, V(leftEdge, textCy), V(Lerp(leftEdge, rL, castDisp), textCy),
-                    castCol, ci, t, true, castWipe, 0f, true);
-                DrawGlowLine(dl, V(rightEdge, textCy), V(Lerp(rightEdge, rR, castDisp), textCy),
-                    castCol, ci, t, true, castWipe, 0f, true);
+DrawFlowingLine(dl, V(leftEdge, textCy), V(Lerp(leftEdge, rL, castDisp), textCy),
+    castCol, t, 1f, 0f, ci, true, castWipe, 0f, true);
+DrawFlowingLine(dl, V(rightEdge, textCy), V(Lerp(rightEdge, rR, castDisp), textCy),
+    castCol, t, 1f, 0f, ci, true, castWipe, 0f, true);
             }
         }
 

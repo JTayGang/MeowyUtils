@@ -464,8 +464,10 @@ private static void DrawFlowingLine(ImDrawListPtr dl, Vector2 a, Vector2 b, uint
         float along = len * i / (samples - 1);
         float u = fromLeft ? along / len : 1f - along / len;
         float env = u * u * (3f - 2f * u);
-        float wave = MathF.Sin(along * freq + phase)
-                   + MathF.Sin(along * freq2 + phase * 1.4f + 1.3f) * 0.33f;
+	float harm = 0.33f;
+	float phase2 = phase * 1.4f + 1.3f;
+        float wave = MathF.Sin(along * freq + phase) * (1f - harm * u)
+                   + MathF.Sin(along * freq2 + phase2) * (harm * u);
         pts[i] = a + dir * along + perp * (amp * env * wave);
 
         float tip = 1f - SmoothStep(Math.Clamp((u - tipStart) / (1f - tipStart + 1e-4f), 0f, 1f));

@@ -69,6 +69,15 @@ public sealed class CompassHud : IDisposable
     private ulong _lastTargetId = 0;
     private float _dispTargetHp = 1f, _lastRawHp = 1f, _flashAlpha = 0f, _dispShield = 0f;
 
+    // Target name/level label: only needs rebuilding when target, cast, level, or scale change.
+    private ulong _tbLabelTargetId = 0;
+    private string? _tbLabelCastName;
+    private int _tbLabelLevel = -1;
+    private float _tbLabelScale = float.NaN;
+    private bool _tbLabelFontAvail;
+    private string _tbLabelText = "";
+    private Vector2 _tbLabelSize;
+
     private readonly List<(float Remaining, int Icon, string Name, string Desc, System.Guid Guid, int Stacks, int MaxStacks)> _statusBuf = new();
 
     private readonly Dictionary<System.Guid, (float FirstSeen, long TotalMs)> _moodleTrack = new();
@@ -83,7 +92,7 @@ public sealed class CompassHud : IDisposable
     private List<LociStatusInfo>? _cachedLoci;
     private nint _cachedLociTarget = IntPtr.Zero;
     private float _cachedLociAt = -1000f;
-    private const float StatusCacheSecs = 0.12f;
+    private const float StatusCacheSecs = 0.24f;
 
     private readonly Dictionary<string, byte[]> _tooltipCache = new();
     private readonly Dictionary<int, string> _durationCache = new();
@@ -144,6 +153,13 @@ public sealed class CompassHud : IDisposable
         (180f, "S", true), (225f, "SW", false), (270f, "W", true), (315f, "NW", false),
     ];
 
+    // RenderBar text metrics: "N" height and per-direction label widths only change when
+    // font scale or font availability changes, so cache them instead of measuring every frame.
+    private float _tickLabelH;
+    private readonly Dictionary<string, Vector2> _dirLabelSizeCache = new();
+    private float _labelMetricsScale = float.NaN;
+    private bool _labelMetricsFontAvail;
+
     private static readonly (float dx, float dy)[] ShadowOffsets8 =
     [
         (-1f,-1f), (0f,-1f), (1f,-1f), (-1f,0f), (1f,0f), (-1f,1f), (0f,1f), (1f,1f),
@@ -153,6 +169,20 @@ public sealed class CompassHud : IDisposable
     [
         (0.05f, 14f), (0.10f, 10f), (0.18f, 6f), (0.32f, 3.5f), (0.70f, 1.8f),
     ];
+
+    // Shared "N%" label table + measured-size cache for the target bar and ToT bar HP readouts.
+    // Built lazily so nothing is allocated unless a health-percent display is actually shown.
+    private static string[]? _pctLabels;
+    private static string[] GetPctLabels() => _pctLabels ??= BuildPctLabels();
+    private static string[] BuildPctLabels()
+    {
+        var arr = new string[101];
+        for (int i = 0; i <= 100; i++) arr[i] = $"{i}%";
+        return arr;
+    }
+    private readonly Vector2[] _pctSizeCache = new Vector2[101];
+    private float _pctSizeCacheScale = float.NaN;
+    private bool _pctSizeCacheFontAvail;
 
     private enum PluginIpcKind { Moodles, Loci }
     private class PluginIpcState
@@ -376,7 +406,14 @@ public sealed class CompassHud : IDisposable
         float fontSize = ImGui.GetFontSize() * _cfg.FontScale;
         var font = ImGui.GetFont();
         float labelTop = by + bh * 0.12f;
-        float labelH = ImGui.CalcTextSize("N").Y * _cfg.FontScale;
+        if (_labelMetricsScale != _cfg.FontScale || _labelMetricsFontAvail != _font.Available)
+        {
+            _tickLabelH = ImGui.CalcTextSize("N").Y * _cfg.FontScale;
+            _dirLabelSizeCache.Clear();
+            _labelMetricsScale = _cfg.FontScale;
+            _labelMetricsFontAvail = _font.Available;
+        }
+        float labelH = _tickLabelH;
         float maxTickH = MathF.Max(2f, (by + bh - 1f) - (labelTop + labelH));
 
         for (int d = 0; d < 360; d += 5)
@@ -397,7 +434,11 @@ public sealed class CompassHud : IDisposable
             float delta = Delta(heading, deg);
             if (MathF.Abs(delta) > ext + 10f) continue;
             float sx = cx + Project(delta, halfVis, halfW, lens);
-            var sz = ImGui.CalcTextSize(label) * _cfg.FontScale;
+            if (!_dirLabelSizeCache.TryGetValue(label, out var sz))
+            {
+                sz = ImGui.CalcTextSize(label) * _cfg.FontScale;
+                _dirLabelSizeCache[label] = sz;
+            }
             float tx = sx - sz.X * 0.5f;
             float la = LensEdgeAlpha(delta, halfVis * 0.88f, ext);
             uint col = WithAlpha(isMajor ? card : inter, la);
@@ -675,6 +716,23 @@ private static void DrawGlowBracket(ImDrawListPtr dl, float bx, float by, float 
         hud->OpenContextMenuFromTarget((FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)obj.Address);
     }
 
+    private Vector2 GetPctLabelSize(int pctInt, float scale)
+    {
+        if (_pctSizeCacheScale != scale || _pctSizeCacheFontAvail != _font.Available)
+        {
+            Array.Fill(_pctSizeCache, new Vector2(-1f, -1f));
+            _pctSizeCacheScale = scale;
+            _pctSizeCacheFontAvail = _font.Available;
+        }
+        var cached = _pctSizeCache[pctInt];
+        if (cached.X < 0f)
+        {
+            cached = ImGui.CalcTextSize(GetPctLabels()[pctInt]) * scale;
+            _pctSizeCache[pctInt] = cached;
+        }
+        return cached;
+    }
+
     private float RenderTargetBar(ImDrawListPtr dl, float x, float w, float y, float nameCx,
         float nameRowW, float now, float alpha, bool inDuty, IGameObject? curTarget)
     {
@@ -751,13 +809,22 @@ private static void DrawGlowBracket(ImDrawListPtr dl, float bx, float by, float 
 
         string? castName = curTarget is IBattleChara casting && casting.IsCasting && casting.TotalCastTime > 0f
             ? GetCastName(casting) : null;
+        int shownLevel = (castName == null && _cfg.ShowTargetLevel && curTarget is ICharacter lv && lv.Level > 0) ? lv.Level : 0;
 
-        string baseLabel = castName ?? curTarget.Name.TextValue;
-        string label = (castName == null && _cfg.ShowTargetLevel && curTarget is ICharacter lv && lv.Level > 0)
-            ? $"Lv{lv.Level}  {baseLabel}"
-            : baseLabel;
-
-        var sz = ImGui.CalcTextSize(label) * _cfg.TargetBarFontScale;
+        if (_tbLabelTargetId != curTarget.GameObjectId || _tbLabelCastName != castName ||
+            _tbLabelLevel != shownLevel || _tbLabelScale != _cfg.TargetBarFontScale || _tbLabelFontAvail != _font.Available)
+        {
+            string baseLabel = castName ?? curTarget.Name.TextValue;
+            _tbLabelText = shownLevel > 0 ? $"Lv{shownLevel}  {baseLabel}" : baseLabel;
+            _tbLabelSize = ImGui.CalcTextSize(_tbLabelText) * _cfg.TargetBarFontScale;
+            _tbLabelTargetId = curTarget.GameObjectId;
+            _tbLabelCastName = castName;
+            _tbLabelLevel = shownLevel;
+            _tbLabelScale = _cfg.TargetBarFontScale;
+            _tbLabelFontAvail = _font.Available;
+        }
+        string label = _tbLabelText;
+        var sz = _tbLabelSize;
         float nameGap = MathF.Max(6f, h * 0.5f);
         float nameY = y + h + nameGap;
         float tx = cx - sz.X * 0.5f;
@@ -830,8 +897,9 @@ DrawFlowingLine(dl, V(rightEdge, textCy), V(Lerp(rightEdge, rR, castDisp), textC
             float pgap = MathF.Max(4f, pctSize * 0.25f);
             float py = bottomY + pgap;
 
-            string pct = $"{(int)(_dispTargetHp * 100)}%";
-            Vector2 psz = ImGui.CalcTextSize(pct) * (pctSize / ImGui.GetFontSize());
+            int pctInt = Math.Clamp((int)(_dispTargetHp * 100f), 0, 100);
+            string pct = GetPctLabels()[pctInt];
+            Vector2 psz = GetPctLabelSize(pctInt, _cfg.TargetBarFontScale);
 
             uint pCol = WithAlpha(C(_cfg.CardinalColor), alpha);
             uint pShadow = WithAlpha(0xCC000000u, alpha);
@@ -880,8 +948,9 @@ DrawFlowingLine(dl, V(rightEdge, textCy), V(Lerp(rightEdge, rR, castDisp), textC
             float pgap = MathF.Max(4f, pctSize * 0.25f);
             float py = bottomY + pgap;
 
-            string pct = $"{(int)(frac * 100)}%";
-            Vector2 psz = ImGui.CalcTextSize(pct) * (pctSize / ImGui.GetFontSize());
+            int pctInt = Math.Clamp((int)(frac * 100f), 0, 100);
+            string pct = GetPctLabels()[pctInt];
+            Vector2 psz = GetPctLabelSize(pctInt, _cfg.TargetBarFontScale);
 
             uint pCol = WithAlpha(C(_cfg.CardinalColor), alpha);
             uint pShadow = WithAlpha(0xCC000000u, alpha);

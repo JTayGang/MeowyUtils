@@ -445,10 +445,11 @@ private static void DrawFlowingLine(ImDrawListPtr dl, Vector2 a, Vector2 b, uint
 
     Vector2 dir = d / len;
     Vector2 perp = new(-dir.Y, dir.X);
-    const float amp = 5f, waveLen = 26f, flow = 2f, wipeHalf = 0.2f;
+    const float amp = 5f, waveLen = 26f, flow = 2f, wipeHalf = 0.2f, harm = 0.33f;
 
     float flowDir = fromLeft ? -1f : 1f;
     float phase = (time * timeMul + timeOff) * flow * flowDir;
+    float phase2 = phase * 1.4f + 1.3f;
     float tipStart = Lerp(0.6f, 1.0f, Math.Clamp(fill, 0f, 1f));
     float wipeCentre = Lerp(1f + wipeHalf, -wipeHalf, wipe);
 
@@ -464,8 +465,6 @@ private static void DrawFlowingLine(ImDrawListPtr dl, Vector2 a, Vector2 b, uint
         float along = len * i / (samples - 1);
         float u = fromLeft ? along / len : 1f - along / len;
         float env = u * u * (3f - 2f * u);
-	float harm = 0.33f;
-	float phase2 = phase * 1.4f + 1.3f;
         float wave = MathF.Sin(along * freq + phase) * (1f - harm * u)
                    + MathF.Sin(along * freq2 + phase2) * (harm * u);
         pts[i] = a + dir * along + perp * (amp * env * wave);

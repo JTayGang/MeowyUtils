@@ -1,7 +1,6 @@
 using System;
 using Dalamud.Game.Command;
 using Dalamud.Interface.GameFonts;
-using Dalamud.Interface.ManagedFontAtlas;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
@@ -22,7 +21,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly CompassHud _hud;
     private readonly ConfigWindow _cfgWin;
     private readonly FirstTimeSetupWindow _ftsw;
-    private readonly IFontHandle _font;
+    private readonly DynamicGameFontCache _fonts;
 
     public Plugin(
         IDalamudPluginInterface pi, ICommandManager cmd,
@@ -38,11 +37,11 @@ public sealed class Plugin : IDalamudPlugin
         bool isNew = !pi.ConfigFile.Exists;
         Config = pi.GetPluginConfig() as Configuration ?? new Configuration();
 
-        _font = pi.UiBuilder.FontAtlas.NewGameFontHandle(new GameFontStyle(GameFontFamily.Jupiter, 18));
+        _fonts = new DynamicGameFontCache(pi.UiBuilder.FontAtlas, GameFontFamily.Jupiter);
 
         StatusMirror = new StatusMirrorEngine(pi, fw, ot, log, Config);
 
-        _hud = new CompassHud(cs, ot, tm, npg, tp, ft, cond, gg, dm, Config, log, _font, pi);
+        _hud = new CompassHud(cs, ot, tm, npg, tp, ft, cond, gg, dm, Config, log, _fonts, pi);
         _cfgWin = new ConfigWindow(this);
         _ws.AddWindow(_cfgWin);
 
@@ -67,7 +66,7 @@ public sealed class Plugin : IDalamudPlugin
         _cmd.RemoveHandler(CommandName);
         PluginInterface.UiBuilder.Draw -= OnDraw;
         PluginInterface.UiBuilder.OpenConfigUi -= OnOpenConfig;
-        _font.Dispose();
+        _fonts.Dispose();
         _hud.Dispose();
         StatusMirror.Dispose();
     }

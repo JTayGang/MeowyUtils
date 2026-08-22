@@ -45,8 +45,9 @@ public sealed class CompassHud : IDisposable
     private readonly IGameGui _gg;
     private readonly Configuration _cfg;
     private readonly IPluginLog _log;
-    private readonly IFontHandle _font;
+    private readonly DynamicGameFontCache _fonts;
     private readonly IDalamudPluginInterface _pi;
+    private const float BaseFontPx = 18f; // FontScale/TargetBarFontScale of 1.0 maps to this many px
 
     private readonly ICallGateSubscriber<nint, List<MoodlesStatusInfo>> _moodlesGet;
     private readonly ICallGateSubscriber<nint, List<LociStatusInfo>> _lociGet;
@@ -72,8 +73,7 @@ public sealed class CompassHud : IDisposable
     private ulong _tbLabelTargetId = 0;
     private string? _tbLabelCastName;
     private int _tbLabelLevel = -1;
-    private float _tbLabelScale = float.NaN;
-    private bool _tbLabelFontAvail;
+    private IFontHandle? _tbLabelFont;
     private string _tbLabelText = "";
     private Vector2 _tbLabelSize;
 
@@ -151,8 +151,7 @@ public sealed class CompassHud : IDisposable
     // Cached compass label sizes
     private float _tickLabelH;
     private readonly Dictionary<string, Vector2> _dirLabelSizeCache = new();
-    private float _labelMetricsScale = float.NaN;
-    private bool _labelMetricsFontAvail;
+    private IFontHandle? _labelMetricsFont;
 
     private static readonly (float dx, float dy)[] ShadowOffsets8 =
     [
@@ -169,8 +168,7 @@ public sealed class CompassHud : IDisposable
     private static string[] GetPctLabels() => _pctLabels ??= BuildPctLabels();
     private static string[] BuildPctLabels() { var a = new string[101]; for (int i=0;i<=100;i++) a[i]=$"{i}%"; return a; }
     private readonly Vector2[] _pctSizeCache = new Vector2[101];
-    private float _pctSizeCacheScale = float.NaN;
-    private bool _pctSizeCacheFontAvail;
+    private IFontHandle? _pctSizeCacheFont;
 
     private enum PluginIpcKind { Moodles, Loci }
     private class PluginIpcState { public string Name; public int MinVer; public PluginIpcKind Kind; public bool Active; public float ActiveCheckedAt = -1000f; public bool VerOk; public float VerCheckedAt = -1000f; public PluginIpcState(string n, int mv, PluginIpcKind k) { Name=n; MinVer=mv; Kind=k; } }
@@ -178,9 +176,9 @@ public sealed class CompassHud : IDisposable
 
     public CompassHud(IClientState cs, IObjectTable ot, ITargetManager tm, INamePlateGui npg,
         ITextureProvider tp, IFateTable ft, ICondition cond, IGameGui gg, IDataManager dm,
-        Configuration cfg, IPluginLog log, IFontHandle font, IDalamudPluginInterface pi)
+        Configuration cfg, IPluginLog log, DynamicGameFontCache fonts, IDalamudPluginInterface pi)
     {
-        _cs=cs; _ot=ot; _tm=tm; _npg=npg; _tp=tp; _ft=ft; _cond=cond; _gg=gg; _cfg=cfg; _log=log; _font=font; _pi=pi;
+        _cs=cs; _ot=ot; _tm=tm; _npg=npg; _tp=tp; _ft=ft; _cond=cond; _gg=gg; _cfg=cfg; _log=log; _fonts=fonts; _pi=pi;
         _moodlesGet = pi.GetIpcSubscriber<nint, List<MoodlesStatusInfo>>("Moodles.GetStatusManagerInfoByPtrV2");
         _lociGet = pi.GetIpcSubscriber<nint, List<LociStatusInfo>>("Loci.GetManagerInfoByPtr");
         _moodlesVer = pi.GetIpcSubscriber<int>("Moodles.Version");
@@ -350,16 +348,16 @@ public sealed class CompassHud : IDisposable
         }
 
         dl.PushClipRect(V(bx+1f,by), V(bx+bw-1f,by+bh), true);
-        using var fontScope = _font.Available ? _font.Push() : null;
-        float fontSize = ImGui.GetFontSize() * _cfg.FontScale;
+        var fontHandle = _fonts.Get(BaseFontPx * _cfg.FontScale);
+        using var fontScope = fontHandle.Available ? fontHandle.Push() : null;
+        float fontSize = ImGui.GetFontSize();
         var font = ImGui.GetFont();
         float labelTop = by + bh*0.12f;
-        if (_labelMetricsScale != _cfg.FontScale || _labelMetricsFontAvail != _font.Available)
+        if (_labelMetricsFont != fontHandle)
         {
-            _tickLabelH = ImGui.CalcTextSize("N").Y * _cfg.FontScale;
+            _tickLabelH = ImGui.CalcTextSize("N").Y;
             _dirLabelSizeCache.Clear();
-            _labelMetricsScale = _cfg.FontScale;
-            _labelMetricsFontAvail = _font.Available;
+            _labelMetricsFont = fontHandle;
         }
         float labelH = _tickLabelH;
         float maxTickH = MathF.Max(2f, (by+bh-1f) - (labelTop+labelH));
@@ -384,7 +382,7 @@ public sealed class CompassHud : IDisposable
             float sx = cx + Project(delta, halfVis, halfW, lens);
             if (!_dirLabelSizeCache.TryGetValue(label, out var sz))
             {
-                sz = ImGui.CalcTextSize(label) * _cfg.FontScale;
+                sz = ImGui.CalcTextSize(label);
                 _dirLabelSizeCache[label] = sz;
             }
             float tx = sx - sz.X*0.5f;
@@ -627,18 +625,17 @@ public sealed class CompassHud : IDisposable
         hud->OpenContextMenuFromTarget((FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)obj.Address);
     }
 
-    private Vector2 GetPctLabelSize(int pctInt, float scale)
+    private Vector2 GetPctLabelSize(int pctInt, IFontHandle activeFont)
     {
-        if (_pctSizeCacheScale != scale || _pctSizeCacheFontAvail != _font.Available)
+        if (_pctSizeCacheFont != activeFont)
         {
             Array.Fill(_pctSizeCache, new Vector2(-1f,-1f));
-            _pctSizeCacheScale=scale;
-            _pctSizeCacheFontAvail=_font.Available;
+            _pctSizeCacheFont=activeFont;
         }
         var cached=_pctSizeCache[pctInt];
         if (cached.X<0f)
         {
-            cached = ImGui.CalcTextSize(GetPctLabels()[pctInt]) * scale;
+            cached = ImGui.CalcTextSize(GetPctLabels()[pctInt]);
             _pctSizeCache[pctInt]=cached;
         }
         return cached;
@@ -688,8 +685,9 @@ public sealed class CompassHud : IDisposable
             }
         }
 
-        using var fontScope=_font.Available ? _font.Push() : null;
-        float fontSize = ImGui.GetFontSize() * _cfg.TargetBarFontScale;
+        var fontHandle = _fonts.Get(BaseFontPx * _cfg.TargetBarFontScale);
+        using var fontScope = fontHandle.Available ? fontHandle.Push() : null;
+        float fontSize = ImGui.GetFontSize();
         var font=ImGui.GetFont();
 
         string? castName = (curTarget is IBattleChara casting && casting.IsCasting && casting.TotalCastTime>0f)
@@ -697,13 +695,13 @@ public sealed class CompassHud : IDisposable
         int shownLevel = (castName==null && _cfg.ShowTargetLevel && curTarget is ICharacter lv && lv.Level>0) ? lv.Level : 0;
 
         if (_tbLabelTargetId != curTarget.GameObjectId || _tbLabelCastName != castName ||
-            _tbLabelLevel != shownLevel || _tbLabelScale != _cfg.TargetBarFontScale || _tbLabelFontAvail != _font.Available)
+            _tbLabelLevel != shownLevel || _tbLabelFont != fontHandle)
         {
             string baseLabel = castName ?? curTarget.Name.TextValue;
             _tbLabelText = shownLevel>0 ? $"Lv{shownLevel}  {baseLabel}" : baseLabel;
-            _tbLabelSize = ImGui.CalcTextSize(_tbLabelText) * _cfg.TargetBarFontScale;
+            _tbLabelSize = ImGui.CalcTextSize(_tbLabelText);
             _tbLabelTargetId=curTarget.GameObjectId; _tbLabelCastName=castName; _tbLabelLevel=shownLevel;
-            _tbLabelScale=_cfg.TargetBarFontScale; _tbLabelFontAvail=_font.Available;
+            _tbLabelFont=fontHandle;
         }
         string label=_tbLabelText;
         var sz=_tbLabelSize;
@@ -758,12 +756,12 @@ public sealed class CompassHud : IDisposable
         {
             float taper=MathF.Min(h*0.9f,w*0.35f);
             float bottomX=x+taper, bottomY=y+h;
-            float pctSize=ImGui.GetFontSize()*_cfg.TargetBarFontScale;
+            float pctSize=ImGui.GetFontSize();
             float pgap=MathF.Max(4f,pctSize*0.25f);
             float py=bottomY+pgap;
             int pctInt=Math.Clamp((int)(_dispTargetHp*100f),0,100);
             string pct=GetPctLabels()[pctInt];
-            Vector2 psz=GetPctLabelSize(pctInt,_cfg.TargetBarFontScale);
+            Vector2 psz=GetPctLabelSize(pctInt,fontHandle);
             uint pCol=WithAlpha(C(_cfg.CardinalColor),alpha), pShadow=WithAlpha(0xCC000000u,alpha);
             float px=bottomX;
             foreach (var (dx,dy) in ShadowOffsets8)
@@ -788,19 +786,20 @@ public sealed class CompassHud : IDisposable
         float frac=ch.MaxHp>0f ? Math.Clamp((float)ch.CurrentHp/ch.MaxHp,0f,1f) : 0f;
         float pulse=targetingMe ? 0.82f+0.18f*MathF.Sin(now*5f) : 1f;
         DrawTrapBar(dl,x,y,w,h,frac, WithAlpha(C(_cfg.BackgroundColor),alpha), WithAlpha(fill,pulse*alpha), alpha);
-        using var totFontScope=_font.Available ? _font.Push() : null;
+        var totFontHandle = _fonts.Get(BaseFontPx * _cfg.TargetBarFontScale);
+        using var totFontScope = totFontHandle.Available ? totFontHandle.Push() : null;
         var font=ImGui.GetFont();
 
         if (_cfg.ShowTargetHealthPercent && _cfg.ShowTargetOfTargetHealthPercent)
         {
             float taper=MathF.Min(h*0.9f,w*0.35f);
             float rightX=x+w-taper, bottomY=y+h;
-            float pctSize=ImGui.GetFontSize()*_cfg.TargetBarFontScale;
+            float pctSize=ImGui.GetFontSize();
             float pgap=MathF.Max(4f,pctSize*0.25f);
             float py=bottomY+pgap;
             int pctInt=Math.Clamp((int)(frac*100f),0,100);
             string pct=GetPctLabels()[pctInt];
-            Vector2 psz=GetPctLabelSize(pctInt,_cfg.TargetBarFontScale);
+            Vector2 psz=GetPctLabelSize(pctInt,totFontHandle);
             uint pCol=WithAlpha(C(_cfg.CardinalColor),alpha), pShadow=WithAlpha(0xCC000000u,alpha);
             float px=rightX-psz.X;
             foreach (var (dx,dy) in ShadowOffsets8)
@@ -813,10 +812,10 @@ public sealed class CompassHud : IDisposable
             bool isPlayer=ch.GameObjectId==player.GameObjectId;
             string label=(isPlayer && _cfg.TargetOfTargetShowYou) ? "YOU" : ch.Name.TextValue;
             if (_cfg.TargetOfTargetFirstNameOnly) { int sp=label.IndexOf(' '); if (sp>0) label=label[..sp]; }
-            float scale=_cfg.TargetBarFontScale;
+            float scale=1f;
             var baseSz=ImGui.CalcTextSize(label);
             float maxW=MathF.Max(4f,w-4f);
-            if (baseSz.X>0f && baseSz.X*scale>maxW) scale=maxW/baseSz.X;
+            if (baseSz.X>0f && baseSz.X>maxW) scale=maxW/baseSz.X;
             float fSize=ImGui.GetFontSize()*scale;
             var sz=baseSz*scale;
             float tx=x+(w-sz.X)*0.5f, ty=y+(h-sz.Y)*0.5f;

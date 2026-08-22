@@ -94,10 +94,6 @@ public sealed class ConfigWindow : Window
             if (ImGui.IsItemHovered())
                 ImGui.SetTooltip("Recenters the compass horizontally.");
 
-            ImGui.Spacing();
-            ch |= DrawSliderFloat("Font Scale##fs", 0.5f, 2.5f, () => cfg.FontScale, v => cfg.FontScale = v);
-
-            ImGui.Spacing();
             ch |= DrawToggle("Hide during cutscenes and Gpose", () => cfg.HideDuringCutscenes, v => cfg.HideDuringCutscenes = v);
         }
 
@@ -135,6 +131,7 @@ public sealed class ConfigWindow : Window
                 "Maximum distance for all markers (FATEs use a multiplier).");
             ch |= DrawSliderInt("Visible Degrees##vd", 30, 180, () => (int)cfg.VisibleDegrees, v => cfg.VisibleDegrees = v);
             ch |= DrawSliderFloat("Lens Strength##ls", 1.0f, 3.0f, () => cfg.LensStrength, v => cfg.LensStrength = v);
+            ch |= DrawSliderFloat("Font Scale##fs", 0.5f, 2.5f, () => cfg.FontScale, v => cfg.FontScale = v);
             ImGui.Spacing();
             ImGui.TextDisabled("Marker distance fade");
             ch |= DrawSliderFloat("Full opacity zone##nz", 0.5f, 1.0f, () => cfg.DotNearZone, v => cfg.DotNearZone = v,
@@ -396,7 +393,7 @@ public sealed class ConfigWindow : Window
 
         if (ImGui.CollapsingHeader("Player Icon Overrides", ImGuiTreeNodeFlags.DefaultOpen))
         {
-            ImGui.TextDisabled("Override icons for specific players by name.");
+            ImGui.TextDisabled("Override icons for specific players by name. (IconIDs can be found in /xldata icons)");
             if (cfg.PlayerIconOverrides.Count == 0)
                 ImGui.TextDisabled("  (none)");
 

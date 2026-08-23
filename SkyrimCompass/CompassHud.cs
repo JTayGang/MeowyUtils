@@ -783,7 +783,8 @@ public sealed class CompassHud : IDisposable
         bool targetingMe = _cfg.HighlightIfTargetingMe && curTarget.TargetObjectId == player.GameObjectId;
         float h=MathF.Max(4f,_cfg.TargetBarHeight);
         uint fill=targetingMe ? C(_cfg.AggroWarningColor) : TargetFillColor(tot,inDuty);
-        float frac=ch.MaxHp>0f ? Math.Clamp((float)ch.CurrentHp/ch.MaxHp,0f,1f) : 0f;
+        bool isMinion=tot.ObjectKind==ObjectKind.Companion;
+        float frac=isMinion ? 1f : (ch.MaxHp>0f ? Math.Clamp((float)ch.CurrentHp/ch.MaxHp,0f,1f) : 0f);
         float pulse=targetingMe ? 0.82f+0.18f*MathF.Sin(now*5f) : 1f;
         DrawTrapBar(dl,x,y,w,h,frac, WithAlpha(C(_cfg.BackgroundColor),alpha), WithAlpha(fill,pulse*alpha), alpha);
         var totFontHandle = _fonts.Get(BaseFontPx * _cfg.TargetBarFontScale);

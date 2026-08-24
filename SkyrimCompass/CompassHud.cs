@@ -100,6 +100,12 @@ public sealed class CompassHud : IDisposable
     private float _ctxFadeChange = -1000f;
     private const float CtxFadeSecs = 0.15f, CtxDimAlpha = 0.33f;
 
+    // null = no right-click gesture in flight; true = we're capturing it (we just
+    // opened the menu); false = we're deliberately letting it pass through to the
+    // game (an already-open menu is being dismissed). Decided once on mouse-down
+    // and held until mouse-up so the release is handled the same way as the press.
+    private bool? _rightClickCapture;
+
     private bool _isDraggingCompass;
     private Vector2 _dragStartMouse;
     private float _dragStartXOffset;
@@ -576,12 +582,41 @@ public sealed class CompassHud : IDisposable
 
     private void HandleTargetClick(Vector2 min,Vector2 max,IGameObject obj,bool allowLeft)
     {
-        if (_ctxMenuWasOpen) return;
-        if (!ImGui.IsMouseHoveringRect(min,max,false)) return;
         var io=ImGui.GetIO();
+
+        // Stick to whatever we decided when this right-click gesture started, even if
+        // _ctxMenuWasOpen changes mid-click (opening/closing the menu happens between
+        // the press and release). Re-deciding capture fresh every frame can capture
+        // the mouse-down but let the mouse-up leak through (or vice versa), so the
+        // game never sees a matching down/up pair and thinks the button is still
+        // held, locking the camera to mouse movement until an unrelated click fixes it.
+        if (_rightClickCapture.HasValue)
+        {
+            if (_rightClickCapture.Value) io.WantCaptureMouse=true;
+            if (ImGui.IsMouseReleased(ImGuiMouseButton.Right)) _rightClickCapture=null;
+            return;
+        }
+
+        if (_ctxMenuWasOpen)
+        {
+            // Menu's already open: let a right click on the bar fall through to the
+            // game, same as clicking anywhere else does, so the game's own "clicked
+            // outside the menu" logic closes it. Remember we did that so the matching
+            // release passes through too, instead of getting captured once the menu
+            // closes and _ctxMenuWasOpen flips back to false.
+            if (ImGui.IsMouseHoveringRect(min,max,false) && ImGui.IsMouseClicked(ImGuiMouseButton.Right))
+                _rightClickCapture=false;
+            return;
+        }
+
+        if (!ImGui.IsMouseHoveringRect(min,max,false)) return;
         io.WantCaptureMouse = true;
         if (allowLeft && ImGui.IsMouseClicked(ImGuiMouseButton.Left)) { _tm.Target=obj; return; }
-        if (ImGui.IsMouseClicked(ImGuiMouseButton.Right)) OpenCtxMenu(obj);
+        if (ImGui.IsMouseClicked(ImGuiMouseButton.Right))
+        {
+            _rightClickCapture=true;
+            OpenCtxMenu(obj);
+        }
     }
 
     private void UpdateCompassDrag()

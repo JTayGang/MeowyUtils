@@ -84,6 +84,8 @@ public class Configuration : IPluginConfiguration
     public int TargetStatusMaxIcons { get; set; } = 10;
     public bool TargetStatusIconAlignLeft { get; set; }
     public bool TargetStatusIconAlignRight { get; set; }
+    public bool ShowTargetStatusEsunaMarker { get; set; } = true;
+    public Vector4 TargetStatusEsunaMarkerColor { get; set; } = new(.71f,.82f,.88f,.95f); // #b5d2e1
 
     public bool MirrorMoodlesLoci { get; set; } = true;
 

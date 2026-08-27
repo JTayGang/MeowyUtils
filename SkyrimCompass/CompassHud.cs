@@ -77,7 +77,7 @@ public sealed class CompassHud : IDisposable
     private string _tbLabelText = "";
     private Vector2 _tbLabelSize;
 
-    private readonly List<(float Remaining, int Icon, string Name, string Desc, System.Guid Guid, int Stacks, int MaxStacks)> _statusBuf = new();
+    private readonly List<(float Remaining, int Icon, string Name, string Desc, System.Guid Guid, int Stacks, int MaxStacks, bool Dispellable)> _statusBuf = new();
     private readonly Dictionary<System.Guid, (float FirstSeen, long TotalMs)> _moodleTrack = new();
     private readonly Dictionary<System.Guid, (float FirstSeen, long TotalMs)> _lociTrack = new();
     private readonly HashSet<System.Guid> _presentScratch = new();
@@ -91,6 +91,11 @@ public sealed class CompassHud : IDisposable
     private nint _cachedLociTarget = IntPtr.Zero;
     private float _cachedLociAt = -1000f;
     private const float StatusCacheSecs = 0.24f;
+    // Bit 0 of the IPC "Modifiers" field == the author-set "dispellable" flag on both plugins:
+    // Moodles.Data.Enums.Modifiers.CanDispel and LociApi.Enums.Modifiers.CanDispel are both
+    // `1u << 0` as of the current Moodles/Loci.Api sources. Re-verify against both projects if
+    // either bumps its IPC version, since this isn't a documented/stable part of either contract.
+    private const uint PluginStatusCanDispelBit = 1u << 0;
 
     private readonly Dictionary<string, byte[]> _tooltipCache = new();
     private readonly Dictionary<int, string> _durationCache = new();
@@ -881,7 +886,7 @@ public sealed class CompassHud : IDisposable
             if (st.GameData.ValueNullable is not { } row || row.Icon==0) continue;
             float rem=(row.IsPermanent || row.IsFcBuff) ? 0f : st.RemainingTime;
             var (name,desc)=GetStatusText(row);
-            _statusBuf.Add((rem, (int)row.Icon, name, desc, System.Guid.Empty, (int)st.Param, (int)row.MaxStacks));
+            _statusBuf.Add((rem, (int)row.Icon, name, desc, System.Guid.Empty, (int)st.Param, (int)row.MaxStacks, row.CanDispel));
         }
 
         // Moodles / Loci
@@ -890,11 +895,13 @@ public sealed class CompassHud : IDisposable
             if (_statusBuf.Count<max && IsPluginActive(_moodlesIpc,now) && IsVerOk(_moodlesIpc,now))
                 AppendPluginStatuses(ch.Address,max,now,_moodlesGet,ref _cachedMoodles,
                     ref _cachedMoodlesTarget,ref _cachedMoodlesAt,_moodleTrack,s=>s.GUID,s=>s.IconID,
-                    s=>(s.Title,s.Description),s=>s.ExpireTicks,s=>s.Stacks);
+                    s=>(s.Title,s.Description),s=>s.ExpireTicks,s=>s.Stacks,
+                    s=>(s.Modifiers & PluginStatusCanDispelBit)!=0);
             if (_statusBuf.Count<max && IsPluginActive(_lociIpc,now) && IsVerOk(_lociIpc,now))
                 AppendPluginStatuses(ch.Address,max,now,_lociGet,ref _cachedLoci,
                     ref _cachedLociTarget,ref _cachedLociAt,_lociTrack,s=>s.GUID,s=>(int)s.IconID,
-                    s=>(s.Title,s.Description),s=>s.ExpireTicks,s=>s.Stacks);
+                    s=>(s.Title,s.Description),s=>s.ExpireTicks,s=>s.Stacks,
+                    s=>(s.Modifiers & PluginStatusCanDispelBit)!=0);
         }
 
         if (_statusBuf.Count==0) return;
@@ -914,7 +921,7 @@ public sealed class CompassHud : IDisposable
 
         for (int i=0; i<n; i++)
         {
-            var (rem, icon, name, desc, guid, stacks, maxStacks)=_statusBuf[i];
+            var (rem, icon, name, desc, guid, stacks, maxStacks, dispellable)=_statusBuf[i];
             float sx=startX + i*(size+hGap) + size*0.5f;
             int displayIcon=icon; string displayName=name, displayDesc=desc;
             if (stacks>1)
@@ -934,6 +941,8 @@ public sealed class CompassHud : IDisposable
             }
             if (!TryDrawIcon(dl,displayIcon,sx,scy,size,alpha,false,1f,false) && displayIcon!=icon)
                 TryDrawIcon(dl,icon,sx,scy,size,alpha,false,1f,false);
+            if (dispellable && _cfg.ShowTargetStatusEsunaMarker)
+                DrawEsunaMarker(dl,sx,scy,halfH,size,alpha);
 
             string? durLabel=GetDurationLabel(rem);
             float hoverBottom=scy+halfH;
@@ -956,6 +965,19 @@ public sealed class CompassHud : IDisposable
                 ImGui.PopStyleColor();
             }
         }
+    }
+
+    private void DrawEsunaMarker(ImDrawListPtr dl, float sx, float cy, float halfH, float size, float alpha)
+    {
+        // Mirrors the vanilla UI convention: a thin bar across the top of the icon
+        // for statuses Esuna (and other dispels) can remove. Inset per side so
+        // it sits inside the icon's edge instead of overhanging it (the icon art
+        // itself has a hair of built-in padding vs. its full sx±size*0.5f bounds).
+        float barH=MathF.Max(2f,size*0.14f);
+        float inset=3f;
+        float y0=cy-halfH;
+        dl.AddRectFilled(V(sx-size*0.5f+inset,y0), V(sx+size*0.5f-inset,y0+barH),
+            WithAlpha(C(_cfg.TargetStatusEsunaMarkerColor),alpha), barH*0.35f);
     }
 
     private string? GetDurationLabel(float rem)
@@ -1006,7 +1028,7 @@ public sealed class CompassHud : IDisposable
         Dictionary<System.Guid,(float FirstSeen,long TotalMs)> tracker,
         Func<T,System.Guid> guidSel, Func<T,int> iconSel,
         Func<T,(string Name,string Desc)> textSel,
-        Func<T,long> expireSel, Func<T,int> stacksSel)
+        Func<T,long> expireSel, Func<T,int> stacksSel, Func<T,bool> dispellableSel)
     {
         if (cache==null || addr!=cacheTarget || now-cacheAt>=StatusCacheSecs)
         {
@@ -1033,7 +1055,7 @@ public sealed class CompassHud : IDisposable
             var (name,desc)=textSel(s);
             long expire=expireSel(s);
             float rem=EstimateRemaining(tracker,g,expire,now);
-            _statusBuf.Add((rem,icon,name,desc,g,stacksSel(s),0));
+            _statusBuf.Add((rem,icon,name,desc,g,stacksSel(s),0,dispellableSel(s)));
         }
     }
 

@@ -283,6 +283,7 @@ public sealed class ConfigWindow : Window
             ch |= DrawToggle("Left align##tsalignl", () => cfg.TargetStatusIconAlignLeft, v => { cfg.TargetStatusIconAlignLeft = v; if (v) cfg.TargetStatusIconAlignRight = false; }, "Icons anchor to the left edge and grow rightward, instead of staying centered.");
             ImGui.SameLine();
             ch |= DrawToggle("Right align##tsalignr", () => cfg.TargetStatusIconAlignRight, v => { cfg.TargetStatusIconAlignRight = v; if (v) cfg.TargetStatusIconAlignLeft = false; }, "Icons anchor to the right edge and grow leftward, instead of staying centered.");
+            ch |= DrawEnableAndColor("tsesuna", "Esuna-able marker", () => cfg.ShowTargetStatusEsunaMarker, v => cfg.ShowTargetStatusEsunaMarker = v, () => cfg.TargetStatusEsunaMarkerColor, v => cfg.TargetStatusEsunaMarkerColor = v, "Bar above statuses that Esuna/dispel can remove: real game data for vanilla statuses, the author's own 'Dispelable' setting for Moodles/Loci. That setting depends on the target's own Moodles/Loci config to actually do anything, so treat it as intended rather than guaranteed.");
         }, ImGuiTreeNodeFlags.DefaultOpen);
 
         ImGui.EndTabItem();

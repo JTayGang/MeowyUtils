@@ -875,6 +875,11 @@ public sealed class CompassHud : IDisposable
         float hGap=size*0.25f;
         int max=Math.Max(1,_cfg.TargetStatusMaxIcons);
         float now=(float)ImGui.GetTime();
+        // Esuna can't be cast on enemies at all, regardless of what any status's
+        // CanDispel/Modifiers flag says - same Combatant check used for compass
+        // dot coloring elsewhere, so this stays consistent with "enemy" everywhere else.
+        bool targetIsEnemy = ch.ObjectKind==ObjectKind.BattleNpc && ch is IBattleNpc bnpc
+            && bnpc.BattleNpcKind==BattleNpcSubKind.Combatant;
         PruneTrackers(now);
         _statusBuf.Clear();
 
@@ -941,7 +946,7 @@ public sealed class CompassHud : IDisposable
             }
             if (!TryDrawIcon(dl,displayIcon,sx,scy,size,alpha,false,1f,false) && displayIcon!=icon)
                 TryDrawIcon(dl,icon,sx,scy,size,alpha,false,1f,false);
-            if (dispellable && _cfg.ShowTargetStatusEsunaMarker)
+            if (dispellable && _cfg.ShowTargetStatusEsunaMarker && !targetIsEnemy)
                 DrawEsunaMarker(dl,sx,scy,halfH,size,alpha);
 
             string? durLabel=GetDurationLabel(rem);

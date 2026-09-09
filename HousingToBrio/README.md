@@ -5,17 +5,13 @@ Brio props, so you can shoot in any house layout without owning the house,
 buying the furniture, or decorating anything yourself - just more
 environments and options for your photos.
 
-## Requirements
+## Install
 
-- A Dalamud plugin dev setup (Visual Studio / `dotnet build`, XIVLauncher).
-- Brio installed.
-- NuGet access to restore `MessagePack` 3.1.7.
+Add this URL as a custom plugin repository in Dalamud (Settings > Experimental > Custom Plugin Repositories), then install HousingToBrio from the plugin list.
 
 ```
-dotnet build HousingToBrio.csproj -c Release
+https://raw.githubusercontent.com/JTayGang/MeowyUtils/main/repo.json
 ```
-
-Load it as a dev plugin the way you normally do.
 
 ## Using it
 
@@ -30,6 +26,18 @@ Load it as a dev plugin the way you normally do.
 
 Items that can't be matched to a current in-game furniture model are skipped
 and listed after saving.
+
+## Building From Source 
+
+- A Dalamud plugin dev setup (Visual Studio / `dotnet build`, XIVLauncher).
+- Brio installed.
+- NuGet access to restore `MessagePack` 3.1.7.
+
+```
+dotnet build HousingToBrio.csproj -c Release
+```
+
+Load it as a dev plugin the way you normally do.
 
 ## Limitations
 

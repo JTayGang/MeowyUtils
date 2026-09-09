@@ -27,18 +27,6 @@ https://raw.githubusercontent.com/JTayGang/MeowyUtils/main/repo.json
 Items that can't be matched to a current in-game furniture model are skipped
 and listed after saving.
 
-## Building From Source 
-
-- A Dalamud plugin dev setup (Visual Studio / `dotnet build`, XIVLauncher).
-- Brio installed.
-- NuGet access to restore `MessagePack` 3.1.7.
-
-```
-dotnet build HousingToBrio.csproj -c Release
-```
-
-Load it as a dev plugin the way you normally do.
-
 ## Limitations
 
 - Fixtures (walls, floors, roof, doors, etc.) aren't converted - furniture only.
@@ -59,3 +47,15 @@ File formats and conventions confirmed by reading (not reusing) source from:
 - [Brio](https://github.com/Etheirys/Brio) (GPL-3.0)
 - [ReMakePlace plugin](https://github.com/RemakePlace/plugin)
 - [Dalamud](https://github.com/goatcorp/Dalamud)
+
+## Building From Source 
+
+- A Dalamud plugin dev setup (Visual Studio / `dotnet build`, XIVLauncher).
+- Brio installed.
+- NuGet access to restore `MessagePack` 3.1.7.
+
+```
+dotnet build HousingToBrio.csproj -c Release
+```
+
+Load it as a dev plugin the way you normally do.

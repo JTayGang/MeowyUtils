@@ -1,0 +1,12 @@
+C:\Users\Justi\Downloads\HousingToBrio\bin\Release\HousingToBrio.deps.json
+C:\Users\Justi\Downloads\HousingToBrio\bin\Release\HousingToBrio.dll
+C:\Users\Justi\Downloads\HousingToBrio\bin\Release\MessagePack.dll
+C:\Users\Justi\Downloads\HousingToBrio\bin\Release\MessagePack.Annotations.dll
+C:\Users\Justi\Downloads\HousingToBrio\bin\Release\Microsoft.NET.StringTools.dll
+C:\Users\Justi\Downloads\HousingToBrio\obj\Release\HousingToBrio.csproj.AssemblyReference.cache
+C:\Users\Justi\Downloads\HousingToBrio\obj\Release\HousingToBrio.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\Justi\Downloads\HousingToBrio\obj\Release\HousingToBrio.AssemblyInfoInputs.cache
+C:\Users\Justi\Downloads\HousingToBrio\obj\Release\HousingToBrio.AssemblyInfo.cs
+C:\Users\Justi\Downloads\HousingToBrio\obj\Release\HousingToBrio.csproj.CoreCompileInputs.cache
+C:\Users\Justi\Downloads\HousingToBrio\obj\Release\HousingT.7113A3A6.Up2Date
+C:\Users\Justi\Downloads\HousingToBrio\obj\Release\HousingToBrio.dll

@@ -1,0 +1,23 @@
+{
+  "Author": "Your Name Here",
+  "Name": "Housing To Brio",
+  "InternalName": "HousingToBrio",
+  "AssemblyVersion": "1.0.0.0",
+  "Description": "Loads ReMakePlace-style housing layout files and saves them as a Brio Project, so the furniture is spawned as Brio world objects for GPose photography - no house, materials, or furniture purchases required.",
+  "ApplicableVersion": "any",
+  "RepoUrl": "",
+  "Tags": [
+    "gpose",
+    "brio",
+    "housing",
+    "furniture",
+    "makeplace"
+  ],
+  "DalamudApiLevel": 15,
+  "LoadRequiredState": 0,
+  "LoadSync": false,
+  "CanUnloadAsync": false,
+  "LoadPriority": 0,
+  "Punchline": "Turn housing layout files into Brio scenes for GPose.",
+  "AcceptsFeedback": false
+}

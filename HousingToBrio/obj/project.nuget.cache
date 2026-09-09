@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "dgSpecHash": "QWotMxFpGCg=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\Justi\\Downloads\\HousingToBrio\\HousingToBrio.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\Justi\\.nuget\\packages\\dalamudpackager\\15.0.0\\dalamudpackager.15.0.0.nupkg.sha512",
+    "C:\\Users\\Justi\\.nuget\\packages\\dotnet.reproduciblebuilds\\1.2.39\\dotnet.reproduciblebuilds.1.2.39.nupkg.sha512",
+    "C:\\Users\\Justi\\.nuget\\packages\\messagepack\\3.1.7\\messagepack.3.1.7.nupkg.sha512",
+    "C:\\Users\\Justi\\.nuget\\packages\\messagepack.annotations\\3.1.7\\messagepack.annotations.3.1.7.nupkg.sha512",
+    "C:\\Users\\Justi\\.nuget\\packages\\messagepackanalyzer\\3.1.7\\messagepackanalyzer.3.1.7.nupkg.sha512",
+    "C:\\Users\\Justi\\.nuget\\packages\\microsoft.net.stringtools\\17.11.4\\microsoft.net.stringtools.17.11.4.nupkg.sha512"
+  ],
+  "logs": []
+}

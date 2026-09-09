@@ -1,0 +1,32 @@
+<Project Sdk="Dalamud.NET.SDK/15.0.0">
+
+	<PropertyGroup>
+		<TargetFramework>net10.0-windows</TargetFramework>
+		<Platforms>x64</Platforms>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<LangVersion>latest</LangVersion>
+		<AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+		<UseWindowsForms>true</UseWindowsForms>
+		<Version>1.0.0.0</Version>
+		<AssemblyName>HousingToBrio</AssemblyName>
+		<RootNamespace>HousingToBrio</RootNamespace>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<!--
+			Same MessagePack version Brio itself references, so the binary output
+			of MessagePackSerializer.Serialize(...) is guaranteed to match what
+			Brio's own SceneService writes/reads for .brioscn files.
+			See: https://github.com/Etheirys/Brio/blob/main/Brio/Brio.csproj
+		-->
+		<PackageReference Include="MessagePack" Version="3.1.7" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Update="HousingToBrio.json">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
+
+</Project>

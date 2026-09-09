@@ -1,11 +1,11 @@
 {
-  "Author": "Your Name Here",
+  "Author": "Meowmeowmeow Cat",
   "Name": "Housing To Brio",
   "InternalName": "HousingToBrio",
   "AssemblyVersion": "1.0.0.0",
-  "Description": "Loads ReMakePlace-style housing layout files and saves them as a Brio Project, so the furniture is spawned as Brio world objects for GPose photography - no house, materials, or furniture purchases required.",
+  "Description": "Loads ReMakePlace-style housing layout files and saves them as a Brio Project to spawn furniture as Brio world objects for GPose photos.",
   "ApplicableVersion": "any",
-  "RepoUrl": "",
+  "RepoUrl": "https://github.com/JTayGang/MeowyUtils",
   "Tags": [
     "gpose",
     "brio",
@@ -18,6 +18,6 @@
   "LoadSync": false,
   "CanUnloadAsync": false,
   "LoadPriority": 0,
-  "Punchline": "Turn housing layout files into Brio scenes for GPose.",
+  "Punchline": "Turn housing layout files into Brio scenes for GPose!",
   "AcceptsFeedback": false
 }

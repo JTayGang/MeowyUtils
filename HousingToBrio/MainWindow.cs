@@ -34,9 +34,7 @@ public sealed class MainWindow : Window, IDisposable
     private string? _projectSaveError;
     private ConversionResult? _lastProjectResult;
 
-    // Written from a background STA thread by the native file dialogs, read
-    // back on the next Draw() - keeps the game's render thread from blocking
-    // while a dialog is open.
+    // Set by a background STA thread (file dialogs); read back in Draw().
     private volatile string? _pendingLayoutPath;
     private volatile string? _pendingBrioFolderPath;
 

@@ -7,13 +7,9 @@ using Lumina.Excel.Sheets;
 namespace HousingToBrio;
 
 /// <summary>
-/// Resolves a housing item's game Item ID to the .sgb asset path that the game
-/// (and Brio) load to display that piece of furniture.
-///
-/// The HousingFurniture / HousingYardObject sheets, the "ModelKey" field, and
-/// the path-construction formula below were confirmed by reading Brio's own
-/// (GPL-3.0 licensed) FurnitureDatabase, purely to learn the on-disk asset
-/// naming convention - this class does not use or embed any of Brio's code:
+/// Maps a housing Item ID to its .sgb asset path via the game's own
+/// HousingFurniture/HousingYardObject sheets. Formula confirmed against
+/// (not reproduced from) Brio's FurnitureDatabase (GPL-3.0):
 /// https://github.com/Etheirys/Brio/blob/main/Brio/Resources/Extra/FurnitureDatabase.cs
 /// </summary>
 public sealed class FurnitureModelResolver
@@ -53,11 +49,7 @@ public sealed class FurnitureModelResolver
         }
     }
 
-    /// <summary>
-    /// Attempts to resolve the given housing Item ID to an .sgb path. Returns
-    /// false for item IDs that aren't in the current game's housing sheets
-    /// (e.g. a placeholder "0" entry, or an item that no longer exists).
-    /// </summary>
+    /// <summary>False if itemId isn't in the current game's housing sheets.</summary>
     public bool TryResolvePath(uint itemId, bool indoors, out string sgbPath)
     {
         var table = indoors ? _indoorModelKeyByItemId : _outdoorModelKeyByItemId;
@@ -115,9 +107,7 @@ public static class LayoutToBrioConverter
         ConversionOptions options,
         ConversionResult result)
     {
-        // "interiorScale"/"exteriorScale" is the divisor the source format uses
-        // to turn its stored location numbers back into real yalms (matches
-        // ReMakePlace's own descale() helper). Guard against 0 in malformed files.
+        // Divisor back to yalms (ReMakePlace's descale()); guard against 0.
         var divisor = scaleField == 0f ? 100f : scaleField;
 
         foreach (var entry in entries)
@@ -138,34 +128,19 @@ public static class LayoutToBrioConverter
             var rot = entry.Transform.Rotation;
             var scl = entry.Transform.Scale;
 
-            // The layout format stores location as [gameX, gameZ, gameY] - Y and
-            // Z are swapped relative to the game's own Vector3 convention - in
-            // units scaled by interior/exteriorScale. Confirmed against
-            // ReMakePlace's SaveLayoutManager.ConvertToHousingItem()/descale().
+            // Y/Z-swapped frame ReMakePlace uses; confirmed against its
+            // SaveLayoutManager.ConvertToHousingItem()/descale().
             var position = new Vector3(
                 SafeGet(loc, 0) / divisor,
                 SafeGet(loc, 2) / divisor,
                 SafeGet(loc, 1) / divisor);
 
-            // The rotation quaternion is stored in that SAME Y/Z-swapped frame -
-            // confirmed by reading ReMakePlace's own RotationToQuat()/
-            // ComputeZAngle() round-trip, which encodes a housing item's single
-            // vertical-axis spin as a rotation around what its own convention
-            // calls "Z" (RotationToQuat(angle) is literally
-            // Quaternion.CreateFromYawPitchRoll(0, 0, angle)).
-            //
-            // Swapping two axes of a coordinate system flips its handedness, and
-            // carrying a *rotation* across a handedness flip is not just a
-            // component permutation the way it is for a position: the axis
-            // permutes AND the angle inverts, which works out to negating every
-            // swapped/kept axis component while leaving w untouched. Skipping
-            // that (the previous code copied x/y/z straight through) leaves the
-            // quaternion rotating the item around the depth (Z) axis instead of
-            // its vertical (Y) axis - i.e. it tips furniture over sideways
-            // instead of spinning it flat, which is exactly the "very broken"
-            // rotations reported. Verified end-to-end against a known transform
-            // (rotate a local test point, compare world-space results) as well
-            // as against ReMakePlace's own reverse converter.
+            // Same Y/Z-swapped frame as position, but a swap flips handedness -
+            // so rotation isn't a pure permutation like position is: x/y/z must
+            // also be negated (w untouched), or items spin around the wrong
+            // (depth) axis instead of vertically. Verified against Lush.json
+            // (rotations are always single-axis) and ReMakePlace's
+            // RotationToQuat()/ComputeZAngle().
             var rotation = new Quaternion(
                 -SafeGet(rot, 0),
                 -SafeGet(rot, 2),
@@ -187,30 +162,11 @@ public static class LayoutToBrioConverter
                 ObjectType = BrioWorldObjectType.Furniture,
                 Path = sgbPath,
                 Transform = new BrioTransform { Position = position, Rotation = rotation, Scale = scale },
-                // Transform.Position above is already an absolute position in
-                // the room's own local-space coordinates - the same coordinate
-                // space real housing items use inside any interior of a
-                // matching shape, regardless of where the player is standing.
-                // That's what actually gets used on import IF Brio's "Relative
-                // Object Positions" import option is unchecked - confirmed by
-                // reading Brio's own WorldObjectService.SpawnFromDTO(), which
-                // uses Transform.Position directly whenever no anchor is
-                // supplied, and only falls back to (anchor + RelativePosition)
-                // when that option is on.
-                //
-                // That option defaults to ON in Brio's Load Project window,
-                // where "anchor" is wherever the player is standing at the
-                // moment they click Load - which is the actual cause of
-                // layouts spawning relative to the player instead of the room.
-                // This plugin can't flip that checkbox for the user (Brio
-                // exposes no IPC for it) - see the README/this plugin's UI for
-                // the "uncheck Relative Object Positions" step that fixes it.
-                //
-                // RelativePosition is still populated here (matching
-                // Transform.Position) purely so that if the user leaves that
-                // option checked anyway, the layout at least keeps its correct
-                // internal shape - anchored on the player instead of the room -
-                // rather than every item collapsing onto a single point.
+                // Position is absolute room-local space - used directly when
+                // Brio's "Relative Object Positions" import option is off (see
+                // UI/README). RelativePosition is also set so the layout still
+                // holds together, anchored on the player, if that option is
+                // left on instead. See Brio's WorldObjectService.SpawnFromDTO().
                 RelativePosition = position,
                 StainID = 0,
                 Color = color,
@@ -235,13 +191,7 @@ public static class LayoutToBrioConverter
     private static float SafeGet(float[] array, int index, float fallback = 0f)
         => array.Length > index ? array[index] : fallback;
 
-    /// <summary>
-    /// Parses the layout format's "RRGGBB" (or "RRGGBBAA") hex color into a
-    /// normalized RGBA Vector4. The trailing byte in the source data is not a
-    /// meaningful alpha value (housing dyes are opaque), so alpha is always
-    /// forced to 1 - matching how Brio's FurnitureObject.SetCustomColor() forces
-    /// full opacity on custom colors too.
-    /// </summary>
+    /// <summary>Parses "RRGGBB[AA]" hex; alpha is ignored/forced to 1 (dyes are opaque, matching Brio's SetCustomColor()).</summary>
     private static bool TryParseColor(string hex, out Vector4 color)
     {
         color = default;

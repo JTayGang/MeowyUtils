@@ -8,12 +8,8 @@ using Lumina.Excel.Sheets;
 namespace HousingToBrio;
 
 /// <summary>
-/// Root of a ReMakePlace-style housing layout file - the format produced by the
-/// ReMakePlace Dalamud plugin and the various layout-sharing sites/tools that
-/// build on it (see https://github.com/RemakePlace/plugin for the reference
-/// implementation). Only the fields we actually use are declared here;
-/// System.Text.Json silently ignores any other top-level fields a particular
-/// export might include (e.g. "lightLevel", "metaData").
+/// ReMakePlace-style housing layout format: https://github.com/RemakePlace/plugin
+/// Unlisted fields (e.g. "lightLevel", "metaData") are ignored by System.Text.Json.
 /// </summary>
 public sealed class LayoutFile
 {
@@ -56,12 +52,7 @@ public sealed class FurnitureEntry
     [JsonPropertyName("properties")]
     public Dictionary<string, JsonElement>? Properties { get; set; }
 
-    /// <summary>
-    /// Some layout sources nest items placed on top of another item (tabletop
-    /// decorations, etc.) inside an "attachments" array on the parent. They use
-    /// the same absolute transform space as top-level furniture, so we flatten
-    /// them rather than trying to model a parent/child relationship.
-    /// </summary>
+    /// <summary>Nested items (tabletop decor, etc.) share the parent's absolute transform space, so these get flattened rather than nested.</summary>
     [JsonPropertyName("attachments")]
     public List<FurnitureEntry>? Attachments { get; set; }
 
@@ -87,12 +78,7 @@ public sealed class FurnitureEntry
     }
 }
 
-/// <summary>
-/// A structural element of the house shell (wall/floor/roof/door/window/fence/
-/// light/district) that has no transform of its own. These describe the house
-/// itself rather than a placeable prop, so they are surfaced only for the
-/// summary shown to the user - they are never turned into world objects.
-/// </summary>
+/// <summary>House shell (walls/floors/roof/etc.) - no transform, so never spawned; shown in the summary only.</summary>
 public sealed class FixtureEntry
 {
     [JsonPropertyName("level")]
@@ -143,24 +129,14 @@ public static class LayoutParser
 }
 
 /// <summary>
-/// Detects the size category of the indoor housing area the player is
-/// currently standing in, using only Dalamud's own client state and game
-/// data - no unsafe memory access or signature scanning.
-///
-/// The current TerritoryType's internal codename encodes the size as a
-/// 2-character substring ("i1"/"i2"/"i3"/"i4"). This is the same technique
-/// ReMakePlace's own Memory.GetIndoorHouseSize() uses (it otherwise reaches
-/// this territory ID via its own unsafe HousingModule pointer, which we don't
-/// need - IClientState.TerritoryType gives us the same ID directly):
-///   https://github.com/RemakePlace/plugin/blob/main/ReMakePlacePlugin/Memory.cs
+/// Decodes house size from the current TerritoryType's internal name (same
+/// technique as ReMakePlace's Memory.GetIndoorHouseSize(), but via
+/// IClientState.TerritoryType instead of its unsafe HousingModule pointer):
+/// https://github.com/RemakePlace/plugin/blob/main/ReMakePlacePlugin/Memory.cs
 /// </summary>
 public static class HouseSizeDetector
 {
-    /// <summary>
-    /// Returns "Small", "Medium", "Large", or "Apartment" if the player is
-    /// currently inside a recognizable private housing interior, otherwise
-    /// null (outdoors, in a different kind of zone, or an unrecognized name).
-    /// </summary>
+    /// <summary>Small/Medium/Large/Apartment, or null if not in a recognizable interior.</summary>
     public static string? GetCurrentIndoorHouseSize(IClientState clientState, IDataManager dataManager)
     {
         var territoryId = clientState.TerritoryType;

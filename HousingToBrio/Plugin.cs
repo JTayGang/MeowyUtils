@@ -22,11 +22,11 @@ public sealed class Configuration : IPluginConfiguration
 
 public sealed class Plugin : IDalamudPlugin
 {
-    // Not required by current Dalamud API levels, but harmless to keep for
-    // compatibility with older IDalamudPlugin implementations.
+    // Not required by current API levels, kept for compatibility.
     public string Name => "Housing To Brio";
 
     private const string CommandName = "/housingtobrio";
+    private const string ShortCommandName = "/h2b";
 
     private readonly IDalamudPluginInterface _pluginInterface;
     private readonly ICommandManager _commandManager;
@@ -67,6 +67,12 @@ public sealed class Plugin : IDalamudPlugin
         {
             HelpMessage = "Opens the Housing To Brio window.",
         });
+
+        _commandManager.AddHandler(ShortCommandName, new CommandInfo(OnCommand)
+        {
+            HelpMessage = "Opens the Housing To Brio window.",
+            ShowInHelp = false,
+        });
     }
 
     private void OnCommand(string command, string args) => ToggleMainWindow();
@@ -78,6 +84,7 @@ public sealed class Plugin : IDalamudPlugin
     public void Dispose()
     {
         _commandManager.RemoveHandler(CommandName);
+        _commandManager.RemoveHandler(ShortCommandName);
 
         _pluginInterface.UiBuilder.Draw -= _windowSystem.Draw;
         _pluginInterface.UiBuilder.OpenMainUi -= ToggleMainWindow;

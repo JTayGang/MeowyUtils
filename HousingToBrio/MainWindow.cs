@@ -46,7 +46,7 @@ public sealed class MainWindow : Window, IDisposable
         ICommandManager commandManager,
         IClientState clientState,
         IDataManager dataManager)
-        : base("Housing To Brio###housing_to_brio_main", ImGuiWindowFlags.None)
+        : base("Housing To Brio (Use /housingtobrio OR /h2b to open this menu)###housing_to_brio_main", ImGuiWindowFlags.None)
     {
         _plugin = plugin;
         _log = log;

@@ -1,0 +1,28 @@
+<Project Sdk="Dalamud.NET.Sdk/15.0.0">
+  <PropertyGroup>
+    <!--
+      Dalamud.NET.Sdk resolves the Dalamud/ImGui/FFXIVClientStructs/Lumina references automatically
+      from your local Dalamud dev install (DALAMUD_HOME, normally
+      %APPDATA%\XIVLauncher\addon\Hooks\dev) and wires up DalamudPackager for you on build - same
+      as SkyrimCompass and StatusBridge in MeowyUtils, no manual HintPath references needed.
+
+      No explicit <TargetFramework> here on purpose - same reasoning as StatusBridge's csproj: the
+      SDK injects whatever TFM the currently-installed Dalamud build actually targets (net10.0-windows
+      as of Dalamud v15), so this keeps building the next time Dalamud moves to a newer .NET instead
+      of fighting a hardcoded moniker. Add <TargetFramework>net10.0-windows</TargetFramework> back in
+      if your tooling needs it spelled out explicitly.
+    -->
+    <Authors>YourNameHere</Authors>
+    <Company>YourNameHere</Company>
+    <Version>1.0.0.0</Version>
+    <Description>Turns FFXIV's status-effect debuffs into actual screen effects.</Description>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="RealDebuffs.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

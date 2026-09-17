@@ -13,7 +13,10 @@ public class Configuration : IPluginConfiguration
     public bool HideDuringCutscenes { get; set; } = true;
 
     /// <summary>Multiplies every effect's alpha/intensity. 1.0 = as-authored, lower = subtler, higher = more intense.</summary>
-    public float GlobalIntensity { get; set; } = 1.75f;
+    public float GlobalIntensity { get; set; } = MaxIntensity;
+
+    public const float MinIntensity = 0.1f;
+    public const float MaxIntensity = 1.75f;
 
     public bool BlindEnabled { get; set; } = true;
     public bool ParalysisEnabled { get; set; } = true;

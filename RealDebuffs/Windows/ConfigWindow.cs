@@ -30,8 +30,13 @@ public sealed class ConfigWindow : Window
         if (ImGui.Checkbox("Hide during cutscenes", ref hideCutscenes)) { _config.HideDuringCutscenes = hideCutscenes; changed = true; }
 
         float intensity = _config.GlobalIntensity;
+        float percent = (intensity - Configuration.MinIntensity) / (Configuration.MaxIntensity - Configuration.MinIntensity) * 100f;
         ImGui.SetNextItemWidth(220);
-        if (ImGui.SliderFloat("Overall intensity", ref intensity, 0.1f, 1.75f, "%.2f")) { _config.GlobalIntensity = intensity; changed = true; }
+        if (ImGui.SliderFloat("Overall intensity", ref percent, 0f, 100f, "%.0f%%"))
+        {
+            _config.GlobalIntensity = Configuration.MinIntensity + (percent / 100f) * (Configuration.MaxIntensity - Configuration.MinIntensity);
+            changed = true;
+        }
 
         ImGui.Separator();
         ImGui.TextDisabled("Per-debuff effects");

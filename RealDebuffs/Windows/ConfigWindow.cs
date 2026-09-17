@@ -31,7 +31,7 @@ public sealed class ConfigWindow : Window
 
         float intensity = _config.GlobalIntensity;
         ImGui.SetNextItemWidth(220);
-        if (ImGui.SliderFloat("Overall intensity", ref intensity, 0.1f, 1.5f)) { _config.GlobalIntensity = intensity; changed = true; }
+        if (ImGui.SliderFloat("Overall intensity", ref intensity, 0.1f, 1.75f, "%.2f")) { _config.GlobalIntensity = intensity; changed = true; }
 
         ImGui.Separator();
         ImGui.TextDisabled("Per-debuff effects");

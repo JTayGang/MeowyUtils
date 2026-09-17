@@ -58,11 +58,12 @@ internal static class DrawHelpers
         dl.AddRectFilledMultiColor(V(0, 0), V(t, size.Y), edge, clear, clear, edge);                     // left
         dl.AddRectFilledMultiColor(V(size.X - t, 0), V(size.X, size.Y), clear, edge, edge, clear);       // right
 
-        // corners, so they read as solid rather than thinner than the edges
-        dl.AddRectFilled(V(0, 0), V(t, t), edge);
-        dl.AddRectFilled(V(size.X - t, 0), V(size.X, t), edge);
-        dl.AddRectFilled(V(0, size.Y - t), V(t, size.Y), edge);
-        dl.AddRectFilled(V(size.X - t, size.Y - t), V(size.X, size.Y), edge);
+        // Deliberately no separate corner fill: the top/bottom bands above span the FULL width
+        // (not just the gap between the side bands) and the left/right bands span the FULL height,
+        // so every corner is already double-covered by one horizontal + one vertical gradient,
+        // and alpha-composites into a naturally darker corner on its own. An earlier version drew
+        // an extra flat, fully-opaque square in each corner "to be safe" - that's exactly what
+        // caused the hard black squares bug: a flat fill on top of an already-correct gradient.
     }
 
     /// <summary>Text with a soft glow (a handful of low-alpha offset copies) plus a dark contact shadow - reads clearly against any game background/color.</summary>

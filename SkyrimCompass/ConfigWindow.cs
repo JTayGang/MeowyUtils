@@ -348,6 +348,10 @@ public sealed class ConfigWindow : Window
             ImGui.TextDisabled($"Moodles: {(mirror.MoodlesAvailable ? "connected" : "not found")}   Loci: {(mirror.LociAvailable ? "connected" : "not found")}");
             ImGui.TextDisabled($"Mirrored into Loci: {mirror.MirroredIntoLociCount}   Mirrored into Moodles: {mirror.MirroredIntoMoodlesCount}" +
                 (mirror.LockedMirrorCount > 0 ? $"   Locked: {mirror.LockedMirrorCount}" : ""));
+            if (mirror.MoodlesRejectedCount > 0)
+                ImGui.TextColored(new Vector4(1f, 0.55f, 0.25f, 1f),
+                    $"Moodles rejected {mirror.MoodlesRejectedCount} mirrored status(es) - in Moodles' own settings, check " +
+                    "\"Allow other plugins apply Moodles\" and \"Allow applying moodles from everyone\".");
             ImGui.EndDisabled();
         }
 

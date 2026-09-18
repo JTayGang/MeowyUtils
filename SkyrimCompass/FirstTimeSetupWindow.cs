@@ -147,6 +147,7 @@ public sealed class FirstTimeSetupWindow : Window
         ImGui.BulletText("Open the Settings tab.");
 
         DrawSettingLine("Allow other plugins apply Moodles", shouldBeOn: true);
+        DrawSettingLine("Allow applying moodles from everyone", shouldBeOn: true);
         DrawSettingLine("Enable Moodle VFX", shouldBeOn: false);
         DrawSettingLine("Enable Fly/Popup Text", shouldBeOn: false);
     }

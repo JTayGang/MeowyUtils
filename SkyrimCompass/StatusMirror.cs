@@ -283,8 +283,10 @@ public sealed class StatusMirrorEngine : IDisposable
     private Dictionary<System.Guid, MirrorSignature> MirroredIntoLoci => _state.MirroredIntoLoci;
     private Dictionary<System.Guid, MirrorSignature> MirroredIntoMoodles => _state.MirroredIntoMoodles;
     private readonly HashSet<System.Guid> _locked = new();
+    private readonly Dictionary<System.Guid, DateTime> _moodlesRejected = new();
     private readonly Dictionary<System.Guid, DateTime> _recentRemoved = new();
     private const double RemovedGraceSecs = 1;
+    private const double MoodlesRejectRetrySecs = 5.0;
     private readonly HashSet<System.Guid> _supersededMoodleGhosts = new();
     private readonly HashSet<System.Guid> _supersededLociGhosts = new();
     private const float MinReconcileInterval = 0.333f;
@@ -299,6 +301,7 @@ public sealed class StatusMirrorEngine : IDisposable
     public int MirroredIntoLociCount => MirroredIntoLoci.Count;
     public int MirroredIntoMoodlesCount => MirroredIntoMoodles.Count;
     public int LockedMirrorCount => _locked.Count;
+    public int MoodlesRejectedCount => _moodlesRejected.Count;
 
     public StatusMirrorEngine(IDalamudPluginInterface pi, IFramework fw, IObjectTable ot, IPluginLog log, Configuration cfg)
     {
@@ -437,12 +440,16 @@ public sealed class StatusMirrorEngine : IDisposable
     private void SyncLociToMoodles(List<LociStatusInfo> lociList, List<MoodlesStatusInfo> moodlesExisting,
                                    IPlayerCharacter local, bool force)
     {
+        var now = DateTime.UtcNow;
         var allLociGuids = new HashSet<Guid>(lociList.Count);
         var lociDict = new Dictionary<Guid, LociStatusInfo>(lociList.Count);
         foreach (var l in lociList) { allLociGuids.Add(l.GUID); lociDict[l.GUID] = l; }
         var moodleGuids = new HashSet<Guid>(moodlesExisting.Count);
         foreach (var m in moodlesExisting) moodleGuids.Add(m.GUID);
         _supersededLociGhosts.RemoveWhere(g => !allLociGuids.Contains(g));
+        if (_moodlesRejected.Count > 0)
+            foreach (var g in new List<Guid>(_moodlesRejected.Keys))
+                if (!allLociGuids.Contains(g)) _moodlesRejected.Remove(g);
 
         if (force)
         {
@@ -468,8 +475,45 @@ public sealed class StatusMirrorEngine : IDisposable
         {
             var sig = MirrorSignature.FromLoci(l);
             bool already = MirroredIntoMoodles.TryGetValue(l.GUID, out var known);
-            if (already && known == sig && moodleGuids.Contains(l.GUID)) continue;
-            if (!already && moodleGuids.Contains(l.GUID)) { MirroredIntoMoodles[l.GUID] = sig; MarkDirty(); continue; }
+
+            if (already && known == sig && moodleGuids.Contains(l.GUID))
+            {
+                // Confirmed present in Moodles - nothing to do.
+                _moodlesRejected.Remove(l.GUID);
+                continue;
+            }
+
+            if (already && known == sig)
+            {
+                // Recorded as mirrored and the Loci content hasn't changed, but Moodles
+                // still doesn't have it. AddOrUpdateMoodleByDataByPlayerV2 silently no-ops
+                // - logging a warning on Moodles' side and returning - when "Allow other
+                // plugins apply Moodles" is off, its whitelist check rejects our Applier,
+                // or its status manager is Ephemeral. That call is a fire-and-forget Action
+                // that never throws, so the only way to catch this is to check what Moodles
+                // actually holds a pass later, which is what moodleGuids (re-read fresh
+                // every reconcile) gives us here. Stop trusting the false "success" instead
+                // of silently re-recording it forever.
+                MirroredIntoMoodles.Remove(l.GUID);
+                MarkDirty();
+                already = false;
+                if (!_moodlesRejected.ContainsKey(l.GUID))
+                    _log.Warning($"[SkyrimCompass] Moodles rejected mirrored status '{l.Title}' ({l.GUID}) - check 'Allow other plugins apply Moodles' and 'Allow applying moodles from everyone' in Moodles' settings.");
+                _moodlesRejected[l.GUID] = now + TimeSpan.FromSeconds(MoodlesRejectRetrySecs);
+            }
+
+            if (!already && moodleGuids.Contains(l.GUID))
+            {
+                MirroredIntoMoodles[l.GUID] = sig; MarkDirty();
+                _moodlesRejected.Remove(l.GUID);
+                continue;
+            }
+
+            // Back off retrying (and re-logging) a status Moodles is currently rejecting
+            // instead of hammering it every ~333ms; still retries periodically in case the
+            // user fixes their Moodles settings mid-session.
+            if (_moodlesRejected.TryGetValue(l.GUID, out var retryAt) && now < retryAt) continue;
+
             if (!already)
             {
                 foreach (var kv in MirroredIntoMoodles)

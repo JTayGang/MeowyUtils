@@ -77,11 +77,11 @@
   "project": {
     "version": "2.0.2",
     "restore": {
-      "projectUniqueName": "C:\\Users\\Justi\\Downloads\\SkyrimCompass\\SkyrimCompass.csproj",
+      "projectUniqueName": "C:\\Users\\Justi\\Downloads\\MeowyUtils-main\\MeowyUtils-main\\SkyrimCompass\\SkyrimCompass.csproj",
       "projectName": "SkyrimCompass",
-      "projectPath": "C:\\Users\\Justi\\Downloads\\SkyrimCompass\\SkyrimCompass.csproj",
+      "projectPath": "C:\\Users\\Justi\\Downloads\\MeowyUtils-main\\MeowyUtils-main\\SkyrimCompass\\SkyrimCompass.csproj",
       "packagesPath": "C:\\Users\\Justi\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\Justi\\Downloads\\SkyrimCompass\\obj\\",
+      "outputPath": "C:\\Users\\Justi\\Downloads\\MeowyUtils-main\\MeowyUtils-main\\SkyrimCompass\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "C:\\Users\\Justi\\AppData\\Roaming\\NuGet\\NuGet.Config"

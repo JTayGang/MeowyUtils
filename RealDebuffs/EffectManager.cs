@@ -132,4 +132,32 @@ public sealed class EffectManager
         if (MathF.Abs(target - current) <= maxDelta) return target;
         return current + MathF.Sign(target - current) * maxDelta;
     }
+
+    /// <summary>
+    /// Backs the /realdebuffs statuses command: logs every status currently on the local player,
+    /// its real name, and whether RealDebuffs maps it to an effect. Point of this is to answer
+    /// "is the debuff I'm looking at actually being detected, under what name" directly instead of
+    /// guessing from the visual result alone.
+    /// </summary>
+    public void LogCurrentStatuses()
+    {
+        var player = _objectTable.LocalPlayer;
+        if (player == null)
+        {
+            _log.Information("RealDebuffs: no local player right now (not logged in / zoning?).");
+            return;
+        }
+
+        var lines = new List<string>();
+        foreach (var status in player.StatusList)
+        {
+            if (status.StatusId == 0) continue;
+            var mapped = _catalog.TryGetKind(status.StatusId, out var kind) ? kind.ToString() : "unmapped";
+            lines.Add($"  #{status.StatusId} \"{_catalog.GetName(status.StatusId)}\" -> {mapped}");
+        }
+
+        _log.Information(lines.Count == 0
+            ? "RealDebuffs: no active statuses on the local player right now."
+            : $"RealDebuffs: {lines.Count} active status(es):\n{string.Join("\n", lines)}");
+    }
 }

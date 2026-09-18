@@ -47,7 +47,7 @@ public sealed class Plugin : IDalamudPlugin
 
         _cmd.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Opens Real Debuffs settings. '/realdebuffs toggle' to quickly enable/disable everything.",
+            HelpMessage = "Opens Real Debuffs settings. '/realdebuffs toggle' to enable/disable everything, '/realdebuffs statuses' to log your current statuses for troubleshooting.",
         });
 
         _pi.UiBuilder.Draw += OnDraw;
@@ -72,6 +72,9 @@ public sealed class Plugin : IDalamudPlugin
             case "toggle":
                 _config.Enabled = !_config.Enabled;
                 SaveConfig();
+                break;
+            case "statuses":
+                _effects.LogCurrentStatuses();
                 break;
             default:
                 _configWindow.IsOpen = !_configWindow.IsOpen;

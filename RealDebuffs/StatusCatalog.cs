@@ -39,6 +39,7 @@ public sealed class StatusCatalog
     };
 
     private readonly Dictionary<uint, DebuffKind> _idToKind = new();
+    private readonly Dictionary<uint, string> _idToName = new();
     private readonly IPluginLog _log;
 
     public StatusCatalog(IDataManager dataManager, IPluginLog log)
@@ -56,6 +57,7 @@ public sealed class StatusCatalog
         {
             var name = row.Name.ToString();
             if (string.IsNullOrEmpty(name)) continue;
+            _idToName[row.RowId] = name;
             if (NameMap.TryGetValue(name, out var kind))
                 _idToKind[row.RowId] = kind;
         }
@@ -74,4 +76,7 @@ public sealed class StatusCatalog
     }
 
     public bool TryGetKind(uint statusId, out DebuffKind kind) => _idToKind.TryGetValue(statusId, out kind);
+
+    /// <summary>Human-readable name for any status ID the sheet knows about, for the /realdebuffs statuses diagnostic. Falls back to the raw ID if the sheet lookup ever comes up empty.</summary>
+    public string GetName(uint statusId) => _idToName.TryGetValue(statusId, out var name) ? name : $"#{statusId}";
 }

@@ -66,16 +66,21 @@ internal static class DrawHelpers
         // caused the hard black squares bug: a flat fill on top of an already-correct gradient.
     }
 
-    /// <summary>Text with a soft glow (a handful of low-alpha offset copies) plus a dark contact shadow - reads clearly against any game background/color.</summary>
+    /// <summary>Text with a soft glow (two layers of offset copies, a wide soft haze plus a tighter bright halo) plus a dark contact shadow - reads clearly against any game background/color.</summary>
     public static void DrawGlowText(ImDrawListPtr dl, Vector2 pos, string text, uint color, float size, float glow = 1f)
     {
         var font = ImGui.GetFont();
         if (glow > 0f)
         {
-            uint glowCol = WithAlpha(color, 0.35f * glow);
-            float o = size * 0.08f;
+            uint outerCol = WithAlpha(color, 0.18f * glow);
+            float outerOffset = size * 0.22f;
             foreach (var (dx, dy) in GlowOffsets)
-                dl.AddText(font, size, V(pos.X + dx * o, pos.Y + dy * o), glowCol, text);
+                dl.AddText(font, size, V(pos.X + dx * outerOffset, pos.Y + dy * outerOffset), outerCol, text);
+
+            uint innerCol = WithAlpha(color, 0.4f * glow);
+            float innerOffset = size * 0.1f;
+            foreach (var (dx, dy) in GlowOffsets)
+                dl.AddText(font, size, V(pos.X + dx * innerOffset, pos.Y + dy * innerOffset), innerCol, text);
         }
 
         dl.AddText(font, size, V(pos.X + 1f, pos.Y + 1f), WithAlpha(0xFF000000, 0.6f), text);

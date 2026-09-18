@@ -77,13 +77,13 @@ internal sealed class EdgeParticleField
     }
 
     /// <summary>Convenience renderer for glyph-based particles (used by Silence and Sleep). Effects that need a custom shape (Poison's drips) should iterate the indexer instead.</summary>
-    public void DrawGlyphs(ImDrawListPtr dl, float time, uint color, float alpha)
+    public void DrawGlyphs(ImDrawListPtr dl, float time, uint color, float alpha, float glow = 1f)
     {
         for (int i = 0; i < _count; i++)
         {
             ref readonly var p = ref _pool[i];
             float fade = FadeFor((time - p.Born) / p.Lifespan);
-            DrawHelpers.DrawGlowText(dl, p.Pos, p.Glyph, DrawHelpers.WithAlpha(color, alpha * fade), p.Size);
+            DrawHelpers.DrawGlowText(dl, p.Pos, p.Glyph, DrawHelpers.WithAlpha(color, alpha * fade), p.Size, glow);
         }
     }
 }

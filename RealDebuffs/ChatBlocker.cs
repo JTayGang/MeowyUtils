@@ -3,38 +3,42 @@ using Dalamud.Hooking;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.System.String;
 using FFXIVClientStructs.FFXIV.Client.UI;
+using FFXIVClientStructs.FFXIV.Component.Shell;
 
 namespace RealDebuffs;
 
 /// <summary>
 /// Optional, OFF BY DEFAULT (see Configuration.SilenceBlocksChat): actually stops outgoing chat
-/// while Silenced, instead of only showing SilenceEffect's visual. Works by hooking the game's own
-/// chat-submit function - <c>UIModule.ProcessChatBoxEntry</c> - and swallowing the call while
-/// silenced instead of forwarding it to the game. This is the exact same native function every
-/// "send chat from code" helper calls INTO (see e.g. ECommons' Automation/Chat.cs or ChatTwo's
-/// GameFunctions/ChatBox.cs); here we intercept calls the other direction, when the *game* invokes
-/// it because the player pressed Enter with text in the chat box.
+/// while Silenced, instead of only showing SilenceEffect's visual. Works by hooking
+/// <c>ShellCommandModule</c>'s chat-input processor - the function that runs right after the
+/// player presses Enter in the chat box, before the typed text is evaluated as a command or sent
+/// as a message - and swallowing the call while silenced instead of forwarding it.
+///
+/// CORRECTED: an earlier version of this hooked <c>UIModule.ProcessChatBoxEntry</c> instead (the
+/// same function ECommons' Automation/Chat.cs and similar "send chat from code" helpers call
+/// *into* to inject a message programmatically). That function is real and that hook resolved
+/// fine, but it turns out not to be the function the game itself calls when a player actually
+/// types and hits Enter - hooking it silently intercepted nothing, which is why chat kept working
+/// with the block "on". Retargeted against Project GagSpeak's client
+/// (github.com/Project-GagSpeak/client), whose chat garbler needs exactly this same interception
+/// point and confirms it works against real keyboard input:
+/// GameInternals/Detours/Static/StaticDetours.ChatInput.cs and GameInternals/Signatures.cs.
 ///
 /// ADVANCED / here be dragons: this hooks a raw byte-pattern signature into the game's own code -
 /// a completely normal technique for Dalamud plugins, but like ANY signature hook it can stop
-/// resolving after a game patch until someone re-derives the new bytes. The signature below is
-/// copied directly from FFXIVClientStructs' UIModule.cs (github.com/aers/FFXIVClientStructs) as of
-/// this writing, since that project tracks game patches closely and is the same source ECommons
-/// and ChatTwo build on - re-check that file first if this ever needs updating.
-///
-/// This class fails safe: if the signature doesn't resolve (e.g. after an unpatched game update),
-/// the constructor logs a warning once and leaves the hook null - every visual effect in the
-/// plugin, including SilenceEffect itself, keeps working completely normally regardless.
+/// resolving after a game patch until someone re-derives the new bytes. This class fails safe: if
+/// the signature doesn't resolve, the constructor logs a warning once and leaves the hook null -
+/// every visual effect in the plugin, including SilenceEffect itself, is unaffected either way.
 /// </summary>
 public sealed unsafe class ChatBlocker : IDisposable
 {
-    private const string ProcessChatBoxEntrySignature =
-        "48 89 5C 24 ?? 48 89 74 24 ?? 57 48 83 EC 20 48 8B F2 48 8B F9 45 84 C9";
+    // Credit: Project GagSpeak (github.com/Project-GagSpeak/client), GameInternals/Signatures.cs.
+    private const string ProcessChatInputSignature = "E8 ?? ?? ?? ?? FE 87 ?? ?? ?? ?? C7 87";
 
-    private delegate void ProcessChatBoxEntryDelegate(UIModule* self, Utf8String* message, nint a4, byte saveToHistory);
+    private delegate void ProcessChatInputDelegate(ShellCommandModule* self, Utf8String* message, UIModule* uiModule);
 
     private readonly IPluginLog _log;
-    private readonly Hook<ProcessChatBoxEntryDelegate>? _hook;
+    private readonly Hook<ProcessChatInputDelegate>? _hook;
     private volatile bool _silenced;
 
     public ChatBlocker(IGameInteropProvider hooks, IPluginLog log)
@@ -43,18 +47,14 @@ public sealed unsafe class ChatBlocker : IDisposable
 
         try
         {
-            _hook = hooks.HookFromSignature<ProcessChatBoxEntryDelegate>(ProcessChatBoxEntrySignature, Detour);
+            _hook = hooks.HookFromSignature<ProcessChatInputDelegate>(ProcessChatInputSignature, Detour);
             _hook.Enable();
         }
         catch (Exception ex)
         {
-            // If IGameInteropProvider.HookFromSignature isn't the exact method name on your
-            // installed Dalamud version, ECommons' DalamudServices/Legacy/SignatureHelper.cs shows
-            // the equivalent attribute-based pattern ([Signature(...)] field + InitializeFromAttributes)
-            // as a drop-in alternative - same signature string, different wiring.
-            _log.Warning(ex, "RealDebuffs: couldn't hook the chat-send function (game may have updated, " +
-                              "or the hook API shape changed). The hard chat-block option will stay a " +
-                              "no-op; every visual effect, including Silence's, is unaffected.");
+            _log.Warning(ex, "RealDebuffs: couldn't hook the chat-input function (game may have updated). " +
+                              "The hard chat-block option will stay a no-op; every visual effect, " +
+                              "including Silence's, is unaffected.");
             _hook = null;
         }
     }
@@ -62,7 +62,7 @@ public sealed unsafe class ChatBlocker : IDisposable
     /// <summary>Whether outgoing chat should currently be swallowed. Set every frame from EffectManager based on config + active statuses.</summary>
     public void SetSilenced(bool silenced) => _silenced = silenced;
 
-    private void Detour(UIModule* self, Utf8String* message, nint a4, byte saveToHistory)
+    private void Detour(ShellCommandModule* self, Utf8String* message, UIModule* uiModule)
     {
         if (_silenced)
         {
@@ -73,7 +73,7 @@ public sealed unsafe class ChatBlocker : IDisposable
             return;
         }
 
-        _hook!.Original(self, message, a4, saveToHistory);
+        _hook!.Original(self, message, uiModule);
     }
 
     public void Dispose()

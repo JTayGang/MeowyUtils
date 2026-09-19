@@ -485,15 +485,6 @@ public sealed class StatusMirrorEngine : IDisposable
 
             if (already && known == sig)
             {
-                // Recorded as mirrored and the Loci content hasn't changed, but Moodles
-                // still doesn't have it. AddOrUpdateMoodleByDataByPlayerV2 silently no-ops
-                // - logging a warning on Moodles' side and returning - when "Allow other
-                // plugins apply Moodles" is off, its whitelist check rejects our Applier,
-                // or its status manager is Ephemeral. That call is a fire-and-forget Action
-                // that never throws, so the only way to catch this is to check what Moodles
-                // actually holds a pass later, which is what moodleGuids (re-read fresh
-                // every reconcile) gives us here. Stop trusting the false "success" instead
-                // of silently re-recording it forever.
                 MirroredIntoMoodles.Remove(l.GUID);
                 MarkDirty();
                 already = false;
@@ -509,9 +500,6 @@ public sealed class StatusMirrorEngine : IDisposable
                 continue;
             }
 
-            // Back off retrying (and re-logging) a status Moodles is currently rejecting
-            // instead of hammering it every ~333ms; still retries periodically in case the
-            // user fixes their Moodles settings mid-session.
             if (_moodlesRejected.TryGetValue(l.GUID, out var retryAt) && now < retryAt) continue;
 
             if (!already)

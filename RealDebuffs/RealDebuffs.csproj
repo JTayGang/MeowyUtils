@@ -12,10 +12,10 @@
       of fighting a hardcoded moniker. Add <TargetFramework>net10.0-windows</TargetFramework> back in
       if your tooling needs it spelled out explicitly.
     -->
-    <Authors>YourNameHere</Authors>
-    <Company>YourNameHere</Company>
+    <Authors>Meowmeowmeow Cat</Authors>
+    <Company>Meowmeowmeow Cat</Company>
     <Version>1.0.0.0</Version>
-    <Description>Turns FFXIV's status-effect debuffs into actual screen effects.</Description>
+    <Description>Turns FFXIV's debuffs into actual screen effects.</Description>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>

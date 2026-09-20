@@ -10,9 +10,9 @@
 using System;
 using System.Reflection;
 
-[assembly: System.Reflection.AssemblyCompanyAttribute("YourNameHere")]
+[assembly: System.Reflection.AssemblyCompanyAttribute("Meowmeowmeow Cat")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
-[assembly: System.Reflection.AssemblyDescriptionAttribute("Turns FFXIV\'s status-effect debuffs into actual screen effects.")]
+[assembly: System.Reflection.AssemblyDescriptionAttribute("Turns FFXIV\'s debuffs into actual screen effects.")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
 [assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0.0")]
 [assembly: System.Reflection.AssemblyProductAttribute("RealDebuffs")]

@@ -1,8 +1,8 @@
 {
-    "Author": "YourNameHere",
+    "Author": "Meowmeowmeow Cat",
     "Name": "Real Debuffs",
     "Punchline": "Blind actually blinds you. Paralysis actually crackles. Silence actually shuts you up.",
-    "Description": "Adds real, resolution-independent screen effects for FFXIV's status debuffs: the screen darkens when you're Blind, electricity crawls the screen edges when you're Paralyzed, purple glyphs swarm the edges (with an optional hard chat block) when you're Silenced, and more for Stun, Sleep, Poison, Bind, Heavy, and Petrification. Effects stack and layer in a fixed, consistent order, and fade in/out smoothly instead of popping. Commands: /realdebuffs (opens settings), /realdebuffs toggle.",
+    "Description": "Adds real screen effects for status debuffs. Effects stack and layer with each other, and fade in/out smoothly. Commands: /realdebuffs (opens settings), /realdebuffs toggle.",
     "Tags": [ "debuff", "immersion", "screen effects", "status", "roleplay" ],
     "InternalName": "RealDebuffs",
     "AssemblyVersion": "1.0.0.0",

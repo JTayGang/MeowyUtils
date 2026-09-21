@@ -16,6 +16,12 @@ namespace RealDebuffs.Effects;
 /// per-segment brightness bias mean only a few arcs are lit at any moment, with real dark gaps
 /// between them that drift around the ring. That's what reads as lightning rather than a glowing
 /// outline.
+///
+/// On top of that steady hum, the first instant after the debuff lands gets its own moment: the
+/// whole cage flashes brighter, one markedly bigger "trunk" bolt strikes in from the perimeter,
+/// and a thin shockwave ring races outward from the centre - the difference between "you're being
+/// zapped" and "you just got zapped". A scatter of short-lived sparks flung off the cage (see
+/// EdgeParticleField) adds depth the same way Silence's drifting runes or Sleep's Zs do.
 /// </summary>
 public sealed class ParalysisEffect : IScreenEffect
 {
@@ -52,6 +58,12 @@ public sealed class ParalysisEffect : IScreenEffect
     private const int BranchSteps = 4;
     private const int BoltSteps = 9;
 
+    // ---- the moment of impact: everything below decays with age, not the tick clock ----
+    private const float NewCastGapSeconds = 1.0f; // long enough that an ordinary frame hitch mid-fight never replays the strike
+    private const float StrikeDecaySeconds = 0.22f; // how fast the initial brightness spike fades - a jolt, not a fade
+    private const float StrikeBoost = 1.2f; // steady-state brightness roughly doubles for an instant right as the cage lands
+    private const float ShockRingDuration = 0.5f; // seconds for the shockwave ring to race out and fade
+
     // Cached per-tick geometry: regenerated when the tick or the window size changes, so the
     // expensive hash/trig walk happens ~12x/sec rather than every frame.
     private readonly Vector2[] _perimeter = new Vector2[PerimeterSegments];
@@ -63,13 +75,47 @@ public sealed class ParalysisEffect : IScreenEffect
     private readonly float[] _segBias = new float[PerimeterSegments];
     private bool _biasReady;
 
+    // Cast tracking, exactly like Silence's: a gap since the last Draw call means the debuff was
+    // just (re)applied, so the strike/shockwave/trunk-bolt sequence restarts from age zero.
+    private float _lastDrawTime = -100f;
+    private float _castStart;
+
+    // Cached per frame so the spark spawn delegates below (called by EdgeParticleField, which only
+    // passes a seed) don't need screenSize threaded through as an extra parameter.
+    private Vector2 _screenSize;
+
+    // Sparks flung off the cage - a scatter of short-lived flecks for depth, the same role Silence's
+    // drifting runes or Sleep's Zs play. Custom-drawn circles rather than glyphs (see DrawSparks),
+    // the same way Poison draws its own bubbles.
+    private readonly EdgeParticleField _sparks = new(maxParticles: 24, seedSalt: 0x54A2C5);
+    private readonly Func<int, Vector2> _sparkPos;
+    private readonly Func<int, Vector2> _sparkVel;
+    private readonly Func<int, string> _noGlyph;
+
+    public ParalysisEffect()
+    {
+        _sparkPos = SparkSpawnPos;
+        _sparkVel = SparkSpawnVelocity;
+        _noGlyph = static _ => "";
+    }
+
     public void Draw(ImDrawListPtr dl, Vector2 screenSize, float alpha, float time)
     {
+        // A gap since the last Draw call means the debuff was just (re)applied - EffectManager
+        // stops calling Draw once an effect has fully faded out, so this only fires on a fresh hit.
+        if (time - _lastDrawTime > NewCastGapSeconds) _castStart = time;
+        _lastDrawTime = time;
+        float age = time - _castStart;
+        _screenSize = screenSize;
+
         int tick = (int)(time / JitterInterval);
 
         // Global surge envelope: fast attack, slower echo, low hum underneath. The whole cage
-        // brightens and dims together, like the vanilla paralysis VFX.
-        float a = alpha * Pulse(time);
+        // brightens and dims together, like the vanilla paralysis VFX. On top of that, "strike"
+        // is a sharp one-off spike at age zero - unlike Silence's slow ritual cast-in, a lightning
+        // strike is instant, so there's no build-up, just a jolt that decays into the steady hum.
+        float strike = MathF.Exp(-age / StrikeDecaySeconds);
+        float a = alpha * Pulse(time) * (1f + StrikeBoost * strike);
         if (a <= 0.001f) return;
 
         float shortSide = MathF.Min(screenSize.X, screenSize.Y);
@@ -88,9 +134,26 @@ public sealed class ParalysisEffect : IScreenEffect
             _cachedSize = screenSize;
         }
 
+        // Steady-state layers. These all take the already strike-boosted 'a', so the whole cage
+        // flashes brighter for an instant on a fresh hit with no extra work in any of them.
         DrawPerimeter(dl, a, time, hot, mid, glow, tick);
         DrawHotNodes(dl, a, tick, hot, glow);
         DrawInwardForks(dl, screenSize, shortSide, a, time, hot, mid, glow, tick);
+
+        // One-off moment-of-impact layers. These key off plain 'alpha' and their own age-based
+        // envelope rather than 'a', so they stay crisp instead of also riding the ambient hum.
+        DrawTrunkBolt(dl, screenSize, shortSide, alpha, strike, time, hot, mid, glow);
+        DrawShockRing(dl, screenSize, age, alpha, hot, mid, glow);
+
+        // Sparks flung off the cage - denser for the first instant, then settling to a slow trickle.
+        _sparks.Update(
+            time, ImGui.GetIO().DeltaTime,
+            spawnIntervalMin: strike > 0.3f ? 0.02f : 0.06f, spawnIntervalMax: strike > 0.3f ? 0.06f : 0.16f,
+            spawnPos: _sparkPos, spawnVelocity: _sparkVel,
+            pickGlyph: _noGlyph,
+            lifespanMin: 0.22f, lifespanMax: 0.5f,
+            sizeMin: 2f, sizeMax: 4.5f);
+        DrawSparks(dl, time, a, hot, mid, glow);
     }
 
     // =====================================================================================
@@ -193,9 +256,103 @@ public sealed class ParalysisEffect : IScreenEffect
         }
     }
 
+    // =====================================================================================
+    // The moment of impact: a bigger bolt, a shockwave ring, and a burst of sparks - all keyed
+    // off 'age' (time since this cast started) rather than the tick clock, so they happen once
+    // per hit instead of recurring every reseed.
+    // =====================================================================================
+
+    /// <summary>
+    /// One markedly bigger, brighter bolt right as the debuff lands - the difference between the
+    /// ambient crackle and an actual strike hitting home. Anchored to _castStart rather than the
+    /// regenerate tick, so it's the same strike for its whole (brief) life, not a new one every
+    /// 85ms - though its exact path still re-jitters each tick along with the rest of the cage,
+    /// which reads as the bolt writhing rather than snapping to a new position.
+    /// </summary>
+    private void DrawTrunkBolt(ImDrawListPtr dl, Vector2 screenSize, float shortSide, float alpha, float strike, float time, uint hot, uint mid, uint glow)
+    {
+        if (strike <= 0.03f) return;
+
+        int seed = unchecked((int)(_castStart * 9973f) + 5153);
+        int idx = (int)(DrawHelpers.Hash01(seed) * PerimeterSegments);
+        Vector2 origin = _perimeter[idx];
+
+        var centre = new Vector2(screenSize.X * 0.5f, screenSize.Y * 0.5f);
+        Vector2 toCentre = centre - origin;
+        float baseAng = MathF.Atan2(toCentre.Y, toCentre.X);
+        float ang = baseAng + DrawHelpers.HashRange(seed + 1, -0.3f, 0.3f);
+        Vector2 dir = new(MathF.Cos(ang), MathF.Sin(ang));
+
+        // Much longer than a steady-state fork (0.09-0.22x): this one is meant to read as reaching
+        // deep toward the centre, not just licking in from the edge.
+        float len = shortSide * DrawHelpers.HashRange(seed + 2, 0.55f, 0.85f);
+        DrawBolt(dl, origin, dir, len, seed + 3, alpha * strike * 1.1f, time, hot, mid, glow, widthScale: 1.8f);
+    }
+
+    /// <summary>A thin ring racing outward from screen centre once, right as the cage locks in - the same beat as Silence's lock ripple, sped up to suit an instant zap instead of a slow seal closing.</summary>
+    private void DrawShockRing(ImDrawListPtr dl, Vector2 screenSize, float age, float alpha, uint hot, uint mid, uint glow)
+    {
+        float k = Saturate(age / ShockRingDuration);
+        if (k <= 0f || k >= 1f) return;
+
+        var centre = new Vector2(screenSize.X * 0.5f, screenSize.Y * 0.5f);
+        float maxR = MathF.Max(screenSize.X, screenSize.Y) * 0.7f;
+        float r = maxR * EaseOutCubic(k);
+        float fade = 1f - k;
+        int segs = Math.Clamp((int)(r * 0.03f), 24, 96);
+
+        dl.AddCircle(centre, r, DrawHelpers.WithAlpha(glow, alpha * fade * 0.30f), segs, 16f);
+        dl.AddCircle(centre, r, DrawHelpers.WithAlpha(mid,  alpha * fade * 0.55f), segs, 6f);
+        dl.AddCircle(centre, r, DrawHelpers.WithAlpha(hot,  alpha * fade * 0.85f), segs, 2f);
+    }
+
+    /// <summary>Small glowing flecks flung off the cage - custom-drawn circles rather than glyphs, the same way Poison draws its own bubbles instead of using EdgeParticleField.DrawGlyphs.</summary>
+    private void DrawSparks(ImDrawListPtr dl, float time, float a, uint hot, uint mid, uint glow)
+    {
+        for (int i = 0; i < _sparks.Count; i++)
+        {
+            ref readonly var p = ref _sparks[i];
+            float fade = EdgeParticleField.FadeFor((time - p.Born) / p.Lifespan);
+            float sparkA = a * fade;
+            if (sparkA < 0.002f) continue;
+
+            dl.AddCircleFilled(p.Pos, p.Size * 2.2f, DrawHelpers.WithAlpha(glow, sparkA * 0.35f));
+            dl.AddCircleFilled(p.Pos, p.Size,        DrawHelpers.WithAlpha(mid,  sparkA * 0.70f));
+            dl.AddCircleFilled(p.Pos, p.Size * 0.5f, DrawHelpers.WithAlpha(hot,  sparkA * 0.95f));
+        }
+    }
+
+    // A spark is born at a random point on the CURRENT jittered perimeter (so it visually belongs
+    // to the cage, not a generic screen edge) and flung outward, away from centre, with some
+    // angular spread so they scatter rather than all flying the same way. EdgeParticleField calls
+    // both delegates with the same seed, so they agree on which perimeter point was picked.
+    private Vector2 SparkSpawnPos(int seed)
+    {
+        int idx = (int)(DrawHelpers.Hash01(seed) * PerimeterSegments);
+        return _perimeter[idx];
+    }
+
+    private Vector2 SparkSpawnVelocity(int seed)
+    {
+        int idx = (int)(DrawHelpers.Hash01(seed) * PerimeterSegments);
+        Vector2 p = _perimeter[idx];
+        Vector2 centre = _screenSize * 0.5f;
+        Vector2 outward = p - centre;
+        float len = outward.Length();
+        Vector2 dir = len > 1f ? outward / len : DrawHelpers.V(0f, -1f);
+
+        // seed+1/seed+2 are reserved for Lifespan/Size by EdgeParticleField itself, so this starts at +6.
+        float spread = DrawHelpers.HashRange(seed + 6, -0.6f, 0.6f);
+        float c = MathF.Cos(spread), s = MathF.Sin(spread);
+        Vector2 d2 = new(dir.X * c - dir.Y * s, dir.X * s + dir.Y * c);
+
+        float speed = DrawHelpers.HashRange(seed + 7, 40f, 110f);
+        return d2 * speed;
+    }
+
     private static void DrawBolt(
         ImDrawListPtr dl, Vector2 origin, Vector2 dir, float length, int seed,
-        float alpha, float time, uint hot, uint mid, uint glow)
+        float alpha, float time, uint hot, uint mid, uint glow, float widthScale = 1f)
     {
         Vector2 perp = new(-dir.Y, dir.X);
         Vector2 step = dir * (length / BoltSteps);
@@ -213,16 +370,16 @@ public sealed class ParalysisEffect : IScreenEffect
             float w = s * s;
             float segA = alpha * (0.55f + 0.45f * w);
 
-            dl.AddLine(prev, pos, DrawHelpers.WithAlpha(glow, segA * 0.30f), 9f);
-            dl.AddLine(prev, pos, DrawHelpers.WithAlpha(mid,  segA * 0.65f), 4f);
-            dl.AddLine(prev, pos, DrawHelpers.WithAlpha(hot,  segA * 0.95f), 1.8f);
+            dl.AddLine(prev, pos, DrawHelpers.WithAlpha(glow, segA * 0.30f), 9f * widthScale);
+            dl.AddLine(prev, pos, DrawHelpers.WithAlpha(mid,  segA * 0.65f), 4f * widthScale);
+            dl.AddLine(prev, pos, DrawHelpers.WithAlpha(hot,  segA * 0.95f), 1.8f * widthScale);
 
             // Small chance per segment of a branch shooting off at a steep angle.
             if (i > 1 && i < BoltSteps - 1 && DrawHelpers.Hash01(unchecked(seed + i * 131)) > 0.72f)
             {
                 float bAng = MathF.Atan2(dir.Y, dir.X) + DrawHelpers.HashRange(seed + i, -1.2f, 1.2f);
                 Vector2 bDir = new(MathF.Cos(bAng), MathF.Sin(bAng));
-                DrawShortBranch(dl, pos, bDir, length * 0.35f, segA * 0.8f, unchecked(seed + i * 4099), hot, mid, glow);
+                DrawShortBranch(dl, pos, bDir, length * 0.35f, segA * 0.8f, unchecked(seed + i * 4099), hot, mid, glow, widthScale);
             }
 
             prev = pos;
@@ -231,7 +388,7 @@ public sealed class ParalysisEffect : IScreenEffect
 
     private static void DrawShortBranch(
         ImDrawListPtr dl, Vector2 origin, Vector2 dir, float length, float alpha,
-        int seed, uint hot, uint mid, uint glow)
+        int seed, uint hot, uint mid, uint glow, float widthScale = 1f)
     {
         Vector2 perp = new(-dir.Y, dir.X);
         Vector2 step = dir * (length / BranchSteps);
@@ -243,9 +400,9 @@ public sealed class ParalysisEffect : IScreenEffect
             Vector2 pos = prev + step + perp * j;
             float fade = 1f - (float)i / BranchSteps;
 
-            dl.AddLine(prev, pos, DrawHelpers.WithAlpha(glow, alpha * fade * 0.28f), 6f);
-            dl.AddLine(prev, pos, DrawHelpers.WithAlpha(mid,  alpha * fade * 0.60f), 2.5f);
-            dl.AddLine(prev, pos, DrawHelpers.WithAlpha(hot,  alpha * fade * 0.90f), 1.2f);
+            dl.AddLine(prev, pos, DrawHelpers.WithAlpha(glow, alpha * fade * 0.28f), 6f * widthScale);
+            dl.AddLine(prev, pos, DrawHelpers.WithAlpha(mid,  alpha * fade * 0.60f), 2.5f * widthScale);
+            dl.AddLine(prev, pos, DrawHelpers.WithAlpha(hot,  alpha * fade * 0.90f), 1.2f * widthScale);
 
             prev = pos;
         }
@@ -330,4 +487,8 @@ public sealed class ParalysisEffect : IScreenEffect
     }
 
     private static float Frac(float x) => x - MathF.Floor(x);
+
+    private static float Saturate(float x) => Math.Clamp(x, 0f, 1f);
+
+    private static float EaseOutCubic(float t) { float u = 1f - Saturate(t); return 1f - u * u * u; }
 }

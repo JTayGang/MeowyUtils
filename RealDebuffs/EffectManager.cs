@@ -18,18 +18,20 @@ namespace RealDebuffs;
 public sealed class EffectManager
 {
     /// <summary>
-    /// Fixed draw order = fixed stacking order. Later entries draw on top of earlier ones, so e.g.
-    /// Silence (near the end) always renders over Blind (near the start) - matching "silence on
-    /// top of the blindfold" from the spec. Reorder this list to change layering; add a new
-    /// IScreenEffect instance here (plus a DebuffKind and a StatusCatalog.NameMap entry) to extend.
+    /// Fixed draw order = fixed stacking order. Later entries draw on top of earlier ones. Blind is
+    /// pinned first/bottom because it covers more of the screen than anything else (a near-total
+    /// vignette) - drawn any later it would sit on top of and wash out every other effect. Silence
+    /// stays near the end so it renders over Blind - matching "silence on top of the blindfold"
+    /// from the spec. Reorder this list to change layering; add a new IScreenEffect instance here
+    /// (plus a DebuffKind and a StatusCatalog.NameMap entry) to extend.
     /// </summary>
     private readonly IScreenEffect[] _order =
     {
+        new BlindEffect(),
         new PoisonEffect(),
         new HeavyEffect(),
         new BindEffect(),
         new PetrificationEffect(),
-        new BlindEffect(),
         new SleepEffect(),
         new StunEffect(),
         new ParalysisEffect(),

@@ -4,7 +4,7 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects;
 
-/// <summary>Color drains out and stone cracks spread in from the edges - you're turning to stone. Reuses the same jagged-loop technique as Paralysis's electric arc, but reseeded far less often so it reads as solid fracture lines rather than crackling energy.</summary>
+/// <summary>Color drains out and stone cracks spread in from the edges - you're turning to stone. Uses DrawHelpers' shared jagged-loop primitive, reseeded far less often than a typical crackle so it reads as solid fracture lines rather than crackling energy.</summary>
 public sealed class PetrificationEffect : IScreenEffect
 {
     public DebuffKind Kind => DebuffKind.Petrification;

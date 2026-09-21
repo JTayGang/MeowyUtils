@@ -94,9 +94,9 @@ internal static class DrawHelpers
 
     /// <summary>
     /// Draws a closed jagged loop that follows the screen's border, inset by <paramref name="inset"/>
-    /// and perturbed by up to <paramref name="jaggedness"/> pixels per sample point. This is the
-    /// shared shape behind Paralysis's electric arc and Petrification's cracks - same technique,
-    /// different color/thickness/reseed timing gives two very different-feeling effects.
+    /// and perturbed by up to <paramref name="jaggedness"/> pixels per sample point. Currently used
+    /// by Petrification's cracks; kept here as a reusable primitive for any future effect that wants
+    /// a jagged border loop without building its own perimeter walk.
     /// </summary>
     public static void AddJaggedRectLoop(ImDrawListPtr dl, Vector2 size, float inset, float jaggedness, int seedBase, uint color, float thickness)
     {

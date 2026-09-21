@@ -1,12 +1,3 @@
-C:\Users\Justi\Downloads\RealDebuffs\RealDebuffs\bin\Release\RealDebuffs.json
-C:\Users\Justi\Downloads\RealDebuffs\RealDebuffs\bin\Release\RealDebuffs.deps.json
-C:\Users\Justi\Downloads\RealDebuffs\RealDebuffs\bin\Release\RealDebuffs.dll
-C:\Users\Justi\Downloads\RealDebuffs\RealDebuffs\obj\Release\RealDebuffs.csproj.AssemblyReference.cache
-C:\Users\Justi\Downloads\RealDebuffs\RealDebuffs\obj\Release\RealDebuffs.GeneratedMSBuildEditorConfig.editorconfig
-C:\Users\Justi\Downloads\RealDebuffs\RealDebuffs\obj\Release\RealDebuffs.AssemblyInfoInputs.cache
-C:\Users\Justi\Downloads\RealDebuffs\RealDebuffs\obj\Release\RealDebuffs.AssemblyInfo.cs
-C:\Users\Justi\Downloads\RealDebuffs\RealDebuffs\obj\Release\RealDebuffs.csproj.CoreCompileInputs.cache
-C:\Users\Justi\Downloads\RealDebuffs\RealDebuffs\obj\Release\RealDebuffs.dll
 C:\Users\Justi\Downloads\RealDebuffs\bin\Release\RealDebuffs.json
 C:\Users\Justi\Downloads\RealDebuffs\bin\Release\RealDebuffs.deps.json
 C:\Users\Justi\Downloads\RealDebuffs\bin\Release\RealDebuffs.dll

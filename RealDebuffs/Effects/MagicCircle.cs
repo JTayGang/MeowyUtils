@@ -417,8 +417,8 @@ internal sealed class MagicCircle
 
     private static float EaseOutCubic(float t) { float u = 1f - Saturate(t); return 1f - u * u * u; }
 
-    /// <summary>A slow "lub-dub" throb: two quick bumps, then a long rest.</summary>
-    private static float Heartbeat(float time)
+    /// <summary>A slow "lub-dub" throb: two quick bumps, then a long rest. (Internal so RuneParticles can pulse in time with the seal.)</summary>
+    internal static float Heartbeat(float time)
     {
         const float period = 1.9f;
         float p = (time % period) / period;

@@ -6,26 +6,27 @@ namespace RealDebuffs.Effects;
 
 /// <summary>
 /// A curse seal locks onto you and your words leak out of it as raw magic. A large magic circle
-/// (see <see cref="MagicCircle"/>) closes around the centre of the screen, and purple glyphs drift up
-/// out of the screen edges - plus a few peeled straight off the seal's rune band. Pair with
-/// Configuration.SilenceBlocksChat / ChatBlocker for an actual chat lockout, not just the visual.
+/// (see <see cref="MagicCircle"/>) closes around the centre of the screen, and runes - the seal's own
+/// script - drift up out of the screen edges, plus a few peeled straight off the seal's rune band
+/// (see <see cref="RuneParticles"/>). Pair with Configuration.SilenceBlocksChat / ChatBlocker for an
+/// actual chat lockout, not just the visual.
 /// </summary>
 public sealed class SilenceEffect : IScreenEffect
 {
     public DebuffKind Kind => DebuffKind.Silence;
 
-    // Plain ASCII letters, not exotic Unicode runes - guarantees they render in any font Dalamud
-    // ships, with zero risk of showing up as missing-glyph tofu boxes. (The seal's own runes are
-    // drawn as vector strokes instead - see VectorRunes - so they can rotate around the ring.)
-    private static readonly string[] Glyphs = { "R", "X", "Z", "V", "K", "N", "M", "S", "H", "Y", "Q" };
-
-    // Text is drawn top-left-anchored, so spawn positions need to stay at least a glyph's worth of
-    // pixels away from the true screen edge on every side - otherwise particles born right at the
-    // edge render mostly (or entirely) clipped off-screen, which reads as "nothing shows up" even
-    // though particles genuinely are spawning. FootprintPx comfortably covers the largest glyph
-    // (26px) plus its glow padding.
+    // Particles are centred on their spawn point, so spawn positions need to stay far enough from the true
+    // screen edge on every side that the whole rune fits - otherwise particles born right at the edge
+    // render mostly (or entirely) clipped off-screen, which reads as "nothing shows up" even though
+    // particles genuinely are spawning. FootprintPx comfortably covers the largest rune (34px tall,
+    // tumbling and swaying, plus its halo).
     private const float FootprintPx = 40f;
     private const float EdgeZone = 90f; // how deep into the screen, from each edge, particles can land
+
+    // Rune heights in px (see RuneParticles). Runes are thin strokes, so they read best a little larger
+    // than letters of the same nominal size would.
+    private const float EdgeRuneMin = 22f, EdgeRuneMax = 34f;
+    private const float ShedRuneMin = 20f, ShedRuneMax = 30f;
 
     // ---- the seal ----
     private const float SealRadiusFrac = 0.46f; // outer radius as a fraction of the SHORTER screen side (lower = smaller seal)
@@ -36,6 +37,7 @@ public sealed class SilenceEffect : IScreenEffect
     private readonly EdgeParticleField _shed = new(maxParticles: 10, seedSalt: 0x5E41ED);
 
     private MagicCircle? _seal;
+    private MagicCircle.Palette _palette; // shared by the seal and the floating runes so they always match
     private float _lastDrawTime = -100f;
     private float _castStart;
 
@@ -64,59 +66,57 @@ public sealed class SilenceEffect : IScreenEffect
         _sealCenter = DrawHelpers.V(screenSize.X * 0.5f, screenSize.Y * SealCenterY);
 
         // Built lazily on first draw (not in the constructor) so we never touch ImGui before the game is up.
-        _seal ??= new MagicCircle(
-            new MagicCircle.Palette(
+        if (_seal == null)
+        {
+            _palette = new MagicCircle.Palette(
                 halo: DrawHelpers.ToU32(0.62f, 0.16f, 0.95f, 1f),  // deep violet haze
-                main: DrawHelpers.ToU32(0.95f, 0.32f, 0.88f, 1f),  // the same pink the letters use
-                core: DrawHelpers.ToU32(1.00f, 0.78f, 0.97f, 1f),  // hot highlights
-                ink: DrawHelpers.ToU32(0.13f, 0.02f, 0.24f, 1f)),  // dark under-stroke for contrast on bright scenes
-            seed: 0x5EA1);
+                main: DrawHelpers.ToU32(0.95f, 0.32f, 0.88f, 1f),  // the bright pink of the lines
+                core: DrawHelpers.ToU32(1.00f, 0.78f, 0.97f, 1f),  // hot highlights (spark heads)
+                ink: DrawHelpers.ToU32(0.13f, 0.02f, 0.24f, 1f));  // dark under-stroke for contrast on bright scenes
+            _seal = new MagicCircle(_palette, seed: 0x5EA1);
+        }
         _seal.Draw(dl, _sealCenter, _sealRadius, age, time, alpha);
 
-        // ---- letters drifting up out of the screen edges (unchanged) ----
+        // ---- runes drifting up out of the screen edges ----
         _particles.Update(
             time, ImGui.GetIO().DeltaTime,
-            spawnIntervalMin: 0.2f, spawnIntervalMax: 0.4f,
+            spawnIntervalMin: 0.1f, spawnIntervalMax: 0.2f, // was 0.2-0.4: half the wait = twice as many
             spawnPos: seed => RandomEdgePos(screenSize, seed),
             spawnVelocity: seed => DrawHelpers.V(DrawHelpers.HashRange(seed, -8f, 8f), DrawHelpers.HashRange(seed + 1, -30f, -12f)),
-            pickGlyph: seed => Glyphs[(int)(DrawHelpers.Hash01(seed) * Glyphs.Length) % Glyphs.Length],
+            pickGlyph: static seed => RuneParticles.PickToken(seed),
             lifespanMin: 1.4f, lifespanMax: 2.6f,
-            sizeMin: 16f, sizeMax: 26f);
+            sizeMin: EdgeRuneMin, sizeMax: EdgeRuneMax);
+        RuneParticles.DrawField(dl, _particles, time, _palette, alpha);
 
-        // Bright, glowing pinkish-purple (leans further pink than a flat violet).
-        uint pink = DrawHelpers.ToU32(0.95f, 0.32f, 0.88f, 1f);
-        _particles.DrawGlyphs(dl, time, pink, alpha, glow: 1.6f);
-
-        // ---- letters peeling off the seal's rune band, once it has locked in ----
+        // ---- runes peeling off the seal's rune band, once it has locked in ----
+        // These start oriented outward like the band's own runes (radial: true), then tumble away.
         if (age > 0.9f)
         {
             _shed.Update(
                 time, ImGui.GetIO().DeltaTime,
                 spawnIntervalMin: 0.45f, spawnIntervalMax: 0.9f,
                 spawnPos: _shedPos, spawnVelocity: _shedVel,
-                pickGlyph: static seed => Glyphs[(int)(DrawHelpers.Hash01(seed) * Glyphs.Length) % Glyphs.Length],
+                pickGlyph: static seed => RuneParticles.PickToken(seed),
                 lifespanMin: 1.6f, lifespanMax: 2.4f,
-                sizeMin: 16f, sizeMax: 24f);
-            _shed.DrawGlyphs(dl, time, pink, alpha, glow: 1.4f);
+                sizeMin: ShedRuneMin, sizeMax: ShedRuneMax);
+            RuneParticles.DrawField(dl, _shed, time, _palette, alpha, radial: true, radialCenter: _sealCenter);
         }
     }
 
-    // A shed letter is born on the rune band at a random angle and drifts outward across the bezel.
+    // A shed rune is born on the rune band at a random angle and drifts outward across the bezel.
     // EdgeParticleField calls both delegates with the same seed, so they agree on the angle.
     private Vector2 ShedSpawnPos(int seed)
     {
         float ang = DrawHelpers.HashRange(seed, 0f, MathF.PI * 2f);
-        float r = _sealRadius * DrawHelpers.HashRange(seed + 5, 0.82f, 0.90f);
-        float size = DrawHelpers.HashRange(seed + 2, 16f, 24f); // same range/seed the field uses for this particle's size
-        // text is top-left anchored, so nudge back by roughly half a glyph to centre it on the point
-        return _sealCenter + DrawHelpers.V(MathF.Cos(ang) * r - size * 0.3f, MathF.Sin(ang) * r - size * 0.5f);
+        float r = _sealRadius * DrawHelpers.HashRange(seed + 5, 0.82f, 0.90f); // the band's runes sit at ~0.86 of the radius
+        return _sealCenter + DrawHelpers.V(MathF.Cos(ang) * r, MathF.Sin(ang) * r);
     }
 
     private Vector2 ShedSpawnVelocity(int seed)
     {
         float ang = DrawHelpers.HashRange(seed, 0f, MathF.PI * 2f);
         float speed = DrawHelpers.HashRange(seed + 6, 16f, 30f); // seed+1 is the lifespan's hash; a different offset keeps speed independent of it
-        return DrawHelpers.V(MathF.Cos(ang) * speed, MathF.Sin(ang) * speed - 6f); // slight upward bias, like the edge letters
+        return DrawHelpers.V(MathF.Cos(ang) * speed, MathF.Sin(ang) * speed - 6f); // slight upward bias, like the edge runes
     }
 
     private static Vector2 RandomEdgePos(Vector2 size, int seed)

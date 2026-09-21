@@ -64,6 +64,7 @@ public sealed class ConfigWindow : Window
             "any of the effects above need, so if a game update ever breaks something, this is the " +
             "first setting to try turning off - everything else is unaffected by it.");
 
+        DebugTester.DrawUi(kind => _config.Enabled && _config.IsEnabled(kind)); // TEST-TOOLS: delete this line (and DebugTester.cs) to remove the test panel
         if (changed)
             _save();
     }

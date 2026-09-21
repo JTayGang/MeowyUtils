@@ -108,6 +108,7 @@ public sealed class EffectManager
         foreach (var effect in _order)
         {
             bool active = !suppressed && _config.IsEnabled(effect.Kind) && _activeScratch.Contains(effect.Kind);
+            active |= !suppressed && _config.IsEnabled(effect.Kind) && DebugTester.IsForced(effect.Kind); // TEST-TOOLS: delete this line (and DebugTester.cs) to remove the test panel
             float target = active ? 1f : 0f;
             float rate = active ? FadeInPerSecond : FadeOutPerSecond;
             float current = MoveTowards(_currentAlpha[effect.Kind], target, rate * dt);

@@ -290,15 +290,6 @@ public sealed class StatusMirrorEngine : IDisposable
     private readonly HashSet<System.Guid> _supersededMoodleGhosts = new();
     private readonly HashSet<System.Guid> _supersededLociGhosts = new();
     private const float MinReconcileInterval = 0.6f;
-    // Floor on how often the SAME already-mirrored status can be re-applied. Moodles (and
-    // possibly Loci) fire their "changed" IPC event on any AddOrUpdate call, even one that
-    // writes back identical data, so a status whose signature comparison keeps failing to
-    // match - for whatever reason - could otherwise retrigger that event on every reconcile
-    // pass. That can in turn reset a sync plugin's own debounce for building/uploading
-    // character data, since it typically listens for the same Moodles event. This doesn't
-    // change what ends up mirrored, only how often the SAME status can retrigger downstream
-    // listeners. Kept above 1s so a ~1s-debounced sync plugin gets a real gap to clear in,
-    // even if one status keeps getting rewritten.
     private const double ReapplyCooldownSecs = 1.5;
     private readonly Dictionary<System.Guid, DateTime> _lastAppliedToLoci = new();
     private readonly Dictionary<System.Guid, DateTime> _lastAppliedToMoodles = new();
@@ -334,9 +325,6 @@ public sealed class StatusMirrorEngine : IDisposable
         return false;
     }
 
-    // True if `guid` had a successful TryApply recorded in `lastApplied` within the last
-    // ReapplyCooldownSecs. Used to avoid re-writing an already-mirrored status again right
-    // after we just wrote it - see the comment on ReapplyCooldownSecs above.
     private static bool IsReapplyOnCooldown(Dictionary<System.Guid, DateTime> lastApplied, System.Guid guid, DateTime now)
         => lastApplied.TryGetValue(guid, out var last) && (now - last).TotalSeconds < ReapplyCooldownSecs;
 

@@ -104,14 +104,18 @@ public sealed class EffectManager
             }
         }
 
-        _chatBlocker.SetSilenced(_config.SilenceBlocksChat && _activeScratch.Contains(DebuffKind.Silence));
-
         // Custom Moodles/Loci statuses feed the very same set of active effects as the real debuffs above, so an
         // effect that's already on from either source is never doubled or restarted - it just stays on until the
-        // last thing asking for it goes away. Deliberately AFTER the chat-block line: a custom status only ever
-        // drives the visual, never the hard chat lockout, which stays tied to the real Silence debuff.
+        // last thing asking for it goes away.
+        //
+        // This runs BEFORE the chat-block line below, deliberately: a custom Silence rule now drives the hard
+        // chat lockout too, exactly like a real Silence debuff would, because the block is derived from the
+        // same _activeScratch set that both sources write into. A custom rule for any OTHER effect still only
+        // affects the visual - only Silence has a chat-block consequence.
         if (!suppressed && player != null)
             _customStatuses.Snapshot.AddActiveKinds(_config.CustomStatusRules, _activeScratch);
+
+        _chatBlocker.SetSilenced(_config.SilenceBlocksChat && _activeScratch.Contains(DebuffKind.Silence));
 
         var screenSize = ImGui.GetIO().DisplaySize;
         if (screenSize.X <= 0 || screenSize.Y <= 0) return;

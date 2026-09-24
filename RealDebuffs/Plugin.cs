@@ -16,6 +16,7 @@ public sealed class Plugin : IDalamudPlugin
 
     private readonly Configuration _config;
     private readonly ChatBlocker _chatBlocker;
+    private readonly CustomStatusWatcher _customStatuses;
     private readonly EffectManager _effects;
     private readonly WindowSystem _windowSystem = new("RealDebuffs");
     private readonly ConfigWindow _configWindow;
@@ -24,6 +25,7 @@ public sealed class Plugin : IDalamudPlugin
         IDalamudPluginInterface pluginInterface,
         ICommandManager commandManager,
         IClientState clientState,
+        IFramework framework,
         IObjectTable objectTable,
         IDataManager dataManager,
         ICondition condition,
@@ -39,14 +41,15 @@ public sealed class Plugin : IDalamudPlugin
 
         var catalog = new StatusCatalog(dataManager, log);
         _chatBlocker = new ChatBlocker(hooks, log);
-        _effects = new EffectManager(clientState, objectTable, condition, gameGui, catalog, _config, _chatBlocker, log);
+        _customStatuses = new CustomStatusWatcher(_pi, framework, objectTable, log);
+        _effects = new EffectManager(clientState, objectTable, condition, gameGui, catalog, _config, _chatBlocker, _customStatuses, log);
 
-        _configWindow = new ConfigWindow(_config, SaveConfig);
+        _configWindow = new ConfigWindow(_config, SaveConfig, _customStatuses);
         _windowSystem.AddWindow(_configWindow);
 
         _cmd.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Opens Real Debuffs settings. '/realdebuffs toggle' to enable/disable everything, '/realdebuffs statuses' to log your current statuses for troubleshooting.",
+            HelpMessage = "Opens Real Debuffs settings. '/realdebuffs toggle' to enable/disable everything, '/realdebuffs statuses' to log your current statuses (including custom Moodles/Loci ones) for troubleshooting.",
         });
 
         _pi.UiBuilder.Draw += OnDraw;
@@ -61,6 +64,7 @@ public sealed class Plugin : IDalamudPlugin
         _pi.UiBuilder.OpenConfigUi -= OnOpenConfig;
         _windowSystem.RemoveAllWindows();
         _cmd.RemoveHandler(CommandName);
+        _customStatuses.Dispose();
         _chatBlocker.Dispose();
     }
 

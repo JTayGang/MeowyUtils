@@ -10,7 +10,8 @@ namespace RealDebuffs;
 
 /// <summary>
 /// Reads the local player's active statuses every frame, maps them to <see cref="DebuffKind"/>s
-/// via <see cref="StatusCatalog"/>, and draws every enabled effect in a fixed order - so layering
+/// via <see cref="StatusCatalog"/> (plus any custom Moodles/Loci statuses the user has linked to an
+/// effect, via <see cref="CustomStatusWatcher"/>), and draws every enabled effect in a fixed order - so layering
 /// (which effect renders "on top" of which) is always consistent no matter which combination of
 /// debuffs is currently active. Effects fade in/out smoothly rather than popping on/off, so
 /// gaining or losing a status doesn't cause a jarring instant flip.
@@ -53,11 +54,13 @@ public sealed class EffectManager
     private readonly StatusCatalog _catalog;
     private readonly Configuration _config;
     private readonly ChatBlocker _chatBlocker;
+    private readonly CustomStatusWatcher _customStatuses;
     private readonly IPluginLog _log;
 
     public EffectManager(
         IClientState clientState, IObjectTable objectTable, ICondition condition, IGameGui gameGui,
-        StatusCatalog catalog, Configuration config, ChatBlocker chatBlocker, IPluginLog log)
+        StatusCatalog catalog, Configuration config, ChatBlocker chatBlocker,
+        CustomStatusWatcher customStatuses, IPluginLog log)
     {
         _clientState = clientState;
         _objectTable = objectTable;
@@ -66,6 +69,7 @@ public sealed class EffectManager
         _catalog = catalog;
         _config = config;
         _chatBlocker = chatBlocker;
+        _customStatuses = customStatuses;
         _log = log;
 
         foreach (var effect in _order)
@@ -101,6 +105,13 @@ public sealed class EffectManager
         }
 
         _chatBlocker.SetSilenced(_config.SilenceBlocksChat && _activeScratch.Contains(DebuffKind.Silence));
+
+        // Custom Moodles/Loci statuses feed the very same set of active effects as the real debuffs above, so an
+        // effect that's already on from either source is never doubled or restarted - it just stays on until the
+        // last thing asking for it goes away. Deliberately AFTER the chat-block line: a custom status only ever
+        // drives the visual, never the hard chat lockout, which stays tied to the real Silence debuff.
+        if (!suppressed && player != null)
+            _customStatuses.Snapshot.AddActiveKinds(_config.CustomStatusRules, _activeScratch);
 
         var screenSize = ImGui.GetIO().DisplaySize;
         if (screenSize.X <= 0 || screenSize.Y <= 0) return;
@@ -162,5 +173,43 @@ public sealed class EffectManager
         _log.Information(lines.Count == 0
             ? "RealDebuffs: no active statuses on the local player right now."
             : $"RealDebuffs: {lines.Count} active status(es):\n{string.Join("\n", lines)}");
+
+        LogCustomStatuses();
+    }
+
+    /// <summary>
+    /// The custom (Moodles/Loci) half of /realdebuffs statuses: what the two plugins are reporting
+    /// after name-merging, and which effect(s) each status currently maps to - or "no rule". Answers
+    /// "why isn't my rule firing" directly: either the name isn't in this list (Moodles/Loci aren't
+    /// reporting it, or it's spelled differently) or it is and no rule matches it.
+    /// Reflects the most recent once-a-second read, so it can be up to a second behind.
+    /// </summary>
+    private void LogCustomStatuses()
+    {
+        var sources = $"Moodles: {(_customStatuses.MoodlesAvailable ? "connected" : "not found")}, " +
+                      $"Loci: {(_customStatuses.LociAvailable ? "connected" : "not found")}";
+
+        var statuses = _customStatuses.Snapshot.Statuses;
+        if (statuses.Count == 0)
+        {
+            _log.Information($"RealDebuffs: no custom statuses active ({sources}).");
+            return;
+        }
+
+        var lines = new List<string>();
+        foreach (var status in statuses)
+        {
+            var kinds = new List<string>();
+            foreach (var rule in _config.CustomStatusRules)
+            {
+                var kind = rule.Kind.ToString();
+                if (rule.Enabled && rule.GetKey() == status.Key && !kinds.Contains(kind))
+                    kinds.Add(kind);
+            }
+
+            lines.Add($"  \"{status.Name}\" [{status.Sources}] -> {(kinds.Count == 0 ? "no rule" : string.Join(", ", kinds))}");
+        }
+
+        _log.Information($"RealDebuffs: {lines.Count} custom status(es) active ({sources}):\n{string.Join("\n", lines)}");
     }
 }

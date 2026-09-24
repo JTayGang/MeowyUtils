@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Configuration;
@@ -30,6 +31,13 @@ public class Configuration : IPluginConfiguration
     public bool BindEnabled { get; set; } = true;
     public bool HeavyEnabled { get; set; } = true;
     public bool PetrificationEnabled { get; set; } = true;
+
+    /// <summary>
+    /// "While I have this custom Moodles/Loci status, show this effect" links - see
+    /// <see cref="CustomStatusRule"/>. These add to the real-debuff effects above rather than
+    /// replacing them, and the per-effect toggles above still act as the master switch for each effect.
+    /// </summary>
+    public List<CustomStatusRule> CustomStatusRules { get; set; } = new();
 
     /// <summary>
     /// Advanced/optional and OFF by default: actually stops outgoing chat while Silenced, via a
@@ -84,13 +92,15 @@ public sealed class ConfigWindow : Window
 {
     private readonly Configuration _config;
     private readonly Action _save;
+    private readonly CustomStatusPanel _customStatuses;
 
-    public ConfigWindow(Configuration config, Action save)
+    public ConfigWindow(Configuration config, Action save, CustomStatusWatcher customStatuses)
         : base("Real Debuffs Settings###RealDebuffsConfig")
     {
         _config = config;
         _save = save;
-        Size = new Vector2(430, 560);
+        _customStatuses = new CustomStatusPanel(config, customStatuses);
+        Size = new Vector2(470, 660);
         SizeCondition = ImGuiCond.FirstUseEver;
     }
 
@@ -126,6 +136,9 @@ public sealed class ConfigWindow : Window
         changed |= EffectToggle(DebuffKind.Bind, "Bind", "Roots creep up from the bottom of the screen.");
         changed |= EffectToggle(DebuffKind.Heavy, "Heavy", "A heavy dark pull with a dragging chain at the bottom of the screen.");
         changed |= EffectToggle(DebuffKind.Petrification, "Petrification", "Color drains out and stone cracks spread in from the edges.");
+
+        ImGui.Separator();
+        changed |= _customStatuses.Draw();
 
         ImGui.Separator();
         ImGui.TextDisabled("Advanced");

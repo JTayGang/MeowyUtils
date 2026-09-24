@@ -11,34 +11,51 @@ namespace RealDebuffs.Effects;
 /// Bright hairline fractures radiate inward, and small faceted crystal chips drift near the border.
 ///
 /// Strictly monochrome: every color in the palette has R == G == B (or within a hair of it), and
-/// the darkening tint is a neutral dark gray rather than a cool one. Earlier versions pushed blue
-/// above red and green across the whole palette, which read as a blue cast over the entire screen.
+/// the darkening tint is a neutral dark gray rather than a cool one.
+///
+/// Cast-in: on every fresh application the whole crust ASSEMBLES. Each plate, fracture and shard
+/// has its own delay; once its delay passes, it flies in from outside the screen along a direction
+/// perpendicular to the edge it belongs to, decelerates with an aggressive ease-out, and snaps
+/// into its final position and rotation. Base plates land first, detail plates mid-way through,
+/// then shards, with fractures revealing progressively from the crust inward as the assembly
+/// finishes. No landing flash - the pieces just shift into place.
 /// </summary>
 public sealed class PetrificationEffect : IScreenEffect
 {
     public DebuffKind Kind => DebuffKind.Petrification;
 
     // ---- palette: strictly neutral grayscale ----
-    // Every entry below is chosen so R, G, B are equal (or differ by <= 0.004, which is
-    // invisible). Nothing here should read as "cool" or "warm" - the reference is neutral stone.
-    private static readonly uint StoneDeep  = DrawHelpers.ToU32(0.007f, 0.007f, 0.008f, 1f); // deepest crevice plate
-    private static readonly uint StoneBody  = DrawHelpers.ToU32(0.042f, 0.042f, 0.045f, 1f); // typical plate body
-    private static readonly uint StoneMid   = DrawHelpers.ToU32(0.120f, 0.120f, 0.125f, 1f); // plate catching the light
-    private static readonly uint StoneLit   = DrawHelpers.ToU32(0.250f, 0.250f, 0.258f, 1f); // brightest plate face
-    private static readonly uint StoneRim   = DrawHelpers.ToU32(0.740f, 0.740f, 0.748f, 1f); // lit plate edge
-    private static readonly uint StoneRimHi = DrawHelpers.ToU32(0.970f, 0.970f, 0.975f, 1f); // hottest glint on rims
-    private static readonly uint CrackGlint = DrawHelpers.ToU32(0.870f, 0.870f, 0.878f, 1f); // hairline cracks
-    private static readonly uint CrackDark  = DrawHelpers.ToU32(0.000f, 0.000f, 0.000f, 1f); // crack shadow under-stroke
-    private static readonly uint ShardBody  = DrawHelpers.ToU32(0.145f, 0.145f, 0.150f, 1f); // shard facet dark
-    private static readonly uint ShardLit   = DrawHelpers.ToU32(0.520f, 0.520f, 0.528f, 1f); // shard facet lit
-    private static readonly uint ShardEdge  = DrawHelpers.ToU32(0.970f, 0.970f, 0.975f, 1f); // shard bright edge
+    private static readonly uint StoneDeep  = DrawHelpers.ToU32(0.007f, 0.007f, 0.008f, 1f);
+    private static readonly uint StoneBody  = DrawHelpers.ToU32(0.042f, 0.042f, 0.045f, 1f);
+    private static readonly uint StoneMid   = DrawHelpers.ToU32(0.120f, 0.120f, 0.125f, 1f);
+    private static readonly uint StoneLit   = DrawHelpers.ToU32(0.250f, 0.250f, 0.258f, 1f);
+    private static readonly uint StoneRim   = DrawHelpers.ToU32(0.740f, 0.740f, 0.748f, 1f);
+    private static readonly uint StoneRimHi = DrawHelpers.ToU32(0.970f, 0.970f, 0.975f, 1f);
+    private static readonly uint CrackGlint = DrawHelpers.ToU32(0.870f, 0.870f, 0.878f, 1f);
+    private static readonly uint CrackDark  = DrawHelpers.ToU32(0.000f, 0.000f, 0.000f, 1f);
+    private static readonly uint ShardBody  = DrawHelpers.ToU32(0.145f, 0.145f, 0.150f, 1f);
+    private static readonly uint ShardLit   = DrawHelpers.ToU32(0.520f, 0.520f, 0.528f, 1f);
+    private static readonly uint ShardEdge  = DrawHelpers.ToU32(0.970f, 0.970f, 0.975f, 1f);
 
-    // Darkening tint - neutral dark gray, not the old bluish one. This is the single biggest
-    // contributor to the cast, because it covers the entire screen and multiplies every plate.
-    private static readonly uint DarkTint   = DrawHelpers.ToU32(0.030f, 0.030f, 0.032f, 1f);
+    private static readonly uint DarkTint = DrawHelpers.ToU32(0.030f, 0.030f, 0.032f, 1f);
 
-    // Implied light direction (from upper-left), used to pick which plate edges get highlighted.
     private static readonly Vector2 LightDir = Vector2.Normalize(new Vector2(-0.7f, -0.7f));
+
+    // =====================================================================================
+    // Cast-in timing (matches the other screen effects: ~1.0s gap detection, ~1.1s total)
+    // =====================================================================================
+    private const float NewCastGapSeconds = 1.0f;  // gap since last Draw that means a fresh application
+    private const float FlightSeconds     = 0.30f; // time a single plate spends flying in
+    private const float FractureRevealSeconds = 0.25f;
+
+    private float _lastDrawTime = -100f;
+    private float _castStart;
+
+    // Per-layer delay ranges - base plates land first, details next, shards settle in last.
+    private const float BaseDelayMax     = 0.55f;
+    private const float DetailDelayMax   = 0.65f;
+    private const float ShardDelayMax    = 0.80f;
+    private const float FractureDelayMax = 0.75f;
 
     // =====================================================================================
     // Crust
@@ -56,10 +73,8 @@ public sealed class PetrificationEffect : IScreenEffect
     private const float DetailRadiusMin = 0.011f;
     private const float DetailRadiusMax = 0.050f;
 
-    // Corner weight: plates placed closer to a screen corner sit deeper, so the four corners
-    // build up a thicker crust than the middle of each edge.
-    private const float CornerBoostMax = 0.75f;  // up to +75% depth at the very corner
-    private const float DepthHardCap   = 0.230f; // never place a plate deeper than this fraction
+    private const float CornerBoostMax = 0.75f;
+    private const float DepthHardCap   = 0.230f;
 
     private struct Plate
     {
@@ -128,7 +143,7 @@ public sealed class PetrificationEffect : IScreenEffect
             float along = DrawHelpers.HashRange(s + 1, -0.10f, 1.10f);
 
             float t = DrawHelpers.Hash01(s + 2);
-            t *= t; // bias toward the outer edge so the rim is the densest part of the crust
+            t *= t;
             float cornerT = MathF.Abs(along - 0.5f) * 2f;
             float cornerBoost = 1f + CornerBoostMax * cornerT * cornerT;
 
@@ -142,7 +157,7 @@ public sealed class PetrificationEffect : IScreenEffect
                 Depth    = depth,
                 Radius   = DrawHelpers.HashRange(s + 3, BaseRadiusMin, BaseRadiusMax),
                 Rotation = DrawHelpers.HashRange(s + 4, 0f, MathF.PI * 2f),
-                Verts    = 4 + (int)(DrawHelpers.Hash01(s + 5) * 3f), // 4..6: angular, not round
+                Verts    = 4 + (int)(DrawHelpers.Hash01(s + 5) * 3f),
                 Seed     = s + 7,
                 Alpha    = DrawHelpers.HashRange(s + 6, 0.94f, 1.00f),
                 ToneBias = DrawHelpers.HashRange(s + 8, 0f, 1f),
@@ -170,7 +185,7 @@ public sealed class PetrificationEffect : IScreenEffect
                 Depth    = depth,
                 Radius   = DrawHelpers.HashRange(s + 3, DetailRadiusMin, DetailRadiusMax),
                 Rotation = DrawHelpers.HashRange(s + 4, 0f, MathF.PI * 2f),
-                Verts    = 3 + (int)(DrawHelpers.Hash01(s + 5) * 3f), // 3..5: small sharp chips
+                Verts    = 3 + (int)(DrawHelpers.Hash01(s + 5) * 3f),
                 Seed     = s + 7,
                 Alpha    = DrawHelpers.HashRange(s + 6, 0.75f, 0.98f),
                 ToneBias = DrawHelpers.HashRange(s + 8, 0f, 1f),
@@ -221,6 +236,12 @@ public sealed class PetrificationEffect : IScreenEffect
 
     public void Draw(ImDrawListPtr dl, Vector2 screenSize, float alpha, float time)
     {
+        // EffectManager stops calling Draw once the effect has fully faded out, so a gap since the
+        // last call means the debuff was just (re)applied: restart the cast-in from age zero.
+        if (time - _lastDrawTime > NewCastGapSeconds) _castStart = time;
+        _lastDrawTime = time;
+        float age = time - _castStart;
+
         float shortSide = MathF.Min(screenSize.X, screenSize.Y);
         float breathe = 0.95f + 0.05f * DrawHelpers.Pulse(time, 4.2f);
 
@@ -230,14 +251,14 @@ public sealed class PetrificationEffect : IScreenEffect
         DrawHelpers.DrawVignette(dl, screenSize, DarkTint, 0.36f, alpha * 0.55f);
 
         // ---- 2) crust (base layer, then detail layer on top) ----
-        DrawPlateLayer(dl, screenSize, shortSide, alpha, time, breathe, _basePlates,   baseLayer: true);
-        DrawPlateLayer(dl, screenSize, shortSide, alpha, time, breathe, _detailPlates, baseLayer: false);
+        DrawPlateLayer(dl, screenSize, shortSide, alpha, time, age, breathe, _basePlates,   baseLayer: true);
+        DrawPlateLayer(dl, screenSize, shortSide, alpha, time, age, breathe, _detailPlates, baseLayer: false);
 
         // ---- 3) fractures ----
-        DrawFractures(dl, screenSize, shortSide, alpha);
+        DrawFractures(dl, screenSize, shortSide, alpha, age);
 
         // ---- 4) floating crystal shards ----
-        DrawShards(dl, screenSize, shortSide, alpha, time);
+        DrawShards(dl, screenSize, shortSide, alpha, time, age);
     }
 
     // =====================================================================================
@@ -245,8 +266,8 @@ public sealed class PetrificationEffect : IScreenEffect
     // =====================================================================================
 
     private void DrawPlateLayer(
-        ImDrawListPtr dl, Vector2 screenSize, float shortSide, float alpha, float time, float breathe,
-        Plate[] plates, bool baseLayer)
+        ImDrawListPtr dl, Vector2 screenSize, float shortSide, float alpha, float time, float age,
+        float breathe, Plate[] plates, bool baseLayer)
     {
         Span<Vector2> pts = stackalloc Vector2[8];
         Span<Vector2> normals = stackalloc Vector2[8];
@@ -255,12 +276,47 @@ public sealed class PetrificationEffect : IScreenEffect
         float rimBase  = baseLayer ? 0.90f : 1.00f;
         uint  rimCol   = baseLayer ? StoneRim : StoneRimHi;
         float rimWidth = baseLayer ? 2.2f : 1.6f;
+        float delayMax = baseLayer ? BaseDelayMax : DetailDelayMax;
 
         for (int i = 0; i < plates.Length; i++)
         {
             ref readonly var p = ref plates[i];
 
-            Vector2 center = EdgePoint(screenSize, shortSide, p.Edge, p.Along, p.Depth);
+            // Per-plate delay and flight parameters, hashed from the seed so they are stable
+            // across frames (no extra fields needed on the struct).
+            float delay      = DrawHelpers.HashRange(p.Seed + 200, 0f, delayMax);
+            float localAge   = age - delay;
+            if (localAge <= 0f) continue; // not yet launched
+
+            float progress = Math.Clamp(localAge / FlightSeconds, 0f, 1f);
+            float ease     = EaseOutQuint(progress);
+
+            // Final position (where this plate lives in the finished crust).
+            Vector2 finalCenter = EdgePoint(screenSize, shortSide, p.Edge, p.Along, p.Depth);
+
+            // Spawn position: outside the screen, along the outward normal of the plate's edge,
+            // with a small lateral offset so they don't all fly in perfectly perpendicular.
+            Vector2 outward = p.Edge switch
+            {
+                0 => new Vector2(0f, -1f),
+                1 => new Vector2(1f, 0f),
+                2 => new Vector2(0f, 1f),
+                _ => new Vector2(-1f, 0f),
+            };
+            Vector2 lateral = new(-outward.Y, outward.X);
+
+            float spawnExtra  = DrawHelpers.HashRange(p.Seed + 202, 0.28f, 0.60f);
+            float lateralOff  = DrawHelpers.HashRange(p.Seed + 203, -0.22f, 0.22f);
+            Vector2 spawnCenter = finalCenter
+                + outward * ((p.Radius + spawnExtra) * shortSide)
+                + lateral * (lateralOff * shortSide);
+
+            // Interpolate position. Ease-out gives a fast launch and a slow, snapping settle.
+            Vector2 center = Vector2.Lerp(spawnCenter, finalCenter, ease);
+
+            // Rotation: offset by a hashed spin that eases to zero as the plate locks in.
+            float spinOffset = DrawHelpers.HashRange(p.Seed + 201, -1.6f, 1.6f);
+            float rotation = p.Rotation + spinOffset * (1f - ease);
 
             float scale = 1f + pulseAmp * MathF.Sin(time * (baseLayer ? 0.7f : 1.3f) + p.Seed * 0.11f);
             float radius = shortSide * p.Radius * scale;
@@ -270,7 +326,7 @@ public sealed class PetrificationEffect : IScreenEffect
             Vector2 centroid = Vector2.Zero;
             for (int k = 0; k < n; k++)
             {
-                float a  = p.Rotation + MathF.Tau * k / n;
+                float a  = rotation + MathF.Tau * k / n;
                 float rr = radius * DrawHelpers.HashRange(p.Seed + k * 13, 0.38f, 1.0f);
                 pts[k] = center + new Vector2(MathF.Cos(a) * rr, MathF.Sin(a) * rr);
                 centroid += pts[k];
@@ -317,11 +373,21 @@ public sealed class PetrificationEffect : IScreenEffect
     // Fractures
     // =====================================================================================
 
-    private void DrawFractures(ImDrawListPtr dl, Vector2 screenSize, float shortSide, float alpha)
+    private void DrawFractures(ImDrawListPtr dl, Vector2 screenSize, float shortSide, float alpha, float age)
     {
         for (int i = 0; i < FractureCount; i++)
         {
             ref readonly var f = ref _fractures[i];
+
+            float delay = DrawHelpers.HashRange(f.Seed + 200, 0f, FractureDelayMax);
+            float localAge = age - delay;
+            if (localAge <= 0f) continue;
+
+            // Fractures reveal progressively from the crust inward: only the first N segments
+            // are drawn until the reveal is complete.
+            float reveal = Math.Clamp(localAge / FractureRevealSeconds, 0f, 1f);
+            int visibleSegments = (int)MathF.Ceiling(reveal * f.Segments);
+            if (visibleSegments <= 0) continue;
 
             Vector2 start = EdgePoint(screenSize, shortSide, f.Edge, f.Along, f.Depth);
 
@@ -343,7 +409,7 @@ public sealed class PetrificationEffect : IScreenEffect
             uint dark = DrawHelpers.WithAlpha(CrackDark,  alpha * f.Alpha * 0.90f);
 
             Vector2 cursor = start;
-            for (int k = 0; k < f.Segments; k++)
+            for (int k = 0; k < f.Segments && k < visibleSegments; k++)
             {
                 float j = DrawHelpers.HashRange(f.Seed + k, -0.55f, 0.55f);
                 float cj = MathF.Cos(j), sj = MathF.Sin(j);
@@ -386,7 +452,7 @@ public sealed class PetrificationEffect : IScreenEffect
     // Shards (faceted crystals)
     // =====================================================================================
 
-    private void DrawShards(ImDrawListPtr dl, Vector2 screenSize, float shortSide, float alpha, float time)
+    private void DrawShards(ImDrawListPtr dl, Vector2 screenSize, float shortSide, float alpha, float time, float age)
     {
         Span<Vector2> ring = stackalloc Vector2[6];
 
@@ -394,10 +460,39 @@ public sealed class PetrificationEffect : IScreenEffect
         {
             ref readonly var s = ref _shards[i];
 
-            Vector2 basePos = EdgePoint(screenSize, shortSide, s.Edge, s.Along, s.Depth);
+            float delay = DrawHelpers.HashRange(s.Seed + 200, 0f, ShardDelayMax);
+            float localAge = age - delay;
+            if (localAge <= 0f) continue;
+
+            float progress = Math.Clamp(localAge / FlightSeconds, 0f, 1f);
+            float ease = EaseOutQuint(progress);
+
+            // Final position includes the ongoing drift, so the shard's "home" is already
+            // animating when it lands and the drift continues seamlessly.
+            Vector2 finalBase = EdgePoint(screenSize, shortSide, s.Edge, s.Along, s.Depth);
             float dx = MathF.Sin(time * s.FreqX + s.PhaseX) * shortSide * s.DriftX;
             float dy = MathF.Cos(time * s.FreqY + s.PhaseY) * shortSide * s.DriftY;
-            Vector2 center = basePos + new Vector2(dx, dy);
+            Vector2 finalCenter = finalBase + new Vector2(dx, dy);
+
+            Vector2 outward = s.Edge switch
+            {
+                0 => new Vector2(0f, -1f),
+                1 => new Vector2(1f, 0f),
+                2 => new Vector2(0f, 1f),
+                _ => new Vector2(-1f, 0f),
+            };
+            Vector2 lateral = new(-outward.Y, outward.X);
+
+            float spawnExtra = DrawHelpers.HashRange(s.Seed + 202, 0.30f, 0.65f);
+            float lateralOff = DrawHelpers.HashRange(s.Seed + 203, -0.25f, 0.25f);
+            Vector2 spawnCenter = finalCenter
+                + outward * ((s.Radius + spawnExtra) * shortSide)
+                + lateral * (lateralOff * shortSide);
+
+            Vector2 center = Vector2.Lerp(spawnCenter, finalCenter, ease);
+
+            float spinOffset = DrawHelpers.HashRange(s.Seed + 201, -2.4f, 2.4f);
+            float rotation = s.Rotation + spinOffset * (1f - ease);
 
             float radius = shortSide * s.Radius;
             float tw = 0.75f + 0.25f * MathF.Sin(time * 1.7f + s.Seed * 0.31f);
@@ -408,7 +503,7 @@ public sealed class PetrificationEffect : IScreenEffect
 
             for (int k = 0; k < n; k++)
             {
-                float ang = s.Rotation + MathF.Tau * k / n;
+                float ang = rotation + MathF.Tau * k / n;
                 float rr  = radius * DrawHelpers.HashRange(s.Seed + k * 17, 0.42f, 1.0f);
                 ring[k] = center + new Vector2(MathF.Cos(ang) * rr, MathF.Sin(ang) * rr);
             }
@@ -459,5 +554,15 @@ public sealed class PetrificationEffect : IScreenEffect
             2 => new Vector2(along * screenSize.X,            screenSize.Y - depthPx),
             _ => new Vector2(depthPx,                         along * screenSize.Y),
         };
+    }
+
+    /// <summary>
+    /// Sharper ease-out than cubic: slower start off the edge, faster final approach, so the
+    /// piece "clunks" into place rather than gliding. Used for both plates and shards.
+    /// </summary>
+    private static float EaseOutQuint(float t)
+    {
+        float u = 1f - Math.Clamp(t, 0f, 1f);
+        return 1f - u * u * u * u * u;
     }
 }

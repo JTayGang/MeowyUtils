@@ -289,7 +289,19 @@ public sealed class StatusMirrorEngine : IDisposable
     private const double MoodlesRejectRetrySecs = 5.0;
     private readonly HashSet<System.Guid> _supersededMoodleGhosts = new();
     private readonly HashSet<System.Guid> _supersededLociGhosts = new();
-    private const float MinReconcileInterval = 0.333f;
+    private const float MinReconcileInterval = 0.6f;
+    // Floor on how often the SAME already-mirrored status can be re-applied. Moodles (and
+    // possibly Loci) fire their "changed" IPC event on any AddOrUpdate call, even one that
+    // writes back identical data, so a status whose signature comparison keeps failing to
+    // match - for whatever reason - could otherwise retrigger that event on every reconcile
+    // pass. That can in turn reset a sync plugin's own debounce for building/uploading
+    // character data, since it typically listens for the same Moodles event. This doesn't
+    // change what ends up mirrored, only how often the SAME status can retrigger downstream
+    // listeners. Kept above 1s so a ~1s-debounced sync plugin gets a real gap to clear in,
+    // even if one status keeps getting rewritten.
+    private const double ReapplyCooldownSecs = 1.5;
+    private readonly Dictionary<System.Guid, DateTime> _lastAppliedToLoci = new();
+    private readonly Dictionary<System.Guid, DateTime> _lastAppliedToMoodles = new();
     private DateTime _nextSave = DateTime.UtcNow;
     private const float SaveIntervalSecs = 5.0f;
     private bool _mirrorsNeedRefresh;
@@ -322,15 +334,35 @@ public sealed class StatusMirrorEngine : IDisposable
         return false;
     }
 
+    // True if `guid` had a successful TryApply recorded in `lastApplied` within the last
+    // ReapplyCooldownSecs. Used to avoid re-writing an already-mirrored status again right
+    // after we just wrote it - see the comment on ReapplyCooldownSecs above.
+    private static bool IsReapplyOnCooldown(Dictionary<System.Guid, DateTime> lastApplied, System.Guid guid, DateTime now)
+        => lastApplied.TryGetValue(guid, out var last) && (now - last).TotalSeconds < ReapplyCooldownSecs;
+
     private void PruneRecent()
     {
-        if (_recentRemoved.Count == 0) return;
         var now = DateTime.UtcNow;
+        if (_recentRemoved.Count > 0)
+        {
+            var expired = new List<System.Guid>();
+            foreach (var kv in _recentRemoved)
+                if ((now - kv.Value).TotalSeconds > RemovedGraceSecs)
+                    expired.Add(kv.Key);
+            foreach (var g in expired) _recentRemoved.Remove(g);
+        }
+        PruneApplyTimestamps(_lastAppliedToLoci, now);
+        PruneApplyTimestamps(_lastAppliedToMoodles, now);
+    }
+
+    private static void PruneApplyTimestamps(Dictionary<System.Guid, DateTime> applied, DateTime now)
+    {
+        if (applied.Count == 0) return;
         var expired = new List<System.Guid>();
-        foreach (var kv in _recentRemoved)
-            if ((now - kv.Value).TotalSeconds > RemovedGraceSecs)
+        foreach (var kv in applied)
+            if ((now - kv.Value).TotalSeconds > ReapplyCooldownSecs)
                 expired.Add(kv.Key);
-        foreach (var g in expired) _recentRemoved.Remove(g);
+        foreach (var g in expired) applied.Remove(g);
     }
 
     private void MarkDirty() => _dirty = true;
@@ -369,6 +401,7 @@ public sealed class StatusMirrorEngine : IDisposable
 
     private void SyncMoodlesToLoci(List<MoodlesStatusInfo> moodleList, List<LociStatusInfo> lociExisting, bool force)
     {
+        var now = DateTime.UtcNow;
         var allMoodleGuids = new HashSet<Guid>(moodleList.Count);
         var moodleDict = new Dictionary<Guid, MoodlesStatusInfo>(moodleList.Count);
         foreach (var m in moodleList) { allMoodleGuids.Add(m.GUID); moodleDict[m.GUID] = m; }
@@ -385,10 +418,12 @@ public sealed class StatusMirrorEngine : IDisposable
                 var src = moodleDict[g];
                 var sig = MirrorSignature.FromMoodles(src);
                 if (MirroredIntoLoci.TryGetValue(g, out var existing) && existing == sig) continue;
+                if (IsReapplyOnCooldown(_lastAppliedToLoci, g, now))
+                { _log.Debug($"[SkyrimCompass] Skipped re-applying {g} to Loci - cooldown."); continue; }
                 var conv = MirrorConverter.ToLoci(src);
                 var ec = _loci.TryApply(conv);
                 if (ec is LociApiEc.Success or LociApiEc.NoChange)
-                { MirroredIntoLoci[g] = sig; MarkDirty(); }
+                { MirroredIntoLoci[g] = sig; MarkDirty(); _lastAppliedToLoci[g] = now; }
                 else if (ec == LociApiEc.ItemLocked) _locked.Add(g);
             }
         }
@@ -405,6 +440,8 @@ public sealed class StatusMirrorEngine : IDisposable
             bool already = MirroredIntoLoci.TryGetValue(m.GUID, out var known);
             if (already && known == sig && lociGuids.Contains(m.GUID)) continue;
             if (!already && lociGuids.Contains(m.GUID)) { MirroredIntoLoci[m.GUID] = sig; MarkDirty(); continue; }
+            if (already && IsReapplyOnCooldown(_lastAppliedToLoci, m.GUID, now))
+            { _log.Debug($"[SkyrimCompass] Skipped re-applying {m.GUID} to Loci - cooldown."); continue; }
             if (!already)
             {
                 foreach (var kv in MirroredIntoLoci)
@@ -414,7 +451,7 @@ public sealed class StatusMirrorEngine : IDisposable
             var conv = MirrorConverter.ToLoci(m);
             var ec = _loci.TryApply(conv);
             if (ec is LociApiEc.Success or LociApiEc.NoChange)
-            { MirroredIntoLoci[m.GUID] = sig; MarkDirty(); }
+            { MirroredIntoLoci[m.GUID] = sig; MarkDirty(); _lastAppliedToLoci[m.GUID] = now; }
         }
 
         var staleSet = new HashSet<Guid>(staleTwins);
@@ -460,8 +497,10 @@ public sealed class StatusMirrorEngine : IDisposable
                 var src = lociDict[g];
                 var sig = MirrorSignature.FromLoci(src);
                 if (MirroredIntoMoodles.TryGetValue(g, out var existing) && existing == sig) continue;
+                if (IsReapplyOnCooldown(_lastAppliedToMoodles, g, now))
+                { _log.Debug($"[SkyrimCompass] Skipped re-applying {g} to Moodles - cooldown."); continue; }
                 var conv = MirrorConverter.ToMoodles(src);
-                if (_moodles.TryApply(conv, local)) { MirroredIntoMoodles[g] = sig; MarkDirty(); }
+                if (_moodles.TryApply(conv, local)) { MirroredIntoMoodles[g] = sig; MarkDirty(); _lastAppliedToMoodles[g] = now; }
             }
         }
 
@@ -502,6 +541,9 @@ public sealed class StatusMirrorEngine : IDisposable
 
             if (_moodlesRejected.TryGetValue(l.GUID, out var retryAt) && now < retryAt) continue;
 
+            if (already && IsReapplyOnCooldown(_lastAppliedToMoodles, l.GUID, now))
+            { _log.Debug($"[SkyrimCompass] Skipped re-applying {l.GUID} to Moodles - cooldown."); continue; }
+
             if (!already)
             {
                 foreach (var kv in MirroredIntoMoodles)
@@ -509,7 +551,7 @@ public sealed class StatusMirrorEngine : IDisposable
                     { staleTwins.Add(kv.Key); break; }
             }
             var conv = MirrorConverter.ToMoodles(l);
-            if (_moodles.TryApply(conv, local)) { MirroredIntoMoodles[l.GUID] = sig; MarkDirty(); }
+            if (_moodles.TryApply(conv, local)) { MirroredIntoMoodles[l.GUID] = sig; MarkDirty(); _lastAppliedToMoodles[l.GUID] = now; }
         }
 
         var staleSet = new HashSet<Guid>(staleTwins);

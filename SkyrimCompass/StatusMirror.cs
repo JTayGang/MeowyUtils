@@ -126,7 +126,7 @@ internal sealed class MoodlesMirrorIpc : IDisposable
     private readonly ICallGateSubscriber<System.Guid, IPlayerCharacter, object> _remove;
     private bool _subscribed;
     public bool Available { get; private set; }
-    public event Action? LocalStatusesChanged;
+    public event Action<nint>? LocalStatusesChanged;
 
     public MoodlesMirrorIpc(IDalamudPluginInterface pi, IPluginLog log)
     {
@@ -156,7 +156,7 @@ internal sealed class MoodlesMirrorIpc : IDisposable
         catch (Exception ex) { _log.Debug(ex, "[SkyrimCompass] Could not subscribe to Moodles.StatusManagerModified yet."); }
     }
 
-    private void OnModified(nint addr) => LocalStatusesChanged?.Invoke();
+    private void OnModified(nint addr) => LocalStatusesChanged?.Invoke(addr);
 
     public List<MoodlesStatusInfo> GetLocalStatuses()
     {
@@ -196,7 +196,7 @@ internal sealed class LociMirrorIpc : IDisposable
     private readonly ICallGateSubscriber<System.Guid, uint, int> _remove;
     private bool _subscribed;
     public bool Available { get; private set; }
-    public event Action? LocalStatusesChanged;
+    public event Action<nint>? LocalStatusesChanged;
 
     public LociMirrorIpc(IDalamudPluginInterface pi, IPluginLog log)
     {
@@ -228,7 +228,7 @@ internal sealed class LociMirrorIpc : IDisposable
         catch (Exception ex) { _log.Debug(ex, "[SkyrimCompass] Could not subscribe to Loci.ManagerChanged yet."); }
     }
 
-    private void OnModified(nint addr, int type) => LocalStatusesChanged?.Invoke();
+    private void OnModified(nint addr, int type) => LocalStatusesChanged?.Invoke(addr);
 
     public List<LociStatusInfo> GetLocalStatuses()
     {
@@ -284,6 +284,7 @@ public sealed class StatusMirrorEngine : IDisposable
     private Dictionary<System.Guid, MirrorSignature> MirroredIntoMoodles => _state.MirroredIntoMoodles;
     private readonly HashSet<System.Guid> _locked = new();
     private readonly Dictionary<System.Guid, DateTime> _moodlesRejected = new();
+    private readonly Dictionary<System.Guid, DateTime> _lociRejected = new();
     private readonly Dictionary<System.Guid, DateTime> _recentRemoved = new();
     private const double RemovedGraceSecs = 1;
     private const double MoodlesRejectRetrySecs = 5.0;
@@ -305,6 +306,7 @@ public sealed class StatusMirrorEngine : IDisposable
     public int MirroredIntoMoodlesCount => MirroredIntoMoodles.Count;
     public int LockedMirrorCount => _locked.Count;
     public int MoodlesRejectedCount => _moodlesRejected.Count;
+    public int LociRejectedCount => _lociRejected.Count;
 
     public StatusMirrorEngine(IDalamudPluginInterface pi, IFramework fw, IObjectTable ot, IPluginLog log, Configuration cfg)
     {
@@ -312,8 +314,8 @@ public sealed class StatusMirrorEngine : IDisposable
         _moodles = new MoodlesMirrorIpc(pi, log);
         _loci = new LociMirrorIpc(pi, log);
         _state = MirrorState.Load(pi, log);
-        _moodles.LocalStatusesChanged += () => { _pendingReconcile = true; _mirrorsNeedRefresh = true; };
-        _loci.LocalStatusesChanged += () => { _pendingReconcile = true; _mirrorsNeedRefresh = true; };
+        _moodles.LocalStatusesChanged += addr => { if (_ot.LocalPlayer?.Address == addr) { _pendingReconcile = true; _mirrorsNeedRefresh = true; } };
+        _loci.LocalStatusesChanged += addr => { if (_ot.LocalPlayer?.Address == addr) { _pendingReconcile = true; _mirrorsNeedRefresh = true; } };
         fw.Update += OnUpdate;
     }
 
@@ -396,6 +398,9 @@ public sealed class StatusMirrorEngine : IDisposable
         var lociGuids = new HashSet<Guid>(lociExisting.Count);
         foreach (var l in lociExisting) lociGuids.Add(l.GUID);
         _supersededMoodleGhosts.RemoveWhere(g => !allMoodleGuids.Contains(g));
+        if (_lociRejected.Count > 0)
+            foreach (var g in new List<Guid>(_lociRejected.Keys))
+                if (!allMoodleGuids.Contains(g)) _lociRejected.Remove(g);
 
         if (force)
         {
@@ -408,11 +413,18 @@ public sealed class StatusMirrorEngine : IDisposable
                 if (MirroredIntoLoci.TryGetValue(g, out var existing) && existing == sig) continue;
                 if (IsReapplyOnCooldown(_lastAppliedToLoci, g, now))
                 { _log.Debug($"[SkyrimCompass] Skipped re-applying {g} to Loci - cooldown."); continue; }
+                if (_lociRejected.TryGetValue(g, out var retryAt) && now < retryAt) continue;
                 var conv = MirrorConverter.ToLoci(src);
                 var ec = _loci.TryApply(conv);
                 if (ec is LociApiEc.Success or LociApiEc.NoChange)
-                { MirroredIntoLoci[g] = sig; MarkDirty(); _lastAppliedToLoci[g] = now; }
+                { MirroredIntoLoci[g] = sig; MarkDirty(); _lastAppliedToLoci[g] = now; _lociRejected.Remove(g); }
                 else if (ec == LociApiEc.ItemLocked) _locked.Add(g);
+                else
+                {
+                    if (!_lociRejected.ContainsKey(g))
+                        _log.Warning($"[SkyrimCompass] Loci rejected mirrored status '{src.Title}' ({g}) as invalid data ({ec}) - likely a bad icon ID, empty title, zero duration, or text-formatting error, not a permission setting.");
+                    _lociRejected[g] = now + TimeSpan.FromSeconds(MoodlesRejectRetrySecs);
+                }
             }
         }
 
@@ -430,6 +442,7 @@ public sealed class StatusMirrorEngine : IDisposable
             if (!already && lociGuids.Contains(m.GUID)) { MirroredIntoLoci[m.GUID] = sig; MarkDirty(); continue; }
             if (already && IsReapplyOnCooldown(_lastAppliedToLoci, m.GUID, now))
             { _log.Debug($"[SkyrimCompass] Skipped re-applying {m.GUID} to Loci - cooldown."); continue; }
+            if (_lociRejected.TryGetValue(m.GUID, out var retryAt) && now < retryAt) continue;
             if (!already)
             {
                 foreach (var kv in MirroredIntoLoci)
@@ -439,7 +452,13 @@ public sealed class StatusMirrorEngine : IDisposable
             var conv = MirrorConverter.ToLoci(m);
             var ec = _loci.TryApply(conv);
             if (ec is LociApiEc.Success or LociApiEc.NoChange)
-            { MirroredIntoLoci[m.GUID] = sig; MarkDirty(); _lastAppliedToLoci[m.GUID] = now; }
+            { MirroredIntoLoci[m.GUID] = sig; MarkDirty(); _lastAppliedToLoci[m.GUID] = now; _lociRejected.Remove(m.GUID); }
+            else if (ec != LociApiEc.ItemLocked)
+            {
+                if (!_lociRejected.ContainsKey(m.GUID))
+                    _log.Warning($"[SkyrimCompass] Loci rejected mirrored status '{m.Title}' ({m.GUID}) as invalid data ({ec}) - likely a bad icon ID, empty title, zero duration, or text-formatting error, not a permission setting.");
+                _lociRejected[m.GUID] = now + TimeSpan.FromSeconds(MoodlesRejectRetrySecs);
+            }
         }
 
         var staleSet = new HashSet<Guid>(staleTwins);

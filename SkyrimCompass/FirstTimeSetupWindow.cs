@@ -132,8 +132,8 @@ public sealed class FirstTimeSetupWindow : Window
         ImGui.PushStyleColor(ImGuiCol.Text, DimText);
         ImGui.TextWrapped(
             "Skyrim Compass mirrors Moodles and Loci statuses to draw its own status icons. " +
-            "If Moodles is left on its default settings, every status will flash and pop up " +
-            "TWICE - once from Moodles, once from here.");
+            "If Moodles is left on its default settings, every status will pop up " +
+            "TWICE - once from Moodles, once from loci.");
         ImGui.PopStyleColor();
 
         ImGui.Spacing();

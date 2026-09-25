@@ -352,6 +352,9 @@ public sealed class ConfigWindow : Window
                 ImGui.TextColored(new Vector4(1f, 0.55f, 0.25f, 1f),
                     $"Moodles rejected {mirror.MoodlesRejectedCount} mirrored status(es) - in Moodles' own settings, check " +
                     "\"Allow other plugins apply Moodles\" and \"Allow applying moodles from everyone\".");
+            if (mirror.LociRejectedCount > 0)
+                ImGui.TextColored(new Vector4(1f, 0.55f, 0.25f, 1f),
+                    $"Loci rejected {mirror.LociRejectedCount} mirrored status(es) as invalid data - likely a bad icon ID, empty title, or zero duration.");
             ImGui.EndDisabled();
         }
 

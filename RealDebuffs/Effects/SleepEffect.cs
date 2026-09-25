@@ -5,31 +5,65 @@ using Dalamud.Bindings.ImGui;
 namespace RealDebuffs.Effects;
 
 /// <summary>
-/// Sleep: everything slows and softens. A breathing blue haze creeps in from the edges, dream
-/// bubbles rise lazily through the frame, tiny stars twinkle in and out, and drowsy "Z"s drift
-/// up from across the lower half of the screen. The whole thing inhales and exhales on one slow
-/// cycle, so nothing moves at a constant rate - which is what sells the "drowsy" feel.
+/// Sleep: everything slows and softens. Opens with a SLOW single blink - the eyelids sag shut
+/// from the top and bottom, hold closed for a moment, then drift back open. The eyelids are
+/// curved: their inner edges bow further out at the outer corners than in the middle, so the
+/// lids MEET AT THE CORNERS FIRST and the gap narrows to a slit that closes last in the center.
 ///
-/// Layers, back to front:
+/// The eyelid edges are SOFT-BLURRED: a gradient band extends from each lid's inner edge into the
+/// visible area, fading from solid lid colour to transparent. That fake-blur is what sells the
+/// look as real, out-of-focus eyelids rather than a hard-edged shutter.
+///
+/// INTRO ORDERING: clear vision first, then the eyelid closes over it, and only once the lid is
+/// nearly shut does the sleep overlay (haze, stars, bubbles, Zs) fade in behind it. By the time
+/// the eyelid lifts, the overlay is at full strength, so the player never sees it appear - they
+/// just open their eyes onto the dream.
+///
+/// Steady state layers, back to front:
 ///   1. flat tint wash (subtle blue darkening, breathes slightly)
 ///   2. breathing vignette (blue, thicker on the inhale)
 ///   3. dream haze - large translucent blobs drifting on slow Lissajous paths
-///   4. twinkling stars - scattered evenly across the frame with occasional cross flares
-///   5. rising bubbles - soft translucent orbs that rise with a gentle sideways wobble
-///   6. "Z" glyphs - classic sleepy Zs that grow slightly as they drift up
+///   4. twinkling stars - scattered evenly across the frame
+///   5. rising bubbles - soft translucent orbs rising with a gentle sideways wobble
+///   6. "Z" glyphs - drawn BEFORE the eyelids so they're hidden by closed eyes
+///   7. curved eyelids with soft blurred edges (only drawn during the intro)
 /// </summary>
 public sealed class SleepEffect : IScreenEffect
 {
     public DebuffKind Kind => DebuffKind.Sleep;
 
+    // ---- intro (single slow blink) ----
+    private const float NewCastGapSeconds = 1.0f;
+    private const float BlinkCloseSec     = 0.90f;
+    private const float BlinkHoldSec      = 0.05f;
+    private const float BlinkOpenSec      = 1.10f;
+
+    // ---- content fade-in window ----
+    // Fraction of the close phase at which the sleep overlay starts fading in. 0.0 = from the
+    // very first frame; 0.65 = only once the lid is ~72% shut (smoothstep of 0.65). Higher =
+    // the overlay stays invisible longer, and the reveal on eye-open is more of a "cut".
+    private const float ContentFadeStartFrac = 0.65f;
+
+    // ---- eyelid shape ----
+    private const float EyelidCurveDepthFrac = 0.110f;
+    private const float EyelidCloseOvershoot = 8f;
+    private const float EyelidOverlapPx      = 2f;
+
+    // ---- eyelid blur (soft gradient band at the inner edge) ----
+    // How far the gradient extends from each lid's inner edge into the visible area, as a
+    // fraction of screen height. Higher = softer, more out-of-focus edge. Scales with the
+    // blink so a barely-open eyelid doesn't leave a big soft haze hanging over the world.
+    private const float EyelidFeatherFrac = 0.035f;
+
     // ---- palette ----
-    private static readonly uint DeepBlue  = DrawHelpers.ToU32(0.030f, 0.045f, 0.130f, 1f); // tint / vignette
-    private static readonly uint HazeBody  = DrawHelpers.ToU32(0.130f, 0.180f, 0.420f, 1f); // dream haze
-    private static readonly uint HazeLit   = DrawHelpers.ToU32(0.300f, 0.380f, 0.720f, 1f); // brighter haze blob
-    private static readonly uint Star      = DrawHelpers.ToU32(0.780f, 0.870f, 1.000f, 1f); // stars
-    private static readonly uint Bubble    = DrawHelpers.ToU32(0.400f, 0.520f, 0.850f, 1f); // bubble body
-    private static readonly uint BubbleLit = DrawHelpers.ToU32(0.720f, 0.830f, 1.000f, 1f); // bubble rim / specular
-    private static readonly uint ZGlyph    = DrawHelpers.ToU32(0.840f, 0.900f, 1.000f, 1f); // Z color
+    private static readonly uint DeepBlue   = DrawHelpers.ToU32(0.030f, 0.045f, 0.130f, 1f);
+    private static readonly uint HazeBody   = DrawHelpers.ToU32(0.130f, 0.180f, 0.420f, 1f);
+    private static readonly uint HazeLit    = DrawHelpers.ToU32(0.300f, 0.380f, 0.720f, 1f);
+    private static readonly uint Star       = DrawHelpers.ToU32(0.780f, 0.870f, 1.000f, 1f);
+    private static readonly uint Bubble     = DrawHelpers.ToU32(0.400f, 0.520f, 0.850f, 1f);
+    private static readonly uint BubbleLit  = DrawHelpers.ToU32(0.720f, 0.830f, 1.000f, 1f);
+    private static readonly uint ZGlyph     = DrawHelpers.ToU32(0.840f, 0.900f, 1.000f, 1f);
+    private static readonly uint EyelidDark = DrawHelpers.ToU32(0.006f, 0.010f, 0.028f, 1f);
 
     // =====================================================================================
     // Dream haze
@@ -38,13 +72,13 @@ public sealed class SleepEffect : IScreenEffect
 
     private struct HazeBlob
     {
-        public float BaseX, BaseY;    // normalized 0..1 screen position
-        public float SizeFrac;        // radius, fraction of shortSide
-        public float DriftX, DriftY;  // wander amplitude, fraction of shortSide
+        public float BaseX, BaseY;
+        public float SizeFrac;
+        public float DriftX, DriftY;
         public float PhaseX, PhaseY;
         public float FreqX, FreqY;
         public float Alpha;
-        public bool  Lit;             // uses HazeLit instead of HazeBody
+        public bool  Lit;
     }
 
     private readonly HazeBlob[] _haze = new HazeBlob[HazeCount];
@@ -56,8 +90,8 @@ public sealed class SleepEffect : IScreenEffect
 
     private struct StarDot
     {
-        public float X, Y;       // normalized
-        public float SizeFrac;   // of shortSide
+        public float X, Y;
+        public float SizeFrac;
         public float Phase;
         public float Freq;
         public float BaseAlpha;
@@ -71,19 +105,21 @@ public sealed class SleepEffect : IScreenEffect
     private readonly EdgeParticleField _bubbles = new(maxParticles: 40, seedSalt: 0x51EEB000);
     private readonly EdgeParticleField _zs      = new(maxParticles: 12, seedSalt: 0x51335133);
 
-    // Cached per-frame; spawn delegates read this directly so we never allocate a closure.
     private Vector2 _screenSize;
     private readonly Func<int, Vector2> _bubblePos;
     private readonly Func<int, Vector2> _bubbleVel;
     private readonly Func<int, string>  _noGlyph;
 
+    // ---- intro timing ----
+    private float _lastDrawTime = -100f;
+    private float _castStart;
+
     public SleepEffect()
     {
-        _bubblePos   = BubbleSpawnPos;
-        _bubbleVel   = BubbleSpawnVelocity;
-        _noGlyph     = static _ => "";
+        _bubblePos = BubbleSpawnPos;
+        _bubbleVel = BubbleSpawnVelocity;
+        _noGlyph   = static _ => "";
 
-        // ---- bake dream haze ----
         for (int i = 0; i < HazeCount; i++)
         {
             int s = unchecked(0x51170000 + i * 7919);
@@ -103,7 +139,6 @@ public sealed class SleepEffect : IScreenEffect
             };
         }
 
-        // ---- bake stars (uniformly scattered; the haze already biases the frame toward the edges) ----
         for (int i = 0; i < StarCount; i++)
         {
             int s = unchecked(0x57A70000 + i * 7919);
@@ -125,44 +160,231 @@ public sealed class SleepEffect : IScreenEffect
         _screenSize = screenSize;
 
         float shortSide = MathF.Min(screenSize.X, screenSize.Y);
+        float dt = ImGui.GetIO().DeltaTime;
 
-        // One slow breathing rhythm drives the whole effect. The 5.5s cycle is long enough to
-        // feel sleepy rather than pulsing.
-        float breath = DrawHelpers.Pulse(time, 5.5f);
+        // EffectManager stops calling Draw once the effect has fully faded out, so a gap since the
+        // last call means the debuff was just (re)applied: restart the intro from age zero.
+        if (time - _lastDrawTime > NewCastGapSeconds) _castStart = time;
+        _lastDrawTime = time;
+        float age = time - _castStart;
 
-        // ---- 1) flat blue wash, breathes slightly ----
+        float closedness = ComputeClosedness(age);
+
+        // The sleep overlay's own layers stay completely hidden while the eyelid is opening
+        // onto clear vision, and only start fading in once the lid is nearly shut. By the time
+        // the lid lifts again, they're at full strength.
+        float contentStart = ContentFadeStartFrac * BlinkCloseSec;
+        float contentSpan  = BlinkCloseSec - contentStart;
+        float contentAlpha = Math.Clamp((age - contentStart) / contentSpan, 0f, 1f);
+
+        // ---- everything the player would see if their eyes were open ----
+        float inner = alpha * contentAlpha;
+
+        // 1) flat blue wash
         dl.AddRectFilled(DrawHelpers.V(0, 0), screenSize,
-            DrawHelpers.WithAlpha(DeepBlue, alpha * (0.30f + 0.06f * breath)));
+            DrawHelpers.WithAlpha(DeepBlue, inner * 0.30f));
 
-        // ---- 2) vignette, thicker on the inhale ----
-        float vigThick = 0.20f + 0.05f * breath;
-        DrawHelpers.DrawVignette(dl, screenSize, DeepBlue, vigThick, alpha * (0.68f + 0.16f * breath));
+        // 2) vignette
+        DrawHelpers.DrawVignette(dl, screenSize, DeepBlue, 0.20f, inner * 0.68f);
 
-        // ---- 3) dream haze ----
-        DrawHaze(dl, screenSize, shortSide, time, alpha);
+        // 3) dream haze
+        DrawHaze(dl, screenSize, shortSide, time, inner);
 
-        // ---- 4) twinkling stars ----
-        DrawStars(dl, screenSize, shortSide, time, alpha);
+        // 4) twinkling stars
+        DrawStars(dl, screenSize, shortSide, time, inner);
 
-        // ---- 5) rising bubbles ----
+        // 5) rising bubbles
         _bubbles.Update(
-            time, ImGui.GetIO().DeltaTime,
+            time, dt,
             spawnIntervalMin: 0.15f, spawnIntervalMax: 0.45f,
             spawnPos: _bubblePos, spawnVelocity: _bubbleVel,
             pickGlyph: _noGlyph,
             lifespanMin: 3.5f, lifespanMax: 6.5f,
             sizeMin: 4f, sizeMax: 12f);
-        DrawBubbles(dl, alpha, time);
+        DrawBubbles(dl, inner, time);
 
-        // ---- 6) Z glyphs ----
+        // 6) Z glyphs. Drawn BEFORE the eyelids so closed eyes hide them.
         _zs.Update(
-            time, ImGui.GetIO().DeltaTime,
+            time, dt,
             spawnIntervalMin: 0.55f, spawnIntervalMax: 1.10f,
             spawnPos: ZSpawnPos, spawnVelocity: ZSpawnVelocity,
             pickGlyph: static _ => "Z",
             lifespanMin: 3.2f, lifespanMax: 4.8f,
             sizeMin: 22f, sizeMax: 42f);
-        DrawZs(dl, time, alpha);
+        DrawZs(dl, time, inner);
+
+        // 7) Eyelids. Drawn LAST so they cover every layer above.
+        DrawEyelids(dl, screenSize, alpha, closedness);
+    }
+
+    // =====================================================================================
+    // Sleepy blink (intro)
+    // =====================================================================================
+
+    /// <summary>
+    /// 0 = eyes wide open, 1 = eyes fully closed. A single slow blink:
+    ///   - Close: smoothstep from 0 to 1 over BlinkCloseSec.
+    ///   - Hold: fully closed for BlinkHoldSec.
+    ///   - Open: smoothstep back to 0 over BlinkOpenSec.
+    /// After the open phase finishes, this stays at 0 forever (until the debuff is reapplied).
+    /// </summary>
+    private static float ComputeClosedness(float age)
+    {
+        if (age < BlinkCloseSec)
+        {
+            float t = age / BlinkCloseSec;
+            return t * t * (3f - 2f * t); // smoothstep
+        }
+
+        float holdEnd = BlinkCloseSec + BlinkHoldSec;
+        if (age < holdEnd) return 1f;
+
+        float openEnd = holdEnd + BlinkOpenSec;
+        if (age < openEnd)
+        {
+            float t = (age - holdEnd) / BlinkOpenSec;
+            float e = t * t * (3f - 2f * t); // smoothstep
+            return 1f - e;
+        }
+
+        return 0f;
+    }
+
+    // =====================================================================================
+    // Eyelids
+    // =====================================================================================
+
+    /// <summary>
+    /// Two curved shapes - one descending from the top, one rising from the bottom - whose inner
+    /// edges bow furthest at the OUTER CORNERS and stay closest to the middle at the screen's
+    /// horizontal center. As a result the corners touch first and the gap narrows to a vertical
+    /// slit that closes last in the middle, like a camera iris / a pair of curtains meeting from
+    /// the sides inward.
+    ///
+    /// The feather (blur) is scaled with the eased closure amount, so a barely-open eyelid doesn't
+    /// leave a big soft haze draped over the middle of the screen.
+    /// </summary>
+    private static void DrawEyelids(ImDrawListPtr dl, Vector2 screenSize, float alpha, float closedness)
+    {
+        if (closedness <= 0.001f || alpha <= 0.001f) return;
+
+        float eased = closedness * closedness * (3f - 2f * closedness); // smoothstep
+
+        float mid = screenSize.Y * 0.5f;
+        float travel = mid * eased + EyelidCloseOvershoot * eased;
+        float curveDepth = screenSize.Y * EyelidCurveDepthFrac * eased;
+        // Feather depth also scales with eased, so the soft edge only exists as much as the
+        // eyelid does.
+        float feather = screenSize.Y * EyelidFeatherFrac * eased;
+
+        uint dark = DrawHelpers.WithAlpha(EyelidDark, alpha);
+
+        DrawLidShape(dl, screenSize, travel, curveDepth, feather, isTop: true,  dark);
+        DrawLidShape(dl, screenSize, travel, curveDepth, feather, isTop: false, dark);
+    }
+
+    /// <summary>
+    /// Builds and fills a single curved eyelid. Two passes:
+    ///
+    ///   1. The solid body, drawn as a strip of convex trapezoids from the outer screen edge to
+    ///      the curved inner edge.
+    ///   2. A SOFT FEATHER along the inner edge, drawn as a strip of axis-aligned gradient
+    ///      rectangles that fade from solid lid colour (at the edge) to transparent (into the
+    ///      visible area). That gradient is what reads as "blurred eyelids" - a hard line would
+    ///      look like a shutter.
+    ///
+    /// Coverage details: both passes extend a couple of pixels past the screen bounds and each
+    /// segment overlaps the next, so no rasterization edge can leave a hairline gap.
+    /// </summary>
+    private static void DrawLidShape(
+        ImDrawListPtr dl, Vector2 screenSize, float travel, float curveDepth, float feather,
+        bool isTop, uint color)
+    {
+        const int segs = 48;
+
+        float w = screenSize.X;
+        float h = screenSize.Y;
+
+        float edgeY  = isTop ? travel : h - travel;
+        float outerY = isTop ? -EyelidOverlapPx : h + EyelidOverlapPx;
+
+        float span = w + 2f * EyelidOverlapPx;
+
+        // ---- pass 1: solid body ----
+        Span<Vector2> quad = stackalloc Vector2[4];
+        for (int i = 0; i < segs; i++)
+        {
+            float x0 = -EyelidOverlapPx + span * i / segs;
+            float x1 = -EyelidOverlapPx + span * (i + 1) / segs;
+            float x1ov = x1 + EyelidOverlapPx;
+
+            float y0 = CurveYAt(x0,   w, edgeY, curveDepth, isTop);
+            float y1 = CurveYAt(x1ov, w, edgeY, curveDepth, isTop);
+
+            quad[0] = new Vector2(x0,   outerY);
+            quad[1] = new Vector2(x1ov, outerY);
+            quad[2] = new Vector2(x1ov, y1);
+            quad[3] = new Vector2(x0,   y0);
+
+            ref Vector2 first = ref quad[0];
+            dl.AddConvexPolyFilled(ref first, 4, color);
+        }
+
+        // ---- pass 2: soft feather along the inner edge ----
+        if (feather <= 0.5f) return;
+
+        // Same RGB as the solid body, but zero alpha. Used as the "far end" of each gradient so
+        // the fade terminates cleanly instead of blending toward black.
+        uint solidEdge = color;
+        uint clearEdge = DrawHelpers.WithAlpha(color, 0f);
+
+        for (int i = 0; i < segs; i++)
+        {
+            float x0 = -EyelidOverlapPx + span * i / segs;
+            float x1 = -EyelidOverlapPx + span * (i + 1) / segs;
+
+            // Sampling the curve at the segment's two endpoints and using their average as a
+            // single flat y is fine here: within one segment the curve barely deviates from a
+            // straight line, and using AddRectFilledMultiColor lets us get a real vertical
+            // gradient (AddConvexPolyFilled only takes a single colour).
+            float y0 = CurveYAt(x0, w, edgeY, curveDepth, isTop);
+            float y1 = CurveYAt(x1, w, edgeY, curveDepth, isTop);
+            float yMid = (y0 + y1) * 0.5f;
+
+            if (isTop)
+            {
+                // Top lid: opaque at the eyelid edge, fading DOWN into the visible area. The
+                // rectangle starts a few px inside the eyelid body so it overlaps the solid pass
+                // (no seam), and extends `feather` px below the edge.
+                dl.AddRectFilledMultiColor(
+                    new Vector2(x0, yMid - EyelidOverlapPx),
+                    new Vector2(x1, yMid + feather),
+                    solidEdge, solidEdge,
+                    clearEdge, clearEdge);
+            }
+            else
+            {
+                // Bottom lid: mirror image. Opaque at the eyelid edge, fading UP.
+                dl.AddRectFilledMultiColor(
+                    new Vector2(x0, yMid - feather),
+                    new Vector2(x1, yMid + EyelidOverlapPx),
+                    clearEdge, clearEdge,
+                    solidEdge, solidEdge);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Y of the lid's inner edge at horizontal position <paramref name="x"/>. The bow peaks at
+    /// the outer corners (u=±1) and is zero at the center (u=0), so the corners of a lid reach
+    /// furthest and meet first.
+    /// </summary>
+    private static float CurveYAt(float x, float w, float edgeY, float curveDepth, bool isTop)
+    {
+        float t = Math.Clamp(x / w, 0f, 1f);
+        float u = t * 2f - 1f;
+        float bow = u * u;
+        return isTop ? edgeY + curveDepth * bow : edgeY - curveDepth * bow;
     }
 
     // =====================================================================================
@@ -175,16 +397,12 @@ public sealed class SleepEffect : IScreenEffect
         {
             ref readonly var h = ref _haze[i];
 
-            // Each blob wanders on its own slow 2D Lissajous. Independent phases and frequencies
-            // mean there's no coherent flow direction - just calm, aimless drift.
             float dx = MathF.Sin(time * h.FreqX + h.PhaseX) * shortSide * h.DriftX;
             float dy = MathF.Cos(time * h.FreqY + h.PhaseY) * shortSide * h.DriftY;
 
             Vector2 p = new(h.BaseX * screenSize.X + dx, h.BaseY * screenSize.Y + dy);
             float r = shortSide * h.SizeFrac;
 
-            // Two stacked circles at different radii fake a soft-edged blob without a radial
-            // gradient (which ImGui doesn't have). The outer is faint, the inner is a touch brighter.
             uint col = h.Lit ? HazeLit : HazeBody;
             dl.AddCircleFilled(p, r,         DrawHelpers.WithAlpha(col, alpha * h.Alpha * 0.55f));
             dl.AddCircleFilled(p, r * 0.55f, DrawHelpers.WithAlpha(col, alpha * h.Alpha * 0.75f));
@@ -201,7 +419,6 @@ public sealed class SleepEffect : IScreenEffect
         {
             ref readonly var s = ref _stars[i];
 
-            // Slow twinkle with a sharpened peak (k² makes the "on" moments shorter and brighter).
             float k = 0.5f + 0.5f * MathF.Sin(time * s.Freq + s.Phase);
             float twinkle = k * k;
 
@@ -211,13 +428,10 @@ public sealed class SleepEffect : IScreenEffect
             Vector2 p = new(s.X * screenSize.X, s.Y * screenSize.Y);
             float r = shortSide * s.SizeFrac;
 
-            // Soft halo + tighter glow + a bright core - the classic star stack.
             dl.AddCircleFilled(p, r * 3.0f, DrawHelpers.WithAlpha(Star, a * 0.15f));
             dl.AddCircleFilled(p, r * 1.4f, DrawHelpers.WithAlpha(Star, a * 0.55f));
             dl.AddCircleFilled(p, r,        DrawHelpers.WithAlpha(Star, a * 0.95f));
 
-            // Cross flare only at the brightest moment of the twinkle, so the stars "sparkle"
-            // rather than pulse.
             if (twinkle > 0.75f)
             {
                 float flare = r * (twinkle - 0.75f) * 18f;
@@ -240,14 +454,11 @@ public sealed class SleepEffect : IScreenEffect
             float age = time - b.Born;
             float fade = EdgeParticleField.FadeFor(age / b.Lifespan);
 
-            // Gentle horizontal wobble, decorrelated per particle so the swarm doesn't pulse together.
             float wobX = MathF.Sin(age * 1.7f + b.Born * 2.1f) * 6f;
 
             Vector2 p = b.Pos + new Vector2(wobX, 0f);
             float r = b.Size;
 
-            // Bubble: soft interior fill, a bright rim, a fainter inner rim, and a specular highlight
-            // offset up-left. Reads as a soap bubble rather than a flat dot.
             dl.AddCircleFilled(p, r,         DrawHelpers.WithAlpha(Bubble,    alpha * fade * 0.30f));
             dl.AddCircle(p, r,               DrawHelpers.WithAlpha(BubbleLit, alpha * fade * 0.75f), 0, MathF.Max(1f, r * 0.18f));
             dl.AddCircle(p, r * 0.72f,       DrawHelpers.WithAlpha(BubbleLit, alpha * fade * 0.18f), 0, MathF.Max(0.8f, r * 0.10f));
@@ -278,7 +489,6 @@ public sealed class SleepEffect : IScreenEffect
 
     private Vector2 ZSpawnPos(int seed)
     {
-        // Spawn across the whole lower quarter, not just the corners.
         float x = DrawHelpers.HashRange(seed,     0.05f, 0.95f) * _screenSize.X;
         float y = _screenSize.Y * DrawHelpers.HashRange(seed + 1, 0.78f, 1.00f);
         return new Vector2(x, y);
@@ -286,7 +496,6 @@ public sealed class SleepEffect : IScreenEffect
 
     private Vector2 ZSpawnVelocity(int seed)
     {
-        // Drift upward with a little sideways motion. Slower than the bubbles so Zs linger.
         float vy = -DrawHelpers.HashRange(seed + 2, 16f, 30f);
         float vx =  DrawHelpers.HashRange(seed + 3, -6f,  6f);
         return new Vector2(vx, vy);
@@ -301,16 +510,13 @@ public sealed class SleepEffect : IScreenEffect
             float lifeU = age / z.Lifespan;
             float fade  = EdgeParticleField.FadeFor(lifeU);
 
-            // Side-to-side sway as it rises. Same seed-based phase for the whole life of the particle.
             float swayX = MathF.Sin(age * 1.3f + z.Born * 1.9f) * 10f;
 
             Vector2 p = z.Pos + new Vector2(swayX, 0f);
-            float size = z.Size * (1f + 0.20f * lifeU); // gently grows as it drifts up
+            float size = z.Size * (1f + 0.20f * lifeU);
 
-            // A small soft halo behind the glyph so it reads against busy backgrounds.
             dl.AddCircleFilled(p, size * 0.55f, DrawHelpers.WithAlpha(ZGlyph, alpha * fade * 0.18f));
 
-            // Glyph itself. DrawGlowText already does glow + shadow + body, so we just call it.
             DrawHelpers.DrawGlowText(dl, p, z.Glyph,
                                      DrawHelpers.WithAlpha(ZGlyph, alpha * fade * 0.95f),
                                      size, glow: 1.2f);

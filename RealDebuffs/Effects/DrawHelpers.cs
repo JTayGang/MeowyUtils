@@ -20,6 +20,14 @@ internal static class DrawHelpers
         return (color & 0x00FFFFFF) | (a << 24);
     }
 
+    /// <summary>Linearly blends every channel (including alpha) between two packed colors. <paramref name="t"/> is clamped to 0..1.</summary>
+    public static uint LerpColor(uint a, uint b, float t)
+    {
+        t = Math.Clamp(t, 0f, 1f);
+        byte Channel(int shift) => (byte)(((a >> shift) & 0xFF) + (((b >> shift) & 0xFF) - (int)((a >> shift) & 0xFF)) * t);
+        return Channel(0) | ((uint)Channel(8) << 8) | ((uint)Channel(16) << 16) | ((uint)Channel(24) << 24);
+    }
+
     /// <summary>Deterministic 0..1 pseudo-random from an integer seed - stable within a frame, cheap, allocation-free. Same seed always gives the same value.</summary>
     public static float Hash01(int seed)
     {

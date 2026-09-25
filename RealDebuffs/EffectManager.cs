@@ -15,6 +15,14 @@ namespace RealDebuffs;
 /// (which effect renders "on top" of which) is always consistent no matter which combination of
 /// debuffs is currently active. Effects fade in/out smoothly rather than popping on/off, so
 /// gaining or losing a status doesn't cause a jarring instant flip.
+///
+/// A few kinds cover more than one status at different severities (Weakness/Brush with
+/// Death/Brink of Death, Frostbite/Deep Freeze, Infatuated/Seduced - see <see cref="DebuffKind.Strengths"/>).
+/// Rather than each of those effects needing its own "how strong am I" logic, the SAME 0..1 alpha
+/// every effect already takes care of it: EffectManager folds the active status's strength into that
+/// alpha before calling Draw, so a fainter-tier status just arrives as a smaller number - the effect
+/// itself never needs to know which specific status is behind it. Custom Moodles/Loci rules don't
+/// carry a tier of their own, so they always ask for full strength (1.0).
 /// </summary>
 public sealed class EffectManager
 {
@@ -23,19 +31,39 @@ public sealed class EffectManager
     /// pinned first/bottom because it covers more of the screen than anything else (a near-total
     /// vignette) - drawn any later it would sit on top of and wash out every other effect. Silence
     /// stays near the end so it renders over Blind - matching "silence on top of the blindfold"
-    /// from the spec. Reorder this list to change layering; add a new IScreenEffect instance here
-    /// (plus a DebuffKind and a StatusCatalog.NameMap entry) to extend.
+    /// from the spec. The DoT/tint cluster (Poison through Misery below) is grouped together since
+    /// they're all a similar "edge vignette + drifting particles" shape and rarely land in ways where
+    /// their exact relative order matters. Reorder this list to change layering; add a new
+    /// IScreenEffect instance here (plus a DebuffKind and a StatusCatalog.NameMap entry) to extend.
     /// </summary>
     private readonly IScreenEffect[] _order =
     {
         new BlindEffect(),
         new PoisonEffect(),
+        new BleedingEffect(),
+        new BurnsEffect(),
+        new DiseaseEffect(),
+        new DropsyEffect(),
+        new SludgeEffect(),
+        new WindburnEffect(),
+        new WeaknessEffect(),
+        new InfirmityEffect(),
+        new MiseryEffect(),
         new HeavyEffect(),
         new BindEffect(),
+        new PacificationEffect(),
+        new DoomEffect(),
+        new FrostEffect(),
         new PetrificationEffect(),
         new SleepEffect(),
+        new AmnesiaEffect(),
+        new CharmEffect(),
+        new HysteriaEffect(),
         new StunEffect(),
+        new ElectrocutionEffect(),
         new ParalysisEffect(),
+        new SlowEffect(),
+        new VulnerabilityEffect(),
         new SilenceEffect(),
     };
 
@@ -44,6 +72,7 @@ public sealed class EffectManager
 
     private readonly Dictionary<DebuffKind, float> _currentAlpha = new();
     private readonly HashSet<DebuffKind> _activeScratch = new();
+    private readonly Dictionary<DebuffKind, float> _targetStrength = new(); // this frame's max severity per kind; see the class doc
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private float _lastTime;
 
@@ -83,6 +112,7 @@ public sealed class EffectManager
         _lastTime = time;
 
         _activeScratch.Clear();
+        _targetStrength.Clear();
 
         bool suppressed = !_config.Enabled
             || _gameGui.GameUiHidden
@@ -99,8 +129,14 @@ public sealed class EffectManager
             foreach (var status in player.StatusList)
             {
                 if (status.StatusId == 0) continue;
-                if (_catalog.TryGetKind(status.StatusId, out var kind))
+                if (_catalog.TryGetEffect(status.StatusId, out var kind, out var strength))
+                {
                     _activeScratch.Add(kind);
+                    // If two statuses somehow share a kind at once (e.g. Weakness AND Brink of
+                    // Death, however unlikely), show it at whichever is currently more severe.
+                    if (!_targetStrength.TryGetValue(kind, out var soFar) || strength > soFar)
+                        _targetStrength[kind] = strength;
+                }
             }
         }
 
@@ -113,7 +149,19 @@ public sealed class EffectManager
         // same _activeScratch set that both sources write into. A custom rule for any OTHER effect still only
         // affects the visual - only Silence has a chat-block consequence.
         if (!suppressed && player != null)
-            _customStatuses.Snapshot.AddActiveKinds(_config.CustomStatusRules, _activeScratch);
+        {
+            var snapshot = _customStatuses.Snapshot;
+            snapshot.AddActiveKinds(_config.CustomStatusRules, _activeScratch);
+
+            // Custom rules don't carry a severity tier of their own (there's no "faint" vs. "full"
+            // version of an arbitrary Moodle) - they always ask for their effect at full strength,
+            // same as any real status not listed in DebuffKind.Strengths.
+            foreach (var rule in _config.CustomStatusRules)
+            {
+                if (rule.Enabled && snapshot.Contains(rule.GetKey()))
+                    _targetStrength[rule.Kind] = 1f;
+            }
+        }
 
         _chatBlocker.SetSilenced(_config.SilenceBlocksChat && _activeScratch.Contains(DebuffKind.Silence));
 
@@ -133,9 +181,11 @@ public sealed class EffectManager
 
             if (current <= 0.001f) continue;
 
+            float strength = _targetStrength.TryGetValue(effect.Kind, out var targetStrength) ? targetStrength : 1f;
+
             try
             {
-                effect.Draw(dl, screenSize, current * _config.GlobalIntensity, time);
+                effect.Draw(dl, screenSize, current * _config.GlobalIntensity * strength, time);
             }
             catch (Exception ex)
             {
@@ -170,7 +220,11 @@ public sealed class EffectManager
         foreach (var status in player.StatusList)
         {
             if (status.StatusId == 0) continue;
-            var mapped = _catalog.TryGetKind(status.StatusId, out var kind) ? kind.ToString() : "unmapped";
+            string mapped;
+            if (_catalog.TryGetEffect(status.StatusId, out var kind, out var strength))
+                mapped = strength < 0.999f ? $"{kind} ({strength:P0} intensity)" : kind.ToString();
+            else
+                mapped = "unmapped";
             lines.Add($"  #{status.StatusId} \"{_catalog.GetName(status.StatusId)}\" -> {mapped}");
         }
 

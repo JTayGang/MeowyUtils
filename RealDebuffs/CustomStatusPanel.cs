@@ -21,6 +21,7 @@ internal sealed class CustomStatusPanel
     private static readonly DebuffKind[] Kinds = Enum.GetValues<DebuffKind>();
     private static readonly string[] KindNames = Array.ConvertAll(Kinds, k => k.ToString());
     private static readonly Vector4 ActiveColor = new(0.4f, 1f, 0.4f, 1f);
+    private static readonly Vector4 WarningColor = new(1f, 0.35f, 0.35f, 1f);
 
     private readonly Configuration _config;
     private readonly CustomStatusWatcher _watcher;
@@ -95,6 +96,14 @@ internal sealed class CustomStatusPanel
                     ImGui.TextColored(ActiveColor, "active");
                 }
 
+                // This row can currently lock the user's chat: it's set to Silence, and the
+                // Advanced hook that turns Silence into a real chat lockout is switched on.
+                if (rule.Kind == DebuffKind.Silence && _config.SilenceBlocksChat)
+                {
+                    ImGui.SameLine();
+                    ImGui.TextColored(WarningColor, "locks chat");
+                }
+
                 ImGui.PopID();
             }
             if (removeAt >= 0) { rules.RemoveAt(removeAt); changed = true; }
@@ -128,9 +137,20 @@ internal sealed class CustomStatusPanel
             ImGui.SetNextItemWidth(KindWidth);
             ImGui.Combo("##newkind", ref _newKind, KindNames, KindNames.Length);
 
+            var pickedKind = Kinds[Math.Clamp(_newKind, 0, Kinds.Length - 1)];
+            if (pickedKind == DebuffKind.Silence)
+            {
+                // Two short lines rather than one long TextWrapped call, so this reads clearly at
+                // the panel's normal width without needing to know the current wrap position.
+                ImGui.TextColored(WarningColor, "This will lock your chat, exactly like a real Silence debuff,");
+                ImGui.TextColored(WarningColor, _config.SilenceBlocksChat
+                    ? "since \"Silence also blocks sending chat\" is on below."
+                    : "once you turn on \"Silence also blocks sending chat\" below.");
+            }
+
             string cleaned = StatusNames.Clean(_newName);
             string key = StatusNames.Key(cleaned);
-            var newKind = Kinds[Math.Clamp(_newKind, 0, Kinds.Length - 1)];
+            var newKind = pickedKind;
             bool duplicate = false;
             foreach (var r in rules)
             {

@@ -6,7 +6,7 @@ namespace RealDebuffs.Effects;
 
 /// <summary>
 /// Cartoon "seeing stars": a small halo of stars, birds and sparkle motes circles near head height,
-/// swaying like someone unsteady on their feet. Covers Stun, Deep Freeze, and Down for the Count -
+/// swaying like someone unsteady on their feet. Covers Stun and Down for the Count -
 /// mechanically identical (can't act, can't move), just different sources.
 ///
 /// Deliberately NOT a vignette or a border. Blind already owns "darken the whole screen" and Paralysis

@@ -47,8 +47,7 @@ public sealed class FirstTimeSetupWindow : Window
         var cfg = plugin.Config;
 
         ImGui.TextWrapped(
-            "Quick one-time setup. Pick how you want to use Skyrim Compass - you can change " +
-            "this (or anything else) later from /compass config.");
+            "Pick how you want to use this plugin. This is just a \"preset\", you can change everything later using /compass config.");
 
         ImGui.Spacing();
         ImGui.Separator();
@@ -59,7 +58,7 @@ public sealed class FirstTimeSetupWindow : Window
 
         if (DrawModeCard(
                 "Give me everything", everything,
-                "Full compass strip, target health bar, and Moodles/Loci status icons. This is the current default."))
+                "Full compass strip, target health bar, and Moodles/Loci status icons. This is the what I was originally intended."))
         {
             cfg.ShowCompassBar = true;
             cfg.ShowTargetBar = true;
@@ -69,7 +68,7 @@ public sealed class FirstTimeSetupWindow : Window
 
         if (DrawModeCard(
                 "I'm just here for Moodles + Loci", moodlesOnly,
-                "Turns off the compass strip and target health bar. Only the Moodles/Loci status icons stay on screen."))
+                "Turns off everything except the Moodles/Loci status bar needed to show all statuses correctly."))
         {
             cfg.ShowCompassBar = false;
             cfg.ShowTargetBar = false;
@@ -127,12 +126,11 @@ public sealed class FirstTimeSetupWindow : Window
     {
         var mirror = plugin.StatusMirror;
 
-        ImGui.TextColored(AccentAmber, "IMPORTANT - one-time Moodles setting");
+        ImGui.TextColored(AccentAmber, "IMPORTANT - setup instructions for moodles/loci users");
 
         ImGui.PushStyleColor(ImGuiCol.Text, DimText);
         ImGui.TextWrapped(
-            "Skyrim Compass mirrors Moodles and Loci statuses to draw its own status icons. " +
-            "If Moodles is left on its default settings, every status will pop up " +
+            "If Moodles and Loci are left on default settings, every status will pop up " +
             "TWICE - once from Moodles, once from loci.");
         ImGui.PopStyleColor();
 
@@ -142,7 +140,13 @@ public sealed class FirstTimeSetupWindow : Window
             $"    Loci: {(mirror.LociAvailable ? "yes" : "not running")}");
         ImGui.Spacing();
 
-        ImGui.TextWrapped("Fix it once, in Moodles itself:");
+        ImGui.TextWrapped("Fix the following in the vanilla status bar:");
+        ImGui.BulletText("Press Escape and open HUD Layout.");
+        ImGui.BulletText("Click the \"Status Effects\" hud element, open UI element settings (the gear icon).");
+        DrawSettingLine("Display as Single Element", shouldBeOn: false);
+        ImGui.Spacing();
+
+        ImGui.TextWrapped("Fix the following in Moodles itself:");
         ImGui.BulletText("Run /moodles to open its settings window.");
         ImGui.BulletText("Open the Settings tab.");
 
@@ -150,6 +154,17 @@ public sealed class FirstTimeSetupWindow : Window
         DrawSettingLine("Allow applying moodles from everyone", shouldBeOn: true);
         DrawSettingLine("Enable Moodle VFX", shouldBeOn: false);
         DrawSettingLine("Enable Fly/Popup Text", shouldBeOn: false);
+  
+
+        ImGui.TextWrapped("Other settings you may or may not need to change:");
+        ImGui.Spacing();
+        ImGui.TextWrapped("If you still see double VFX, change this in Loci settings:");
+        DrawSettingLine("Loci VFX", shouldBeOn: false);
+
+        ImGui.Spacing();
+        ImGui.TextWrapped("If you care about serious content, change this in both Moodles+Loci:");
+        DrawSettingLine("Disable in combat, Disable in duties/instances", shouldBeOn: true);
+
     }
 
     private static void DrawSettingLine(string settingName, bool shouldBeOn)

@@ -28,6 +28,14 @@ internal static class DrawHelpers
         return Channel(0) | ((uint)Channel(8) << 8) | ((uint)Channel(16) << 16) | ((uint)Channel(24) << 24);
     }
 
+    /// <summary>Standard ease-out-cubic curve: starts fast, settles gently. <paramref name="t"/> is clamped to 0..1.</summary>
+    public static float EaseOutCubic(float t)
+    {
+        t = Math.Clamp(t, 0f, 1f);
+        float inv = 1f - t;
+        return 1f - inv * inv * inv;
+    }
+
     /// <summary>Deterministic 0..1 pseudo-random from an integer seed - stable within a frame, cheap, allocation-free. Same seed always gives the same value.</summary>
     public static float Hash01(int seed)
     {
@@ -91,7 +99,11 @@ internal static class DrawHelpers
                 dl.AddText(font, size, V(pos.X + dx * innerOffset, pos.Y + dy * innerOffset), innerCol, text);
         }
 
-        dl.AddText(font, size, V(pos.X + 1f, pos.Y + 1f), WithAlpha(0xFF000000, 0.6f), text);
+        // The shadow's own alpha is scaled by the text's, not fixed - otherwise a hardcoded shadow
+        // strength dominates the text during a fade-in/out (or any other sub-full alpha), and the
+        // word reads as a dark smudge instead of its intended color until it's nearly at full alpha.
+        float textAlpha01 = ((color >> 24) & 0xFF) / 255f;
+        dl.AddText(font, size, V(pos.X + 1f, pos.Y + 1f), WithAlpha(0xFF000000, 0.6f * textAlpha01), text);
         dl.AddText(font, size, pos, color, text);
     }
 

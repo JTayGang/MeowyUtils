@@ -344,7 +344,7 @@ public sealed class CustomStatusWatcher : IDisposable
 
         // Empty (not just "skip building") when the checkbox is off, so Build still runs its normal
         // merge but every status naturally ends up with no TooltipMatches - one code path either way.
-        var tooltipRules = _config.ParseCustomStatusTooltips
+        IReadOnlyList<TooltipKeywordRule> tooltipRules = _config.ParseCustomStatusTooltips
             ? _config.TooltipKeywordRules
             : Array.Empty<TooltipKeywordRule>();
 

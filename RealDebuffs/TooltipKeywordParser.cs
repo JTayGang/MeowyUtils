@@ -23,27 +23,30 @@ public enum TooltipColorSource
 public readonly record struct TooltipEffectMatch(DebuffKind Kind, Vector4? Color, float Strength, TooltipColorSource ColorSource);
 
 /// <summary>
-/// Scans a single status's tooltip text (a Moodles/Loci "Description") for every enabled
-/// <see cref="TooltipKeywordRule"/>'s keyword, and for each one found, works out what color (if
-/// any) the text itself is asking for. Pure and stateless - no IPC, no ImGui, nothing game-related
-/// - so it's exactly as easy to call from the settings window's tester (on text you just typed) as
-/// from the real path (on text read from Moodles/Loci). See
-/// <see cref="CustomStatusSnapshot.Build"/> for how the real path calls this once per active status,
-/// per snapshot refresh, and caches the results rather than calling it fresh every frame.
+/// Scans a single status's tooltip text (a Moodles/Loci "Description") for any of the words in
+/// every enabled <see cref="TooltipKeywordRule"/>, and for each one found, works out what color (if
+/// any) the text itself is asking for. Pure and stateless apart from one wall-clock read
+/// (<see cref="Environment.TickCount64"/>, used only to pick the current frame of the "rainbow"
+/// color - see <see cref="RainbowWords"/>) - no IPC, no ImGui, nothing game-related - so it's
+/// exactly as easy to call from the settings window's tester (on text you just typed) as from the
+/// real path (on text read from Moodles/Loci). See <see cref="CustomStatusSnapshot.Build"/> for how
+/// the real path calls this once per active status, per snapshot refresh, and caches the results
+/// rather than calling it fresh every frame.
 ///
 /// COLOR RESOLUTION, per match, highest priority first:
 ///  1. An explicit `[color=value]...[/color]` tag (Moodles/Loci's own rich-text tag - the same one
 ///     <see cref="StatusNames"/> already strips from titles) that wraps the matched word. `value`
 ///     can be a hex triplet (`ff69b4`, `#ff69b4`, or the 3/4-digit CSS-style shorthand) or a plain
-///     color name from <see cref="NamedColors"/> - see <see cref="TryResolveColorToken"/>.
-///  2. A plain color WORD ("pink", "green", ...) anywhere in the same CLAUSE as the matched word.
-///     "Clause" means: split the tooltip on `. , ; ! ?` and the standalone words "and"/"but", and
-///     look inside whichever piece the match landed in. This is what makes
-///     "the pink tentacles hold you in place, shocking you." color the tentacles (Bind) pink
-///     without also tinting the shock (Paralysis) pink - they're on opposite sides of the comma.
-///     If a clause happens to contain more than one color word, the first one (by position) wins -
-///     a deliberately simple tie-break rather than trying to guess which word is "closer" to the
-///     match in some more clever sense.
+///     color name from <see cref="NamedColors"/> (or one of the rainbow words - see
+///     <see cref="RainbowWords"/>) - see <see cref="TryResolveColorToken"/>.
+///  2. A plain color WORD ("pink", "green", ... or one of the rainbow words) anywhere in the same
+///     CLAUSE as the matched word. "Clause" means: split the tooltip on `. , ; ! ?` and the
+///     standalone words "and"/"but", and look inside whichever piece the match landed in. This is
+///     what makes "the pink tentacles hold you in place, shocking you." color the tentacles (Bind)
+///     pink without also tinting the shock (Paralysis) pink - they're on opposite sides of the
+///     comma. If a clause happens to contain more than one color word, the first one (by position)
+///     wins - a deliberately simple tie-break rather than trying to guess which word is "closer" to
+///     the match in some more clever sense.
 ///  3. The rule's own <see cref="TooltipKeywordRule.Color"/>, if the person configured one.
 ///  4. Nothing - the effect shows in its own normal color, same as a real debuff.
 ///
@@ -115,14 +118,31 @@ public static class TooltipKeywordParser
         ["copper"] = Rgb(0.72f, 0.45f, 0.25f),
     };
 
-    // One compiled alternation over every named color, rather than looping the dictionary per
-    // match - built once from NamedColors' own keys so it can never drift out of sync with it.
+    /// <summary>
+    /// "Secret" color words that aren't a fixed color at all: any tooltip clause (or [color=] tag)
+    /// mentioning one of these resolves to <see cref="RainbowColor"/>, a hue that advances one step
+    /// per second and wraps every 256 seconds - so an effect driven by such a match visibly cycles
+    /// through the color wheel at exactly the cadence <see cref="CustomStatusWatcher"/> already
+    /// re-reads tooltips at. Kept out of <see cref="NamedColors"/> so that dictionary stays a plain
+    /// word -> fixed-RGB lookup, and so <see cref="TryResolveWord"/> can special-case these before
+    /// falling through to it. Intentionally undocumented in the settings window.
+    /// </summary>
+    private static readonly HashSet<string> RainbowWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "rgb", "rainbow",
+    };
+
+    // One compiled alternation over every named color AND every rainbow word, rather than looping
+    // the dictionary per match - built once from the two sources' own keys so it can never drift
+    // out of sync with them.
     private static readonly Regex ColorWordPattern = BuildColorWordPattern();
 
     private static Regex BuildColorWordPattern()
     {
-        var escaped = new List<string>(NamedColors.Count);
+        var escaped = new List<string>(NamedColors.Count + RainbowWords.Count);
         foreach (var name in NamedColors.Keys)
+            escaped.Add(Regex.Escape(name));
+        foreach (var name in RainbowWords)
             escaped.Add(Regex.Escape(name));
         // Longest-first so e.g. "sea green" (if ever added) would win over "green" alone; harmless
         // no-op with the current single-word list, but free to get right now.
@@ -187,9 +207,10 @@ public static class TooltipKeywordParser
     /// <summary>
     /// Attempts to resolve one color TOKEN - the value inside a `[color=value]` tag, or (from the
     /// settings window) whatever the person typed into a manual hex box. Accepts a hex triplet/
-    /// quad (`ff69b4`, `#ff69b4`, `0xff69b4`, or the 3/4-digit CSS-style shorthand `f6b`/`f6bf`) or a
-    /// name from <see cref="NamedColors"/>. Returns false (leaving <paramref name="rgb"/> as
-    /// default) for anything else, rather than guessing.
+    /// quad (`ff69b4`, `#ff69b4`, `0xff69b4`, or the 3/4-digit CSS-style shorthand `f6b`/`f6bf`), a
+    /// name from <see cref="NamedColors"/>, or one of the time-varying <see cref="RainbowWords"/>.
+    /// Returns false (leaving <paramref name="rgb"/> as default) for anything else, rather than
+    /// guessing.
     /// </summary>
     public static bool TryResolveColorToken(string? token, out Vector4 rgb)
     {
@@ -216,7 +237,58 @@ public static class TooltipKeywordParser
             return true;
         }
 
-        return NamedColors.TryGetValue(t, out rgb);
+        return TryResolveWord(t, out rgb);
+    }
+
+    /// <summary>
+    /// Resolves one color WORD - from either <see cref="NamedColors"/> or the time-varying
+    /// <see cref="RainbowWords"/>. This is the single place both the plain-clause path
+    /// (<see cref="FindClauseColor"/>) and <see cref="TryResolveColorToken"/> go through, so the two
+    /// paths can never drift apart on which words they recognize or on what a rainbow word resolves
+    /// to right now.
+    /// </summary>
+    private static bool TryResolveWord(string word, out Vector4 rgb)
+    {
+        if (RainbowWords.Contains(word))
+        {
+            rgb = RainbowColor(Environment.TickCount64);
+            return true;
+        }
+        return NamedColors.TryGetValue(word, out rgb);
+    }
+
+    /// <summary>
+    /// The "rainbow" color at <paramref name="nowMs"/>: full-saturation, full-value RGB whose hue
+    /// advances one step per second across a 256-step wheel and wraps back to red - see
+    /// <see cref="RainbowWords"/>. A long-milliseconds value like <see cref="Environment.TickCount64"/>
+    /// works directly; the modulo keeps it in range. The result is a SNAPSHOT: callers cache it (as
+    /// part of a <see cref="TooltipEffectMatch"/>), and the next <see cref="Parse"/> picks up the
+    /// next step - which is why this lines up with <see cref="CustomStatusWatcher"/>'s own
+    /// once-a-second re-read instead of needing its own timer.
+    /// </summary>
+    private static Vector4 RainbowColor(long nowMs)
+    {
+        int hue = (int)((nowMs / 1000) % 256);
+        if (hue < 0) hue += 256; // TickCount64 is non-negative, but keep the math total anyway
+        return HueToRgb(hue / 256f);
+    }
+
+    /// <summary>Fully-saturated, fully-bright HSV hue in [0, 1) to RGB, for <see cref="RainbowColor"/>.</summary>
+    private static Vector4 HueToRgb(float h)
+    {
+        float sector = h * 6f;
+        int i = (int)sector % 6;
+        float f = sector - (int)sector;
+        float q = 1f - f;
+        return i switch
+        {
+            0 => new Vector4(1f, f, 0f, 1f),
+            1 => new Vector4(q, 1f, 0f, 1f),
+            2 => new Vector4(0f, 1f, f, 1f),
+            3 => new Vector4(0f, q, 1f, 1f),
+            4 => new Vector4(f, 0f, 1f, 1f),
+            _ => new Vector4(1f, 0f, q, 1f),
+        };
     }
 
     private static bool IsAllHex(string s)
@@ -305,7 +377,7 @@ public static class TooltipKeywordParser
             foreach (Match cw in colorWords)
             {
                 if (cw.Index < c.Start || cw.Index >= c.End) continue;
-                return NamedColors.TryGetValue(cw.Value, out var rgb) ? rgb : null;
+                return TryResolveWord(cw.Value, out var rgb) ? rgb : null;
             }
             break; // found the containing clause; it just has no color word in it
         }

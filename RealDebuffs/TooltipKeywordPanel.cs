@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 
@@ -6,10 +7,11 @@ namespace RealDebuffs;
 
 /// <summary>
 /// The "Tooltip keywords" section of the settings window: the master checkbox, the list of
-/// keyword -> effect rules (each with an optional fallback tint and a strength slider), and a
-/// paste-in tester for checking what a piece of text would trigger without needing to actually
-/// apply a Moodle/Loci status in-game first. Kept in its own file for the same reason
-/// <see cref="CustomStatusPanel"/> is: Configuration.cs only has to call <see cref="Draw"/>.
+/// keyword-rule -> effect rules (each holding a comma-separated keyword list, an optional fallback
+/// tint, and a strength slider), and a paste-in tester for checking what a piece of text would
+/// trigger without needing to actually apply a Moodle/Loci status in-game first. Kept in its own
+/// file for the same reason <see cref="CustomStatusPanel"/> is: Configuration.cs only has to call
+/// <see cref="Draw"/>.
 ///
 /// This is intentionally a SEPARATE panel from <see cref="CustomStatusPanel"/> rather than a mode
 /// bolted onto it - see <see cref="TooltipKeywordRule"/>'s remarks for why the two rule types don't
@@ -17,7 +19,7 @@ namespace RealDebuffs;
 /// </summary>
 internal sealed class TooltipKeywordPanel
 {
-    private const float KeywordWidth = 130f;
+    private const float KeywordWidth = 220f;
     private const float KindWidth = 110f;
     private const float StrengthWidth = 90f;
 
@@ -30,7 +32,7 @@ internal sealed class TooltipKeywordPanel
     private readonly CustomStatusWatcher _watcher;
 
     // State of the "add" row; only lives as long as the window does.
-    private string _newKeyword = "";
+    private string _newKeywords = "";
     private int _newKind = Array.IndexOf(Kinds, DebuffKind.Bind);
 
     // State of the tester; only lives as long as the window does.
@@ -67,7 +69,9 @@ internal sealed class TooltipKeywordPanel
                 "(the same [color=] tag Moodles/Loci already support in titles) or a plain color word " +
                 "like \"pink\" or \"green\" near the matched word. This is a heuristic over free-form " +
                 "text, not an exact science - use the tester near the bottom to check a specific " +
-                "tooltip before relying on it.");
+                "tooltip before relying on it. Each rule holds several comma-separated words (e.g. " +
+                "\"flame, burning, scorch\"), all driving the same effect and sharing the same tint " +
+                "and strength.");
 
             if (!enabled)
                 ImGui.TextDisabled("  (off - the rules below are kept, but nothing is matched against them yet)");
@@ -88,9 +92,11 @@ internal sealed class TooltipKeywordPanel
                 if (ImGui.Checkbox("##on", ref ruleEnabled)) { rule.Enabled = ruleEnabled; changed = true; }
 
                 ImGui.SameLine();
-                string keyword = rule.Keyword;
+                string keywords = rule.Keywords;
                 ImGui.SetNextItemWidth(KeywordWidth);
-                if (ImGui.InputTextWithHint("##keyword", "Word or phrase", ref keyword, 64)) { rule.Keyword = keyword; changed = true; }
+                if (ImGui.InputTextWithHint("##keywords", "flame, burning, scorch...", ref keywords, 512)) { rule.Keywords = keywords; changed = true; }
+                if (ImGui.IsItemHovered())
+                    ImGui.SetTooltip("Separate multiple words with commas. Blank entries and duplicates are ignored; so are newlines and semicolons, so a pasted list works too.");
 
                 ImGui.SameLine();
                 int kind = Math.Max(0, Array.IndexOf(Kinds, rule.Kind));
@@ -146,39 +152,59 @@ internal sealed class TooltipKeywordPanel
 
             // ---- add a rule ----
             ImGui.Spacing();
-            ImGui.TextDisabled("Add a keyword");
+            ImGui.TextDisabled("Add a keyword rule");
 
             ImGui.SetNextItemWidth(KeywordWidth);
-            ImGui.InputTextWithHint("##newkeyword", "Word or phrase", ref _newKeyword, 64);
+            ImGui.InputTextWithHint("##newkeywords", "flame, burning, scorch...", ref _newKeywords, 512);
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Separate multiple words with commas. Blank entries and duplicates are ignored; so are newlines and semicolons, so a pasted list works too.");
 
             ImGui.SameLine();
             ImGui.SetNextItemWidth(KindWidth);
             ImGui.Combo("##newkind", ref _newKind, KindNames, KindNames.Length);
 
-            string trimmed = _newKeyword.Trim();
+            var parsedNew = TooltipKeywordRule.ParseKeywords(_newKeywords);
             var newKind = Kinds[Math.Clamp(_newKind, 0, Kinds.Length - 1)];
+
+            // Any keyword that already drives this same effect would be dead weight (and would
+            // silently race the existing rule for the merge tie-break). Different kinds are fine
+            // and common - "flame" driving Burns in one rule and Electrocution in another is
+            // deliberate, so only same-kind collisions are flagged.
             bool duplicate = false;
-            foreach (var r in rules)
+            if (parsedNew.Length > 0)
             {
-                if (r.Kind == newKind && string.Equals(r.Keyword.Trim(), trimmed, StringComparison.OrdinalIgnoreCase))
+                foreach (var r in rules)
                 {
-                    duplicate = true;
-                    break;
+                    if (r.Kind != newKind) continue;
+                    foreach (var existing in r.ParsedKeywords)
+                    {
+                        if (parsedNew.Contains(existing, StringComparer.OrdinalIgnoreCase))
+                        {
+                            duplicate = true;
+                            break;
+                        }
+                    }
+                    if (duplicate) break;
                 }
             }
 
             ImGui.SameLine();
-            ImGui.BeginDisabled(trimmed.Length == 0 || duplicate);
+            ImGui.BeginDisabled(parsedNew.Length == 0 || duplicate);
             if (ImGui.Button("Add##addkeyword"))
             {
-                rules.Add(new TooltipKeywordRule { Keyword = trimmed, Kind = newKind });
-                _newKeyword = "";
+                // Store the normalized re-join rather than the raw typed string, so a messy paste
+                // ("flame,,  flames ,,,") lands in the config as exactly the parsed set the
+                // duplicate check just validated.
+                rules.Add(new TooltipKeywordRule { Keywords = string.Join(", ", parsedNew), Kind = newKind });
+                _newKeywords = "";
                 changed = true;
             }
             ImGui.EndDisabled();
 
-            if (duplicate && trimmed.Length > 0)
-                ImGui.TextDisabled("  That word already has that effect.");
+            if (duplicate)
+                ImGui.TextDisabled("  One or more of those words is already driving this effect.");
+            else if (parsedNew.Length > 1)
+                ImGui.TextDisabled($"  Will add {parsedNew.Length} keywords in one rule.");
 
             ImGui.TextDisabled("Not triggering? '/realdebuffs statuses' also logs tooltip matches (and why) when this is on.");
 
@@ -193,7 +219,7 @@ internal sealed class TooltipKeywordPanel
         return changed;
     }
 
-    /// <summary>Whether <paramref name="rule"/>'s keyword is currently found in any active status's tooltip - purely a live "yes, this would fire" indicator, independent of whether tooltip parsing is switched on.</summary>
+    /// <summary>Whether <paramref name="rule"/>'s keywords are currently found in any active status's tooltip - purely a live "yes, this would fire" indicator, independent of whether tooltip parsing is switched on.</summary>
     private bool IsCurrentlyMatching(TooltipKeywordRule rule)
     {
         var pattern = rule.GetPattern();

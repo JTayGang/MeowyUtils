@@ -162,10 +162,17 @@ public class Configuration : IPluginConfiguration
 }
 
 /// <summary>
-/// The settings window: master enable switch, overall intensity slider, and a per-debuff toggle
-/// for each <see cref="DebuffKind"/>. Used to live in its own Windows/ConfigWindow.cs; moved in
-/// here because Configuration is its only real dependency and the two are almost always read or
-/// edited together.
+/// The settings window. Two tabs:
+///  - "Effects": the master enable switch, overall intensity, the per-debuff toggles, and the
+///    Advanced section (chat lockout) - everything that applies to REAL game debuffs.
+///  - "Moodles/Loci Support": the two custom-status rule editors
+///    (<see cref="CustomStatusPanel"/>, <see cref="TooltipKeywordPanel"/>) - everything that
+///    only fires because of a Moodles or Loci status. Kept on its own tab both because it's a
+///    self-contained feature a lot of users will never touch (so it no longer sits between the
+///    per-debuff list and the Advanced section), and because the two panels together are tall
+///    enough that stacking them under the main list made for one long scroll.
+/// ImGui remembers the selected tab per session automatically, since the tab bar is keyed by the
+/// same ID every frame.
 /// </summary>
 public sealed class ConfigWindow : Window
 {
@@ -186,6 +193,32 @@ public sealed class ConfigWindow : Window
     }
 
     public override void Draw()
+    {
+        bool changed = false;
+
+        if (ImGui.BeginTabBar("##RealDebuffsTabs"))
+        {
+            if (ImGui.BeginTabItem("Effects"))
+            {
+                changed |= DrawEffectsTab();
+                ImGui.EndTabItem();
+            }
+
+            if (ImGui.BeginTabItem("Moodles/Loci Support"))
+            {
+                changed |= DrawMoodlesTab();
+                ImGui.EndTabItem();
+            }
+
+            ImGui.EndTabBar();
+        }
+
+        if (changed)
+            _save();
+    }
+
+    /// <summary>Everything that applies to REAL game debuffs: master switches, intensity, per-debuff toggles, chat lockout, and the in-game test panel.</summary>
+    private bool DrawEffectsTab()
     {
         bool changed = false;
 
@@ -237,12 +270,6 @@ public sealed class ConfigWindow : Window
         changed |= EffectToggle(DebuffKind.Windburn, "Windburn", "Pale streaks blow across the screen edges.");
 
         ImGui.Separator();
-        changed |= _customStatuses.Draw();
-
-        ImGui.Separator();
-        changed |= _tooltipKeywords.Draw();
-
-        ImGui.Separator();
         ImGui.TextDisabled("Advanced");
         ImGui.Spacing();
 
@@ -255,8 +282,22 @@ public sealed class ConfigWindow : Window
             "first setting to try turning off - everything else is unaffected by it.");
 
         DebugTester.DrawUi(kind => _config.Enabled && _config.IsEnabled(kind)); // TEST-TOOLS: delete this line (and DebugTester.cs) to remove the test panel
-        if (changed)
-            _save();
+
+        return changed;
+    }
+
+    /// <summary>Everything that only fires because of a Moodles or Loci status: the name-based rule list, and the tooltip-keyword rule list (with its master toggle and tester).</summary>
+    private bool DrawMoodlesTab()
+    {
+        bool changed = false;
+
+        changed |= _customStatuses.Draw();
+
+        ImGui.Separator();
+
+        changed |= _tooltipKeywords.Draw();
+
+        return changed;
     }
 
     private bool EffectToggle(DebuffKind kind, string label, string description)

@@ -1,17 +1,25 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Ipc;
 using Dalamud.Plugin.Services;
 
-// Moodles and Loci both hand a status back over IPC as one long tuple whose first four fields are
-// (Version, GUID, IconID, Title). Dalamud converts an IPC result to the type the caller declares by
-// round-tripping it through JSON, and JSON -> tuple simply ignores any field the target tuple
-// doesn't have - so declaring just the leading fields we read is enough, and it keeps working if
-// either plugin appends more fields later. (SkyrimCompass has to declare the full tuples because it
-// also sends statuses back.) IconID is a long so it accepts Moodles' int and Loci's uint alike.
-using StatusHead = (int Version, System.Guid GUID, long IconID, string Title);
+// Moodles and Loci both hand a status back over IPC as one long tuple whose first five fields are
+// (Version, GUID, IconID, Title, Description). Dalamud converts an IPC result to the type the caller
+// declares by round-tripping it through JSON, and JSON -> tuple simply ignores any field the target
+// tuple doesn't have - so declaring just the leading fields we read is enough, and it keeps working
+// if either plugin appends more fields later. (SkyrimCompass has to declare the full tuples because
+// it also sends statuses back - see its StatusMirror.cs, which confirms Description really is field
+// 5 on both sides.) IconID is a long so it accepts Moodles' int and Loci's uint alike.
+//
+// Description is new here (RealDebuffs used to only read Title): it's a status's full tooltip body,
+// and reading it is what makes the tooltip-keyword feature (TooltipKeywordParser) possible. It's
+// kept RAW (unlike Title, which immediately goes through StatusNames.Clean below) because the
+// parser needs the [color=] tags still in place to know what color a tooltip is asking for - it
+// does its own stripping once it's done reading them.
+using StatusHead = (int Version, System.Guid GUID, long IconID, string Title, string Description);
 
 namespace RealDebuffs;
 
@@ -24,8 +32,17 @@ public enum StatusSource
     Loci = 2,
 }
 
-/// <summary>One distinct custom status currently on the player. <see cref="Key"/> is the comparison form of <see cref="Name"/>.</summary>
-public sealed record ActiveCustomStatus(string Key, string Name, StatusSource Sources);
+/// <summary>
+/// One distinct custom status currently on the player. <see cref="Key"/> is the comparison form of
+/// <see cref="Name"/>. <see cref="Description"/> is the raw tooltip body (see the remarks on
+/// <c>StatusHead</c> above for why it's raw) - empty if the status has none, which is common for a
+/// quickly-made Moodle/Loci that's just a title and an icon. <see cref="TooltipMatches"/> is what
+/// <see cref="TooltipKeywordParser"/> found in that description the last time this snapshot was
+/// built (empty if the status has no description, no rule matched, or tooltip parsing is off) - see
+/// <see cref="CustomStatusSnapshot"/>'s remarks for why it's precomputed here rather than on demand.
+/// </summary>
+public sealed record ActiveCustomStatus(
+    string Key, string Name, string Description, StatusSource Sources, IReadOnlyList<TooltipEffectMatch> TooltipMatches);
 
 /// <summary>
 /// An immutable picture of "which custom statuses does the player have right now", merged across
@@ -35,52 +52,133 @@ public sealed record ActiveCustomStatus(string Key, string Name, StatusSource So
 /// Statuses are merged BY NAME (see <see cref="StatusNames"/>). That's what makes a mirrored status
 /// count once: SkyrimCompass copies a Moodle into Loci (and vice versa) under the same title, so
 /// both plugins report it - and it collapses into a single entry here, tagged with both sources.
-/// The same goes for two separate statuses that happen to share a title.
+/// The same goes for two separate statuses that happen to share a title. If the two sides disagree
+/// on the description text for what merges into one entry (only possible for a status that predates
+/// SkyrimCompass's mirroring, or was independently created twice), whichever non-empty description
+/// was seen FIRST wins - simple, and a mismatch here is already an edge case neither this plugin nor
+/// SkyrimCompass can fully resolve on your behalf.
+///
+/// TOOLTIP KEYWORDS ARE RESOLVED HERE, ONCE, AT BUILD TIME - not on demand in EffectManager.Draw.
+/// <see cref="TooltipKeywordRule"/> matching (unlike the plain name-based <see cref="CustomStatusRule"/>)
+/// involves real text processing - stripping markup, splitting clauses, scanning for color words -
+/// and the text it runs on is already only as fresh as the last IPC read (see
+/// <see cref="CustomStatusWatcher"/>'s remarks on its read cadence), so redoing that work 60 times a
+/// second in the draw loop would just repeat the same answer 59 extra times. Instead the aggregate
+/// result (<see cref="TooltipKinds"/>/<see cref="TooltipStrengths"/>/<see cref="TooltipColors"/>) is
+/// computed once per <see cref="Build"/> call, and each status's own
+/// <see cref="ActiveCustomStatus.TooltipMatches"/> is cached alongside it too, so
+/// EffectManager.Draw's per-frame job is just cheap dictionary/set merging over an answer that's
+/// already sitting there, and the "/realdebuffs statuses" diagnostic can show exactly what's
+/// actually driving the screen right now rather than a fresh (and potentially momentarily
+/// different) re-parse. The trade-off: editing a keyword, its color, or the on/off checkbox in the
+/// settings window takes effect on the next read (up to about a second), same as a real change to
+/// the Moodle/Loci status itself would - name-based rules are still matched fresh every frame
+/// (see <see cref="AddActiveKinds"/>), since a plain "is this key present" check is cheap enough
+/// that there's no reason to make IT wait too.
 /// </summary>
 public sealed class CustomStatusSnapshot
 {
-    public static readonly CustomStatusSnapshot Empty = new(Array.Empty<ActiveCustomStatus>());
+    public static readonly CustomStatusSnapshot Empty = new(
+        Array.Empty<ActiveCustomStatus>(), new HashSet<DebuffKind>(), new Dictionary<DebuffKind, float>(), new Dictionary<DebuffKind, Vector4>());
 
     private readonly HashSet<string> _keys;
 
     /// <summary>Every distinct active status, sorted by name.</summary>
     public IReadOnlyList<ActiveCustomStatus> Statuses { get; }
 
-    private CustomStatusSnapshot(ActiveCustomStatus[] statuses)
+    /// <summary>Every effect kind at least one active status's tooltip currently asks for - see the class remarks. Empty whenever tooltip parsing is off.</summary>
+    public IReadOnlyCollection<DebuffKind> TooltipKinds { get; }
+
+    /// <summary>Per-kind strength from whichever tooltip match asked loudest - see <see cref="TooltipKeywordRule.Strength"/>.</summary>
+    public IReadOnlyDictionary<DebuffKind, float> TooltipStrengths { get; }
+
+    /// <summary>Per-kind color from whichever tooltip match resolved one first - see <see cref="TooltipKeywordParser"/>'s remarks on how ties resolve.</summary>
+    public IReadOnlyDictionary<DebuffKind, Vector4> TooltipColors { get; }
+
+    private CustomStatusSnapshot(
+        ActiveCustomStatus[] statuses,
+        HashSet<DebuffKind> tooltipKinds,
+        Dictionary<DebuffKind, float> tooltipStrengths,
+        Dictionary<DebuffKind, Vector4> tooltipColors)
     {
         Statuses = statuses;
         _keys = new HashSet<string>(statuses.Select(s => s.Key), StringComparer.Ordinal);
+        TooltipKinds = tooltipKinds;
+        TooltipStrengths = tooltipStrengths;
+        TooltipColors = tooltipColors;
     }
 
     /// <summary>True if a status with this comparison key (see <see cref="StatusNames.Key"/>) is active.</summary>
     public bool Contains(string key) => key.Length > 0 && _keys.Contains(key);
 
-    /// <summary>Merges the titles reported by each plugin into one deduped snapshot.</summary>
-    internal static CustomStatusSnapshot Build(IEnumerable<string?> moodlesTitles, IEnumerable<string?> lociTitles)
+    /// <summary>
+    /// Merges the titles+descriptions reported by each plugin into one deduped snapshot, and - see
+    /// the class remarks - resolves every status's tooltip against <paramref name="tooltipRules"/>
+    /// right here, once. Pass an empty rule list (rather than skipping the call) when tooltip
+    /// parsing is switched off; every status just ends up with empty <see cref="ActiveCustomStatus.TooltipMatches"/>
+    /// and the three tooltip-aggregate properties end up empty too; that's what
+    /// <see cref="CustomStatusWatcher.Refresh"/> does.
+    /// </summary>
+    internal static CustomStatusSnapshot Build(
+        IEnumerable<(string? Title, string? Description)> moodlesStatuses,
+        IEnumerable<(string? Title, string? Description)> lociStatuses,
+        IReadOnlyList<TooltipKeywordRule> tooltipRules)
     {
-        var merged = new Dictionary<string, (string Name, StatusSource Sources)>(StringComparer.Ordinal);
+        var merged = new Dictionary<string, (string Name, string Description, StatusSource Sources)>(StringComparer.Ordinal);
 
-        void Add(string? title, StatusSource source)
+        void Add(string? title, string? description, StatusSource source)
         {
             var name = StatusNames.Clean(title);
             if (name.Length == 0) return;
 
             var key = StatusNames.Key(name);
+            var desc = description ?? "";
+
             merged[key] = merged.TryGetValue(key, out var seen)
-                ? (seen.Name, seen.Sources | source)
-                : (name, source);
+                ? (seen.Name, seen.Description.Length > 0 ? seen.Description : desc, seen.Sources | source)
+                : (name, desc, source);
         }
 
-        foreach (var title in moodlesTitles) Add(title, StatusSource.Moodles);
-        foreach (var title in lociTitles) Add(title, StatusSource.Loci);
+        foreach (var (title, description) in moodlesStatuses) Add(title, description, StatusSource.Moodles);
+        foreach (var (title, description) in lociStatuses) Add(title, description, StatusSource.Loci);
 
         if (merged.Count == 0) return Empty;
 
-        return new CustomStatusSnapshot(merged
-            .Select(kv => new ActiveCustomStatus(kv.Key, kv.Value.Name, kv.Value.Sources))
+        // Second pass, now that each status's final (post name-merge) description is settled: run
+        // the keyword parser over it exactly once - seeding both this status's own TooltipMatches
+        // (for the settings-window/diagnostic view) and the snapshot-wide aggregates EffectManager
+        // actually draws from.
+        var built = new List<ActiveCustomStatus>(merged.Count);
+        var tooltipKinds = new HashSet<DebuffKind>();
+        var tooltipStrengths = new Dictionary<DebuffKind, float>();
+        var tooltipColors = new Dictionary<DebuffKind, Vector4>();
+
+        foreach (var kv in merged)
+        {
+            var matches = tooltipRules.Count > 0 && kv.Value.Description.Length > 0
+                ? TooltipKeywordParser.Parse(kv.Value.Description, tooltipRules)
+                : Array.Empty<TooltipEffectMatch>();
+
+            built.Add(new ActiveCustomStatus(kv.Key, kv.Value.Name, kv.Value.Description, kv.Value.Sources, matches));
+
+            foreach (var match in matches)
+            {
+                tooltipKinds.Add(match.Kind);
+
+                if (!tooltipStrengths.TryGetValue(match.Kind, out var bestStrength) || match.Strength > bestStrength)
+                    tooltipStrengths[match.Kind] = match.Strength;
+
+                if (match.Color is { } color && !tooltipColors.ContainsKey(match.Kind))
+                    tooltipColors[match.Kind] = color;
+            }
+        }
+
+        var statuses = built
             .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
             .ThenBy(s => s.Key, StringComparer.Ordinal)
-            .ToArray());
+            .ToArray();
+
+        return new CustomStatusSnapshot(statuses, tooltipKinds, tooltipStrengths, tooltipColors);
     }
 
     /// <summary>
@@ -118,10 +216,17 @@ public sealed class CustomStatusSnapshot
 /// by up to about a second, on top of its normal fade in/out - fine for a screen effect. Either
 /// plugin being absent is normal: that side just reports nothing, and is re-probed every couple of
 /// seconds so installing or enabling it mid-session is picked up without a reload.
+///
+/// This is also the ONE place <see cref="TooltipKeywordRule"/> matching happens - see
+/// <see cref="CustomStatusSnapshot"/>'s remarks - which is why this class needs a
+/// <see cref="Configuration"/> reference at all (it otherwise has nothing to do with settings).
+/// A plain name-based <see cref="CustomStatusRule"/>, by contrast, is still matched fresh every
+/// frame in EffectManager against whatever this class last read, since that comparison is cheap
+/// enough not to bother caching.
 /// </summary>
 public sealed class CustomStatusWatcher : IDisposable
 {
-    private const int ReadIntervalMs = 1000; // the one knob: how often Moodles and Loci get read
+    private const int ReadIntervalMs = 1000; // the one knob: how often Moodles and Loci get read (and tooltips re-parsed)
     private const int ProbeMs = 2000;        // how often to look for a plugin that isn't there / isn't working
     private const int MoodlesMinVersion = 4; // first Moodles IPC version with the V2 status-info calls
 
@@ -145,6 +250,7 @@ public sealed class CustomStatusWatcher : IDisposable
     private readonly IFramework _framework;
     private readonly IObjectTable _objectTable;
     private readonly IPluginLog _log;
+    private readonly Configuration _config;
     private readonly Func<long> _nowMs;
     private readonly Source _moodles;
     private readonly Source _loci;
@@ -162,18 +268,19 @@ public sealed class CustomStatusWatcher : IDisposable
     /// <summary>Whether a usable, enabled Loci was found and is being read.</summary>
     public bool LociAvailable => _loci.Available;
 
-    public CustomStatusWatcher(IDalamudPluginInterface pi, IFramework framework, IObjectTable objectTable, IPluginLog log)
-        : this(pi, framework, objectTable, log, static () => Environment.TickCount64)
+    public CustomStatusWatcher(IDalamudPluginInterface pi, IFramework framework, IObjectTable objectTable, IPluginLog log, Configuration config)
+        : this(pi, framework, objectTable, log, config, static () => Environment.TickCount64)
     {
     }
 
     /// <summary>Same as the public constructor, with the clock swappable so the timing can be tested.</summary>
     internal CustomStatusWatcher(
-        IDalamudPluginInterface pi, IFramework framework, IObjectTable objectTable, IPluginLog log, Func<long> nowMs)
+        IDalamudPluginInterface pi, IFramework framework, IObjectTable objectTable, IPluginLog log, Configuration config, Func<long> nowMs)
     {
         _framework = framework;
         _objectTable = objectTable;
         _log = log;
+        _config = config;
         _nowMs = nowMs;
 
         // Same IPC endpoints SkyrimCompass already uses for its mirroring. Plain calls only - no event
@@ -235,27 +342,34 @@ public sealed class CustomStatusWatcher : IDisposable
             return;
         }
 
-        _snapshot = CustomStatusSnapshot.Build(ReadSource(_moodles, now), ReadSource(_loci, now));
+        // Empty (not just "skip building") when the checkbox is off, so Build still runs its normal
+        // merge but every status naturally ends up with no TooltipMatches - one code path either way.
+        var tooltipRules = _config.ParseCustomStatusTooltips
+            ? _config.TooltipKeywordRules
+            : Array.Empty<TooltipKeywordRule>();
+
+        _snapshot = CustomStatusSnapshot.Build(ReadSource(_moodles, now), ReadSource(_loci, now), tooltipRules);
     }
 
     /// <summary>
-    /// Reads one plugin's current status titles. Never throws: a missing or misbehaving plugin just
-    /// contributes nothing. Probes for a missing plugin at a slow rate, and if reads start failing
-    /// (plugin unloaded, or its IPC shape changed) logs ONE warning for the streak, then retries
-    /// quietly - on the very next read in case it was a blip, then at the slow probe rate.
+    /// Reads one plugin's current status titles+descriptions. Never throws: a missing or
+    /// misbehaving plugin just contributes nothing. Probes for a missing plugin at a slow rate, and
+    /// if reads start failing (plugin unloaded, or its IPC shape changed) logs ONE warning for the
+    /// streak, then retries quietly - on the very next read in case it was a blip, then at the slow
+    /// probe rate.
     /// </summary>
-    private IReadOnlyList<string> ReadSource(Source s, long now)
+    private IReadOnlyList<(string? Title, string? Description)> ReadSource(Source s, long now)
     {
         if (!s.Available)
         {
-            if (now < s.NextProbeAt) return Array.Empty<string>();
+            if (now < s.NextProbeAt) return Array.Empty<(string?, string?)>();
             s.NextProbeAt = now + ProbeMs;
 
             bool found;
             try { found = s.Probe(); }
             catch { found = false; } // IpcNotReadyError: not loaded (yet)
 
-            if (!found) return Array.Empty<string>();
+            if (!found) return Array.Empty<(string?, string?)>();
 
             s.Available = true;
             if (!s.Failing)
@@ -264,13 +378,13 @@ public sealed class CustomStatusWatcher : IDisposable
 
         try
         {
-            var titles = Titles(s.Read());
+            var heads = Heads(s.Read());
             if (s.Failing)
             {
                 s.Failing = false;
                 _log.Information($"RealDebuffs: reading {s.Name} statuses works again.");
             }
-            return titles;
+            return heads;
         }
         catch (Exception ex)
         {
@@ -281,18 +395,18 @@ public sealed class CustomStatusWatcher : IDisposable
                 s.Failing = true;
                 _log.Warning(ex, $"RealDebuffs: couldn't read {s.Name} statuses (it may have been unloaded, or its IPC changed). Will keep retrying quietly.");
             }
-            return Array.Empty<string>();
+            return Array.Empty<(string?, string?)>();
         }
     }
 
-    private static List<string> Titles(List<StatusHead>? list)
+    private static List<(string? Title, string? Description)> Heads(List<StatusHead>? list)
     {
-        var titles = new List<string>(list?.Count ?? 0);
-        if (list == null) return titles;
+        var heads = new List<(string?, string?)>(list?.Count ?? 0);
+        if (list == null) return heads;
 
         foreach (var status in list)
-            titles.Add(status.Title);
-        return titles;
+            heads.Add((status.Title, status.Description));
+        return heads;
     }
 
     public void Dispose() => _framework.Update -= OnUpdate;

@@ -41,7 +41,7 @@ public sealed class Plugin : IDalamudPlugin
 
         var catalog = new StatusCatalog(dataManager, log);
         _chatBlocker = new ChatBlocker(hooks, log);
-        _customStatuses = new CustomStatusWatcher(_pi, framework, objectTable, log);
+        _customStatuses = new CustomStatusWatcher(_pi, framework, objectTable, log, _config);
         _effects = new EffectManager(clientState, objectTable, condition, gameGui, catalog, _config, _chatBlocker, _customStatuses, log);
 
         _configWindow = new ConfigWindow(_config, SaveConfig, _customStatuses);

@@ -60,6 +60,29 @@ public class Configuration : IPluginConfiguration
     public List<CustomStatusRule> CustomStatusRules { get; set; } = new();
 
     /// <summary>
+    /// The checkbox next to the custom-status section: whether to ALSO scan each active Moodles/Loci
+    /// status's tooltip text for <see cref="TooltipKeywordRules"/>, on top of matching its name
+    /// above. Off by default - this is a heuristic, text-matching feature, and worth reviewing the
+    /// seeded keyword list against your own moodles before turning it on.
+    /// </summary>
+    public bool ParseCustomStatusTooltips { get; set; } = false;
+
+    /// <summary>
+    /// "If a status's tooltip contains this word, show this effect (in this color, at this
+    /// strength)" links - see <see cref="TooltipKeywordRule"/>. Only consulted while
+    /// <see cref="ParseCustomStatusTooltips"/> is on. Seeded with a starting set (see
+    /// <see cref="TooltipKeywordRule.Defaults"/>) rather than empty, since - unlike a status NAME,
+    /// which is arbitrary per-user RP flavor - common English color/effect words are predictable
+    /// enough to ship a useful default for. This also means an existing save from before this
+    /// feature existed picks up the same defaults the first time it loads post-update: Dalamud's
+    /// config load only overwrites a property the saved JSON actually contains, so a property this
+    /// old JSON never had keeps whatever this field initializer set it to - exactly how
+    /// CustomStatusRules above has always defaulted an old save to an empty list, just with a
+    /// non-empty default this time.
+    /// </summary>
+    public List<TooltipKeywordRule> TooltipKeywordRules { get; set; } = TooltipKeywordRule.Defaults();
+
+    /// <summary>
     /// Advanced/optional and OFF by default: actually stops outgoing chat while Silenced, via a
     /// game hook, instead of just showing the visual effect. See ChatBlocker.cs.
     /// </summary>
@@ -149,6 +172,7 @@ public sealed class ConfigWindow : Window
     private readonly Configuration _config;
     private readonly Action _save;
     private readonly CustomStatusPanel _customStatuses;
+    private readonly TooltipKeywordPanel _tooltipKeywords;
 
     public ConfigWindow(Configuration config, Action save, CustomStatusWatcher customStatuses)
         : base("Real Debuffs Settings###RealDebuffsConfig")
@@ -156,6 +180,7 @@ public sealed class ConfigWindow : Window
         _config = config;
         _save = save;
         _customStatuses = new CustomStatusPanel(config, customStatuses);
+        _tooltipKeywords = new TooltipKeywordPanel(config, customStatuses);
         Size = new Vector2(470, 660);
         SizeCondition = ImGuiCond.FirstUseEver;
     }
@@ -213,6 +238,9 @@ public sealed class ConfigWindow : Window
 
         ImGui.Separator();
         changed |= _customStatuses.Draw();
+
+        ImGui.Separator();
+        changed |= _tooltipKeywords.Draw();
 
         ImGui.Separator();
         ImGui.TextDisabled("Advanced");

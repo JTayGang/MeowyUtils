@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Plugin.Services;
@@ -22,7 +23,18 @@ namespace RealDebuffs;
 /// every effect already takes care of it: EffectManager folds the active status's strength into that
 /// alpha before calling Draw, so a fainter-tier status just arrives as a smaller number - the effect
 /// itself never needs to know which specific status is behind it. Custom Moodles/Loci rules don't
-/// carry a tier of their own, so they always ask for full strength (1.0).
+/// carry a tier of their own, so they always ask for full strength (1.0) - EXCEPT a
+/// <see cref="TooltipKeywordRule"/> match, which can configure its own strength.
+///
+/// COLOR: same idea, one more dial. A real debuff or a name-based <see cref="CustomStatusRule"/>
+/// never overrides an effect's own authored color. A <see cref="TooltipKeywordRule"/> match CAN -
+/// see <see cref="TooltipKeywordParser"/> for how a tooltip's text resolves to a color - and when
+/// one does, <see cref="DrawHelpers.PushColorOverride"/> is what actually applies it, wrapped
+/// tightly around just that one effect's <see cref="IScreenEffect.Draw"/> call below so every other
+/// effect drawn this same frame is completely unaffected. If a real debuff and a recolored custom
+/// status ever happen to share the same kind at once, the color (like strength above) is tracked
+/// per-KIND, not per-source, so the shared effect renders with whatever color won out that frame -
+/// a rare edge case, and the same simplification this class already accepts for strength.
 /// </summary>
 public sealed class EffectManager
 {
@@ -73,6 +85,7 @@ public sealed class EffectManager
     private readonly Dictionary<DebuffKind, float> _currentAlpha = new();
     private readonly HashSet<DebuffKind> _activeScratch = new();
     private readonly Dictionary<DebuffKind, float> _targetStrength = new(); // this frame's max severity per kind; see the class doc
+    private readonly Dictionary<DebuffKind, Vector4> _colorOverrides = new(); // this frame's color per kind, ONLY for kinds a tooltip match (or a forced test) actually claimed - see the class doc
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private float _lastTime;
 
@@ -113,6 +126,7 @@ public sealed class EffectManager
 
         _activeScratch.Clear();
         _targetStrength.Clear();
+        _colorOverrides.Clear();
 
         bool suppressed = !_config.Enabled
             || _gameGui.GameUiHidden
@@ -161,6 +175,28 @@ public sealed class EffectManager
                 if (rule.Enabled && snapshot.Contains(rule.GetKey()))
                     _targetStrength[rule.Kind] = 1f;
             }
+
+            // TooltipKeywordRule matches (unlike the name-based rules just above) are NOT computed
+            // here - they're precomputed once per snapshot refresh, at the same ~1s cadence as the
+            // Moodles/Loci read itself, since matching one involves real text processing rather than
+            // a cheap key lookup. See CustomStatusSnapshot's remarks. This is just a merge of an
+            // already-computed answer into this frame's scratch collections - and it's already
+            // correctly empty when Configuration.ParseCustomStatusTooltips is off, since
+            // CustomStatusWatcher.Refresh only ever populates it when that's on.
+            foreach (var kind in snapshot.TooltipKinds)
+                _activeScratch.Add(kind);
+
+            foreach (var (kind, strength) in snapshot.TooltipStrengths)
+            {
+                if (!_targetStrength.TryGetValue(kind, out var soFar) || strength > soFar)
+                    _targetStrength[kind] = strength;
+            }
+
+            foreach (var (kind, color) in snapshot.TooltipColors)
+            {
+                if (!_colorOverrides.ContainsKey(kind))
+                    _colorOverrides[kind] = color;
+            }
         }
 
         _chatBlocker.SetSilenced(_config.SilenceBlocksChat && _activeScratch.Contains(DebuffKind.Silence));
@@ -183,6 +219,12 @@ public sealed class EffectManager
 
             float strength = _targetStrength.TryGetValue(effect.Kind, out var targetStrength) ? targetStrength : 1f;
 
+            // A forced test (see DebugTester) can also carry a preview color; a real tooltip match
+            // takes priority if somehow both are present for the same kind at once (only possible
+            // while actively using the dev tester on a kind you also happen to have live right now).
+            Vector4? color = _colorOverrides.TryGetValue(effect.Kind, out var c) ? c : DebugTester.GetForcedColor(effect.Kind); // TEST-TOOLS: trim to `_colorOverrides.TryGetValue(effect.Kind, out var color) ? color : (Vector4?)null` if you remove DebugTester.cs - see its remarks first
+
+            DrawHelpers.PushColorOverride(color);
             try
             {
                 effect.Draw(dl, screenSize, current * _config.GlobalIntensity * strength, time);
@@ -191,6 +233,10 @@ public sealed class EffectManager
             {
                 _log.Error(ex, $"RealDebuffs: {effect.Kind} effect threw during Draw - disabling it for the rest of this session.");
                 _config.SetEnabled(effect.Kind, false); // in-memory only, not saved - a real game update fix shouldn't require a settings reset
+            }
+            finally
+            {
+                DrawHelpers.PopColorOverride();
             }
         }
     }
@@ -237,10 +283,12 @@ public sealed class EffectManager
 
     /// <summary>
     /// The custom (Moodles/Loci) half of /realdebuffs statuses: what the two plugins are reporting
-    /// after name-merging, and which effect(s) each status currently maps to - or "no rule". Answers
-    /// "why isn't my rule firing" directly: either the name isn't in this list (Moodles/Loci aren't
-    /// reporting it, or it's spelled differently) or it is and no rule matches it.
-    /// Reflects the most recent once-a-second read, so it can be up to a second behind.
+    /// after name-merging, which name-rule(s) each status matches - or "no rule" - and, when tooltip
+    /// parsing is on, what TooltipKeywordRules find in its description and what color (if any) that
+    /// resolved to. Answers "why isn't my rule firing" directly: either the name/keyword isn't in
+    /// this list at all (Moodles/Loci aren't reporting it, or it's spelled/worded differently), or
+    /// it is and no rule matches it. Reflects the most recent once-a-second read, so it can be up to
+    /// a second behind.
     /// </summary>
     private void LogCustomStatuses()
     {
@@ -266,8 +314,33 @@ public sealed class EffectManager
             }
 
             lines.Add($"  \"{status.Name}\" [{status.Sources}] -> {(kinds.Count == 0 ? "no rule" : string.Join(", ", kinds))}");
+
+            if (!_config.ParseCustomStatusTooltips) continue;
+
+            if (status.Description.Length == 0)
+            {
+                lines.Add("    (no tooltip text)");
+                continue;
+            }
+
+            // Reads the SAME cached matches EffectManager.Draw is actually using this frame (see
+            // CustomStatusSnapshot's remarks) rather than re-parsing here, so this line can never
+            // show something different from what's really on screen.
+            if (status.TooltipMatches.Count == 0)
+            {
+                lines.Add("    tooltip: no keyword matches");
+                continue;
+            }
+
+            foreach (var m in status.TooltipMatches)
+            {
+                var colorText = m.Color is { } col
+                    ? $"color #{(int)(col.X * 255):X2}{(int)(col.Y * 255):X2}{(int)(col.Z * 255):X2} (from {m.ColorSource})"
+                    : "no color override";
+                lines.Add($"    tooltip -> {m.Kind}, {colorText}");
+            }
         }
 
-        _log.Information($"RealDebuffs: {lines.Count} custom status(es) active ({sources}):\n{string.Join("\n", lines)}");
+        _log.Information($"RealDebuffs: {lines.Count} custom status line(s) ({sources}):\n{string.Join("\n", lines)}");
     }
 }

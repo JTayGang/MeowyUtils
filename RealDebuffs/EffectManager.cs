@@ -227,6 +227,11 @@ public sealed class EffectManager
             DrawHelpers.PushColorOverride(color);
             try
             {
+                // Opt-in only: effects that aren't strand/path-based don't implement this, so this
+                // is a no-op for them - see IReskinnableEffect and Effects/IStrandSkin.cs.
+                if (effect is IReskinnableEffect reskinnable)
+                    reskinnable.SkinKind = _config.GetSkin(effect.Kind);
+
                 effect.Draw(dl, screenSize, current * _config.GlobalIntensity * strength, time);
             }
             catch (Exception ex)

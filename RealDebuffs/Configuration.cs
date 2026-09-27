@@ -5,6 +5,7 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Configuration;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
+using RealDebuffs.Effects;
 
 namespace RealDebuffs;
 
@@ -31,6 +32,13 @@ public class Configuration : IPluginConfiguration
     public bool BindEnabled { get; set; } = true;
     public bool HeavyEnabled { get; set; } = true;
     public bool PetrificationEnabled { get; set; } = true;
+
+    // Which IStrandSkin material to render each reskinnable effect's strands with - see
+    // IReskinnableEffect and Effects/IStrandSkin.cs. Defaults preserve each effect's original,
+    // as-shipped look: Bind's tendrils stay tentacles, Heavy's chains stay chains, until the user
+    // deliberately swaps them in Settings.
+    public StrandSkinKind BindSkin { get; set; } = StrandSkinKind.Tentacle;
+    public StrandSkinKind HeavySkin { get; set; } = StrandSkinKind.Chain;
 
     // Added later, alongside DebuffKind's "Added later" block - same order as that enum.
     public bool AmnesiaEnabled { get; set; } = true;
@@ -119,6 +127,24 @@ public class Configuration : IPluginConfiguration
         DebuffKind.Windburn => WindburnEnabled,
         _ => false,
     };
+
+    /// <summary>Which IStrandSkin material to render this kind's strands with, if it's reskinnable at all - see IReskinnableEffect. Kinds that aren't strand-based never read this.</summary>
+    public StrandSkinKind GetSkin(DebuffKind kind) => kind switch
+    {
+        DebuffKind.Bind => BindSkin,
+        DebuffKind.Heavy => HeavySkin,
+        _ => StrandSkinKind.Tentacle,
+    };
+
+    /// <summary>Used by the config window's per-effect skin picker.</summary>
+    public void SetSkin(DebuffKind kind, StrandSkinKind skin)
+    {
+        switch (kind)
+        {
+            case DebuffKind.Bind: BindSkin = skin; break;
+            case DebuffKind.Heavy: HeavySkin = skin; break;
+        }
+    }
 
     /// <summary>
     /// Used by the config window's checkboxes, and by EffectManager as a session-only (not saved)
@@ -248,7 +274,9 @@ public sealed class ConfigWindow : Window
         changed |= EffectToggle(DebuffKind.Sleep, "Sleep", "Soft blue tint with drowsy Zs drifting up from the corners.");
         changed |= EffectToggle(DebuffKind.Poison, "Poison", "Sickly green tint with drips falling from the top.");
         changed |= EffectToggle(DebuffKind.Bind, "Bind", "Roots creep up from the bottom of the screen.");
+        changed |= SkinPicker(DebuffKind.Bind, "##BindSkin");
         changed |= EffectToggle(DebuffKind.Heavy, "Heavy", "A heavy dark pull with a dragging chain at the bottom of the screen.");
+        changed |= SkinPicker(DebuffKind.Heavy, "##HeavySkin");
         changed |= EffectToggle(DebuffKind.Petrification, "Petrification", "Color drains out and stone cracks spread in from the edges.");
         changed |= EffectToggle(DebuffKind.Amnesia, "Amnesia", "A hazy gray fog rolls in, with drifting question marks - like your memory's been wiped.");
         changed |= EffectToggle(DebuffKind.Bleeding, "Bleeding", "Dark red drips bead and fall from the top edge.");
@@ -312,5 +340,26 @@ public sealed class ConfigWindow : Window
             ImGui.SetTooltip(description);
 
         return didChange;
+    }
+
+    private static readonly string[] StrandSkinNames = { "Tentacles", "Chains" };
+
+    /// <summary>
+    /// The small indented "Visual style" combo shown under a reskinnable effect's checkbox - see
+    /// IReskinnableEffect and Effects/IStrandSkin.cs. Only Bind and Heavy have one today, but any
+    /// future strand-based effect gets one for free just by adding a case to
+    /// Configuration.GetSkin/SetSkin and a call to this here.
+    /// </summary>
+    private bool SkinPicker(DebuffKind kind, string hiddenId)
+    {
+        int idx = (int)_config.GetSkin(kind);
+
+        ImGui.Indent();
+        ImGui.SetNextItemWidth(160);
+        bool changed = ImGui.Combo("Visual style" + hiddenId, ref idx, StrandSkinNames, StrandSkinNames.Length);
+        ImGui.Unindent();
+
+        if (changed) _config.SetSkin(kind, (StrandSkinKind)idx);
+        return changed;
     }
 }

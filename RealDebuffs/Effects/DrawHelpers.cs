@@ -76,8 +76,12 @@ internal static class DrawHelpers
     /// stays dark, the hot core stays pale (since a pale tone's low original saturation means a
     /// forced hue barely shows against it - it's mathematically still "mostly white/gray, tinted"),
     /// and only the mid-tones read as clearly, definitely the new color. That's what makes ONE
-    /// override work for BurnsEffect's white-to-soot fire ramp exactly as well as BindEffect's
-    /// violet-magic palette without either effect needing to know what its own colors mean.
+    /// override work for BurnsEffect's white-to-soot fire ramp exactly as well as TentacleSkin's
+    /// violet-magic palette (Bind's default look) without either needing to know what its own
+    /// colors mean - and, since it's applied at the point every color is actually drawn rather than
+    /// baked into any one effect, it keeps working exactly the same after a skin swap: a custom-
+    /// status override on Bind re-hues whichever material - tentacle or chain - is currently
+    /// selected, with no extra work from either skin.
     /// A fully achromatic source color (pure black/white/gray, Saturation already 0) is unaffected
     /// either way - there's no hue to override in the first place.
     /// </summary>

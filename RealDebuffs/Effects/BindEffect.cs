@@ -13,12 +13,6 @@ namespace RealDebuffs.Effects;
 /// application, each tendril has its own stagger delay, and it extends from its edge anchor
 /// inward over EaseOutCubic(age - delay). The tip carries a small glowing bulb while extending.
 ///
-/// Each tendril is a discrete-integrated heading path. The look is layered:
-///   - the tendril body (halo, dark violet flesh, bright magic core, rim-lit highlight);
-///   - a WET SHEEN that travels along the length like light catching a slick surface;
-///   - SLIME DRIPS: some hang from the underside, swell, and release a droplet that accelerates
-///     under gravity and stretches as it falls; the rest slide slowly toward the tendril's base.
-///
 /// SEARCHING and GRABBING:
 ///   - While free, each tendril slow-pulses its length (a "reach") on its own cycle, on top of
 ///     its sway and curl. That's what reads as the tendril SEARCHING for something to grab.
@@ -32,10 +26,19 @@ namespace RealDebuffs.Effects;
 ///   - Bend-in and release both ramp over LatchBlendSeconds, so nothing snaps.
 ///   - There is no grip VFX at the tip - the pinned shape, the curl, and the stilled sway are
 ///     the whole tell.
+///
+/// VISUALS: this class owns the tendril's SHAPE only - how many there are, where they anchor, how
+/// they curl/sway/search/latch. What a tendril actually LOOKS like when drawn (the default violet
+/// flesh-and-slime, or any other material) is a pluggable IStrandSkin - see IReskinnableEffect and
+/// the remarks on StrandPath/IStrandSkin for why that split exists and how the two effects that
+/// currently use it (this one and Heavy) can swap materials with each other.
 /// </summary>
-public sealed class BindEffect : IScreenEffect
+public sealed class BindEffect : IScreenEffect, IReskinnableEffect
 {
     public DebuffKind Kind => DebuffKind.Bind;
+
+    private StrandSkinKind _skinKind = StrandSkinKind.Tentacle;
+    public StrandSkinKind SkinKind { set => _skinKind = value; }
 
     // ---- timing ----
     private const float NewCastGapSeconds = 1.0f;
@@ -57,18 +60,6 @@ public sealed class BindEffect : IScreenEffect
     private const float LatchedCurlBoost   = 0.65f;  // extra curl while latched, so it visibly coils
     private const float LatchRotationCap   = 1.8f;  // max total tip-region rotation, radians (~69 deg)
     private const float RotationStartU     = 0.05f;  // u below this is untouched by the tip rotation
-
-    // ---- palette: near-black void flesh, violet magic core, pale lavender hot glint ----
-    private static readonly uint Halo      = DrawHelpers.ToU32(0.010f, 0.002f, 0.022f, 1f);
-    private static readonly uint Void      = DrawHelpers.ToU32(0.014f, 0.006f, 0.028f, 1f);
-    private static readonly uint Body      = DrawHelpers.ToU32(0.052f, 0.018f, 0.100f, 1f);
-    private static readonly uint BodyLit   = DrawHelpers.ToU32(0.145f, 0.055f, 0.235f, 1f);
-    private static readonly uint Core      = DrawHelpers.ToU32(0.580f, 0.180f, 0.780f, 1f);
-    private static readonly uint CoreHot   = DrawHelpers.ToU32(0.960f, 0.800f, 1.000f, 1f);
-    private static readonly uint SlimeBody = DrawHelpers.ToU32(0.190f, 0.055f, 0.340f, 1f);
-    private static readonly uint SlimeCore = DrawHelpers.ToU32(0.720f, 0.320f, 0.960f, 1f);
-
-    private static readonly Vector2 LightDir = Vector2.Normalize(new Vector2(-0.7f, -0.7f));
 
     private struct Tendril
     {
@@ -100,8 +91,8 @@ public sealed class BindEffect : IScreenEffect
         public float   LatchRotSpeed;  // rotation rate, radians/sec, signed
     }
 
-    private readonly Tendril[]   _tendrils = new Tendril[TotalCount];
-    private readonly Vector2[][] _paths    = new Vector2[TotalCount][];
+    private readonly Tendril[]    _tendrils = new Tendril[TotalCount];
+    private readonly StrandPath[] _paths    = new StrandPath[TotalCount];
 
     private float _lastDrawTime = -100f;
     private float _castStart;
@@ -109,7 +100,7 @@ public sealed class BindEffect : IScreenEffect
     public BindEffect()
     {
         for (int i = 0; i < TotalCount; i++)
-            _paths[i] = new Vector2[Samples];
+            _paths[i] = new StrandPath(Samples);
     }
 
     public void Draw(ImDrawListPtr dl, Vector2 screenSize, float alpha, float time)
@@ -144,11 +135,17 @@ public sealed class BindEffect : IScreenEffect
             UpdateLatch(i, screenSize, shortSide, time, dt, revealT);
 
             // 3. If latched (or still easing out), pin the tip to the latch point and rotate the
-            //    tip region around it, so the tendril visibly curls at its grip.
+            //    tip region around it, so the tendril visibly curls and pulls at its grip.
             if (_tendrils[i].LatchBlend > 0.001f)
                 ApplyLatchPin(i, screenSize, shortSide);
 
-            // 4. Draw.
+            // 4. The arc-length table has to reflect whatever ApplyLatchPin just did to the
+            //    points, so it's rebuilt here, after any in-place correction, rather than right
+            //    after BuildTendrilPath - a table built before that correction would describe a
+            //    path that's no longer the one actually being drawn.
+            _paths[i].BuildArc();
+
+            // 5. Hand it to whichever skin is currently selected.
             DrawTendril(dl, i, screenSize, shortSide, px, alpha, time, revealT);
         }
     }
@@ -306,7 +303,7 @@ public sealed class BindEffect : IScreenEffect
         float swayTime = time * t.Speed;
 
         Vector2 cursor = start;
-        path[0] = cursor;
+        path.Points[0] = cursor;
 
         for (int i = 1; i < Samples; i++)
         {
@@ -316,8 +313,10 @@ public sealed class BindEffect : IScreenEffect
                 + t.WaveAmp * swayScale * MathF.Sin(u * t.WaveFreq + t.Phase + swayTime);
 
             cursor += new Vector2(MathF.Cos(heading), MathF.Sin(heading)) * step;
-            path[i] = cursor;
+            path.Points[i] = cursor;
         }
+
+        path.Count = Samples;
     }
 
     /// <summary>
@@ -336,7 +335,7 @@ public sealed class BindEffect : IScreenEffect
     private void ApplyLatchPin(int idx, Vector2 screenSize, float shortSide)
     {
         ref readonly var t = ref _tendrils[idx];
-        var path = _paths[idx];
+        var path = _paths[idx].Points;
 
         Vector2 freeTip = path[Samples - 1];
         Vector2 correction = t.LatchPoint - freeTip;
@@ -409,7 +408,7 @@ public sealed class BindEffect : IScreenEffect
 
         // Contact test: the tip must ACTUALLY be touching an edge. ContactEpsilonFrac is tight
         // (~5px at 1080p), so a tendril can't latch from a distance.
-        Vector2 freeTip = _paths[idx][Samples - 1];
+        Vector2 freeTip = _paths[idx].Points[Samples - 1];
         float inset = shortSide * LatchInsetFrac;
         float contact = shortSide * ContactEpsilonFrac;
 
@@ -446,238 +445,31 @@ public sealed class BindEffect : IScreenEffect
     }
 
     // =====================================================================================
-    // One tendril
+    // One tendril: hand off to the current skin
     // =====================================================================================
 
     private void DrawTendril(ImDrawListPtr dl, int idx, Vector2 screenSize,
                              float shortSide, float px, float alpha, float time, float revealT)
     {
         ref readonly var t = ref _tendrils[idx];
-        var path = _paths[idx];
 
-        float baseW = shortSide * t.BaseWidth;
-        float a = alpha * t.Alpha;
-
-        // ---- main trunk (with traveling wet sheen) ----
-        DrawTaperedPath(dl, path, Samples, baseW, a, px, revealT, time, t.Phase,
-                        out Vector2 tipPos, out bool tipVisible);
-
-        // ---- slime drips: hang-and-fall ones, plus flow-to-base ones ----
-        DrawSlimeDrips(dl, path, Samples, baseW, a, revealT, time, t.Seed);
-
-        // ---- growing tip bulb ----
-        if (tipVisible && revealT < 0.999f)
+        var visual = new StrandVisual
         {
-            float r = baseW * 1.4f;
-            dl.AddCircleFilled(tipPos, r * 3.0f, DrawHelpers.WithAlpha(Core,    a * 0.30f));
-            dl.AddCircleFilled(tipPos, r * 1.6f, DrawHelpers.WithAlpha(Core,    a * 0.70f));
-            dl.AddCircleFilled(tipPos, r * 0.70f, DrawHelpers.WithAlpha(CoreHot, a * 0.95f));
-        }
-    }
+            Thickness  = shortSide * t.BaseWidth,
+            Seed       = t.Seed,
+            Phase      = t.Phase,
+            // All of Bind's tendrils start exactly on a screen edge (see EdgeAnchor) - only
+            // matters to a skin that decorates before the base, like ChainSkin.
+            FlushStart = true,
+        };
 
-    // =====================================================================================
-    // Slime drips
-    // =====================================================================================
+        float strandAlpha = alpha * t.Alpha;
+        // Same "still growing in" window the tip bulb has always used - just expressed as a
+        // generic 0/1 flourish knob now instead of a hardcoded circle-draw condition.
+        float tipFlare = revealT < 0.999f ? 1f : 0f;
 
-    private static void DrawSlimeDrips(ImDrawListPtr dl, ReadOnlySpan<Vector2> path, int count,
-                                       float baseW, float a, float revealT, float time, int seed)
-    {
-        if (count < 2 || a <= 0.002f) return;
-
-        int dripCount = 3 + (int)(DrawHelpers.Hash01(seed + 900) * 3f); // 3..5 per tendril
-        float aS = a * 0.85f;
-
-        for (int d = 0; d < dripCount; d++)
-        {
-            int ds = unchecked(seed + 900 + d * 131);
-            float attachT = DrawHelpers.HashRange(ds, 0.15f, 0.90f);
-            if (attachT > revealT) break;
-
-            bool flowing = DrawHelpers.Hash01(ds + 50) < 0.40f;
-
-            int at = (int)(attachT * (count - 1));
-
-            if (flowing)
-                DrawFlowingDrip(dl, path, count, at, baseW, aS, time, ds);
-            else
-                DrawHangingDrip(dl, path[at], baseW, aS, time, ds);
-        }
-    }
-
-    private static void DrawHangingDrip(ImDrawListPtr dl, Vector2 onPath, float baseW, float aS,
-                                        float time, int ds)
-    {
-        float lateral = DrawHelpers.HashRange(ds + 1, -0.6f, 0.6f);
-        Vector2 dripBase = onPath + new Vector2(baseW * lateral, baseW * 0.85f);
-
-        float phase = DrawHelpers.HashRange(ds + 2, 0f, 1f);
-        float cycle = (time * 0.42f + phase) % 1f;
-        if (cycle < 0f) cycle += 1f;
-
-        float swell = MathF.Sin(cycle * MathF.PI);
-        float blobR = baseW * (0.42f + 0.32f * swell);
-
-        dl.AddCircleFilled(dripBase, blobR * 2.8f, DrawHelpers.WithAlpha(SlimeCore, aS * 0.09f));
-        dl.AddCircleFilled(dripBase, blobR * 0.92f, DrawHelpers.WithAlpha(SlimeBody, aS * 0.88f));
-        Vector2 teardrop = dripBase + new Vector2(0f, blobR * 0.75f * swell);
-        dl.AddCircleFilled(teardrop, blobR * 0.62f, DrawHelpers.WithAlpha(SlimeBody, aS * 0.80f));
-        dl.AddCircleFilled(dripBase, blobR * 0.55f, DrawHelpers.WithAlpha(SlimeCore, aS * 0.60f));
-        dl.AddCircleFilled(dripBase, blobR * 0.28f, DrawHelpers.WithAlpha(CoreHot,   aS * 0.90f));
-
-        if (cycle > 0.55f)
-        {
-            float fallT = (cycle - 0.55f) / 0.45f;
-            float fallDist = fallT * fallT * baseW * 14f;
-            Vector2 fallPos = dripBase + new Vector2(0f, fallDist);
-
-            float fallA = 1f - fallT * fallT * fallT;
-            float fallR = baseW * 0.34f * (1f - 0.35f * fallT);
-            float speedFrac = 2f * fallT;
-            float stretch = fallR * (1.4f + 4.0f * speedFrac);
-
-            DrawStretchedDroplet(dl, fallPos, new Vector2(0f, 1f), fallR, stretch, aS * fallA);
-        }
-    }
-
-    private static void DrawFlowingDrip(ImDrawListPtr dl, ReadOnlySpan<Vector2> path, int count,
-                                        int startIndex, float baseW, float aS, float time, int ds)
-    {
-        if (startIndex < 4) startIndex = 4;
-
-        float phase = DrawHelpers.HashRange(ds + 20, 0f, 1f);
-        float speed = 0.22f + 0.14f * DrawHelpers.Hash01(ds + 21);
-        float t = (time * speed + phase) % 1f;
-
-        float idxFloat = startIndex * (1f - t);
-        int i0 = Math.Clamp((int)idxFloat, 0, count - 2);
-        float f = Math.Clamp(idxFloat - i0, 0f, 1f);
-
-        Vector2 p = Vector2.Lerp(path[i0], path[i0 + 1], f);
-        Vector2 tangent = path[i0 + 1] - path[i0];
-        float tlen = tangent.Length();
-        if (tlen < 1e-4f) return;
-        Vector2 dir = tangent / tlen;
-
-        float alpha = MathF.Sin(t * MathF.PI);
-        float dropR  = baseW * 0.30f;
-        float stretch = dropR * 2.6f;
-
-        DrawStretchedDroplet(dl, p, dir, dropR, stretch, aS * alpha * 0.85f);
-    }
-
-    private static void DrawStretchedDroplet(ImDrawListPtr dl, Vector2 center, Vector2 dir,
-                                             float radius, float totalLength, float alpha)
-    {
-        if (alpha <= 0.01f || radius <= 0.2f) return;
-
-        float half = MathF.Max(0f, totalLength * 0.5f - radius);
-        Vector2 a = center - dir * half;
-        Vector2 b = center + dir * half;
-
-        uint glow = DrawHelpers.WithAlpha(SlimeCore, alpha * 0.15f);
-        uint body = DrawHelpers.WithAlpha(SlimeCore, alpha * 0.70f);
-        uint hot  = DrawHelpers.WithAlpha(CoreHot,   alpha * 0.90f);
-
-        dl.AddLine(a, b, glow, radius * 3.0f);
-        dl.AddLine(a, b, body, radius * 2.0f);
-        dl.AddLine(a, b, hot,  radius * 0.9f);
-        dl.AddCircleFilled(a, radius,        body);
-        dl.AddCircleFilled(b, radius,        body);
-        dl.AddCircleFilled(a, radius * 0.55f, hot);
-        dl.AddCircleFilled(b, radius * 0.55f, hot);
-    }
-
-    // =====================================================================================
-    // Tapered path drawing
-    // =====================================================================================
-
-    private static void DrawTaperedPath(ImDrawListPtr dl, ReadOnlySpan<Vector2> path, int count,
-                                        float baseW, float a, float px, float revealT,
-                                        float time, float phase,
-                                        out Vector2 tipPos, out bool tipVisible)
-    {
-        tipPos = default;
-        tipVisible = false;
-        if (count < 2 || a <= 0.002f || revealT <= 0.001f) return;
-
-        float maxSeg = (count - 1) * revealT;
-        int fullSegs = (int)maxSeg;
-        float partialFrac = maxSeg - fullSegs;
-        if (fullSegs >= count - 1)
-        {
-            fullSegs = count - 2;
-            partialFrac = 1f;
-        }
-
-        int segCount = fullSegs + (partialFrac > 0.001f ? 1 : 0);
-        if (segCount <= 0) return;
-
-        float sheenRaw = time * 0.35f + phase;
-        float sheenPos = sheenRaw - MathF.Floor(sheenRaw);
-
-        for (int i = 0; i < segCount; i++)
-        {
-            Vector2 p0 = path[i];
-            Vector2 p1 = (i < fullSegs) ? path[i + 1] : Vector2.Lerp(path[i], path[i + 1], partialFrac);
-
-            float u0 = (float)i / segCount;
-            float u1 = (float)(i + 1) / segCount;
-
-            float w0 = TaperWidth(u0, baseW);
-            float w1 = TaperWidth(u1, baseW);
-            float w  = 0.5f * (w0 + w1);
-
-            dl.AddLine(p0, p1, DrawHelpers.WithAlpha(Halo, a * 0.45f), w * 3.4f + 2f * px);
-
-            dl.AddLine(p0, p1, DrawHelpers.WithAlpha(Void, a),         w * 1.00f);
-            dl.AddLine(p0, p1, DrawHelpers.WithAlpha(Body, a * 0.92f), w * 0.82f);
-
-            Vector2 dir = p1 - p0;
-            float len = dir.Length();
-            if (len > 1e-4f)
-            {
-                Vector2 perp = new(-dir.Y / len, dir.X / len);
-
-                float lightDot = Vector2.Dot(perp, LightDir);
-                if (lightDot > 0f)
-                {
-                    Vector2 off = perp * (w * 0.34f * lightDot);
-                    dl.AddLine(p0 + off, p1 + off,
-                               DrawHelpers.WithAlpha(BodyLit, a * 0.60f * lightDot),
-                               w * 0.30f);
-                }
-
-                float midU = (u0 + u1) * 0.5f;
-                float sDelta = midU - sheenPos;
-                sDelta -= MathF.Round(sDelta);
-                float sheenK = MathF.Exp(-(sDelta * sDelta) / 0.010f);
-                if (sheenK > 0.02f)
-                {
-                    float sideK = lightDot > 0f ? 0.55f + 0.45f * lightDot : 0.45f;
-                    Vector2 sheenOff = perp * (w * 0.18f * (lightDot > 0f ? lightDot : 0f));
-                    dl.AddLine(p0 + sheenOff, p1 + sheenOff,
-                               DrawHelpers.WithAlpha(CoreHot, a * 0.50f * sheenK * sideK),
-                               w * 0.42f);
-                }
-            }
-
-            float coreW = w * 0.22f;
-            dl.AddLine(p0, p1, DrawHelpers.WithAlpha(Core,    a * 0.80f), coreW * 2.4f);
-            dl.AddLine(p0, p1, DrawHelpers.WithAlpha(Core,    a * 0.95f), coreW * 1.1f);
-            dl.AddLine(p0, p1, DrawHelpers.WithAlpha(CoreHot, a * 0.70f), MathF.Max(0.6f, coreW * 0.55f));
-
-            if (i == segCount - 1)
-            {
-                tipPos = p1;
-                tipVisible = true;
-            }
-        }
-    }
-
-    private static float TaperWidth(float u, float baseW)
-    {
-        float f = MathF.Pow(1f - u, 0.65f);
-        return baseW * (0.22f + 0.78f * f);
+        StrandSkins.Get(_skinKind).DrawStrand(dl, _paths[idx], in visual, revealT, tipFlare,
+                                              strandAlpha, px, time, out _, out _);
     }
 
     // =====================================================================================

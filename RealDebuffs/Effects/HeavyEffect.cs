@@ -2,6 +2,7 @@ using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using RealDebuffs.Effects.Framework;
+using static RealDebuffs.Effects.Framework.DrawHelpers;
 
 namespace RealDebuffs.Effects;
 
@@ -388,13 +389,5 @@ public sealed class HeavyEffect : ISceneEffect
     {
         float len = v.Length();
         return len > 1e-5f ? v / len : new Vector2(0f, 1f);
-    }
-
-    private static float Saturate(float x) => Math.Clamp(x, 0f, 1f);
-
-    private static float EaseOutCubic(float t)
-    {
-        float u = 1f - Saturate(t);
-        return 1f - u * u * u;
     }
 }

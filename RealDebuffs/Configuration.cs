@@ -22,40 +22,31 @@ public class Configuration : IPluginConfiguration
     public const float MinIntensity = 0.1f;
     public const float MaxIntensity = 1.75f;
 
-    public bool BlindEnabled { get; set; } = true;
-    public bool ParalysisEnabled { get; set; } = true;
-    public bool SilenceEnabled { get; set; } = true;
-    public bool StunEnabled { get; set; } = true;
-    public bool SleepEnabled { get; set; } = true;
-    public bool PoisonEnabled { get; set; } = true;
-    public bool BindEnabled { get; set; } = true;
-    public bool HeavyEnabled { get; set; } = true;
-    public bool PetrificationEnabled { get; set; } = true;
+    /// <summary>
+    /// Effects the user has toggled off. Membership means disabled; absence means enabled. A
+    /// set rather than one bool per kind, so adding a new DebuffKind requires no change here -
+    /// a new kind is simply "not in the set" and therefore on by default. The per-kind label
+    /// and description still live in the settings panel.
+    ///
+    /// NOTE: the enum's numeric values are what get serialized. Under the existing convention
+    /// (CustomStatusRule.Kind already stores the enum number the same way), new kinds must be
+    /// added at the END of DebuffKind, never inserted or reordered.
+    /// </summary>
+    public HashSet<DebuffKind> DisabledKinds { get; set; } = new();
 
-    public bool AmnesiaEnabled { get; set; } = true;
-    public bool BleedingEnabled { get; set; } = true;
-    public bool WeaknessEnabled { get; set; } = true;
-    public bool BurnsEnabled { get; set; } = true;
-    public bool CharmEnabled { get; set; } = true;
-    public bool FrostEnabled { get; set; } = true;
-    public bool DiseaseEnabled { get; set; } = true;
-    public bool DoomEnabled { get; set; } = true;
-    public bool DropsyEnabled { get; set; } = true;
-    public bool ElectrocutionEnabled { get; set; } = true;
-    public bool HysteriaEnabled { get; set; } = true;
-    public bool InfirmityEnabled { get; set; } = true;
-    public bool MiseryEnabled { get; set; } = true;
-    public bool PacificationEnabled { get; set; } = true;
-    public bool SlowEnabled { get; set; } = true;
-    public bool SludgeEnabled { get; set; } = true;
-    public bool VulnerabilityEnabled { get; set; } = true;
-    public bool WindburnEnabled { get; set; } = true;
+    public bool IsEnabled(DebuffKind kind) => !DisabledKinds.Contains(kind);
+
+    public void SetEnabled(DebuffKind kind, bool enabled)
+    {
+        if (enabled) DisabledKinds.Remove(kind);
+        else         DisabledKinds.Add(kind);
+    }
 
     /// <summary>
     /// Per-slot material overrides for ported effects. Key format is
-    /// "{DebuffKind}.{Stroke|Particle|Region}.{PrimitiveRole}"; value is the material name
-    /// (e.g. "particle.ember"). Missing entries fall back to the built-in default for that role.
-    /// See Effect Styles in the Moodles/Loci Support tab.
+    /// "{DebuffKind}.{Stroke|Particle}.{PrimitiveRole}" or "{DebuffKind}.Region.{EdgeGlow|FlatFill}";
+    /// value is a material name from MaterialRegistry (e.g. "particle.ember"). Missing entries
+    /// fall back to BuiltInDefaults. See Effect Styles in the Moodles/Loci Support tab.
     /// </summary>
     public Dictionary<string, string> MaterialOverrides { get; set; } = new();
 
@@ -76,82 +67,13 @@ public class Configuration : IPluginConfiguration
     /// <summary>OFF by default: actually stop outgoing chat while silenced. See ChatBlocker.cs.</summary>
     public bool SilenceBlocksChat { get; set; } = false;
 
-    public bool IsEnabled(DebuffKind kind) => kind switch
-    {
-        DebuffKind.Blind => BlindEnabled,
-        DebuffKind.Paralysis => ParalysisEnabled,
-        DebuffKind.Silence => SilenceEnabled,
-        DebuffKind.Stun => StunEnabled,
-        DebuffKind.Sleep => SleepEnabled,
-        DebuffKind.Poison => PoisonEnabled,
-        DebuffKind.Bind => BindEnabled,
-        DebuffKind.Heavy => HeavyEnabled,
-        DebuffKind.Petrification => PetrificationEnabled,
-        DebuffKind.Amnesia => AmnesiaEnabled,
-        DebuffKind.Bleeding => BleedingEnabled,
-        DebuffKind.Weakness => WeaknessEnabled,
-        DebuffKind.Burns => BurnsEnabled,
-        DebuffKind.Charm => CharmEnabled,
-        DebuffKind.Frost => FrostEnabled,
-        DebuffKind.Disease => DiseaseEnabled,
-        DebuffKind.Doom => DoomEnabled,
-        DebuffKind.Dropsy => DropsyEnabled,
-        DebuffKind.Electrocution => ElectrocutionEnabled,
-        DebuffKind.Hysteria => HysteriaEnabled,
-        DebuffKind.Infirmity => InfirmityEnabled,
-        DebuffKind.Misery => MiseryEnabled,
-        DebuffKind.Pacification => PacificationEnabled,
-        DebuffKind.Slow => SlowEnabled,
-        DebuffKind.Sludge => SludgeEnabled,
-        DebuffKind.Vulnerability => VulnerabilityEnabled,
-        DebuffKind.Windburn => WindburnEnabled,
-        _ => false,
-    };
-
-    /// <summary>Settings checkbox, and EffectManager's session-only safety net if an effect throws.</summary>
-    public void SetEnabled(DebuffKind kind, bool enabled)
-    {
-        switch (kind)
-        {
-            case DebuffKind.Blind: BlindEnabled = enabled; break;
-            case DebuffKind.Paralysis: ParalysisEnabled = enabled; break;
-            case DebuffKind.Silence: SilenceEnabled = enabled; break;
-            case DebuffKind.Stun: StunEnabled = enabled; break;
-            case DebuffKind.Sleep: SleepEnabled = enabled; break;
-            case DebuffKind.Poison: PoisonEnabled = enabled; break;
-            case DebuffKind.Bind: BindEnabled = enabled; break;
-            case DebuffKind.Heavy: HeavyEnabled = enabled; break;
-            case DebuffKind.Petrification: PetrificationEnabled = enabled; break;
-            case DebuffKind.Amnesia: AmnesiaEnabled = enabled; break;
-            case DebuffKind.Bleeding: BleedingEnabled = enabled; break;
-            case DebuffKind.Weakness: WeaknessEnabled = enabled; break;
-            case DebuffKind.Burns: BurnsEnabled = enabled; break;
-            case DebuffKind.Charm: CharmEnabled = enabled; break;
-            case DebuffKind.Frost: FrostEnabled = enabled; break;
-            case DebuffKind.Disease: DiseaseEnabled = enabled; break;
-            case DebuffKind.Doom: DoomEnabled = enabled; break;
-            case DebuffKind.Dropsy: DropsyEnabled = enabled; break;
-            case DebuffKind.Electrocution: ElectrocutionEnabled = enabled; break;
-            case DebuffKind.Hysteria: HysteriaEnabled = enabled; break;
-            case DebuffKind.Infirmity: InfirmityEnabled = enabled; break;
-            case DebuffKind.Misery: MiseryEnabled = enabled; break;
-            case DebuffKind.Pacification: PacificationEnabled = enabled; break;
-            case DebuffKind.Slow: SlowEnabled = enabled; break;
-            case DebuffKind.Sludge: SludgeEnabled = enabled; break;
-            case DebuffKind.Vulnerability: VulnerabilityEnabled = enabled; break;
-            case DebuffKind.Windburn: WindburnEnabled = enabled; break;
-        }
-    }
-
     public void Save(IDalamudPluginInterface pi) => pi.SavePluginConfig(this);
 }
 
 /// <summary>
 /// Settings window. Two tabs:
 ///  - "Effects": master switches, intensity, per-debuff toggles, chat lockout, dev test panel.
-///  - "Moodles/Loci Support": the two custom-status rule editors (see SettingsPanels.cs).
-/// The Moodles tab is separate both because most users never touch it, and because it's tall
-/// enough that stacking it under the main list would make one long scroll.
+///  - "Moodles/Loci Support": custom-status rules, tooltip keyword rules, and effect styles.
 /// </summary>
 public sealed class ConfigWindow : Window
 {
@@ -159,6 +81,7 @@ public sealed class ConfigWindow : Window
     private readonly Action _save;
     private readonly CustomStatusPanel _customStatuses;
     private readonly TooltipKeywordPanel _tooltipKeywords;
+    private readonly EffectStylePanel _effectStyles;
 
     public ConfigWindow(Configuration config, Action save, CustomStatusWatcher customStatuses)
         : base("Real Debuffs Settings###RealDebuffsConfig")
@@ -167,6 +90,7 @@ public sealed class ConfigWindow : Window
         _save = save;
         _customStatuses = new CustomStatusPanel(config, customStatuses);
         _tooltipKeywords = new TooltipKeywordPanel(config, customStatuses);
+        _effectStyles = new EffectStylePanel(config);
         Size = new Vector2(470, 660);
         SizeCondition = ImGuiCond.FirstUseEver;
     }
@@ -219,8 +143,8 @@ public sealed class ConfigWindow : Window
         ImGui.TextDisabled("Per-debuff effects");
         ImGui.Spacing();
 
-        // Alphabetical by the primary effect name. Purely a config-menu convenience; draw
-        // layering order is entirely separate (see EffectManager._order).
+        // Alphabetical by primary effect name. Purely a config-menu convenience; draw layering
+        // order is entirely separate (see EffectManager._order).
         changed |= EffectToggle(DebuffKind.Amnesia, "Amnesia", "A hazy gray fog rolls in, with drifting question marks.");
         changed |= EffectToggle(DebuffKind.Bind, "Bind", "Roots creep up from the bottom of the screen.");
         changed |= EffectToggle(DebuffKind.Bleeding, "Bleeding", "Dark red drips bead and fall from the top edge.");
@@ -261,7 +185,7 @@ public sealed class ConfigWindow : Window
             "any of the effects above need, so if a game update ever breaks something, this is the " +
             "first setting to try turning off - everything else is unaffected by it.");
 
-        DebugTester.DrawUi(kind => _config.Enabled && _config.IsEnabled(kind)); // TEST-TOOLS: delete this line (and DebugTester.cs) to remove the test panel
+        DebugTester.DrawUi(kind => _config.Enabled && _config.IsEnabled(kind));
 
         return changed;
     }
@@ -272,6 +196,8 @@ public sealed class ConfigWindow : Window
         changed |= _customStatuses.Draw();
         ImGui.Separator();
         changed |= _tooltipKeywords.Draw();
+        ImGui.Separator();
+        changed |= _effectStyles.Draw();
         return changed;
     }
 

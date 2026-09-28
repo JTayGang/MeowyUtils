@@ -158,6 +158,8 @@ internal static class DrawHelpers
         return Channel(0) | ((uint)Channel(8) << 8) | ((uint)Channel(16) << 16) | ((uint)Channel(24) << 24);
     }
 
+    public static float Saturate(float x) => Math.Clamp(x, 0f, 1f);
+
     public static float EaseOutCubic(float t)
     {
         t = Math.Clamp(t, 0f, 1f);

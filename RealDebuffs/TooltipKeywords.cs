@@ -133,6 +133,41 @@ public sealed class TooltipKeywordRule
 /// </summary>
 public static class TooltipKeywordParser
 {
+    /// <summary>
+    /// A canonical trigger word for a kind, drawn from the user's own enabled keyword rules so
+    /// an exported phrase is guaranteed to fire against their config. Null if no enabled rule
+    /// targets this kind; the caller falls back to the kind's name.
+    /// </summary>
+    public static string? CanonicalTriggerWord(DebuffKind kind, IReadOnlyList<TooltipKeywordRule> rules)
+    {
+        foreach (var rule in rules)
+        {
+            if (!rule.Enabled || rule.Kind != kind) continue;
+            var parsed = rule.ParsedKeywords;
+            if (parsed.Count > 0) return parsed[0];
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// The shortest phrase from <c>MaterialWords</c> that maps to a given material name, for
+    /// producing "made of X" export text. Null when the material has no natural-language word
+    /// (region materials, or any material added to the registry without a matching entry).
+    /// </summary>
+    public static string? CanonicalMaterialWord(string materialName)
+    {
+        string? best = null;
+        foreach (var kv in MaterialWords)
+        {
+            if (!string.Equals(kv.Value, materialName, StringComparison.OrdinalIgnoreCase)) continue;
+            if (best == null
+                || kv.Key.Length < best.Length
+                || (kv.Key.Length == best.Length && string.CompareOrdinal(kv.Key, best) < 0))
+                best = kv.Key;
+        }
+        return best;
+    }
+
     private static readonly Regex TagToken = new(
         @"\[color=(?<color>[0-9a-z]+)\]|\[/color\]|\[glow=[0-9a-z]+\]|\[/glow\]|\[i\]|\[/i\]",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);

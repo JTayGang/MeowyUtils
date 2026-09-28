@@ -59,7 +59,7 @@ public static class EffectSceneRenderer
             DrawHelpers.PushColorOverride(s.ColorOverride);
             try
             {
-                var mat = MaterialRegistry.TryGetStroke(ResolveStroke(in s, materialOverrides))
+                var mat = MaterialRegistry.TryGetStroke(MaterialOverrideKey.ResolveStroke(in s, materialOverrides))
                           ?? MaterialRegistry.TryGetStroke(BuiltInDefaults.FallbackStroke())
                           ?? MaterialRegistry.TryGetStroke("stroke.simple");
                 mat?.Draw(dl, in s, in ctx);
@@ -80,16 +80,6 @@ public static class EffectSceneRenderer
             }
             finally { DrawHelpers.PopColorOverride(); }
         }
-    }
-
-    private static string ResolveStroke(in StrokePrimitive s, IReadOnlyDictionary<string, string>? overrides)
-    {
-        if (overrides != null &&
-            overrides.TryGetValue(MaterialOverrideKey.For(s.Owner, "Stroke", s.Role), out var name))
-            return name;
-
-        return BuiltInDefaults.Get(s.Owner, "Stroke", s.Role.ToString())
-            ?? BuiltInDefaults.FallbackStroke();
     }
 
     private static string ResolveParticle(in ParticlePrimitive p, IReadOnlyDictionary<string, string>? overrides)
@@ -142,4 +132,17 @@ public static class MaterialOverrideKey
     /// <summary>Emit axis: which particle material this stroke sheds along its length.</summary>
     public static string ForStrokeEmit(DebuffKind kind, PrimitiveRole role) =>
         $"{kind}.Stroke.{role}.Emit";
+
+    /// <summary>
+    /// Which stroke material should render this stroke, considering overrides first. Shared by
+    /// the renderer and StrokeAutoEmitter so the two never disagree about which material is
+    /// actually on screen.
+    /// </summary>
+    public static string ResolveStroke(in StrokePrimitive s, IReadOnlyDictionary<string, string>? overrides)
+    {
+        if (overrides != null && overrides.TryGetValue(For(s.Owner, "Stroke", s.Role), out var name))
+            return name;
+        return BuiltInDefaults.Get(s.Owner, "Stroke", s.Role.ToString())
+            ?? BuiltInDefaults.FallbackStroke();
+    }
 }

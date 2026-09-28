@@ -116,7 +116,7 @@ public static class StrokeAutoEmitter
                 continue;
             }
 
-            string materialName = ResolveStrokeMaterial(in s, overrides);
+            string materialName = MaterialOverrideKey.ResolveStroke(in s, overrides);
             IStrokeMaterial material;
             try { material = MaterialRegistry.GetStroke(materialName); }
             catch { continue; }
@@ -389,18 +389,5 @@ public static class StrokeAutoEmitter
                 return s;
         }
         return null;
-    }
-
-    // =====================================================================================
-    // Material resolution
-    // =====================================================================================
-
-    private static string ResolveStrokeMaterial(in StrokePrimitive s, IReadOnlyDictionary<string, string>? overrides)
-    {
-        if (overrides != null &&
-            overrides.TryGetValue(MaterialOverrideKey.For(s.Owner, "Stroke", s.Role), out var name))
-            return name;
-        return BuiltInDefaults.Get(s.Owner, "Stroke", s.Role.ToString())
-            ?? BuiltInDefaults.FallbackStroke();
     }
 }

@@ -56,6 +56,13 @@ public sealed class EffectManager
     private const float FadeInPerSecond = 1f / 0.35f;
     private const float FadeOutPerSecond = 1f / 0.6f;
 
+    /// <summary>
+    /// Effects that have thrown during this session. They're skipped for the rest of the session
+    /// but left enabled in config - an effect that crashed isn't the user's problem, and mutating
+    /// config from inside the draw loop previously leaked the disable across sessions.
+    /// </summary>
+    private readonly HashSet<DebuffKind> _crashedKinds = new();
+
     private readonly Dictionary<DebuffKind, float> _currentAlpha = new();
     private readonly HashSet<DebuffKind> _activeScratch = new();
     private readonly Dictionary<DebuffKind, float> _targetStrength = new();
@@ -180,8 +187,11 @@ public sealed class EffectManager
 
         foreach (var effect in _order)
         {
+            // Skip anything that has already thrown this session.
+            if (_crashedKinds.Contains(effect.Kind)) continue;
+
             bool active = !suppressed && _config.IsEnabled(effect.Kind) && _activeScratch.Contains(effect.Kind);
-            active |= !suppressed && _config.IsEnabled(effect.Kind) && DebugTester.IsForced(effect.Kind); // TEST-TOOLS: delete this line (and DebugTester.cs) to remove the test panel
+            active |= !suppressed && _config.IsEnabled(effect.Kind) && DebugTester.IsForced(effect.Kind);
             float target = active ? 1f : 0f;
             float rate = active ? FadeInPerSecond : FadeOutPerSecond;
             float current = MoveTowards(_currentAlpha[effect.Kind], target, rate * dt);
@@ -190,24 +200,18 @@ public sealed class EffectManager
             if (current <= 0.001f) continue;
 
             float strength = _targetStrength.TryGetValue(effect.Kind, out var targetStrength) ? targetStrength : 1f;
-
-            // A forced test (DebugTester) can also carry a preview color. A real tooltip match
-            // wins if both are present for the same kind.
-            Vector4? color = _colorOverrides.TryGetValue(effect.Kind, out var c) ? c : DebugTester.GetForcedColor(effect.Kind); // TEST-TOOLS: trim to `_colorOverrides.TryGetValue(...) ? color : (Vector4?)null` if you remove DebugTester.cs
+            Vector4? color = _colorOverrides.TryGetValue(effect.Kind, out var c) ? c : DebugTester.GetForcedColor(effect.Kind);
 
             _scene.CurrentOwner = effect.Kind;
 
             try
             {
-                // GlobalIntensity is applied once by the renderer via MaterialContext.Alpha, so
-                // the effect receives fade * strength only - not multiplied by intensity a second
-                // time. See EffectSceneRenderer.Render.
                 effect.Emit(_scene, screenSize, current * strength, time, color);
             }
             catch (Exception ex)
             {
-                _log.Error(ex, $"RealDebuffs: {effect.Kind} effect threw during Emit - disabling it for the rest of this session.");
-                _config.SetEnabled(effect.Kind, false); // in-memory only, not saved
+                _crashedKinds.Add(effect.Kind);
+                _log.Error(ex, $"RealDebuffs: {effect.Kind} effect threw during Emit - skipping it for the rest of this session.");
             }
         }
 

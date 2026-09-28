@@ -81,7 +81,12 @@ public sealed class ParticleSnowflake : IParticleMaterial
         // Bright center pip so the flake has a visible anchor.
         dl.AddCircleFilled(pos, MathF.Max(0.7f, size * 0.09f), DrawHelpers.WithAlpha(Hot, alpha * 0.95f));
     }
-    private static readonly StrokeEmission EmissionSpec = new(
+
+    public ReadOnlySpan<StrokeEmission> Emissions => EmissionSpecs;
+
+    private static readonly StrokeEmission[] EmissionSpecs =
+    {
+        new(
         Role: PrimitiveRole.Snowflake,
         DensityPer100px: 1.2f,
         SpeedMin: 12f, SpeedMax: 30f,
@@ -89,7 +94,6 @@ public sealed class ParticleSnowflake : IParticleMaterial
         SizeMin: 4f, SizeMax: 8f,
         SpreadRadians: 0.9f,
         BiasVelocity: new Vector2(0f, 8f),
-        PrimaryDirection: new Vector2(0f, 1f)); // fall gently
-
-    public StrokeEmission? Emission => EmissionSpec;
+        PrimaryDirection: new Vector2(0f, 1f)), // fall gently
+    };
 }

@@ -110,8 +110,9 @@ public static class StrokeAutoEmitter
                 try { emitter = MaterialRegistry.GetParticle(emitOverride); }
                 catch { continue; }
 
-                if (emitter.Emission is not { } spec) continue;
-                SpawnFromStroke(in s, in spec, emitOverride, time, dt);
+                var specs = emitter.Emissions;
+                for (int e = 0; e < specs.Length; e++)
+                    SpawnFromStroke(in s, in specs[e], emitOverride, time, dt);
                 continue;
             }
 
@@ -166,7 +167,8 @@ public static class StrokeAutoEmitter
         if (toSpawn > 24) toSpawn = 24;
         if (toSpawn <= 0) return;
 
-        // Direction for flow particles, decided once per stroke per frame.
+        string? particleMaterial = e.RenderMaterial ?? forcedMaterial;
+
         bool flowToTip = false;
         if (e.Flow.HasValue)
         {
@@ -175,38 +177,63 @@ public static class StrokeAutoEmitter
             flowToTip = tipPos.Y > basePos.Y;
         }
 
+        // Cluster direction: computed once per SpawnFromStroke call, then shared by every
+        // particle spawned from this emission this frame. When clustering is off, or no fixed
+        // launch axis is declared, this stays null and each particle picks its own direction.
+        Vector2? clusterBaseDir = null;
+        if (e.ClusterWindowSeconds > 0f && e.PrimaryDirection is { } axis && axis.LengthSquared() > 1e-6f)
+        {
+            int bucket = (int)(time / e.ClusterWindowSeconds);
+            int clusterSeed = unchecked(s.Seed * 7919 + bucket * 131 + (int)e.Role * 977);
+            float gustAngle = DrawHelpers.HashRange(clusterSeed, -e.SpreadRadians, e.SpreadRadians);
+            clusterBaseDir = Rotate(Vector2.Normalize(axis), gustAngle);
+        }
+
         for (int i = 0; i < toSpawn; i++)
         {
             int seed = unchecked(s.Seed + (int)(time * 977f) + i * 131 + (int)e.Role * 7919);
 
-            // Per-spawn roll: flowing or free-flying?
             bool asFlow = e.Flow is { } flowOpts
                 && DrawHelpers.Hash01(seed + 7) < flowOpts.Share;
 
             if (asFlow)
-                SpawnFlow(in s, in e, e.Flow!.Value, forcedMaterial, seed, visibleLen, flowToTip, time);
+                SpawnFlow(in s, in e, e.Flow!.Value, particleMaterial, seed, visibleLen, flowToTip, time);
             else
-                SpawnFreeFly(in s, in e, forcedMaterial, seed, visibleLen, time);
+                SpawnFreeFly(in s, in e, particleMaterial, seed, visibleLen, time, clusterBaseDir);
         }
     }
 
     private static void SpawnFreeFly(in StrokePrimitive s, in StrokeEmission e,
-                                     string? forcedMaterial, int seed, float visibleLen, float time)
+                                     string? particleMaterial, int seed, float visibleLen,
+                                     float time, Vector2? clusterBaseDir)
     {
         if (_freeFlyCount >= FreeFlyCapacity) return;
 
         float arc = visibleLen * DrawHelpers.Hash01(seed);
         s.Path.SampleAtArc(arc, out Vector2 pos, out Vector2 tan);
 
+        // Direction resolution:
+        //  - In a cluster: gust direction is the base; per-particle jitter is ClusterConeRadians.
+        //  - Otherwise: base is PrimaryDirection or the local perpendicular; jitter is
+        //    SpreadRadians.
         Vector2 baseDir;
-        if (e.PrimaryDirection is { } pd && pd.LengthSquared() > 1e-6f)
-            baseDir = Vector2.Normalize(pd);
-        else
-            baseDir = new Vector2(-tan.Y, tan.X);
+        float directionSpread;
 
-        float spread = DrawHelpers.HashRange(seed + 1, -e.SpreadRadians, e.SpreadRadians);
-        float ca = MathF.Cos(spread), sa = MathF.Sin(spread);
-        Vector2 dir = new(baseDir.X * ca - baseDir.Y * sa, baseDir.X * sa + baseDir.Y * ca);
+        if (clusterBaseDir is { } gust)
+        {
+            baseDir = gust;
+            directionSpread = e.ClusterConeRadians;
+        }
+        else
+        {
+            baseDir = e.PrimaryDirection is { } pd && pd.LengthSquared() > 1e-6f
+                ? Vector2.Normalize(pd)
+                : new Vector2(-tan.Y, tan.X);
+            directionSpread = e.SpreadRadians;
+        }
+
+        float spread = DrawHelpers.HashRange(seed + 1, -directionSpread, directionSpread);
+        Vector2 dir = Rotate(baseDir, spread);
 
         float speed = DrawHelpers.HashRange(seed + 2, e.SpeedMin, e.SpeedMax);
 
@@ -221,14 +248,20 @@ public static class StrokeAutoEmitter
             Brightness = s.Brightness,
             Seed = seed,
             Role = e.Role,
-            MaterialName = forcedMaterial,
+            MaterialName = particleMaterial,
             Owner = s.Owner,
             ColorOverride = s.ColorOverride,
         };
     }
 
+    private static Vector2 Rotate(Vector2 v, float radians)
+    {
+        float c = MathF.Cos(radians), sn = MathF.Sin(radians);
+        return new Vector2(v.X * c - v.Y * sn, v.X * sn + v.Y * c);
+    }
+
     private static void SpawnFlow(in StrokePrimitive s, in StrokeEmission e, in StrokeFlowOptions f,
-                                  string? forcedMaterial, int seed, float visibleLen, bool flowToTip, float time)
+                                  string? particleMaterial, int seed, float visibleLen, bool flowToTip, float time)
     {
         if (_flowCount >= FlowCapacity) return;
 
@@ -238,7 +271,7 @@ public static class StrokeAutoEmitter
         {
             Owner = s.Owner,
             StrokeSeed = s.Seed,
-            MaterialName = forcedMaterial,
+            MaterialName = particleMaterial,
 
             Born = time,
             Lifespan = DrawHelpers.HashRange(seed + 1, e.LifespanMin, e.LifespanMax),
@@ -306,14 +339,13 @@ public static class StrokeAutoEmitter
             ref var d = ref FlowPool[i];
 
             var stroke = FindStroke(scene, d.Owner, d.StrokeSeed);
-            if (stroke is null) continue; // parent gone this frame; drip sits idle
+            if (stroke is null) continue;
 
             var s = stroke.Value;
             var path = s.Path;
             float totalLen = path.Length * s.Reveal;
             if (totalLen < 1f) continue;
 
-            // Speed modulation: slow near each obstacle, fast between.
             float obstaclePhase = d.Arc / MathF.Max(1f, d.ObstacleSpacing) * MathF.Tau;
             float speedFactor = 0.6f + 0.4f * MathF.Cos(obstaclePhase);
             float currentSpeed = d.BaseSpeed * speedFactor;

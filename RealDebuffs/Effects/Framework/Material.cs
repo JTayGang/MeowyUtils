@@ -25,8 +25,8 @@ public interface IStrokeMaterial
     void Draw(ImDrawListPtr dl, in StrokePrimitive s, in MaterialContext ctx);
 
     /// <summary>
-    /// Everything this material sheds along its strokes. Each entry may be free-flying only,
-    /// or a mixed field (with its own Flow block) that spawns both free-flying and path-following
+    /// Everything this material sheds along its strokes. Each entry may be free-flying only, or a
+    /// mixed field (with its own Flow block) that spawns both free-flying and path-following
     /// particles. See StrokeEmission.
     /// </summary>
     ReadOnlySpan<StrokeEmission> Emissions => ReadOnlySpan<StrokeEmission>.Empty;
@@ -38,11 +38,14 @@ public interface IParticleMaterial
     void Draw(ImDrawListPtr dl, in ParticlePrimitive p, in MaterialContext ctx);
 
     /// <summary>
-    /// How this material looks when emitted along a stroke. Null means "can't be used as a
-    /// stroke emitter". The returned emission may itself carry a Flow block, in which case
-    /// "made of X" via a tooltip description will produce both falling and flowing particles.
+    /// Every emission this material contributes when used as a stroke emitter. Empty (the
+    /// default) means "can't be used as a stroke emitter". A material that declares multiple
+    /// emissions runs them side by side from the same strand — e.g. ParticleSnow declares both
+    /// a speck emission and a flake emission, so a strand using it produces a proper snowfall.
+    /// Each emission's optional RenderMaterial field lets the two halves render as different
+    /// particle visuals.
     /// </summary>
-    StrokeEmission? Emission => null;
+    ReadOnlySpan<StrokeEmission> Emissions => ReadOnlySpan<StrokeEmission>.Empty;
 }
 
 public interface IRegionMaterial

@@ -444,7 +444,7 @@ internal sealed class EffectStylePanel
         {
             IParticleMaterial mat;
             try { mat = MaterialRegistry.GetParticle(name); } catch { continue; }
-            if (mat.Emission is null) continue;
+            if (mat.Emissions.Length == 0) continue;
             particleNames.Add(name);
             particleLabels.Add(FriendlyMaterialName(name));
         }

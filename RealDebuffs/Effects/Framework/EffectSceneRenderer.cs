@@ -6,9 +6,13 @@ namespace RealDebuffs.Effects.Framework;
 
 /// <summary>
 /// Renders one frame's scene. Fixed order: vignette → regions → strokes → particles. Every
-/// primitive's ColorOverride is pushed around its material call. Per-effect material overrides
-/// (from the Effect Styles settings panel) are looked up by the primitive's stamped Owner + its
-/// type + its role; when no override exists, the built-in default for that role is used.
+/// primitive's ColorOverride is pushed around its material call.
+///
+/// Material resolution order for each primitive:
+///  1. User override (Settings → Effect styles, or a tooltip "made of X" phrase).
+///  2. The effect's authored default (BuiltInDefaults).
+///  3. A universal fallback (a plain stroke, a spark, a flat fill).
+/// Step 3 is a safety net so an unregistered material name never crashes the plugin.
 /// </summary>
 public static class EffectSceneRenderer
 {
@@ -39,7 +43,7 @@ public static class EffectSceneRenderer
         foreach (var r in scene.Regions)
         {
             DrawHelpers.PushColorOverride(r.ColorOverride);
-            try { MaterialRegistry.GetRegion(ResolveRegion(r, materialOverrides)).Draw(dl, in r, in ctx); }
+            try { MaterialRegistry.GetRegion(ResolveRegion(in r, materialOverrides)).Draw(dl, in r, in ctx); }
             finally { DrawHelpers.PopColorOverride(); }
         }
 
@@ -47,7 +51,7 @@ public static class EffectSceneRenderer
         foreach (var s in scene.Strokes)
         {
             DrawHelpers.PushColorOverride(s.ColorOverride);
-            try { MaterialRegistry.GetStroke(ResolveStroke(s, materialOverrides)).Draw(dl, in s, in ctx); }
+            try { MaterialRegistry.GetStroke(ResolveStroke(in s, materialOverrides)).Draw(dl, in s, in ctx); }
             finally { DrawHelpers.PopColorOverride(); }
         }
 
@@ -55,7 +59,7 @@ public static class EffectSceneRenderer
         foreach (var p in scene.Particles)
         {
             DrawHelpers.PushColorOverride(p.ColorOverride);
-            try { MaterialRegistry.GetParticle(ResolveParticle(p, materialOverrides)).Draw(dl, in p, in ctx); }
+            try { MaterialRegistry.GetParticle(ResolveParticle(in p, materialOverrides)).Draw(dl, in p, in ctx); }
             finally { DrawHelpers.PopColorOverride(); }
         }
     }
@@ -65,59 +69,59 @@ public static class EffectSceneRenderer
         if (overrides != null &&
             overrides.TryGetValue(MaterialOverrideKey.For(s.Owner, "Stroke", s.Role), out var name))
             return name;
-        return DefaultStroke(s.Role);
+
+        return BuiltInDefaults.Get(s.Owner, "Stroke", s.Role.ToString())
+            ?? BuiltInDefaults.FallbackStroke();
     }
 
     private static string ResolveParticle(in ParticlePrimitive p, IReadOnlyDictionary<string, string>? overrides)
     {
+        // A particle can carry its material with it directly (StrokeAutoEmitter sets this when a
+        // user override asked for a specific emitter material).
+        if (p.MaterialName is { } forced) return forced;
+
         if (overrides != null &&
             overrides.TryGetValue(MaterialOverrideKey.For(p.Owner, "Particle", p.Role), out var name))
             return name;
-        return DefaultParticle(p.Role);
+
+        return BuiltInDefaults.Get(p.Owner, "Particle", p.Role.ToString())
+            ?? BuiltInDefaults.FallbackParticle(p.Role);
     }
 
     private static string ResolveRegion(in RegionPrimitive r, IReadOnlyDictionary<string, string>? overrides)
     {
+        // Regions don't have a meaningful Role beyond "which kind of region is this", so the
+        // override key uses a coarse tag derived from the edge mask instead of Role.ToString().
+        string regionKind = (r.Top || r.Bottom || r.Left || r.Right) ? "EdgeGlow" : "FlatFill";
+
         if (overrides != null &&
-            overrides.TryGetValue(MaterialOverrideKey.For(r.Owner, "Region", r.Role), out var name))
+            overrides.TryGetValue(MaterialOverrideKey.ForRegion(r.Owner, regionKind), out var name))
             return name;
-        return DefaultRegion(in r);
+
+        return BuiltInDefaults.Get(r.Owner, "Region", regionKind)
+            ?? BuiltInDefaults.FallbackRegion(in r);
     }
-
-    private static string DefaultStroke(PrimitiveRole r) => r switch
-    {
-        PrimitiveRole.BranchStroke => "stroke.simple",
-        PrimitiveRole.DetailStroke => "stroke.simple",
-        _                          => "stroke.lightning",
-    };
-
-    private static string DefaultParticle(PrimitiveRole r) => r switch
-    {
-        PrimitiveRole.Drip      => "particle.drip",
-        PrimitiveRole.Flow      => "particle.drip",
-        PrimitiveRole.Mote      => "particle.mote",
-        PrimitiveRole.Ember     => "particle.ember",
-        PrimitiveRole.Rune      => "particle.rune",
-        PrimitiveRole.Word      => "particle.word",
-        PrimitiveRole.Ring      => "particle.ring",
-        PrimitiveRole.Flare     => "particle.flare",
-        PrimitiveRole.Snowflake => "particle.snowflake",
-        PrimitiveRole.Snow      => "particle.snow",
-        PrimitiveRole.Fog       => "particle.fog",
-        _                       => "particle.spark",
-    };
-
-    /// <summary>Any edge-mask flag set → edge glow. No edge-mask flag → flat fill.</summary>
-    private static string DefaultRegion(in RegionPrimitive r) =>
-        (r.Top || r.Bottom || r.Left || r.Right) ? "region.edge-glow" : "region.flat-fill";
 }
 
 /// <summary>
-/// Shared key format for material overrides. Effects never build these keys; the settings panel
-/// and the renderer are the only places that do, and they must agree, so the format lives here.
+/// Shared key format for material overrides.
+///  - Material axis: (Kind, "Stroke"|"Particle"|"Region", Role-or-tag) -> material name.
+///  - Emit axis: (Kind, "Stroke", Role) + ".Emit" -> particle material name (ambient particles
+///    spawned along that stroke).
+/// Settings panel and renderer/emitter are the only places that build these.
 /// </summary>
 public static class MaterialOverrideKey
 {
     public static string For(DebuffKind kind, string type, PrimitiveRole role) =>
         $"{kind}.{type}.{role}";
+
+    public static string ForRegion(DebuffKind kind, string regionKind) =>
+        $"{kind}.Region.{regionKind}";
+
+    public static string ForRegion(DebuffKind kind, in RegionPrimitive r) =>
+        ForRegion(kind, (r.Top || r.Bottom || r.Left || r.Right) ? "EdgeGlow" : "FlatFill");
+
+    /// <summary>Emit axis: which particle material this stroke sheds along its length.</summary>
+    public static string ForStrokeEmit(DebuffKind kind, PrimitiveRole role) =>
+        $"{kind}.Stroke.{role}.Emit";
 }

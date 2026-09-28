@@ -3,6 +3,7 @@ using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using RealDebuffs.Effects.Framework;
+using System.Collections.Generic;
 
 namespace RealDebuffs;
 
@@ -348,8 +349,6 @@ internal sealed class EffectStylePanel
 {
     private readonly record struct Slot(DebuffKind Kind, string PrimitiveType, PrimitiveRole Role, string Label);
 
-    // Curated roster of "hero slots" - the parts of each effect we consider user-swappable.
-    // Adding a new effect: add its slots here.
     private static readonly Slot[] Slots =
     {
         new(DebuffKind.Blind, "Region",   PrimitiveRole.MainStroke, "Screen wash"),
@@ -359,14 +358,12 @@ internal sealed class EffectStylePanel
         new(DebuffKind.Frost, "Particle", PrimitiveRole.Snow,       "Snow specks"),
         new(DebuffKind.Frost, "Particle", PrimitiveRole.Fog,        "Fog"),
         new(DebuffKind.Frost, "Region",   PrimitiveRole.MainStroke, "Intro flash"),
+        new(DebuffKind.Heavy, "Stroke",   PrimitiveRole.MainStroke, "Chains"),
     };
 
     private readonly Configuration _config;
 
-    public EffectStylePanel(Configuration config)
-    {
-        _config = config;
-    }
+    public EffectStylePanel(Configuration config) { _config = config; }
 
     public bool Draw()
     {
@@ -389,6 +386,8 @@ internal sealed class EffectStylePanel
                 foreach (var slot in Slots.Where(s => s.Kind == kind))
                 {
                     changed |= DrawSlotRow(slot);
+                    if (slot.PrimitiveType == "Stroke")
+                        changed |= DrawEmitRow(slot);
                 }
 
                 ImGui.Unindent();
@@ -411,16 +410,10 @@ internal sealed class EffectStylePanel
         if (names.Length == 0) return false;
 
         string[] labels = names.Select(FriendlyMaterialName).ToArray();
-
         string key = MaterialOverrideKey.For(slot.Kind, slot.PrimitiveType, slot.Role);
-
-        // Default = first material of this type whose name matches the built-in default for
-        // this slot, or the first entry if none matches.
         string defaultName = DefaultMaterialNameFor(slot);
 
-        string current = _config.MaterialOverrides.TryGetValue(key, out var overrideName)
-            ? overrideName
-            : defaultName;
+        string current = _config.MaterialOverrides.TryGetValue(key, out var o) ? o : defaultName;
         int idx = Array.IndexOf(names, current);
         if (idx < 0) idx = 0;
 
@@ -429,42 +422,80 @@ internal sealed class EffectStylePanel
         if (changed)
         {
             string picked = names[idx];
-            if (picked == defaultName)
-                _config.MaterialOverrides.Remove(key);
-            else
-                _config.MaterialOverrides[key] = picked;
+            if (picked == defaultName) _config.MaterialOverrides.Remove(key);
+            else                       _config.MaterialOverrides[key] = picked;
         }
-
         return changed;
     }
 
     /// <summary>
-    /// The built-in default material for a slot. Kept in sync with EffectSceneRenderer's
-    /// role-based defaults (see DefaultParticle/DefaultRegion in that file).
+    /// Emit dropdown for stroke slots. Options: "(from material)", "(none)", and every particle
+    /// material that declares a stroke emission. Selecting "(from material)" removes the key so
+    /// the stroke material's own emissions apply; "(none)" pins an empty string so it stays
+    /// silent regardless of what the material declares.
     /// </summary>
-    private static string DefaultMaterialNameFor(Slot slot) => slot.PrimitiveType switch
+    private bool DrawEmitRow(Slot slot)
     {
-        "Particle" => slot.Role switch
+        // Build the option list: two sentinels + every particle material with a non-null Emission.
+        var particleNames = new List<string>();
+        var particleLabels = new List<string>();
+        foreach (var name in MaterialRegistry.ParticleNames)
         {
-            PrimitiveRole.Ember     => "particle.ember",
-            PrimitiveRole.Snowflake => "particle.snowflake",
-            PrimitiveRole.Snow      => "particle.snow",
-            PrimitiveRole.Fog       => "particle.fog",
-            _                       => "particle.spark",
-        },
-        "Region" => slot.Label switch
-        {
-            "Screen wash" or "Intro flash" => "region.flat-fill",
-            _                              => "region.edge-glow",
-        },
-        _ => "",
-    };
+            IParticleMaterial mat;
+            try { mat = MaterialRegistry.GetParticle(name); } catch { continue; }
+            if (mat.Emission is null) continue;
+            particleNames.Add(name);
+            particleLabels.Add(FriendlyMaterialName(name));
+        }
+        if (particleNames.Count == 0) return false;
 
-    /// <summary>
-    /// "particle.snowflake" -> "Snowflake"; "region.edge-glow" -> "Edge glow". Drops the type
-    /// prefix because the panel already groups by effect, and the combo only contains materials
-    /// of the matching type.
-    /// </summary>
+        string[] options = new[] { "(from material)", "(none)" }
+            .Concat(particleLabels)
+            .ToArray();
+        string[] optionIds = new[] { "", "__none__" }
+            .Concat(particleNames)
+            .ToArray();
+
+        string key = MaterialOverrideKey.ForStrokeEmit(slot.Kind, slot.Role);
+
+        // Current selection: "" default, "__none__" explicit-disable, else specific material.
+        string current = _config.MaterialOverrides.TryGetValue(key, out var o) ? o : "";
+        int idx = Array.IndexOf(optionIds, current);
+        if (idx < 0) idx = 0;
+
+        ImGui.Indent();
+        ImGui.SetNextItemWidth(200f);
+        bool changed = ImGui.Combo($"Emits##{slot.Kind}{slot.Role}", ref idx, options, options.Length);
+        ImGui.Unindent();
+
+        if (changed)
+        {
+            string picked = optionIds[idx];
+            if (picked.Length == 0) _config.MaterialOverrides.Remove(key);
+            else                    _config.MaterialOverrides[key] = picked;
+        }
+        return changed;
+    }
+
+    private static string DefaultMaterialNameFor(Slot slot)
+    {
+        string roleKey = slot.PrimitiveType == "Region"
+            ? (slot.Label.Contains("wash", StringComparison.OrdinalIgnoreCase) ||
+               slot.Label.Contains("flash", StringComparison.OrdinalIgnoreCase) ? "FlatFill" : "EdgeGlow")
+            : slot.Role.ToString();
+
+        return BuiltInDefaults.Get(slot.Kind, slot.PrimitiveType, roleKey)
+            ?? slot.PrimitiveType switch
+            {
+                "Stroke"   => BuiltInDefaults.FallbackStroke(),
+                "Particle" => BuiltInDefaults.FallbackParticle(slot.Role),
+                "Region"   => slot.Label.Contains("wash", StringComparison.OrdinalIgnoreCase) ||
+                              slot.Label.Contains("flash", StringComparison.OrdinalIgnoreCase)
+                              ? "region.flat-fill" : "region.edge-glow",
+                _ => "",
+            };
+    }
+
     private static string FriendlyMaterialName(string name)
     {
         int dot = name.IndexOf('.');

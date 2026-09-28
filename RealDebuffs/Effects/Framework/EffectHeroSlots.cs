@@ -3,17 +3,12 @@ using System;
 namespace RealDebuffs.Effects.Framework;
 
 /// <summary>
-/// The "hero" primitive slot(s) of each effect - the thing the effect is *about*, and the thing
-/// a "made of snow" / "made of lightning" phrase in a status description replaces.
+/// The "hero" primitive slot(s) of each effect - the thing the effect is about, and the thing a
+/// "made of snow" / "made of lightning" phrase in a status description replaces.
 ///
 /// Effects with no clear hero (purely atmospheric washes, edge accents) return an empty list;
-/// substitutions targeting them are silently dropped. Effects with more than one hero role
-/// (Frost's three particle fields, for instance) can list several, though a single material
-/// usually ends up on the first that type-matches.
-///
-/// This is a central table rather than a per-effect declaration on purpose: it plays the same
-/// role as EffectManager._order and StatusCatalog.NameMap - a single place to look when tracing
-/// "which slot does a substitution target for kind X." Kept small and stable.
+/// substitutions targeting them are silently dropped. Effects with more than one hero role can
+/// list several: a single material substitution applies to whichever slot type-matches it.
 /// </summary>
 public static class EffectHeroSlots
 {
@@ -24,6 +19,7 @@ public static class EffectHeroSlots
     private static readonly HeroSlot[] FrostHeroes   = { new("Particle", PrimitiveRole.Snowflake) };
     private static readonly HeroSlot[] BlindHeroes   = { new("Region",   PrimitiveRole.MainStroke) };
     private static readonly HeroSlot[] SilenceHeroes = { new("Particle", PrimitiveRole.Rune) };
+    private static readonly HeroSlot[] HeavyHeroes   = { new("Stroke",   PrimitiveRole.MainStroke) };
 
     public static HeroSlot[] For(DebuffKind kind) => kind switch
     {
@@ -31,6 +27,7 @@ public static class EffectHeroSlots
         DebuffKind.Frost   => FrostHeroes,
         DebuffKind.Blind   => BlindHeroes,
         DebuffKind.Silence => SilenceHeroes,
+        DebuffKind.Heavy   => HeavyHeroes,
         _                  => None,
     };
 }

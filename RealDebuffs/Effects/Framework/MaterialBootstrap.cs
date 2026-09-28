@@ -15,10 +15,15 @@ public static class MaterialBootstrap
         MaterialRegistry.Register(new RegionFlatFill());
         MaterialRegistry.Register(new RegionEdgeGlow());
 
+        // Stroke materials.
+        MaterialRegistry.Register(new StrokeSimple());
+        MaterialRegistry.Register(new StrokeChain());
+
         // Particle materials.
         MaterialRegistry.Register(new ParticleEmber());
         MaterialRegistry.Register(new ParticleSnowflake());
         MaterialRegistry.Register(new ParticleSnow());
         MaterialRegistry.Register(new ParticleFog());
+        MaterialRegistry.Register(new ParticleSpark());
     }
 }

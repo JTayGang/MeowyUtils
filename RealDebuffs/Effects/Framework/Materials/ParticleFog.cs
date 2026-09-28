@@ -41,4 +41,15 @@ public sealed class ParticleFog : IParticleMaterial
         dl.AddCircleFilled(pos, size,        DrawHelpers.WithAlpha(Tint, alpha * 0.09f));
         dl.AddCircleFilled(pos, size * 0.62f, DrawHelpers.WithAlpha(Tint, alpha * 0.14f));
     }
+    private static readonly StrokeEmission EmissionSpec = new(
+        Role: PrimitiveRole.Fog,
+        DensityPer100px: 0.5f,
+        SpeedMin: 6f, SpeedMax: 14f,
+        LifespanMin: 2.0f, LifespanMax: 4.0f,
+        SizeMin: 12f, SizeMax: 24f,
+        SpreadRadians: 1.4f,
+        BiasVelocity: new Vector2(0f, -6f),
+        PrimaryDirection: new Vector2(0f, -1f)); // drift up slowly
+
+    public StrokeEmission? Emission => EmissionSpec;
 }

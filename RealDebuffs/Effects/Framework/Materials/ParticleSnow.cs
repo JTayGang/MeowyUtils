@@ -39,4 +39,15 @@ public sealed class ParticleSnow : IParticleMaterial
         dl.AddCircleFilled(pos, size * 2.2f, DrawHelpers.WithAlpha(Halo, alpha * 0.22f));
         dl.AddCircleFilled(pos, size,        DrawHelpers.WithAlpha(Core, alpha * 0.92f));
     }
+    private static readonly StrokeEmission EmissionSpec = new(
+        Role: PrimitiveRole.Snow,
+        DensityPer100px: 4f,
+        SpeedMin: 18f, SpeedMax: 45f,
+        LifespanMin: 0.8f, LifespanMax: 1.4f,
+        SizeMin: 1f, SizeMax: 2.4f,
+        SpreadRadians: 0.7f,
+        BiasVelocity: new Vector2(0f, 12f),
+        PrimaryDirection: new Vector2(0f, 1f)); // fall
+
+    public StrokeEmission? Emission => EmissionSpec;
 }

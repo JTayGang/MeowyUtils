@@ -47,6 +47,7 @@ public sealed class EffectManager
     {
         new BlindEffect(),
         new BurnsEffect(),
+        new HeavyEffect(),
         new FrostEffect(),
         new VulnerabilityEffect(),
     };
@@ -209,6 +210,8 @@ public sealed class EffectManager
             }
         }
 
+        // Ambient particles along strokes, then the frame render.
+        StrokeAutoEmitter.Emit(_scene, time, dt, _materialOverridesScratch);
         EffectSceneRenderer.Render(dl, _scene, screenSize, time, _config.GlobalIntensity, _materialOverridesScratch);
     }
 

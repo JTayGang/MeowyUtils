@@ -95,4 +95,16 @@ public sealed class ParticleEmber : IParticleMaterial
         if (hue > 0f) return DrawHelpers.LerpColor(c, HotWhite, hue * 0.10f);
         return DrawHelpers.LerpColor(c, DeepRed, -hue * 0.14f);
     }
+
+    private static readonly StrokeEmission EmissionSpec = new(
+        Role: PrimitiveRole.Ember,
+        DensityPer100px: 6f,
+        SpeedMin: 18f, SpeedMax: 50f,
+        LifespanMin: 0.65f, LifespanMax: 1.30f,
+        SizeMin: 5f, SizeMax: 12f,
+        SpreadRadians: 0.55f,
+        BiasVelocity: new Vector2(0f, -14f),
+        PrimaryDirection: new Vector2(0f, -1f));
+
+    public StrokeEmission? Emission => EmissionSpec;
 }

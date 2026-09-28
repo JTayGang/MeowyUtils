@@ -10,12 +10,6 @@ public sealed class EffectScene
     public readonly List<RegionPrimitive>   Regions   = new(64);
 
     public VignetteRequest Vignette;
-
-    /// <summary>
-    /// The DebuffKind currently emitting. EffectManager sets this before each effect's Emit call;
-    /// AddStroke/AddParticle/AddRegion stamp it onto whatever primitive they receive, so the
-    /// renderer can look up per-effect material overrides without every effect having to set it.
-    /// </summary>
     public DebuffKind CurrentOwner;
 
     public void Clear()
@@ -29,23 +23,26 @@ public sealed class EffectScene
 
     public void AddStroke(in StrokePrimitive s)
     {
-        var copy = s;
-        copy.Owner = CurrentOwner;
-        Strokes.Add(copy);
+        var copy = s; copy.Owner = CurrentOwner; Strokes.Add(copy);
     }
 
     public void AddParticle(in ParticlePrimitive p)
     {
-        var copy = p;
-        copy.Owner = CurrentOwner;
-        Particles.Add(copy);
+        var copy = p; copy.Owner = CurrentOwner; Particles.Add(copy);
     }
 
     public void AddRegion(in RegionPrimitive r)
     {
-        var copy = r;
-        copy.Owner = CurrentOwner;
-        Regions.Add(copy);
+        var copy = r; copy.Owner = CurrentOwner; Regions.Add(copy);
+    }
+
+    /// <summary>
+    /// For post-effect emission passes (see StrokeAutoEmitter) where CurrentOwner isn't set to
+    /// the right effect anymore. Caller supplies the owner explicitly.
+    /// </summary>
+    public void AddParticleForOwner(in ParticlePrimitive p, DebuffKind owner)
+    {
+        var copy = p; copy.Owner = owner; Particles.Add(copy);
     }
 
     public void RequestVignette(uint tint, float thicknessFrac, float alpha, int priority, Vector4? colorOverride)
@@ -55,12 +52,8 @@ public sealed class EffectScene
         {
             Vignette = new VignetteRequest
             {
-                Active = true,
-                Tint = tint,
-                ThicknessFrac = thicknessFrac,
-                Alpha = alpha,
-                Priority = priority,
-                ColorOverride = colorOverride,
+                Active = true, Tint = tint, ThicknessFrac = thicknessFrac,
+                Alpha = alpha, Priority = priority, ColorOverride = colorOverride,
             };
         }
     }

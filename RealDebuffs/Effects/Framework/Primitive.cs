@@ -45,7 +45,7 @@ public struct StrokePrimitive
 
 public struct ParticlePrimitive
 {
-    public DebuffKind Owner;         // stamped by EffectScene
+    public DebuffKind Owner;
     public Vector2 Position;
     public Vector2 Velocity;
     public Vector4? ColorOverride;
@@ -56,6 +56,13 @@ public struct ParticlePrimitive
     public int   Seed;
 
     public PrimitiveRole Role;
+
+    /// <summary>
+    /// Forces this particle to render with a specific material name, bypassing role lookup.
+    /// Set by StrokeAutoEmitter when a user override specified "emit particle X" so the spawned
+    /// particles carry their emitter's material with them. Null = resolve via role.
+    /// </summary>
+    public string? MaterialName;
 
     public int    GlyphIndex;
     public string? Text;

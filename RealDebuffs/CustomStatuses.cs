@@ -135,10 +135,24 @@ public sealed class CustomStatusSnapshot
                 string matType = PrefixOf(matName);
                 foreach (var hero in EffectHeroSlots.For(m.Kind))
                 {
-                    if (!string.Equals(hero.PrimitiveType, matType, StringComparison.OrdinalIgnoreCase)) continue;
-                    string key = MaterialOverrideKey.For(m.Kind, hero.PrimitiveType, hero.Role);
-                    if (!tooltipMaterials.ContainsKey(key))
-                        tooltipMaterials[key] = matName;
+                    // Same-type match: material axis (stroke material on stroke hero, etc.).
+                    if (string.Equals(hero.PrimitiveType, matType, StringComparison.OrdinalIgnoreCase))
+                    {
+                        string key = MaterialOverrideKey.For(m.Kind, hero.PrimitiveType, hero.Role);
+                        if (!tooltipMaterials.ContainsKey(key))
+                            tooltipMaterials[key] = matName;
+                    }
+                    // Cross-type on a stroke: a particle material means "emit this along the
+                    // stroke", routed to the emit axis. This is what makes "chains made of
+                    // flames" work: chains keep their material, but shed fire particles.
+                    else if (string.Equals(hero.PrimitiveType, "Stroke", StringComparison.OrdinalIgnoreCase)
+                             && string.Equals(matType, "particle", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string key = MaterialOverrideKey.ForStrokeEmit(m.Kind, hero.Role);
+                        if (!tooltipMaterials.ContainsKey(key))
+                            tooltipMaterials[key] = matName;
+                    }
+                    // Any other cross-type (stroke material on particle hero, etc.) is dropped.
                 }
             }
         }

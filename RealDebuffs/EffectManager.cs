@@ -212,7 +212,6 @@ public sealed class EffectManager
         }
 
         // Ambient stroke emissions: path-following first (behind), free-flying second (on top).
-        StrokeFlowEmitter.Emit(_scene, time, dt, _materialOverridesScratch);
         StrokeAutoEmitter.Emit(_scene, time, dt, _materialOverridesScratch);
         EffectSceneRenderer.Render(dl, _scene, screenSize, time, _config.GlobalIntensity, _materialOverridesScratch);
     }

@@ -21,6 +21,14 @@ public sealed class StrokeChain : IStrokeMaterial
 {
     public string Name => "stroke.chain";
 
+    // Chain links have a natural size range: too small and the interlock pattern is illegible
+    // (they read as a string of beads), too large and a single link dominates the frame instead
+    // of reading as part of a longer chain. Clamped as a fraction of the shorter screen side so
+    // the range scales with resolution. Both bounds are deliberately generous enough that
+    // Heavy's own native hint (~0.044 shortSide) sits comfortably inside them, unaffected.
+    private const float MinLinkFrac = 0.030f; // ~32px at 1080p
+    private const float MaxLinkFrac = 0.075f; // ~81px at 1080p
+
     private const int StadiumCapSegs = 6;
     private const int StadiumPoints  = 2 * StadiumCapSegs + 3;
 
@@ -40,6 +48,15 @@ public sealed class StrokeChain : IStrokeMaterial
 
         float totalLength = path.Length;
         float linkLength = s.WidthHint;
+
+        // Clamp the effective link length to this material's viable range. A tentacle-authored
+        // hint (~15-26px) lands at the floor and reads as a proper chain; a chain-authored hint
+        // (~47px) passes through unchanged.
+        float minLink = ctx.ShortSide * MinLinkFrac;
+        float maxLink = ctx.ShortSide * MaxLinkFrac;
+        if (linkLength < minLink) linkLength = minLink;
+        if (linkLength > maxLink) linkLength = maxLink;
+
         if (path.Count < 2 || linkLength <= 0f || totalLength < linkLength) return;
 
         float reveal = Math.Clamp(s.Reveal, 0f, 1f);

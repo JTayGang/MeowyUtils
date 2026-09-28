@@ -32,6 +32,15 @@ public static class MaterialRegistry
             ? m
             : throw new KeyNotFoundException($"No region material registered as '{name}'.");
 
+    public static IStrokeMaterial? TryGetStroke(string name) =>
+        StrokeMaterials.TryGetValue(name, out var m) ? m : null;
+
+    public static IParticleMaterial? TryGetParticle(string name) =>
+        ParticleMaterials.TryGetValue(name, out var m) ? m : null;
+
+    public static IRegionMaterial? TryGetRegion(string name) =>
+        RegionMaterials.TryGetValue(name, out var m) ? m : null;
+
     public static IEnumerable<string> StrokeNames   => StrokeMaterials.Keys;
     public static IEnumerable<string> ParticleNames => ParticleMaterials.Keys;
     public static IEnumerable<string> RegionNames   => RegionMaterials.Keys;

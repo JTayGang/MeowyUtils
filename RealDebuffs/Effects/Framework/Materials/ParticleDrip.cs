@@ -54,15 +54,29 @@ public sealed class ParticleDrip : IParticleMaterial
         _ = perp;
     }
 
-    public StrokeEmission? Emission => EmissionSpec;
-
+    /// <summary>
+    /// The canonical drip emission when this material is used as a stroke emitter ("chains with
+    /// drips", or any future "... with drips" phrase). Half the spawns fall under gravity, half
+    /// run along the strand catching on generic obstacles. Matches StrokeParasite.Combined so a
+    /// drip behaves the same regardless of which strand is shedding it.
+    /// </summary>
     private static readonly StrokeEmission EmissionSpec = new(
         Role: PrimitiveRole.Drip,
-        DensityPer100px: 1.5f,
-        SpeedMin: 12f, SpeedMax: 30f,
-        LifespanMin: 1.4f, LifespanMax: 2.6f,
-        SizeMin: 2f, SizeMax: 4.5f,
-        SpreadRadians: 0.5f,
-        BiasVelocity: new Vector2(0f, 30f),
-        PrimaryDirection: new Vector2(0f, 1f));
+        DensityPer100px: 0.4f,
+        SpeedMin: 8f, SpeedMax: 22f,
+        LifespanMin: 1.6f, LifespanMax: 2.6f,
+        SizeMin: 2.0f, SizeMax: 4.5f,
+        SpreadRadians: 0.18f,
+        BiasVelocity: Vector2.Zero,
+        PrimaryDirection: new Vector2(0f, 1f),
+        Gravity: new Vector2(0f, 420f),
+        Flow: new StrokeFlowOptions(
+            Share: 0.5f,
+            SpeedMin: 55f, SpeedMax: 110f,
+            WobbleAmplitude: 1.8f,
+            WobbleFrequencyHz: 0.7f,
+            ObstacleSpacingPx: 45f,   // matches StrokeParasite.SuckerSpacing
+            LateralOffsetFrac: 0.45f));
+
+    public StrokeEmission? Emission => EmissionSpec;
 }

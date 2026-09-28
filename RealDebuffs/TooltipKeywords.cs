@@ -227,13 +227,15 @@ public static class TooltipKeywordParser
         ["electricity"] = "stroke.lightning",
         ["bolt"]        = "stroke.lightning",
         ["bolts"]       = "stroke.lightning",
-        ["tentacle"]    = "stroke.tentacle",
-        ["tentacles"]   = "stroke.tentacle",
-        ["tendril"]     = "stroke.tentacle",
-        ["tendrils"]    = "stroke.tentacle",
+        ["tentacle"]    = "stroke.parasite",
+        ["tentacles"]   = "stroke.parasite",
+        ["tendril"]     = "stroke.parasite",
+        ["tendrils"]    = "stroke.parasite",
         ["chain"]       = "stroke.chain",
         ["chains"]      = "stroke.chain",
         ["links"]       = "stroke.chain",
+        ["parasite"]    = "stroke.parasite",
+        ["parasites"]   = "stroke.parasite",
     };
 
     // Both regexes are built from their dictionaries above so they can never drift out of sync.

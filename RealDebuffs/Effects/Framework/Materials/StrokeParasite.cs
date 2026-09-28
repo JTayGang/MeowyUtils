@@ -34,7 +34,7 @@ public sealed class StrokeParasite : IStrokeMaterial
     // ---- palette: sickly green parasite flesh ----
     private static readonly uint Halo    = DrawHelpers.ToU32(0.015f, 0.030f, 0.010f, 1f);
     private static readonly uint Void    = DrawHelpers.ToU32(0.030f, 0.055f, 0.020f, 1f);
-    private static readonly uint Body    = DrawHelpers.ToU32(0.72f,  0.88f,  0.26f,  1f);
+    private static readonly uint Body    = DrawHelpers.ToU32(0.35f,  0.55f,  0.20f,  1f);
     private static readonly uint Ridge   = DrawHelpers.ToU32(0.050f, 0.095f, 0.030f, 1f);
     private static readonly uint Lit     = DrawHelpers.ToU32(0.240f, 0.360f, 0.120f, 1f);
     private static readonly uint Rim     = DrawHelpers.ToU32(0.560f, 0.740f, 0.260f, 1f);
@@ -46,9 +46,16 @@ public sealed class StrokeParasite : IStrokeMaterial
     private static readonly Vector2 LightDir = Vector2.Normalize(new Vector2(-0.65f, -0.75f));
 
     private const int   MaxSteps      = 96;
-    private const float RidgeSpacing  = 12f;  // pixels at 1080p scale
+    private const float RidgeSpacing  = 12f;
     private const float SuckerSpacing = 45f;
     private const float SheenSpeed    = 0.32f;
+
+    // Parasite flesh has a viable size range too, for the same reason chains do: too thin and
+    // the ridges/suckers/core all read as illegible noise on a hairline, too thick and the
+    // silhouette stops looking like a tendril and starts looking like a tree trunk. Both bounds
+    // comfortably contain Disease's own native hints (~15-26px).
+    private const float MinBaseWidthFrac = 0.008f; // ~9px at 1080p
+    private const float MaxBaseWidthFrac = 0.030f; // ~32px at 1080p
 
     public void Draw(ImDrawListPtr dl, in StrokePrimitive s, in MaterialContext ctx)
     {
@@ -62,6 +69,11 @@ public sealed class StrokeParasite : IStrokeMaterial
         if (reveal <= 0.001f) return;
 
         float baseWidth = MathF.Max(2f, s.WidthHint);
+        float minW = ctx.ShortSide * MinBaseWidthFrac;
+        float maxW = ctx.ShortSide * MaxBaseWidthFrac;
+        if (baseWidth < minW) baseWidth = minW;
+        if (baseWidth > maxW) baseWidth = maxW;
+
         float px = ctx.ScreenScale;
         float visibleLen = path.Length * reveal;
 
@@ -153,44 +165,31 @@ public sealed class StrokeParasite : IStrokeMaterial
         }
     }
 
-    public ReadOnlySpan<StrokeEmission> Emissions => FallingDrips;
-    public ReadOnlySpan<StrokeFlowEmission> Flows => FlowingDrips;
+    public ReadOnlySpan<StrokeEmission> Emissions => Combined;
 
     /// <summary>
-    /// Sparse drips that detach from the strand and fall. Gravity accelerates them; the drip
-    /// material's stretch logic converts their increasing speed into a longer teardrop, which is
-    /// what makes the fall read as "under gravity" rather than "moving at a fixed rate".
+    /// One unified emission: falls half the time, flows half the time. Fall side uses gravity
+    /// and a tight spread so detached drops accelerate; flow side runs along the strand, catches
+    /// on each sucker (ObstacleSpacingPx matches SuckerSpacing), and wanders laterally.
     /// </summary>
-    private static readonly StrokeEmission[] FallingDrips =
+    private static readonly StrokeEmission[] Combined =
     {
         new(Role: PrimitiveRole.Drip,
-            DensityPer100px: 0.2f,
+            DensityPer100px: 0.4f,
             SpeedMin: 8f, SpeedMax: 22f,
             LifespanMin: 1.6f, LifespanMax: 2.6f,
             SizeMin: 2.0f, SizeMax: 4.5f,
             SpreadRadians: 0.18f,
-            BiasVelocity: new Vector2(0f, 0f),
+            BiasVelocity: Vector2.Zero,
             PrimaryDirection: new Vector2(0f, 1f),
-            Gravity: new Vector2(0f, 420f)),
-    };
-
-    /// <summary>
-    /// Drips that stay attached to the strand, running along it toward whichever endpoint is
-    /// lower on screen. Speed is modulated so each drip slows near a sucker (ObstacleSpacingPx
-    /// matches the sucker spacing used above) and speeds up between them, reading as the drip
-    /// catching on each one. Wobble adds the side-to-side wander.
-    /// </summary>
-    private static readonly StrokeFlowEmission[] FlowingDrips =
-    {
-        new(Role: PrimitiveRole.Drip,
-            DensityPer100px: 0.2f,
-            SpeedMin: 55f, SpeedMax: 110f,
-            LifespanMin: 5.0f, LifespanMax: 7.0f,
-            SizeMin: 3.5f, SizeMax: 7.5f,
-            WobbleAmplitude: 1.8f,
-            WobbleFrequencyHz: 0.7f,
-            ObstacleSpacingPx: 55f,
-            LateralOffsetFrac: 0.45f),
+            Gravity: new Vector2(0f, 420f),
+            Flow: new StrokeFlowOptions(
+                Share: 0.5f,
+                SpeedMin: 55f, SpeedMax: 110f,
+                WobbleAmplitude: 1.8f,
+                WobbleFrequencyHz: 0.7f,
+                ObstacleSpacingPx: SuckerSpacing,   // matches the suckers below
+                LateralOffsetFrac: 0.45f)),
     };
 
     // =====================================================================================

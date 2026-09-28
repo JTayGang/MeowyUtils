@@ -5,21 +5,26 @@ using System.Numerics;
 namespace RealDebuffs.Effects.Framework;
 
 /// <summary>
-/// Spawns ambient particles along every stroke in the scene, using each stroke's resolved
-/// material's declared emissions (or an emit-axis override). Runs after all effects have emitted,
-/// before the renderer.
+/// Spawns and advances everything a stroke material sheds along its length: free-flying particles
+/// (sparks, falling drips, embers) and path-following particles (drips running down the strand).
+/// Both kinds come from a single StrokeEmission list — each emission carries an optional Flow
+/// block that enables the path-following half — and both are resolved through the same material
+/// lookup, so an emit-axis override ("chains with drips") reaches both.
 ///
-/// Owns a persistent pool: strokes are spawned fresh each frame based on arc position, and those
-/// particles live out their full lifespan across many frames, integrating their own velocity.
-/// The pool is a fixed-size static buffer; when it fills up, spawning gracefully stops until
-/// slots free up. Brightness fades with age using ParticleEmitter.FadeFor, matching the ambient
-/// particle pipeline that effects already use.
+/// Owns two internal pools: one for free-flying particles (position + velocity + gravity), one
+/// for flowing particles (arc position along a parent stroke, direction, wobble, obstacle sync).
+/// Both persist across frames and are culled as lifespans expire or (for flows) as parent
+/// strokes disappear from the scene.
 /// </summary>
 public static class StrokeAutoEmitter
 {
-    private const int PoolCapacity = 2000;
+    // =====================================================================================
+    // Free-flying pool
+    // =====================================================================================
 
-    private struct PooledParticle
+    private const int FreeFlyCapacity = 2000;
+
+    private struct FreeFlyParticle
     {
         public Vector2 Pos;
         public Vector2 Vel;
@@ -35,37 +40,67 @@ public static class StrokeAutoEmitter
         public Vector4? ColorOverride;
     }
 
-    private static readonly PooledParticle[] Pool = new PooledParticle[PoolCapacity];
-    private static int _count;
+    private static readonly FreeFlyParticle[] FreeFlyPool = new FreeFlyParticle[FreeFlyCapacity];
+    private static int _freeFlyCount;
+
+    // =====================================================================================
+    // Flow pool
+    // =====================================================================================
+
+    private const int FlowCapacity = 600;
+
+    private struct FlowingParticle
+    {
+        public DebuffKind Owner;
+        public int   StrokeSeed;
+        public string? MaterialName;
+
+        public float Born;
+        public float Lifespan;
+        public float Size;
+        public float Brightness;
+        public PrimitiveRole Role;
+        public Vector4? ColorOverride;
+
+        public float Arc;
+        public float BaseSpeed;
+        public bool  FlowToTip;
+
+        public float WobblePhase;
+        public float WobbleFreq;
+        public float WobbleAmp;
+        public float ObstacleSpacing;
+        public float LateralOffsetFrac;
+        public int   SideSign;
+    }
+
+    private static readonly FlowingParticle[] FlowPool = new FlowingParticle[FlowCapacity];
+    private static int _flowCount;
+
+    // =====================================================================================
+    // Public entry point
+    // =====================================================================================
 
     public static void Emit(EffectScene scene, float time, float dt,
                             IReadOnlyDictionary<string, string>? overrides)
     {
-        // 1. Cull expired particles.
-        int w = 0;
-        for (int i = 0; i < _count; i++)
-        {
-            if (time - Pool[i].Born < Pool[i].Lifespan)
-                Pool[w++] = Pool[i];
-        }
-        _count = w;
+        // 1. Free-flying: cull, integrate, and (further down) spawn.
+        CullFreeFly(time);
+        IntegrateFreeFly(dt);
 
-        // 2. Integrate live particles (with gravity).
-        for (int i = 0; i < _count; i++)
-        {
-            Pool[i].Vel += Pool[i].Gravity * dt;
-            Pool[i].Pos += Pool[i].Vel * dt;
-        }
+        // 2. Flowing: cull expired, advance along parents, and (further down) spawn.
+        CullFlows(time);
+        AdvanceFlows(scene, time, dt);
 
-        // 3. Spawn new particles along every stroke in the scene.
-        int strokeCount = scene.Strokes.Count;
-        for (int i = 0; i < strokeCount; i++)
+        // 3. Spawn from every stroke in the scene.
+        for (int i = 0; i < scene.Strokes.Count; i++)
         {
             var s = scene.Strokes[i];
             if (s.Path.Count < 2 || s.Reveal <= 0.001f) continue;
 
-            // Emit-axis override wins: use that particle material's spec and stamp its name onto
-            // every spawned particle so the renderer uses it directly.
+            // Emit-axis override: forces every emission (free-flying and flowing) to use the
+            // override material's spec. Falls through to the stroke material's own emissions if
+            // no override is set.
             string? emitOverride = overrides?.GetValueOrDefault(
                 MaterialOverrideKey.ForStrokeEmit(s.Owner, s.Role));
 
@@ -76,11 +111,10 @@ public static class StrokeAutoEmitter
                 catch { continue; }
 
                 if (emitter.Emission is not { } spec) continue;
-                SpawnFromStroke(in s, spec, emitOverride, time, dt);
+                SpawnFromStroke(in s, in spec, emitOverride, time, dt);
                 continue;
             }
 
-            // No override: use the stroke material's own declared emissions.
             string materialName = ResolveStrokeMaterial(in s, overrides);
             IStrokeMaterial material;
             try { material = MaterialRegistry.GetStroke(materialName); }
@@ -88,13 +122,14 @@ public static class StrokeAutoEmitter
 
             var emissions = material.Emissions;
             for (int e = 0; e < emissions.Length; e++)
-                SpawnFromStroke(in s, emissions[e], forcedMaterial: null, time, dt);
+                SpawnFromStroke(in s, in emissions[e], forcedMaterial: null, time, dt);
         }
 
-        // 4. Push every live particle into the scene for this frame's render.
-        for (int i = 0; i < _count; i++)
+        // 4. Push every live free-flying particle into the scene for this frame's render.
+        // Flowing particles were pushed during AdvanceFlows above.
+        for (int i = 0; i < _freeFlyCount; i++)
         {
-            ref readonly var p = ref Pool[i];
+            ref readonly var p = ref FreeFlyPool[i];
             float age = time - p.Born;
             float t01 = age / p.Lifespan;
             float fade = ParticleEmitter.FadeFor(t01);
@@ -114,6 +149,10 @@ public static class StrokeAutoEmitter
         }
     }
 
+    // =====================================================================================
+    // Spawning from a stroke
+    // =====================================================================================
+
     private static void SpawnFromStroke(in StrokePrimitive s, in StrokeEmission e,
                                         string? forcedMaterial, float time, float dt)
     {
@@ -121,52 +160,208 @@ public static class StrokeAutoEmitter
         if (visibleLen < 8f) return;
 
         float expected = e.DensityPer100px * visibleLen / 100f * dt;
-
         int toSpawn = (int)expected;
-        float frac = expected - toSpawn;
-
-        int slotSeed = unchecked(s.Seed + (int)(time * 90f) + (int)e.Role * 7919);
-        if (DrawHelpers.Hash01(slotSeed) < frac) toSpawn++;
+        if (DrawHelpers.Hash01(unchecked(s.Seed + (int)(time * 90f) + (int)e.Role * 7919)) < expected - toSpawn)
+            toSpawn++;
         if (toSpawn > 24) toSpawn = 24;
         if (toSpawn <= 0) return;
 
-        for (int i = 0; i < toSpawn && _count < PoolCapacity; i++)
+        // Direction for flow particles, decided once per stroke per frame.
+        bool flowToTip = false;
+        if (e.Flow.HasValue)
+        {
+            s.Path.SampleAtArc(0f, out Vector2 basePos, out _);
+            s.Path.SampleAtArc(s.Path.Length, out Vector2 tipPos, out _);
+            flowToTip = tipPos.Y > basePos.Y;
+        }
+
+        for (int i = 0; i < toSpawn; i++)
         {
             int seed = unchecked(s.Seed + (int)(time * 977f) + i * 131 + (int)e.Role * 7919);
 
-            float t01 = DrawHelpers.Hash01(seed);
-            float arc = visibleLen * t01;
-            s.Path.SampleAtArc(arc, out Vector2 pos, out Vector2 tan);
+            // Per-spawn roll: flowing or free-flying?
+            bool asFlow = e.Flow is { } flowOpts
+                && DrawHelpers.Hash01(seed + 7) < flowOpts.Share;
 
-            Vector2 baseDir;
-            if (e.PrimaryDirection is { } pd && pd.LengthSquared() > 1e-6f)
-                baseDir = Vector2.Normalize(pd);
+            if (asFlow)
+                SpawnFlow(in s, in e, e.Flow!.Value, forcedMaterial, seed, visibleLen, flowToTip, time);
             else
-                baseDir = new Vector2(-tan.Y, tan.X);
-
-            float spread = DrawHelpers.HashRange(seed + 1, -e.SpreadRadians, e.SpreadRadians);
-            float ca = MathF.Cos(spread), sa = MathF.Sin(spread);
-            Vector2 dir = new(baseDir.X * ca - baseDir.Y * sa, baseDir.X * sa + baseDir.Y * ca);
-
-            float speed = DrawHelpers.HashRange(seed + 2, e.SpeedMin, e.SpeedMax);
-
-            Pool[_count++] = new PooledParticle
-            {
-                Pos = pos,
-                Vel = dir * speed + e.BiasVelocity,
-                Gravity = e.Gravity,
-                Born = time,
-                Lifespan = DrawHelpers.HashRange(seed + 3, e.LifespanMin, e.LifespanMax),
-                Size = DrawHelpers.HashRange(seed + 4, e.SizeMin, e.SizeMax),
-                Brightness = s.Brightness,
-                Seed = seed,
-                Role = e.Role,
-                MaterialName = forcedMaterial,
-                Owner = s.Owner,
-                ColorOverride = s.ColorOverride,
-            };
+                SpawnFreeFly(in s, in e, forcedMaterial, seed, visibleLen, time);
         }
     }
+
+    private static void SpawnFreeFly(in StrokePrimitive s, in StrokeEmission e,
+                                     string? forcedMaterial, int seed, float visibleLen, float time)
+    {
+        if (_freeFlyCount >= FreeFlyCapacity) return;
+
+        float arc = visibleLen * DrawHelpers.Hash01(seed);
+        s.Path.SampleAtArc(arc, out Vector2 pos, out Vector2 tan);
+
+        Vector2 baseDir;
+        if (e.PrimaryDirection is { } pd && pd.LengthSquared() > 1e-6f)
+            baseDir = Vector2.Normalize(pd);
+        else
+            baseDir = new Vector2(-tan.Y, tan.X);
+
+        float spread = DrawHelpers.HashRange(seed + 1, -e.SpreadRadians, e.SpreadRadians);
+        float ca = MathF.Cos(spread), sa = MathF.Sin(spread);
+        Vector2 dir = new(baseDir.X * ca - baseDir.Y * sa, baseDir.X * sa + baseDir.Y * ca);
+
+        float speed = DrawHelpers.HashRange(seed + 2, e.SpeedMin, e.SpeedMax);
+
+        FreeFlyPool[_freeFlyCount++] = new FreeFlyParticle
+        {
+            Pos = pos,
+            Vel = dir * speed + e.BiasVelocity,
+            Gravity = e.Gravity,
+            Born = time,
+            Lifespan = DrawHelpers.HashRange(seed + 3, e.LifespanMin, e.LifespanMax),
+            Size = DrawHelpers.HashRange(seed + 4, e.SizeMin, e.SizeMax),
+            Brightness = s.Brightness,
+            Seed = seed,
+            Role = e.Role,
+            MaterialName = forcedMaterial,
+            Owner = s.Owner,
+            ColorOverride = s.ColorOverride,
+        };
+    }
+
+    private static void SpawnFlow(in StrokePrimitive s, in StrokeEmission e, in StrokeFlowOptions f,
+                                  string? forcedMaterial, int seed, float visibleLen, bool flowToTip, float time)
+    {
+        if (_flowCount >= FlowCapacity) return;
+
+        float arc = visibleLen * DrawHelpers.Hash01(seed);
+
+        FlowPool[_flowCount++] = new FlowingParticle
+        {
+            Owner = s.Owner,
+            StrokeSeed = s.Seed,
+            MaterialName = forcedMaterial,
+
+            Born = time,
+            Lifespan = DrawHelpers.HashRange(seed + 1, e.LifespanMin, e.LifespanMax),
+            Size = DrawHelpers.HashRange(seed + 2, e.SizeMin, e.SizeMax),
+            Brightness = s.Brightness,
+            Role = e.Role,
+            ColorOverride = s.ColorOverride,
+
+            Arc = arc,
+            BaseSpeed = DrawHelpers.HashRange(seed + 3, f.SpeedMin, f.SpeedMax),
+            FlowToTip = flowToTip,
+
+            WobblePhase = DrawHelpers.HashRange(seed + 4, 0f, MathF.Tau),
+            WobbleFreq = f.WobbleFrequencyHz,
+            WobbleAmp = f.WobbleAmplitude,
+            ObstacleSpacing = f.ObstacleSpacingPx,
+            LateralOffsetFrac = f.LateralOffsetFrac,
+            SideSign = DrawHelpers.Hash01(seed + 5) < 0.5f ? -1 : 1,
+        };
+    }
+
+    // =====================================================================================
+    // Free-flying integration
+    // =====================================================================================
+
+    private static void CullFreeFly(float time)
+    {
+        int w = 0;
+        for (int i = 0; i < _freeFlyCount; i++)
+        {
+            if (time - FreeFlyPool[i].Born < FreeFlyPool[i].Lifespan)
+                FreeFlyPool[w++] = FreeFlyPool[i];
+        }
+        _freeFlyCount = w;
+    }
+
+    private static void IntegrateFreeFly(float dt)
+    {
+        for (int i = 0; i < _freeFlyCount; i++)
+        {
+            FreeFlyPool[i].Vel += FreeFlyPool[i].Gravity * dt;
+            FreeFlyPool[i].Pos += FreeFlyPool[i].Vel * dt;
+        }
+    }
+
+    // =====================================================================================
+    // Flow advancement
+    // =====================================================================================
+
+    private static void CullFlows(float time)
+    {
+        int w = 0;
+        for (int i = 0; i < _flowCount; i++)
+        {
+            if (time - FlowPool[i].Born < FlowPool[i].Lifespan)
+                FlowPool[w++] = FlowPool[i];
+        }
+        _flowCount = w;
+    }
+
+    private static void AdvanceFlows(EffectScene scene, float time, float dt)
+    {
+        for (int i = 0; i < _flowCount; i++)
+        {
+            ref var d = ref FlowPool[i];
+
+            var stroke = FindStroke(scene, d.Owner, d.StrokeSeed);
+            if (stroke is null) continue; // parent gone this frame; drip sits idle
+
+            var s = stroke.Value;
+            var path = s.Path;
+            float totalLen = path.Length * s.Reveal;
+            if (totalLen < 1f) continue;
+
+            // Speed modulation: slow near each obstacle, fast between.
+            float obstaclePhase = d.Arc / MathF.Max(1f, d.ObstacleSpacing) * MathF.Tau;
+            float speedFactor = 0.6f + 0.4f * MathF.Cos(obstaclePhase);
+            float currentSpeed = d.BaseSpeed * speedFactor;
+            d.Arc += (d.FlowToTip ? 1f : -1f) * currentSpeed * dt;
+
+            if (d.Arc < 0f) d.Arc = 0f;
+            if (d.Arc > totalLen) d.Arc = totalLen;
+
+            path.SampleAtArc(d.Arc, out Vector2 pos, out Vector2 tan);
+            Vector2 perp = new(-tan.Y, tan.X);
+
+            float halfWidth = MathF.Max(1f, s.WidthHint * 0.5f);
+            float wobble = MathF.Sin(time * d.WobbleFreq * MathF.Tau + d.WobblePhase) * d.WobbleAmp;
+            float lateral = (d.LateralOffsetFrac * halfWidth + wobble) * d.SideSign;
+            Vector2 finalPos = pos + perp * lateral;
+
+            float age = time - d.Born;
+            float ageT = Math.Clamp(age / d.Lifespan, 0f, 1f);
+
+            scene.AddParticleForOwner(new ParticlePrimitive
+            {
+                Position = finalPos,
+                Velocity = tan * (d.FlowToTip ? currentSpeed : -currentSpeed),
+                AgeRatio = ageT,
+                Size = d.Size,
+                Brightness = d.Brightness * ParticleEmitter.FadeFor(ageT),
+                Seed = d.StrokeSeed + i * 7919,
+                Role = d.Role,
+                MaterialName = d.MaterialName,
+                ColorOverride = d.ColorOverride,
+            }, d.Owner);
+        }
+    }
+
+    private static StrokePrimitive? FindStroke(EffectScene scene, DebuffKind owner, int seed)
+    {
+        for (int i = 0; i < scene.Strokes.Count; i++)
+        {
+            var s = scene.Strokes[i];
+            if (s.Owner == owner && s.Seed == seed)
+                return s;
+        }
+        return null;
+    }
+
+    // =====================================================================================
+    // Material resolution
+    // =====================================================================================
 
     private static string ResolveStrokeMaterial(in StrokePrimitive s, IReadOnlyDictionary<string, string>? overrides)
     {

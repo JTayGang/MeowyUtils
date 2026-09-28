@@ -43,7 +43,13 @@ public static class EffectSceneRenderer
         foreach (var r in scene.Regions)
         {
             DrawHelpers.PushColorOverride(r.ColorOverride);
-            try { MaterialRegistry.GetRegion(ResolveRegion(in r, materialOverrides)).Draw(dl, in r, in ctx); }
+            try
+            {
+                var mat = MaterialRegistry.TryGetRegion(ResolveRegion(in r, materialOverrides))
+                          ?? MaterialRegistry.TryGetRegion(BuiltInDefaults.FallbackRegion(in r))
+                          ?? MaterialRegistry.TryGetRegion("region.flat-fill");
+                mat?.Draw(dl, in r, in ctx);
+            }
             finally { DrawHelpers.PopColorOverride(); }
         }
 
@@ -51,7 +57,13 @@ public static class EffectSceneRenderer
         foreach (var s in scene.Strokes)
         {
             DrawHelpers.PushColorOverride(s.ColorOverride);
-            try { MaterialRegistry.GetStroke(ResolveStroke(in s, materialOverrides)).Draw(dl, in s, in ctx); }
+            try
+            {
+                var mat = MaterialRegistry.TryGetStroke(ResolveStroke(in s, materialOverrides))
+                          ?? MaterialRegistry.TryGetStroke(BuiltInDefaults.FallbackStroke())
+                          ?? MaterialRegistry.TryGetStroke("stroke.simple");
+                mat?.Draw(dl, in s, in ctx);
+            }
             finally { DrawHelpers.PopColorOverride(); }
         }
 
@@ -59,7 +71,13 @@ public static class EffectSceneRenderer
         foreach (var p in scene.Particles)
         {
             DrawHelpers.PushColorOverride(p.ColorOverride);
-            try { MaterialRegistry.GetParticle(ResolveParticle(in p, materialOverrides)).Draw(dl, in p, in ctx); }
+            try
+            {
+                var mat = MaterialRegistry.TryGetParticle(ResolveParticle(in p, materialOverrides))
+                          ?? MaterialRegistry.TryGetParticle(BuiltInDefaults.FallbackParticle(p.Role))
+                          ?? MaterialRegistry.TryGetParticle("particle.spark");
+                mat?.Draw(dl, in p, in ctx);
+            }
             finally { DrawHelpers.PopColorOverride(); }
         }
     }

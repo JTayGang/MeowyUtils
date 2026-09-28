@@ -1,486 +1,342 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using RealDebuffs.Effects.Framework;
 
 namespace RealDebuffs.Effects;
 
 /// <summary>
-/// Burns: fire damage over time. Built entirely from a particle system - there is no ribbon
-/// geometry anywhere, so the fire's silhouette is whatever the particles happen to trace as they
-/// rise, fork, and dissipate.
+/// Burns: fire damage over time. The fire is built from a fixed roster of ~30 particle emitters,
+/// each with its own position along the bottom or lower sides, its own base spawn rate, and its
+/// own rate-oscillation clock. Combined, they produce the three properties that make a fire read
+/// as a fire rather than a curtain of motes:
 ///
-/// Anti-uniformity, in four parts:
-///   - Emitters are placed with heavy jitter (not on a grid) and some emitters are hot spots that
-///     run at many times the rate of others.
-///   - Each emitter's effective rate OSCILLATES on its own period and phase, so at any moment
-///     some spots are raging and others are calm, and that balance shifts over seconds.
-///   - Particles are BIMODAL: about a quarter are large slow "puffs" (the volume of the fire),
-///     the rest are small fast "sparks" (the bright hot core). Two visually distinct particle
-///     types layering together reads as fire rather than as a bead of identical dots.
-///   - Puff sizes follow a heavy-tailed distribution - most are small, a few are very large - and
-///     lifespan, turbulence, colour, and launch velocity are all much more widely varied than
-///     the previous version.
+///  - Cluster: emitters are jittered off a grid, with a per-emitter "pull toward a neighbor"
+///    bias. Some regions get dense triple-emitters, other regions get gaps.
 ///
-/// The base band is a soft bottom gradient, NOT a row of circles - an even grid of glow discs was
-/// reading as a repeating pattern and dominating the fire.
+///  - Varying rate: each emitter's baseline rate is randomized across a 5x range. Combined with
+///    the middle-boost that runs center emitters hottest, this is what gives the fire its shape
+///    (short and hot in the middle, sparse and lazy at the edges).
 ///
-/// IGNITION: on every fresh application, the fire lights from the middle of the bottom edge and
-/// rushes outward. Each emitter has its own delay, so the middle catches first, then the outer
-/// bottom edge, then the lower sides climb. A brief white-hot flash accompanies each new emitter.
+///  - Oscillation: each emitter's effective rate is modulated by its own slow sine wave, out of
+///    phase with every other emitter. At any moment some spots are raging and others are calm,
+///    and that balance drifts over seconds.
+///
+/// INTRO (0.0 - ~1.0s): each emitter has an ignition delay based on distance from the bottom
+/// center, so the middle catches first, then the fire spreads outward along the bottom edge, then
+/// the lower side corners climb. The moment an emitter catches, its rate is boosted ~3x and
+/// decays back to steady over ~0.4s - the "catch and flare" that sells the ignition.
+///
+/// HERO VISUAL: the fire particle fields themselves, all emitted as Role.Ember and rendered by
+/// whichever particle material is assigned to that role (currently particle.ember). The vignette
+/// and ground band are ambient staging, deliberately quieter.
 /// </summary>
-public sealed class BurnsEffect : IScreenEffect
+public sealed class BurnsEffect : ISceneEffect
 {
     public DebuffKind Kind => DebuffKind.Burns;
+
+    // ---- palette (only what the effect itself owns; fire colors live in particle.ember) ----
+    private static readonly uint Soot  = DrawHelpers.ToU32(0.05f, 0.01f, 0.005f, 1f);
+    private static readonly uint Ember = DrawHelpers.ToU32(0.95f, 0.18f, 0.02f, 1f);
 
     // ---- timing ----
     private const float NewCastGapSeconds = 1.0f;
 
-    // ---- particle budget ----
-    private const int MaxParticles = 900;
-
-    // ---- palette ----
-    private static readonly uint Soot     = DrawHelpers.ToU32(0.05f, 0.010f, 0.005f, 1f);
-    private static readonly uint DeepRed  = DrawHelpers.ToU32(0.55f, 0.06f, 0.010f, 1f);
-    private static readonly uint Ember    = DrawHelpers.ToU32(0.95f, 0.18f, 0.020f, 1f);
-    private static readonly uint Orange   = DrawHelpers.ToU32(1.00f, 0.45f, 0.050f, 1f);
-    private static readonly uint Yellow   = DrawHelpers.ToU32(1.00f, 0.78f, 0.200f, 1f);
-    private static readonly uint HotWhite = DrawHelpers.ToU32(1.00f, 0.97f, 0.820f, 1f);
-
-    // =====================================================================================
-    // Emission points
-    // =====================================================================================
-    private const int BottomEmitters      = 18;
-    private const int SideEmittersPerSide = 3;
-    private const int TotalEmitters       = BottomEmitters + SideEmittersPerSide * 2;
-
-    private struct EmissionPoint
+    // ---- emitter model ----
+    // A single emission point plus everything it needs to run independently. The effect owns an
+    // array of these; ParticleEmitter underneath handles the per-particle bookkeeping.
+    private sealed class FireEmitter
     {
-        public byte  Edge;           // 0 = bottom, 1 = left, 2 = right
-        public float Along;          // 0..1 along that edge
-        public float Rate;           // particles/sec baseline (before oscillation)
-        public float OscPeriod;      // seconds per intensity oscillation
+        public ParticleEmitter Pool = null!;
+        public byte  Edge;              // 0 = bottom, 1 = left, 2 = right
+        public float Along;             // 0..1 position along that edge
+        public float IgnitionDelay;     // seconds after cast before this emitter starts
+        public float RateBoost;         // baseline rate multiplier, varies per emitter
+        public float OscPeriod;         // seconds per rate-oscillation cycle
         public float OscPhase;
-        public float IgnitionDelay;
-        public float XJitter;        // lateral scatter, fraction of shortSide
-        public float SpeedBias;
-        public float SizeBias;
-        public float HeatBias;       // 0..1, biases this plume hotter/cooler
-        public float PuffChance;     // 0..1, how often this emitter spawns puffs vs sparks
-        public int   Seed;
-        public float Accum;
+        public float JitterX;           // spawn jitter as a fraction of screen width
+        public float SizeBoost;         // per-emitter size multiplier
+        public float SpeedBoost;        // per-emitter velocity multiplier
+        public float InwardPush;        // px/s horizontal velocity added at spawn (side emitters)
+        public float BaseIntervalMin;   // base spawn interval, before rate boost / oscillation
+        public float BaseIntervalMax;
+        public float LifespanMin;
+        public float LifespanMax;
+        public float SizeMinFrac;       // size band as a fraction of shortSide
+        public float SizeMaxFrac;
+        public float MinSpeed;          // px/s upward (positive number; sign flipped at spawn)
+        public float MaxSpeed;
+        public float Sway;              // horizontal wobble amplitude in px
+        public bool  IsPuff;            // informational; the material decides shape from Size
     }
 
-    private readonly EmissionPoint[] _emitters = new EmissionPoint[TotalEmitters];
+    private readonly List<FireEmitter> _emitters = new();
+    private readonly ParticleEmitter _embers = new(maxParticles: 60, seedSalt: 0x8107);
 
-    // =====================================================================================
-    // Fire particles - bimodal: puff or spark
-    // =====================================================================================
-    private struct FireParticle
-    {
-        public Vector2 Pos;
-        public Vector2 Vel;
-        public float Born;
-        public float Lifespan;
-        public float BaseSize;
-        public float Heat;
-        public float Phase;
-        public float TurbFreqX, TurbAmpX;
-        public float TurbFreqY, TurbAmpY;
-        public float Hue;            // -1..1, shifts the colour curve slightly warmer/cooler
-        public bool  IsPuff;         // true = big soft blob, false = small bright spark
-    }
-
-    private readonly FireParticle[] _particles = new FireParticle[MaxParticles];
-    private int _count;
-
-    // =====================================================================================
-    // Embers
-    // =====================================================================================
-    private readonly EdgeParticleField _embers = new(maxParticles: 40, seedSalt: 0x100003);
+    // Set every Emit call before any emitter runs - spawn lambdas read it via SpawnPos.
     private Vector2 _screenSize;
-    private readonly Func<int, Vector2> _spawnPos;
-    private readonly Func<int, Vector2> _spawnVel;
-    private readonly Func<int, string>  _noGlyph;
 
-    // =====================================================================================
-    // Ignition state
-    // =====================================================================================
+    // ---- cast state ----
+    private float _castStart = -1f;
     private float _lastDrawTime = -100f;
-    private float _ignitionStart;
 
     public BurnsEffect()
     {
-        _spawnPos = SpawnPos;
-        _spawnVel = SpawnVel;
-        _noGlyph  = static _ => "";
-
-        int idx = 0;
-
-        // ---- Bottom emitters: jittered positions, wild rate variance ----
-        for (int i = 0; i < BottomEmitters; i++)
+        // ---- Bottom emitters: 12 jittered positions, each spawning BOTH a puff and a spark ----
+        const int BottomPositions = 12;
+        for (int i = 0; i < BottomPositions; i++)
         {
             int s = unchecked(0xB001 + i * 6427);
 
-            // Base grid position, then heavy jitter. Some emitters pull toward a neighbour,
-            // producing local clusters and gaps instead of a clean even spread.
-            float alongBase = (i + 0.5f) / BottomEmitters;
+            // Position: even grid, plus a per-emitter "cluster pull" (some pull toward a
+            // neighbor, producing density variation) plus fine jitter. Clamped away from the
+            // exact screen corners.
+            float alongBase = (i + 0.5f) / BottomPositions;
             float clusterPull = DrawHelpers.Hash01(s + 40) < 0.35f
                 ? DrawHelpers.HashRange(s + 41, -0.06f, 0.06f)
                 : 0f;
             float along = Math.Clamp(alongBase + clusterPull + DrawHelpers.HashRange(s, -0.035f, 0.035f), 0.02f, 0.98f);
 
-            // Rate: wildly varied so some emitters are barely a candle and others are a furnace.
-            // Middle emitters get a modest boost so the fire's centre still reads as hottest.
-            float rateBase = DrawHelpers.HashRange(s, 6f, 55f);
+            // Rate: 0.5x..2.5x baseline, times a middle-boost so the center runs hotter.
+            float rateBase   = DrawHelpers.HashRange(s + 60, 0.5f, 2.5f);
             float middleBoost = 1f - 0.35f * MathF.Abs(along - 0.5f) * 2f;
+            float rate       = rateBase * middleBoost;
 
-            _emitters[idx++] = new EmissionPoint
+            // Ignition: distance from the bottom center → middle catches first.
+            float ignitionDelay = MathF.Abs(along - 0.5f) * 0.70f;
+
+            float oscPeriod = DrawHelpers.HashRange(s + 6, 0.55f, 1.85f);
+            float oscPhase  = DrawHelpers.HashRange(s + 7, 0f, MathF.PI * 2f);
+            float jitterX   = DrawHelpers.HashRange(s + 1, 0.010f, 0.035f);
+            float speedBoost = DrawHelpers.HashRange(s + 2, 0.65f, 1.35f);
+            float sizeBoost  = DrawHelpers.HashRange(s + 3, 0.55f, 1.55f);
+
+            // Puff emitter: slower, larger, gives the fire its volume.
+            _emitters.Add(new FireEmitter
             {
-                Edge          = 0,
-                Along         = along,
-                Rate          = rateBase * middleBoost,
-                OscPeriod     = DrawHelpers.HashRange(s + 6, 0.55f, 1.85f),
-                OscPhase      = DrawHelpers.HashRange(s + 7, 0f, MathF.PI * 2f),
-                IgnitionDelay = MathF.Abs(along - 0.5f) * 0.75f,
-                XJitter       = DrawHelpers.HashRange(s + 1, 0.010f, 0.035f),
-                SpeedBias     = DrawHelpers.HashRange(s + 2, 0.65f, 1.35f),
-                SizeBias      = DrawHelpers.HashRange(s + 3, 0.55f, 1.55f),
-                HeatBias      = DrawHelpers.HashRange(s + 4, 0.05f, 0.90f),
-                PuffChance    = DrawHelpers.HashRange(s + 5, 0.15f, 0.45f),
-                Seed          = s,
-            };
+                Pool = new ParticleEmitter(maxParticles: 90, seedSalt: 0x8105 + i * 17),
+                Edge = 0, Along = along,
+                IgnitionDelay = ignitionDelay,
+                RateBoost = rate,
+                OscPeriod = oscPeriod, OscPhase = oscPhase,
+                JitterX = jitterX, SizeBoost = sizeBoost, SpeedBoost = speedBoost,
+                InwardPush = 0f,
+                BaseIntervalMin = 0.06f, BaseIntervalMax = 0.18f,
+                LifespanMin = 1.0f, LifespanMax = 2.4f,
+                SizeMinFrac = 0.018f, SizeMaxFrac = 0.045f,
+                MinSpeed = 130f, MaxSpeed = 280f,
+                Sway = 3f,
+                IsPuff = true,
+            });
+
+            // Spark emitter: same position, faster, smaller, hotter. Different osc phase so
+            // puff and spark don't both surge on the same frame.
+            _emitters.Add(new FireEmitter
+            {
+                Pool = new ParticleEmitter(maxParticles: 90, seedSalt: 0x8205 + i * 17),
+                Edge = 0, Along = along,
+                IgnitionDelay = ignitionDelay,
+                RateBoost = rate * 1.5f,
+                OscPeriod = oscPeriod * 0.85f, OscPhase = oscPhase + 1.7f,
+                JitterX = jitterX, SizeBoost = sizeBoost, SpeedBoost = speedBoost,
+                InwardPush = 0f,
+                BaseIntervalMin = 0.02f, BaseIntervalMax = 0.06f,
+                LifespanMin = 0.5f, LifespanMax = 1.3f,
+                SizeMinFrac = 0.003f, SizeMaxFrac = 0.010f,
+                MinSpeed = 380f, MaxSpeed = 700f,
+                Sway = 4f,
+                IsPuff = false,
+            });
         }
 
-        // ---- Side emitters: sparse, cooler, catching later ----
+        // ---- Side emitters: 2 per side, climbing the lower corners ----
         for (int side = 0; side < 2; side++)
         {
-            for (int i = 0; i < SideEmittersPerSide; i++)
+            for (int i = 0; i < 2; i++)
             {
+                int idx = BottomPositions + side * 2 + i;
                 int s = unchecked(0xB001 + idx * 6427);
-                float along = (i + 0.5f) / SideEmittersPerSide * 0.55f
-                            + DrawHelpers.HashRange(s, -0.04f, 0.04f);
+
+                byte edge = (byte)(side == 0 ? 1 : 2);
+                float along = (i + 0.5f) / 2f * 0.55f + DrawHelpers.HashRange(s, -0.04f, 0.04f);
                 along = Math.Clamp(along, 0.02f, 0.60f);
 
-                _emitters[idx++] = new EmissionPoint
+                // Inward horizontal push so side plumes curl toward the screen rather than
+                // hugging the edge.
+                float inwardPush = side == 0 ? 40f : -40f;
+
+                float oscPeriod = DrawHelpers.HashRange(s + 6, 0.65f, 1.95f);
+                float oscPhase  = DrawHelpers.HashRange(s + 7, 0f, MathF.PI * 2f);
+                float jitterX   = DrawHelpers.HashRange(s + 1, 0.008f, 0.024f);
+                float speedBoost = DrawHelpers.HashRange(s + 2, 0.55f, 0.95f);
+                float sizeBoost  = DrawHelpers.HashRange(s + 3, 0.55f, 1.05f);
+                float ignitionDelay = 0.55f + along * 0.85f;
+
+                _emitters.Add(new FireEmitter
                 {
-                    Edge          = (byte)(side == 0 ? 1 : 2),
-                    Along         = along,
-                    Rate          = DrawHelpers.HashRange(s,     5f, 22f),
-                    OscPeriod     = DrawHelpers.HashRange(s + 6, 0.65f, 1.95f),
-                    OscPhase      = DrawHelpers.HashRange(s + 7, 0f, MathF.PI * 2f),
-                    IgnitionDelay = 0.55f + along * 0.85f,
-                    XJitter       = DrawHelpers.HashRange(s + 1, 0.008f, 0.024f),
-                    SpeedBias     = DrawHelpers.HashRange(s + 2, 0.55f, 0.95f),
-                    SizeBias      = DrawHelpers.HashRange(s + 3, 0.55f, 1.05f),
-                    HeatBias      = DrawHelpers.HashRange(s + 4, 0.00f, 0.45f),
-                    PuffChance    = DrawHelpers.HashRange(s + 5, 0.30f, 0.65f),
-                    Seed          = s,
-                };
+                    Pool = new ParticleEmitter(maxParticles: 40, seedSalt: 0x8105 + idx * 17),
+                    Edge = edge, Along = along,
+                    IgnitionDelay = ignitionDelay,
+                    RateBoost = DrawHelpers.HashRange(s, 0.5f, 1.5f),
+                    OscPeriod = oscPeriod, OscPhase = oscPhase,
+                    JitterX = jitterX, SizeBoost = sizeBoost, SpeedBoost = speedBoost,
+                    InwardPush = inwardPush,
+                    BaseIntervalMin = 0.08f, BaseIntervalMax = 0.20f,
+                    LifespanMin = 0.9f, LifespanMax = 2.0f,
+                    SizeMinFrac = 0.012f, SizeMaxFrac = 0.032f,
+                    MinSpeed = 100f, MaxSpeed = 220f,
+                    Sway = 3f,
+                    IsPuff = true,
+                });
+
+                _emitters.Add(new FireEmitter
+                {
+                    Pool = new ParticleEmitter(maxParticles: 40, seedSalt: 0x8205 + idx * 17),
+                    Edge = edge, Along = along,
+                    IgnitionDelay = ignitionDelay,
+                    RateBoost = DrawHelpers.HashRange(s, 0.5f, 1.5f),
+                    OscPeriod = oscPeriod * 0.85f, OscPhase = oscPhase + 1.7f,
+                    JitterX = jitterX, SizeBoost = sizeBoost, SpeedBoost = speedBoost,
+                    InwardPush = inwardPush,
+                    BaseIntervalMin = 0.03f, BaseIntervalMax = 0.08f,
+                    LifespanMin = 0.5f, LifespanMax = 1.2f,
+                    SizeMinFrac = 0.003f, SizeMaxFrac = 0.008f,
+                    MinSpeed = 320f, MaxSpeed = 600f,
+                    Sway = 4f,
+                    IsPuff = false,
+                });
             }
         }
     }
 
-    public void Draw(ImDrawListPtr dl, Vector2 screenSize, float alpha, float time)
+    public void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, Vector4? colorOverride)
     {
-        float dt = ImGui.GetIO().DeltaTime;
         _screenSize = screenSize;
-        float shortSide = MathF.Min(screenSize.X, screenSize.Y);
 
+        // Gap since last Emit = fresh application. Reset ignition and drop any lingering particles
+        // from the previous cast, so the fire always starts from the middle.
         if (time - _lastDrawTime > NewCastGapSeconds)
         {
-            _ignitionStart = time;
-            _count = 0;
-            for (int i = 0; i < TotalEmitters; i++) _emitters[i].Accum = 0f;
+            _castStart = time;
+            foreach (var e in _emitters) e.Pool.Clear();
+            _embers.Clear();
         }
         _lastDrawTime = time;
-        float age = time - _ignitionStart;
+        float age = time - _castStart;
 
-        // Irregular flicker on three overlapping octaves, driving the vignette and bottom band.
+        float dt = ImGui.GetIO().DeltaTime;
+        float shortSide = MathF.Min(screenSize.X, screenSize.Y);
+
+        // Three-octave flicker drives vignette and band together, so the whole effect breathes
+        // as one rather than each layer pulsing on its own clock.
         float flicker = 0.55f * DrawHelpers.Pulse(time, 0.31f)
-                       + 0.30f * DrawHelpers.Pulse(time, 0.17f, 0.35f)
-                       + 0.15f * DrawHelpers.Pulse(time, 0.53f, 0.60f);
+                      + 0.30f * DrawHelpers.Pulse(time, 0.17f, 0.35f)
+                      + 0.15f * DrawHelpers.Pulse(time, 0.53f, 0.60f);
 
-        // Vignette: warm soot haze around the edges.
-        DrawHelpers.DrawVignette(dl, screenSize, Soot, 0.15f, alpha * (0.55f + 0.35f * flicker));
+        // ---- 1. soot vignette ----
+        scene.RequestVignette(Soot, 0.15f, alpha * (0.55f + 0.35f * flicker), priority: 30, colorOverride);
 
-        // Bottom gradient band - a soft wash instead of a row of circles. This is what reads as
-        // "the fire is anchored to the ground" without the repeating-pattern artifact.
-        float bandHeight = shortSide * 0.14f * Math.Clamp(age / 0.6f, 0f, 1f);
+        // ---- 2. ground band ----
+        float bandHeight = shortSide * 0.14f * Math.Clamp(age / 0.5f, 0f, 1f);
         if (bandHeight > 1f)
         {
-            uint edgeGlow  = DrawHelpers.WithAlpha(Ember, alpha * 0.30f * (0.70f + 0.30f * flicker));
-            uint clearGlow = DrawHelpers.WithAlpha(Ember, 0f);
-            dl.AddRectFilledMultiColor(
-                new Vector2(0f, screenSize.Y - bandHeight),
-                new Vector2(screenSize.X, screenSize.Y),
-                clearGlow, clearGlow, edgeGlow, edgeGlow);
-        }
-
-        // Integrate, emit, then draw.
-        UpdateParticles(time, dt, age, shortSide);
-        for (int i = 0; i < _count; i++)
-            DrawParticle(dl, in _particles[i], alpha, time);
-
-        // Embers above everything.
-        _embers.Update(
-            time, dt,
-            spawnIntervalMin: 0.03f, spawnIntervalMax: 0.10f,
-            spawnPos: _spawnPos, spawnVelocity: _spawnVel,
-            pickGlyph: _noGlyph,
-            lifespanMin: 1.3f, lifespanMax: 2.4f, sizeMin: 2f, sizeMax: 5f);
-
-        for (int i = 0; i < _embers.Count; i++)
-            DrawEmber(dl, in _embers[i], alpha, time);
-    }
-
-    // =====================================================================================
-    // Particle system
-    // =====================================================================================
-
-    private void UpdateParticles(float time, float dt, float age, float shortSide)
-    {
-        // Compaction keeps draw order = spawn order, so brighter young particles land on top.
-        int w = 0;
-        for (int i = 0; i < _count; i++)
-        {
-            if (time - _particles[i].Born < _particles[i].Lifespan)
-                _particles[w++] = _particles[i];
-        }
-        _count = w;
-
-        // Integrate. Velocity decays exponentially so particles "cool" and slow as they rise.
-        for (int i = 0; i < _count; i++)
-        {
-            ref var p = ref _particles[i];
-            float decay = MathF.Exp(-dt * 0.45f);
-            p.Vel *= decay;
-            p.Pos += p.Vel * dt;
-        }
-
-        // Emit from every ignition-passed emitter, with a per-emitter intensity oscillation so
-        // different spots swell and calm independently.
-        for (int e = 0; e < TotalEmitters; e++)
-        {
-            ref var em = ref _emitters[e];
-            if (age < em.IgnitionDelay) continue;
-
-            float local = MathF.Min(1f, (age - em.IgnitionDelay) / 0.35f);
-
-            // Slow oscillation on the emitter's own clock: at any moment some emitters are at
-            // 0.3x and others at 1.7x, and that balance drifts over seconds.
-            float osc = 0.55f + 0.90f * DrawHelpers.Pulse(time, em.OscPeriod, em.OscPhase);
-
-            float rate = em.Rate * local * osc;
-            em.Accum += rate * dt;
-
-            int toSpawn = (int)em.Accum;
-            if (toSpawn > 10) toSpawn = 10; // cap a long frame hitch from dumping the pool
-            em.Accum -= toSpawn;
-
-            for (int k = 0; k < toSpawn && _count < MaxParticles; k++)
-                SpawnParticle(time, in em, shortSide);
-        }
-    }
-
-    private void SpawnParticle(float time, in EmissionPoint em, float shortSide)
-    {
-        if (_count >= MaxParticles) return;
-        int s = unchecked(em.Seed + (int)(time * 977f) + _count * 113);
-
-        // Emitter world position.
-        Vector2 emitPos;
-        switch (em.Edge)
-        {
-            default:
-            case 0: emitPos = new Vector2(em.Along * _screenSize.X, _screenSize.Y + 2f); break;
-            case 1: emitPos = new Vector2(-2f, _screenSize.Y * (1f - em.Along));         break;
-            case 2: emitPos = new Vector2(_screenSize.X + 2f, _screenSize.Y * (1f - em.Along)); break;
-        }
-
-        // Bimodal: some big soft puffs (volume), most small bright sparks (hot core).
-        bool isPuff = DrawHelpers.Hash01(s + 20) < em.PuffChance;
-
-        float jitterX = DrawHelpers.HashRange(s + 1, -em.XJitter, em.XJitter) * shortSide;
-        float jitterY = DrawHelpers.HashRange(s + 2, -3f, 3f);
-        Vector2 pos = emitPos + new Vector2(jitterX, jitterY);
-
-        // Launch velocity. Puffs go slower (they billow, they don't shoot), sparks go faster.
-        float v0Y, v0X, lifespan, baseSize, heat, turbAx, turbAy;
-
-        if (isPuff)
-        {
-            v0Y = DrawHelpers.HashRange(s + 3, -280f, -140f) * em.SpeedBias;
-            v0X = DrawHelpers.HashRange(s + 4, -40f, 40f);
-            lifespan = DrawHelpers.HashRange(s + 5, 1.1f, 2.6f);
-            // Heavy-tailed puff size: most are moderate, occasional ones are huge.
-            float roll = DrawHelpers.Hash01(s + 21);
-            float sizeRoll = 0.30f + 1.70f * roll * roll * roll;
-            baseSize = DrawHelpers.HashRange(s + 6, 0.020f, 0.038f) * shortSide * em.SizeBias * sizeRoll;
-            heat = Math.Clamp(em.HeatBias - 0.15f + DrawHelpers.HashRange(s + 7, -0.30f, 0.30f), 0f, 1f);
-            turbAx = DrawHelpers.HashRange(s + 10, 3f, 12f);
-            turbAy = DrawHelpers.HashRange(s + 12, 2f, 6f);
-        }
-        else
-        {
-            v0Y = DrawHelpers.HashRange(s + 3, -680f, -380f) * em.SpeedBias;
-            v0X = DrawHelpers.HashRange(s + 4, -45f, 45f);
-            lifespan = DrawHelpers.HashRange(s + 5, 0.5f, 1.6f);
-            // Heavy-tailed spark size: most are tiny, a few are noticeably larger.
-            float roll = DrawHelpers.Hash01(s + 21);
-            float sizeRoll = 0.35f + 1.65f * roll * roll * roll;
-            baseSize = DrawHelpers.HashRange(s + 6, 0.004f, 0.011f) * shortSide * em.SizeBias * sizeRoll;
-            heat = Math.Clamp(em.HeatBias + 0.15f + DrawHelpers.HashRange(s + 7, -0.25f, 0.25f), 0f, 1f);
-            turbAx = DrawHelpers.HashRange(s + 10, 6f, 26f);
-            turbAy = DrawHelpers.HashRange(s + 12, 3f, 12f);
-        }
-
-        // Side emitters push inward slightly so their plumes curl toward the screen.
-        if (em.Edge == 1) v0X += 55f;
-        if (em.Edge == 2) v0X -= 55f;
-
-        _particles[_count++] = new FireParticle
-        {
-            Pos       = pos,
-            Vel       = new Vector2(v0X, v0Y),
-            Born      = time,
-            Lifespan  = lifespan,
-            BaseSize  = baseSize,
-            Heat      = heat,
-            Phase     = DrawHelpers.HashRange(s + 8,  0f, MathF.PI * 2f),
-            TurbFreqX = DrawHelpers.HashRange(s + 9,  2.0f, 6.5f),
-            TurbAmpX  = turbAx,
-            TurbFreqY = DrawHelpers.HashRange(s + 11, 1.2f, 4.0f),
-            TurbAmpY  = turbAy,
-            Hue       = DrawHelpers.HashRange(s + 13, -1f, 1f),
-            IsPuff    = isPuff,
-        };
-    }
-
-    private static void DrawParticle(ImDrawListPtr dl, in FireParticle p, float alpha, float time)
-    {
-        float age = time - p.Born;
-        if (age < 0f || age >= p.Lifespan) return;
-        float ageNorm = age / p.Lifespan;
-
-        // Size envelope. Puffs have a slower attack and longer hold than sparks.
-        float sizeT;
-        if (p.IsPuff)
-        {
-            if (ageNorm < 0.30f)      sizeT = 0.35f + 0.65f * (ageNorm / 0.30f);
-            else if (ageNorm < 0.70f) sizeT = 1f;
-            else                      sizeT = 1f - (ageNorm - 0.70f) / 0.30f;
-        }
-        else
-        {
-            if (ageNorm < 0.15f)      sizeT = ageNorm / 0.15f;
-            else if (ageNorm < 0.45f) sizeT = 1f;
-            else                      sizeT = 1f - (ageNorm - 0.45f) / 0.55f;
-        }
-        sizeT = MathF.Max(0.04f, sizeT);
-        float size = p.BaseSize * sizeT;
-
-        // Alpha envelope: quick fade-in, slow fade-out.
-        float fade = ageNorm < 0.10f
-            ? ageNorm / 0.10f
-            : (1f - ageNorm) * (1f - ageNorm);
-        float a = alpha * Math.Clamp(fade, 0f, 1f);
-        if (a < 0.005f || size < 0.4f) return;
-
-        // Turbulence applied at draw time, offset from the clean ballistic path. Never accumulated
-        // into the position, so it can't drift the particle sideways over its life.
-        float turbX = MathF.Sin(age * p.TurbFreqX + p.Phase) * p.TurbAmpX;
-        float turbY = MathF.Cos(age * p.TurbFreqY + p.Phase * 1.3f) * p.TurbAmpY;
-        Vector2 pos = p.Pos + new Vector2(turbX, turbY);
-
-        uint col = ColorForAge(ageNorm, p.Heat, p.Hue);
-
-        if (p.IsPuff)
-        {
-            // Big soft blobs: one wide low-alpha fill, one tighter body. Reads as fire volume.
-            dl.AddCircleFilled(pos, size * 1.15f, DrawHelpers.WithAlpha(col, a * 0.20f));
-            dl.AddCircleFilled(pos, size * 0.65f, DrawHelpers.WithAlpha(col, a * 0.42f));
-        }
-        else
-        {
-            // Bright sparks: outer glow, tight body, hot core while young.
-            dl.AddCircleFilled(pos, size * 1.5f, DrawHelpers.WithAlpha(col, a * 0.18f));
-            dl.AddCircleFilled(pos, size,        DrawHelpers.WithAlpha(col, a * 0.80f));
-            if (ageNorm < 0.40f)
+            // During ignition the band is stronger, so the first "catch" moment reads.
+            float bandAlpha = alpha * (0.28f + 0.25f * MathF.Exp(-age / 0.55f)) * (0.70f + 0.30f * flicker);
+            scene.AddRegion(new RegionPrimitive
             {
-                float innerK = 1f - ageNorm / 0.40f;
-                uint inner = DrawHelpers.LerpColor(col, HotWhite, innerK * 0.60f);
-                dl.AddCircleFilled(pos, size * 0.50f, DrawHelpers.WithAlpha(inner, a * 0.90f));
-            }
+                Min = new Vector2(0f, screenSize.Y - bandHeight),
+                Max = screenSize,
+                Tint = Ember,
+                Alpha = bandAlpha,
+                Bottom = true,
+                ColorOverride = colorOverride,
+            });
+        }
+
+        // ---- 3. drive every fire emitter ----
+        foreach (var e in _emitters)
+        {
+            if (age < e.IgnitionDelay) continue;
+
+            // Catch-and-flare: right after this emitter's ignition, its rate runs ~3.5x and
+            // decays back to 1x over ~0.4s. Sells "the fire just caught here."
+            float ignTime  = age - e.IgnitionDelay;
+            float ignBoost = 1f + 2.5f * MathF.Exp(-ignTime / 0.40f);
+
+            // Per-emitter rate oscillation.
+            float osc = 0.55f + 0.90f * DrawHelpers.Pulse(time, e.OscPeriod, e.OscPhase);
+
+            float effectiveRate = e.RateBoost * ignBoost * osc;
+            float intervalMin = e.BaseIntervalMin / effectiveRate;
+            float intervalMax = e.BaseIntervalMax / effectiveRate;
+
+            // Tighten the interval so it doesn't collapse to zero under extreme multipliers.
+            if (intervalMin < 0.005f) intervalMin = 0.005f;
+            if (intervalMax < 0.010f) intervalMax = 0.010f;
+
+            var captured = e;
+            e.Pool.Update(
+                time, dt,
+                spawnIntervalMin: intervalMin, spawnIntervalMax: intervalMax,
+                spawnPos: seed => SpawnPos(captured, seed),
+                spawnVelocity: seed => SpawnVel(captured, seed),
+                lifespanMin: e.LifespanMin, lifespanMax: e.LifespanMax,
+                sizeMin: shortSide * e.SizeMinFrac * e.SizeBoost,
+                sizeMax: shortSide * e.SizeMaxFrac * e.SizeBoost);
+
+            e.Pool.Emit(scene, time, PrimitiveRole.Ember,
+                        brightnessMul: alpha, colorOverride, swayPerParticle: e.Sway);
+        }
+
+        // ---- 4. embers: rise above the fire once it has fully caught ----
+        if (age > 1.0f)
+        {
+            float emberFade = Math.Clamp((age - 1.0f) / 1.0f, 0f, 1f);
+
+            _embers.Update(
+                time, dt,
+                spawnIntervalMin: 0.05f, spawnIntervalMax: 0.14f,
+                spawnPos: seed => new Vector2(
+                    DrawHelpers.HashRange(seed, 0.10f, 0.90f) * screenSize.X,
+                    screenSize.Y - 6f),
+                spawnVelocity: seed => new Vector2(
+                    DrawHelpers.HashRange(seed + 20, -20f, 20f),
+                    -DrawHelpers.HashRange(seed + 21, 90f, 160f)),
+                lifespanMin: 1.4f, lifespanMax: 2.6f,
+                sizeMin: shortSide * 0.006f, sizeMax: shortSide * 0.014f);
+
+            _embers.Emit(scene, time, PrimitiveRole.Ember,
+                         brightnessMul: alpha * 0.9f * emberFade, colorOverride, swayPerParticle: 6f);
         }
     }
 
     /// <summary>
-    /// Colour over a particle's life, running hot at birth and cooling through orange, ember, deep
-    /// red, and soot. <paramref name="heat"/> shifts the curve hotter; <paramref name="hue"/> adds
-    /// a slight per-particle warm/cool tint on top so no two particles look identical.
+    /// World-space spawn point for one emission. Bottom emitters sit just below the bottom edge
+    /// (particles rise into view). Side emitters sit just outside the left/right edge and
+    /// positions are 1-Along, so Along = 0 is the bottom corner and Along = 0.6 is 60% up the side.
     /// </summary>
-    private static uint ColorForAge(float ageNorm, float heat, float hue)
+    private Vector2 SpawnPos(FireEmitter e, int seed)
     {
-        float t = Math.Clamp(ageNorm - heat * 0.14f + hue * 0.05f, 0f, 1f);
+        float jitter = DrawHelpers.HashRange(seed + 20, -e.JitterX, e.JitterX);
 
-        uint c;
-        if      (t < 0.10f) c = DrawHelpers.LerpColor(HotWhite, Yellow,   t / 0.10f);
-        else if (t < 0.28f) c = DrawHelpers.LerpColor(Yellow,   Orange,  (t - 0.10f) / 0.18f);
-        else if (t < 0.55f) c = DrawHelpers.LerpColor(Orange,   Ember,   (t - 0.28f) / 0.27f);
-        else if (t < 0.82f) c = DrawHelpers.LerpColor(Ember,    DeepRed, (t - 0.55f) / 0.27f);
-        else                c = DrawHelpers.LerpColor(DeepRed,  Soot,    (t - 0.82f) / 0.18f);
-
-        // Per-particle warm/cool nudge: pushes a fraction toward white (warmer) or red (cooler).
-        if (hue > 0f) return DrawHelpers.LerpColor(c, HotWhite, hue * 0.10f);
-        return DrawHelpers.LerpColor(c, DeepRed, -hue * 0.14f);
-    }
-
-    // =====================================================================================
-    // Embers
-    // =====================================================================================
-
-    private void DrawEmber(ImDrawListPtr dl, in EdgeParticleField.Particle p, float alpha, float time)
-    {
-        float age = time - p.Born;
-        float ageNorm = Math.Clamp(age / p.Lifespan, 0f, 1f);
-        float fade = EdgeParticleField.FadeFor(ageNorm);
-        float a = alpha * fade;
-        if (a < 0.003f) return;
-
-        int seed = unchecked((int)(p.Born * 10007f));
-        float heat = DrawHelpers.Hash01(seed);
-
-        float wobAmp = 4f + ageNorm * 11f;
-        float wobX = MathF.Sin(age * 6f + p.Born * 3f) * wobAmp;
-        float settle = ageNorm * ageNorm * p.Size * 9f;
-        var pos = p.Pos + new Vector2(wobX, settle);
-
-        uint mid  = DrawHelpers.LerpColor(Ember, Yellow, heat);
-        uint core = DrawHelpers.LerpColor(Orange, HotWhite, heat);
-        dl.AddCircleFilled(pos, p.Size * 2.0f, DrawHelpers.WithAlpha(Soot, a * 0.30f));
-        dl.AddCircleFilled(pos, p.Size,        DrawHelpers.WithAlpha(mid,  a * 0.75f));
-        dl.AddCircleFilled(pos, p.Size * 0.5f, DrawHelpers.WithAlpha(core, a * 0.95f));
-
-        if (age < 0.08f)
+        return e.Edge switch
         {
-            float popFade = 1f - age / 0.08f;
-            for (int k = 0; k < 3; k++)
-            {
-                float ang = DrawHelpers.HashRange(seed + k, 0f, MathF.PI * 2f);
-                var dir = new Vector2(MathF.Cos(ang), MathF.Sin(ang));
-                var tip = pos + dir * p.Size * DrawHelpers.HashRange(seed + k + 10, 3f, 7f);
-                dl.AddLine(pos, tip, DrawHelpers.WithAlpha(HotWhite, a * popFade * 0.8f), 1.4f);
-            }
-        }
+            0 => new Vector2((e.Along + jitter) * _screenSize.X, _screenSize.Y + 2f),
+            1 => new Vector2(-2f, (1f - e.Along + jitter) * _screenSize.Y),
+            _ => new Vector2(_screenSize.X + 2f, (1f - e.Along + jitter) * _screenSize.Y),
+        };
     }
 
-    private Vector2 SpawnPos(int seed)
+    /// <summary>
+    /// Launch velocity for one particle: mostly upward (sign-flipped), with a small horizontal
+    /// scatter and the emitter's own inward push for side emitters.
+    /// </summary>
+    private Vector2 SpawnVel(FireEmitter e, int seed)
     {
-        float x01 = (DrawHelpers.Hash01(seed) + DrawHelpers.Hash01(seed + 100)) * 0.5f;
-        return new Vector2(x01 * _screenSize.X, _screenSize.Y - 6f);
+        float vy = -DrawHelpers.HashRange(seed + 11, e.MinSpeed, e.MaxSpeed) * e.SpeedBoost;
+        float vx = DrawHelpers.HashRange(seed + 10, -35f, 35f) + e.InwardPush;
+        return new Vector2(vx, vy);
     }
 
-    private Vector2 SpawnVel(int seed) =>
-        new(DrawHelpers.HashRange(seed + 2, -20f, 20f),
-            DrawHelpers.HashRange(seed + 1, -150f, -85f));
 }

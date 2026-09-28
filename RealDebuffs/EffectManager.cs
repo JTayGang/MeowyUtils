@@ -6,88 +6,69 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Plugin.Services;
 using RealDebuffs.Effects;
+using RealDebuffs.Effects.Framework;
 
 namespace RealDebuffs;
 
 /// <summary>
-/// Reads the local player's active statuses every frame, maps them to <see cref="DebuffKind"/>s
-/// via <see cref="StatusCatalog"/> (plus any custom Moodles/Loci statuses the user has linked to an
-/// effect, via <see cref="CustomStatusWatcher"/>), and draws every enabled effect in a fixed order - so layering
-/// (which effect renders "on top" of which) is always consistent no matter which combination of
-/// debuffs is currently active. Effects fade in/out smoothly rather than popping on/off, so
-/// gaining or losing a status doesn't cause a jarring instant flip.
+/// Reads the local player's statuses every frame, maps them to DebuffKinds via StatusCatalog plus
+/// any active Moodles/Loci statuses linked via CustomStatusWatcher, and dispatches every enabled
+/// effect's Emit call in a fixed order. Effects fade in/out smoothly rather than popping.
 ///
-/// A few kinds cover more than one status at different severities (Weakness/Brush with
-/// Death/Brink of Death, Frostbite/Deep Freeze, Infatuated/Seduced - see <see cref="DebuffKind.Strengths"/>).
-/// Rather than each of those effects needing its own "how strong am I" logic, the SAME 0..1 alpha
-/// every effect already takes care of it: EffectManager folds the active status's strength into that
-/// alpha before calling Draw, so a fainter-tier status just arrives as a smaller number - the effect
-/// itself never needs to know which specific status is behind it. Custom Moodles/Loci rules don't
-/// carry a tier of their own, so they always ask for full strength (1.0) - EXCEPT a
-/// <see cref="TooltipKeywordRule"/> match, which can configure its own strength.
+/// Every effect implements ISceneEffect: it writes primitives into a shared EffectScene and the
+/// framework renders the whole frame at once after the loop. This means the vignette is chosen
+/// once per frame (no stacking), each primitive's material can be swapped independently, and
+/// legacy draw calls no longer exist anywhere in the plugin.
 ///
-/// COLOR: same idea, one more dial. A real debuff or a name-based <see cref="CustomStatusRule"/>
-/// never overrides an effect's own authored color. A <see cref="TooltipKeywordRule"/> match CAN -
-/// see <see cref="TooltipKeywordParser"/> for how a tooltip's text resolves to a color - and when
-/// one does, <see cref="DrawHelpers.PushColorOverride"/> is what actually applies it, wrapped
-/// tightly around just that one effect's <see cref="IScreenEffect.Draw"/> call below so every other
-/// effect drawn this same frame is completely unaffected. If a real debuff and a recolored custom
-/// status ever happen to share the same kind at once, the color (like strength above) is tracked
-/// per-KIND, not per-source, so the shared effect renders with whatever color won out that frame -
-/// a rare edge case, and the same simplification this class already accepts for strength.
+/// Strength: kinds that cover several severities fold the active status's strength into the same
+/// 0..1 alpha every effect takes. Custom rules ask for 1.0.
+///
+/// Color: a real debuff or name-based CustomStatusRule never overrides an effect's authored color.
+/// A TooltipKeywordRule match can (see TooltipKeywordParser). Effects receive it via the
+/// colorOverride argument and attach it to their primitives; the renderer pushes it around each
+/// material call. If two sources share a kind at once, strength and color are tracked per-KIND
+/// rather than per-source - a rare edge case accepted as a simplification.
+///
+/// Material overrides: the settings panel exposes per-slot material choices via
+/// Configuration.MaterialOverrides, and tooltip descriptions can inject substitutions via
+/// TooltipMaterialOverrides (see CustomStatusSnapshot). Both are merged into one dict per frame
+/// and handed to the renderer, keyed by "{Kind}.{Type}.{Role}".
 /// </summary>
 public sealed class EffectManager
 {
     /// <summary>
-    /// Fixed draw order = fixed stacking order. Later entries draw on top of earlier ones. Blind is
-    /// pinned first/bottom because it covers more of the screen than anything else (a near-total
-    /// vignette) - drawn any later it would sit on top of and wash out every other effect. Silence
-    /// stays near the end so it renders over Blind - matching "silence on top of the blindfold"
-    /// from the spec. The DoT/tint cluster (Poison through Misery below) is grouped together since
-    /// they're all a similar "edge vignette + drifting particles" shape and rarely land in ways where
-    /// their exact relative order matters. Reorder this list to change layering; add a new
-    /// IScreenEffect instance here (plus a DebuffKind and a StatusCatalog.NameMap entry) to extend.
+    /// Fixed draw order = stacking order; earlier entries underneath, later on top. The order is
+    /// chosen for the shipped effects; reorder to change layering once those exist. Suggested
+    /// layering (bottom to top): Blind, DoT/tint cluster, Heavy, Bind, Pacification, Doom, Frost,
+    /// Petrification, Sleep, Amnesia, Charm, Hysteria, Stun, Electrocution, Paralysis, Slow,
+    /// Vulnerability, Silence.
     /// </summary>
-    private readonly IScreenEffect[] _order =
+    private readonly ISceneEffect[] _order =
     {
         new BlindEffect(),
-        new PoisonEffect(),
-        new BleedingEffect(),
         new BurnsEffect(),
-        new DiseaseEffect(),
-        new DropsyEffect(),
-        new SludgeEffect(),
-        new WindburnEffect(),
-        new WeaknessEffect(),
-        new InfirmityEffect(),
-        new MiseryEffect(),
-        new HeavyEffect(),
-        new BindEffect(),
-        new PacificationEffect(),
-        new DoomEffect(),
         new FrostEffect(),
-        new PetrificationEffect(),
-        new SleepEffect(),
-        new AmnesiaEffect(),
-        new CharmEffect(),
-        new HysteriaEffect(),
-        new StunEffect(),
-        new ElectrocutionEffect(),
-        new ParalysisEffect(),
-        new SlowEffect(),
         new VulnerabilityEffect(),
-        new SilenceEffect(),
     };
 
-    private const float FadeInPerSecond = 1f / 0.35f;  // ~350ms to fully appear
-    private const float FadeOutPerSecond = 1f / 0.6f;  // ~600ms to fully disappear
+    private const float FadeInPerSecond = 1f / 0.35f;
+    private const float FadeOutPerSecond = 1f / 0.6f;
 
     private readonly Dictionary<DebuffKind, float> _currentAlpha = new();
     private readonly HashSet<DebuffKind> _activeScratch = new();
-    private readonly Dictionary<DebuffKind, float> _targetStrength = new(); // this frame's max severity per kind; see the class doc
-    private readonly Dictionary<DebuffKind, Vector4> _colorOverrides = new(); // this frame's color per kind, ONLY for kinds a tooltip match (or a forced test) actually claimed - see the class doc
+    private readonly Dictionary<DebuffKind, float> _targetStrength = new();
+    private readonly Dictionary<DebuffKind, Vector4> _colorOverrides = new();
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private float _lastTime;
+
+    /// <summary>
+    /// Per-frame merged material overrides. Global config entries are merged first, then
+    /// tooltip-derived entries layered on top (more specific intent wins). Handed to the renderer.
+    /// </summary>
+    private readonly Dictionary<string, string> _materialOverridesScratch = new(StringComparer.Ordinal);
+
+    /// <summary>Per-frame buffer effects emit into. Cleared at the start of Draw, rendered after the loop.</summary>
+    private readonly EffectScene _scene = new();
 
     private readonly IClientState _clientState;
     private readonly IObjectTable _objectTable;
@@ -127,6 +108,7 @@ public sealed class EffectManager
         _activeScratch.Clear();
         _targetStrength.Clear();
         _colorOverrides.Clear();
+        _materialOverridesScratch.Clear();
 
         bool suppressed = !_config.Enabled
             || _gameGui.GameUiHidden
@@ -146,57 +128,44 @@ public sealed class EffectManager
                 if (_catalog.TryGetEffect(status.StatusId, out var kind, out var strength))
                 {
                     _activeScratch.Add(kind);
-                    // If two statuses somehow share a kind at once (e.g. Weakness AND Brink of
-                    // Death, however unlikely), show it at whichever is currently more severe.
                     if (!_targetStrength.TryGetValue(kind, out var soFar) || strength > soFar)
                         _targetStrength[kind] = strength;
                 }
             }
         }
 
-        // Custom Moodles/Loci statuses feed the very same set of active effects as the real debuffs above, so an
-        // effect that's already on from either source is never doubled or restarted - it just stays on until the
-        // last thing asking for it goes away.
-        //
-        // This runs BEFORE the chat-block line below, deliberately: a custom Silence rule now drives the hard
-        // chat lockout too, exactly like a real Silence debuff would, because the block is derived from the
-        // same _activeScratch set that both sources write into. A custom rule for any OTHER effect still only
-        // affects the visual - only Silence has a chat-block consequence.
+        // Custom Moodles/Loci rules feed the same _activeScratch set real debuffs do, so an effect
+        // already on from either source is never doubled or restarted - it stays on until the last
+        // thing asking for it goes away. Runs BEFORE the chat-block line on purpose: a custom
+        // Silence rule then drives the hard chat lockout exactly like a real Silence debuff.
         if (!suppressed && player != null)
         {
             var snapshot = _customStatuses.Snapshot;
             snapshot.AddActiveKinds(_config.CustomStatusRules, _activeScratch);
 
-            // Custom rules don't carry a severity tier of their own (there's no "faint" vs. "full"
-            // version of an arbitrary Moodle) - they always ask for their effect at full strength,
-            // same as any real status not listed in DebuffKind.Strengths.
             foreach (var rule in _config.CustomStatusRules)
             {
                 if (rule.Enabled && snapshot.Contains(rule.GetKey()))
                     _targetStrength[rule.Kind] = 1f;
             }
 
-            // TooltipKeywordRule matches (unlike the name-based rules just above) are NOT computed
-            // here - they're precomputed once per snapshot refresh, at the same ~1s cadence as the
-            // Moodles/Loci read itself, since matching one involves real text processing rather than
-            // a cheap key lookup. See CustomStatusSnapshot's remarks. This is just a merge of an
-            // already-computed answer into this frame's scratch collections - and it's already
-            // correctly empty when Configuration.ParseCustomStatusTooltips is off, since
-            // CustomStatusWatcher.Refresh only ever populates it when that's on.
+            // Tooltip keyword matches are precomputed once per snapshot refresh (see
+            // CustomStatusSnapshot); this just merges the already-computed answer.
             foreach (var kind in snapshot.TooltipKinds)
                 _activeScratch.Add(kind);
-
-            foreach (var (kind, strength) in snapshot.TooltipStrengths)
-            {
-                if (!_targetStrength.TryGetValue(kind, out var soFar) || strength > soFar)
-                    _targetStrength[kind] = strength;
-            }
 
             foreach (var (kind, color) in snapshot.TooltipColors)
             {
                 if (!_colorOverrides.ContainsKey(kind))
                     _colorOverrides[kind] = color;
             }
+
+            // Merge material overrides: global config first, then tooltip-derived on top.
+            // The scratch dict was cleared at the top of Draw, so this is a fresh fill each frame.
+            foreach (var kv in _config.MaterialOverrides)
+                _materialOverridesScratch[kv.Key] = kv.Value;
+            foreach (var kv in snapshot.TooltipMaterialOverrides)
+                _materialOverridesScratch[kv.Key] = kv.Value;
         }
 
         _chatBlocker.SetSilenced(_config.SilenceBlocksChat && _activeScratch.Contains(DebuffKind.Silence));
@@ -205,6 +174,7 @@ public sealed class EffectManager
         if (screenSize.X <= 0 || screenSize.Y <= 0) return;
 
         var dl = ImGui.GetForegroundDrawList();
+        _scene.Clear();
 
         foreach (var effect in _order)
         {
@@ -219,31 +189,27 @@ public sealed class EffectManager
 
             float strength = _targetStrength.TryGetValue(effect.Kind, out var targetStrength) ? targetStrength : 1f;
 
-            // A forced test (see DebugTester) can also carry a preview color; a real tooltip match
-            // takes priority if somehow both are present for the same kind at once (only possible
-            // while actively using the dev tester on a kind you also happen to have live right now).
-            Vector4? color = _colorOverrides.TryGetValue(effect.Kind, out var c) ? c : DebugTester.GetForcedColor(effect.Kind); // TEST-TOOLS: trim to `_colorOverrides.TryGetValue(effect.Kind, out var color) ? color : (Vector4?)null` if you remove DebugTester.cs - see its remarks first
+            // A forced test (DebugTester) can also carry a preview color. A real tooltip match
+            // wins if both are present for the same kind.
+            Vector4? color = _colorOverrides.TryGetValue(effect.Kind, out var c) ? c : DebugTester.GetForcedColor(effect.Kind); // TEST-TOOLS: trim to `_colorOverrides.TryGetValue(...) ? color : (Vector4?)null` if you remove DebugTester.cs
 
-            DrawHelpers.PushColorOverride(color);
+            _scene.CurrentOwner = effect.Kind;
+
             try
             {
-                // Opt-in only: effects that aren't strand/path-based don't implement this, so this
-                // is a no-op for them - see IReskinnableEffect and Effects/IStrandSkin.cs.
-                if (effect is IReskinnableEffect reskinnable)
-                    reskinnable.SkinKind = _config.GetSkin(effect.Kind);
-
-                effect.Draw(dl, screenSize, current * _config.GlobalIntensity * strength, time);
+                // GlobalIntensity is applied once by the renderer via MaterialContext.Alpha, so
+                // the effect receives fade * strength only - not multiplied by intensity a second
+                // time. See EffectSceneRenderer.Render.
+                effect.Emit(_scene, screenSize, current * strength, time, color);
             }
             catch (Exception ex)
             {
-                _log.Error(ex, $"RealDebuffs: {effect.Kind} effect threw during Draw - disabling it for the rest of this session.");
-                _config.SetEnabled(effect.Kind, false); // in-memory only, not saved - a real game update fix shouldn't require a settings reset
-            }
-            finally
-            {
-                DrawHelpers.PopColorOverride();
+                _log.Error(ex, $"RealDebuffs: {effect.Kind} effect threw during Emit - disabling it for the rest of this session.");
+                _config.SetEnabled(effect.Kind, false); // in-memory only, not saved
             }
         }
+
+        EffectSceneRenderer.Render(dl, _scene, screenSize, time, _config.GlobalIntensity, _materialOverridesScratch);
     }
 
     private static float MoveTowards(float current, float target, float maxDelta)
@@ -253,10 +219,10 @@ public sealed class EffectManager
     }
 
     /// <summary>
-    /// Backs the /realdebuffs statuses command: logs every status currently on the local player,
-    /// its real name, and whether RealDebuffs maps it to an effect. Point of this is to answer
-    /// "is the debuff I'm looking at actually being detected, under what name" directly instead of
-    /// guessing from the visual result alone.
+    /// Backs /realdebuffs statuses: logs every status currently on the local player, its real name,
+    /// and whether RealDebuffs maps it to an effect - so "is the debuff I'm looking at actually
+    /// being detected, under what name" is answerable directly rather than by guessing from the
+    /// visual result.
     /// </summary>
     public void LogCurrentStatuses()
     {
@@ -287,13 +253,10 @@ public sealed class EffectManager
     }
 
     /// <summary>
-    /// The custom (Moodles/Loci) half of /realdebuffs statuses: what the two plugins are reporting
-    /// after name-merging, which name-rule(s) each status matches - or "no rule" - and, when tooltip
-    /// parsing is on, what TooltipKeywordRules find in its description and what color (if any) that
-    /// resolved to. Answers "why isn't my rule firing" directly: either the name/keyword isn't in
-    /// this list at all (Moodles/Loci aren't reporting it, or it's spelled/worded differently), or
-    /// it is and no rule matches it. Reflects the most recent once-a-second read, so it can be up to
-    /// a second behind.
+    /// The Moodles/Loci half of /realdebuffs statuses: what the two plugins report after
+    /// name-merging, which name-rule(s) each status matches, and - when tooltip parsing is on -
+    /// what TooltipKeywordRules find in its description and what color (if any) that resolved to.
+    /// Reflects the most recent once-a-second read.
     /// </summary>
     private void LogCustomStatuses()
     {
@@ -328,9 +291,6 @@ public sealed class EffectManager
                 continue;
             }
 
-            // Reads the SAME cached matches EffectManager.Draw is actually using this frame (see
-            // CustomStatusSnapshot's remarks) rather than re-parsing here, so this line can never
-            // show something different from what's really on screen.
             if (status.TooltipMatches.Count == 0)
             {
                 lines.Add("    tooltip: no keyword matches");
@@ -342,7 +302,8 @@ public sealed class EffectManager
                 var colorText = m.Color is { } col
                     ? $"color #{(int)(col.X * 255):X2}{(int)(col.Y * 255):X2}{(int)(col.Z * 255):X2} (from {m.ColorSource})"
                     : "no color override";
-                lines.Add($"    tooltip -> {m.Kind}, {colorText}");
+                var matText = m.MaterialSubstitution is { } mat ? $", material {mat}" : "";
+                lines.Add($"    tooltip -> {m.Kind}, {colorText}{matText}");
             }
         }
 

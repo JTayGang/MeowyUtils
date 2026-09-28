@@ -6,66 +6,47 @@ using Dalamud.Bindings.ImGui;
 namespace RealDebuffs;
 
 /// <summary>
-/// TEST-TOOLS-ish - originally a dev-only helper for previewing effects without hunting down a mob
-/// to apply the debuff; now ALSO the mechanism behind the tooltip-keyword settings panel's "preview
-/// these on screen" button (see <see cref="TooltipKeywordPanel"/>), since both are exactly the same
-/// need - "show this kind, maybe in this color, for a little while, then stop" - and duplicating a
-/// second expiry-tracking dictionary for the second caller would just be the same logic twice.
+/// Preview an effect without needing a matching debuff to actually be active. Two callers: the
+/// dev-only test panel at the bottom of the settings window, and the tooltip-keyword tester's
+/// "preview on screen" button.
 ///
-/// The original dev panel adds a collapsed "Test effects (dev only)" section to the bottom of the
-/// settings window with one checkbox per <see cref="DebuffKind"/> (new kinds show up on their own).
-/// Ticking one makes EffectManager draw that effect as if you had the debuff, for
-/// <see cref="Seconds"/> seconds, then it switches itself off; the tooltip tester's button does the
-/// same thing programmatically for whatever it just parsed, optionally with a color.
+/// Visual only - hooked in after EffectManager tells ChatBlocker whether you're silenced, so a
+/// test never blocks real chat. Always temporary (some effects, like Blind at high intensity,
+/// could hide the checkbox you'd need to switch them off). Respects the master Enabled, per-effect
+/// toggles, cutscene/GPose hiding, and the intensity slider. Nothing is saved; reload clears it.
 ///
-/// TO REMOVE JUST THE DEV PANEL (keep the tooltip tester's preview button working): delete the
-/// "Test effects (dev only)" line in ConfigWindow.Draw (tagged TEST-TOOLS) and the DrawUi method
-/// below; leave Force/IsForced/GetForcedColor and the DebuffKind[] Kinds field - the preview button
-/// still needs them.
-///
-/// TO REMOVE THIS FILE ENTIRELY: first decide what happens to the tooltip tester's preview button
-/// (drop the button, or give it its own small "temporarily force this kind" dictionary instead of
-/// sharing this one), THEN delete this file and the two remaining lines tagged "TEST-TOOLS" (one in
-/// EffectManager.Draw's `active |=` line, one in ConfigWindow.Draw) - EffectManager.Draw's color
-/// line just above the `active |=` one also reads this file, but only to fall back to null, so it
-/// only needs trimming, not deleting; the compiler will point at all of them either way.
-///
-/// Choices worth knowing about:
-///  - Visual only. It's hooked in AFTER EffectManager has told ChatBlocker whether you're silenced, so a
-///    test can never swallow your real chat messages, even with "Silence also blocks sending chat" on.
-///  - Always temporary. Some effects (Blind at high intensity is nearly a black screen) can hide the very
-///    checkbox you'd need to switch them off, so a test always ends by itself.
-///  - Same pipeline as a real debuff. A forced effect still respects the master "Enabled" box, the
-///    per-effect boxes, cutscene/GPose hiding and the intensity slider - and the "an effect that throws
-///    gets disabled" safety net, which bypassing those would defeat (it'd re-throw every frame).
-///  - Nothing is saved. Every test (dev checkbox or tooltip preview alike) is gone after a reload.
+/// To remove just the dev panel: delete the TEST-TOOLS line in ConfigWindow.Draw and DrawUi below,
+/// leaving Force/IsForced/GetForcedColor for the tooltip-tester preview button. To remove the file
+/// entirely, also delete the two remaining TEST-TOOLS lines (one in EffectManager.Draw, one in
+/// ConfigWindow.Draw); the color fallback line just above EffectManager's active check only needs
+/// trimming. The compiler will point at all of them either way.
 /// </summary>
 internal static class DebugTester
 {
-    /// <summary>How long a test plays before it switches itself off.</summary>
     public static float Seconds { get; set; } = 15f;
 
     private static readonly DebuffKind[] Kinds = Enum.GetValues<DebuffKind>();
 
-    // kind -> Environment.TickCount64 (ms) when its test ends. Missing, or in the past = not being tested.
+    // kind -> TickCount64 ms when its test ends. Missing or past = not being tested.
     private static readonly Dictionary<DebuffKind, long> EndsAt = new();
 
-    // kind -> color to force it to while under test, if any - set alongside EndsAt by the overload
-    // below. Read even after the test ends (EffectManager only asks for it while IsForced is also
-    // true), so a stale entry left over from a previous test is harmless.
+    // kind -> color to force, set alongside EndsAt. Only meaningful while IsForced is also true.
     private static readonly Dictionary<DebuffKind, Vector4?> ForcedColor = new();
 
-    /// <summary>EffectManager asks this for each effect: should it draw as if the debuff were on right now?</summary>
     public static bool IsForced(DebuffKind kind) =>
         EndsAt.TryGetValue(kind, out long end) && end > Environment.TickCount64;
 
-    /// <summary>The color a forced test wants (from <see cref="Force(DebuffKind,bool,System.Numerics.Vector4?)"/>), or null for "use the effect's own color". Meaningless unless <see cref="IsForced"/> is also true.</summary>
-    public static Vector4? GetForcedColor(DebuffKind kind) => ForcedColor.TryGetValue(kind, out var c) ? c : null;
+    /// <summary>What color a forced test wants, or null for "use the effect's own".</summary>
+    public static Vector4? GetForcedColor(DebuffKind kind) =>
+        ForcedColor.TryGetValue(kind, out var c) ? c : null;
 
-    /// <summary>Starts (or stops) a test, in the effect's own color.</summary>
     public static void Force(DebuffKind kind, bool on) => Force(kind, on, null);
 
-    /// <summary>Starts (or stops) a test, optionally recolored - see <see cref="Effects.DrawHelpers.PushColorOverride"/> for what a non-null color actually does. Used by the settings window's per-kind test checkboxes (always null) and the tooltip-keyword tester's "preview on screen" button (whatever it just parsed).</summary>
+    /// <summary>
+    /// Starts or stops a test, optionally recolored (see DrawHelpers.PushColorOverride for what a
+    /// non-null color does). Used by the dev checkboxes (always null) and the tooltip-tester's
+    /// preview button (whatever it just parsed).
+    /// </summary>
     public static void Force(DebuffKind kind, bool on, Vector4? color)
     {
         EndsAt[kind] = on ? Environment.TickCount64 + (long)(Seconds * 1000f) : 0L;
@@ -73,23 +54,23 @@ internal static class DebugTester
     }
 
     /// <summary>
-    /// Draws the panel (call it from the end of the settings window's Draw). <paramref name="isShowing"/>
-    /// says whether an effect is currently allowed to appear at all; it's only used to add an
-    /// "(off in settings)" hint, so a test that shows nothing explains itself.
+    /// Draws the panel. <paramref name="isShowing"/> says whether an effect is allowed to appear at
+    /// all right now; it's only used to add an "(off in settings)" hint so a test that shows
+    /// nothing explains itself.
     /// </summary>
     public static void DrawUi(Func<DebuffKind, bool> isShowing)
     {
         ImGui.Separator();
         if (!ImGui.CollapsingHeader("Test effects (dev only)")) return;
 
-        // The labels below repeat the settings checkboxes above, and ImGui treats two same-label widgets
-        // in one window as the SAME widget (ticking one would tick both) - so give this block its own ID scope.
+        // Own ID scope: labels repeat the settings-window checkboxes, and ImGui would otherwise
+        // treat them as the same widgets (ticking one would tick both).
         ImGui.PushID("TestTools");
         try
         {
             ImGui.TextWrapped(
-                $"Shows an effect for {Seconds:0}s as if you had the debuff. Visual only - it never triggers " +
-                "the chat lockout. Effects switched off above still won't show.");
+                $"Shows an effect for {Seconds:0}s as if you had the debuff. Visual only - it never " +
+                "triggers the chat lockout. Effects switched off above still won't show.");
 
             long now = Environment.TickCount64;
             foreach (var kind in Kinds)
@@ -101,7 +82,7 @@ internal static class DebugTester
                 if (EndsAt.TryGetValue(kind, out long end) && end > now)
                 {
                     ImGui.SameLine();
-                    ImGui.TextDisabled($"{(end - now + 999) / 1000}s"); // whole seconds left, rounded up
+                    ImGui.TextDisabled($"{(end - now + 999) / 1000}s");
                 }
 
                 if (!isShowing(kind))

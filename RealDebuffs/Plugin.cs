@@ -3,6 +3,7 @@ using Dalamud.Game.Command;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using RealDebuffs.Effects.Framework;
 
 namespace RealDebuffs;
 
@@ -36,6 +37,8 @@ public sealed class Plugin : IDalamudPlugin
         _pi = pluginInterface;
         _cmd = commandManager;
         _log = log;
+
+	MaterialBootstrap.RegisterAll();
 
         _config = _pi.GetPluginConfig() as Configuration ?? new Configuration();
 

@@ -7,14 +7,13 @@ using Dalamud.Plugin.Services;
 namespace RealDebuffs;
 
 /// <summary>
-/// The set of "real" visual debuff families this plugin renders. Several vanilla FFXIV statuses
-/// map to the same kind when they're mechanically identical (e.g. Stun / Down for
-/// the Count both mean "can't act, can't move" - they just come from different sources), so this
-/// is a curated list of *feelings*, not a 1:1 mirror of every status name.
+/// The set of visual debuff "families" this plugin renders. Several vanilla statuses can map to
+/// one kind when they're mechanically the same (Stun and Down for the Count both mean "can't
+/// act"), so this is a curated list of feelings, not a 1:1 mirror of every status name.
 ///
-/// To add a new kind: add it here, add its name(s) to <see cref="StatusCatalog.NameMap"/>, write
-/// an <see cref="Effects.IScreenEffect"/> for it, and drop that effect into the order list in
-/// <see cref="EffectManager"/>. See the README for a worked example.
+/// To add a kind: add it here, add its name(s) to StatusCatalog.NameMap, and write an
+/// ISceneEffect. Add new kinds at the END - saved custom-status rules store the enum's number,
+/// so reordering would re-point existing rules.
 /// </summary>
 public enum DebuffKind
 {
@@ -28,10 +27,10 @@ public enum DebuffKind
     Heavy,
     Petrification,
 
-    // Added later. Add new kinds at the END: saved custom-status rules store the enum's number.
+    // Added later.
     Amnesia,
     Bleeding,
-    Weakness,       // Weakness, Brush with Death and Brink of Death - one look at three strengths
+    Weakness,       // Weakness, Brush with Death, Brink of Death - one look at three strengths
     Burns,
     Charm,          // Infatuated and Seduced - one look at two strengths
     Frost,          // Frostbite and Deep Freeze - one look at two strengths
@@ -50,21 +49,16 @@ public enum DebuffKind
 }
 
 /// <summary>
-/// Resolves vanilla FFXIV status IDs to <see cref="DebuffKind"/>s by loading the Status Excel
-/// sheet ONCE at startup and matching on the English status name. Matching by name (rather than
-/// hardcoding row IDs) means this keeps working even if a status's row ID ever changes between
-/// patches, and makes it trivial to extend - just add a name to <see cref="NameMap"/>.
-///
-/// Always resolved against the English sheet regardless of the client's UI language: StatusIds
-/// themselves are language-independent, this just makes the *name matching done here* reliable no
-/// matter what language the game client is actually set to display.
+/// Resolves vanilla status IDs to DebuffKinds by loading the English Status sheet at startup and
+/// matching on the name. Matching by name (rather than hardcoded row IDs) survives a status's row
+/// ID shifting between patches. Always uses the English sheet regardless of the client's UI
+/// language, so the name matching here is stable.
 /// </summary>
 public sealed class StatusCatalog
 {
     /// <summary>
-    /// English status name -&gt; the DebuffKind we render for it. Extend the plugin by adding more
-    /// entries here - see the README for the full checklist of what else needs to happen alongside
-    /// a new entry. Names are matched exactly (ignoring case) against the English Status sheet.
+    /// English status name -> DebuffKind. Names are matched exactly (ignoring case). See the README
+    /// for the full checklist when adding a new entry.
     /// </summary>
     public static readonly Dictionary<string, DebuffKind> NameMap = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -78,7 +72,6 @@ public sealed class StatusCatalog
         ["Bind"] = DebuffKind.Bind,
         ["Heavy"] = DebuffKind.Heavy,
         ["Petrification"] = DebuffKind.Petrification,
-
         ["Amnesia"] = DebuffKind.Amnesia,
         ["Bleeding"] = DebuffKind.Bleeding,
         ["Weakness"] = DebuffKind.Weakness,
@@ -87,8 +80,8 @@ public sealed class StatusCatalog
         ["Burns"] = DebuffKind.Burns,
         ["Infatuated"] = DebuffKind.Charm,
         ["Seduced"] = DebuffKind.Charm,
-        ["Charm"] = DebuffKind.Charm,       // there's no "Charm"/"Charmed"/"Seduce" in today's English sheet;
-        ["Charmed"] = DebuffKind.Charm,     // kept so they work if a patch ever adds them
+        ["Charm"] = DebuffKind.Charm,    // not in today's English sheet, kept so they work if a
+        ["Charmed"] = DebuffKind.Charm,  // patch ever adds them
         ["Seduce"] = DebuffKind.Charm,
         ["Frostbite"] = DebuffKind.Frost,
         ["Deep Freeze"] = DebuffKind.Frost,
@@ -107,10 +100,8 @@ public sealed class StatusCatalog
     };
 
     /// <summary>
-    /// For kinds that cover several statuses of different severity: how strong each name's effect is
-    /// compared to the kind's full look (1.0). A name not listed here is full strength. The effect
-    /// is drawn at this fraction of its normal intensity, so Weakness reads as a faint version of
-    /// what Brink of Death looks like.
+    /// For kinds that cover several severities: how strong each name's effect is vs. the kind's
+    /// full look. A name not listed here is full strength.
     /// </summary>
     public static readonly Dictionary<string, float> Strengths = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -151,22 +142,19 @@ public sealed class StatusCatalog
             }
         }
 
-        var distinctKindsFound = _idToKind.Values.Distinct().Count();
-        var distinctKindsExpected = NameMap.Values.Distinct().Count();
-        _log.Debug($"RealDebuffs: resolved {_idToKind.Count} status row(s) covering " +
-                   $"{distinctKindsFound}/{distinctKindsExpected} configured debuff kinds.");
+        int found = _idToKind.Values.Distinct().Count();
+        int expected = NameMap.Values.Distinct().Count();
+        _log.Debug($"RealDebuffs: resolved {_idToKind.Count} row(s) covering {found}/{expected} kinds.");
 
-        if (distinctKindsFound < distinctKindsExpected)
-        {
+        if (found < expected)
             _log.Warning("RealDebuffs: not every name in StatusCatalog.NameMap was found in the Status " +
-                         "sheet, so some effects may never trigger. This usually means a status's English " +
-                         "name changed in a recent patch - compare NameMap against the current sheet.");
-        }
+                         "sheet, so some effects may never trigger. A status's English name may have " +
+                         "changed in a recent patch - compare NameMap against the current sheet.");
     }
 
     public bool TryGetKind(uint statusId, out DebuffKind kind) => _idToKind.TryGetValue(statusId, out kind);
 
-    /// <summary>Like <see cref="TryGetKind"/>, plus how strong this particular status should look (1.0 = the kind's full effect).</summary>
+    /// <summary>Like <see cref="TryGetKind"/>, plus how strong this particular status should look (1.0 = full).</summary>
     public bool TryGetEffect(uint statusId, out DebuffKind kind, out float strength)
     {
         strength = 1f;
@@ -175,6 +163,6 @@ public sealed class StatusCatalog
         return true;
     }
 
-    /// <summary>Human-readable name for any status ID the sheet knows about, for the /realdebuffs statuses diagnostic. Falls back to the raw ID if the sheet lookup ever comes up empty.</summary>
+    /// <summary>Human-readable name for any status ID the sheet knows about, for /realdebuffs statuses.</summary>
     public string GetName(uint statusId) => _idToName.TryGetValue(statusId, out var name) ? name : $"#{statusId}";
 }

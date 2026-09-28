@@ -5,7 +5,6 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Configuration;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
-using RealDebuffs.Effects;
 
 namespace RealDebuffs;
 
@@ -17,7 +16,7 @@ public class Configuration : IPluginConfiguration
     public bool Enabled { get; set; } = true;
     public bool HideDuringCutscenes { get; set; } = true;
 
-    /// <summary>Multiplies every effect's alpha/intensity. 1.0 = as-authored, lower = subtler, higher = more intense.</summary>
+    /// <summary>Multiplies every effect's alpha/intensity. 1.0 = as-authored.</summary>
     public float GlobalIntensity { get; set; } = MaxIntensity;
 
     public const float MinIntensity = 0.1f;
@@ -33,14 +32,6 @@ public class Configuration : IPluginConfiguration
     public bool HeavyEnabled { get; set; } = true;
     public bool PetrificationEnabled { get; set; } = true;
 
-    // Which IStrandSkin material to render each reskinnable effect's strands with - see
-    // IReskinnableEffect and Effects/IStrandSkin.cs. Defaults preserve each effect's original,
-    // as-shipped look: Bind's tendrils stay tentacles, Heavy's chains stay chains, until the user
-    // deliberately swaps them in Settings.
-    public StrandSkinKind BindSkin { get; set; } = StrandSkinKind.Tentacle;
-    public StrandSkinKind HeavySkin { get; set; } = StrandSkinKind.Chain;
-
-    // Added later, alongside DebuffKind's "Added later" block - same order as that enum.
     public bool AmnesiaEnabled { get; set; } = true;
     public bool BleedingEnabled { get; set; } = true;
     public bool WeaknessEnabled { get; set; } = true;
@@ -61,39 +52,28 @@ public class Configuration : IPluginConfiguration
     public bool WindburnEnabled { get; set; } = true;
 
     /// <summary>
-    /// "While I have this custom Moodles/Loci status, show this effect" links - see
-    /// <see cref="CustomStatusRule"/>. These add to the real-debuff effects above rather than
-    /// replacing them, and the per-effect toggles above still act as the master switch for each effect.
+    /// Per-slot material overrides for ported effects. Key format is
+    /// "{DebuffKind}.{Stroke|Particle|Region}.{PrimitiveRole}"; value is the material name
+    /// (e.g. "particle.ember"). Missing entries fall back to the built-in default for that role.
+    /// See Effect Styles in the Moodles/Loci Support tab.
     /// </summary>
+    public Dictionary<string, string> MaterialOverrides { get; set; } = new();
+
+    /// <summary>"While I have this custom status, show this effect" links - see <see cref="CustomStatusRule"/>.</summary>
     public List<CustomStatusRule> CustomStatusRules { get; set; } = new();
 
-    /// <summary>
-    /// The checkbox next to the custom-status section: whether to ALSO scan each active Moodles/Loci
-    /// status's tooltip text for <see cref="TooltipKeywordRules"/>, on top of matching its name
-    /// above. Off by default - this is a heuristic, text-matching feature, and worth reviewing the
-    /// seeded keyword list against your own moodles before turning it on.
-    /// </summary>
+    /// <summary>Also scan each active status's tooltip text for <see cref="TooltipKeywordRules"/>. Off by default.</summary>
     public bool ParseCustomStatusTooltips { get; set; } = false;
 
     /// <summary>
-    /// "If a status's tooltip contains this word, show this effect (in this color, at this
-    /// strength)" links - see <see cref="TooltipKeywordRule"/>. Only consulted while
-    /// <see cref="ParseCustomStatusTooltips"/> is on. Seeded with a starting set (see
-    /// <see cref="TooltipKeywordRule.Defaults"/>) rather than empty, since - unlike a status NAME,
-    /// which is arbitrary per-user RP flavor - common English color/effect words are predictable
-    /// enough to ship a useful default for. This also means an existing save from before this
-    /// feature existed picks up the same defaults the first time it loads post-update: Dalamud's
-    /// config load only overwrites a property the saved JSON actually contains, so a property this
-    /// old JSON never had keeps whatever this field initializer set it to - exactly how
-    /// CustomStatusRules above has always defaulted an old save to an empty list, just with a
-    /// non-empty default this time.
+    /// "If a status's tooltip contains this word, show this effect" links - see
+    /// <see cref="TooltipKeywordRule"/>. Only consulted while <see cref="ParseCustomStatusTooltips"/>
+    /// is on. Seeded with a default set; a save from before this field existed picks the defaults
+    /// up on first load.
     /// </summary>
     public List<TooltipKeywordRule> TooltipKeywordRules { get; set; } = TooltipKeywordRule.Defaults();
 
-    /// <summary>
-    /// Advanced/optional and OFF by default: actually stops outgoing chat while Silenced, via a
-    /// game hook, instead of just showing the visual effect. See ChatBlocker.cs.
-    /// </summary>
+    /// <summary>OFF by default: actually stop outgoing chat while silenced. See ChatBlocker.cs.</summary>
     public bool SilenceBlocksChat { get; set; } = false;
 
     public bool IsEnabled(DebuffKind kind) => kind switch
@@ -128,28 +108,7 @@ public class Configuration : IPluginConfiguration
         _ => false,
     };
 
-    /// <summary>Which IStrandSkin material to render this kind's strands with, if it's reskinnable at all - see IReskinnableEffect. Kinds that aren't strand-based never read this.</summary>
-    public StrandSkinKind GetSkin(DebuffKind kind) => kind switch
-    {
-        DebuffKind.Bind => BindSkin,
-        DebuffKind.Heavy => HeavySkin,
-        _ => StrandSkinKind.Tentacle,
-    };
-
-    /// <summary>Used by the config window's per-effect skin picker.</summary>
-    public void SetSkin(DebuffKind kind, StrandSkinKind skin)
-    {
-        switch (kind)
-        {
-            case DebuffKind.Bind: BindSkin = skin; break;
-            case DebuffKind.Heavy: HeavySkin = skin; break;
-        }
-    }
-
-    /// <summary>
-    /// Used by the config window's checkboxes, and by EffectManager as a session-only (not saved)
-    /// safety net if an effect ever throws - see EffectManager.Draw.
-    /// </summary>
+    /// <summary>Settings checkbox, and EffectManager's session-only safety net if an effect throws.</summary>
     public void SetEnabled(DebuffKind kind, bool enabled)
     {
         switch (kind)
@@ -188,17 +147,11 @@ public class Configuration : IPluginConfiguration
 }
 
 /// <summary>
-/// The settings window. Two tabs:
-///  - "Effects": the master enable switch, overall intensity, the per-debuff toggles, and the
-///    Advanced section (chat lockout) - everything that applies to REAL game debuffs.
-///  - "Moodles/Loci Support": the two custom-status rule editors
-///    (<see cref="CustomStatusPanel"/>, <see cref="TooltipKeywordPanel"/>) - everything that
-///    only fires because of a Moodles or Loci status. Kept on its own tab both because it's a
-///    self-contained feature a lot of users will never touch (so it no longer sits between the
-///    per-debuff list and the Advanced section), and because the two panels together are tall
-///    enough that stacking them under the main list made for one long scroll.
-/// ImGui remembers the selected tab per session automatically, since the tab bar is keyed by the
-/// same ID every frame.
+/// Settings window. Two tabs:
+///  - "Effects": master switches, intensity, per-debuff toggles, chat lockout, dev test panel.
+///  - "Moodles/Loci Support": the two custom-status rule editors (see SettingsPanels.cs).
+/// The Moodles tab is separate both because most users never touch it, and because it's tall
+/// enough that stacking it under the main list would make one long scroll.
 /// </summary>
 public sealed class ConfigWindow : Window
 {
@@ -243,7 +196,6 @@ public sealed class ConfigWindow : Window
             _save();
     }
 
-    /// <summary>Everything that applies to REAL game debuffs: master switches, intensity, per-debuff toggles, chat lockout, and the in-game test panel.</summary>
     private bool DrawEffectsTab()
     {
         bool changed = false;
@@ -267,34 +219,34 @@ public sealed class ConfigWindow : Window
         ImGui.TextDisabled("Per-debuff effects");
         ImGui.Spacing();
 
-        changed |= EffectToggle(DebuffKind.Blind, "Blind", "Screen darkens with a heavy vignette.");
-        changed |= EffectToggle(DebuffKind.Paralysis, "Paralysis", "Crackling electric arcs around the screen edges.");
-        changed |= EffectToggle(DebuffKind.Silence, "Silence", "Floating purple glyphs drift from the edges. See the Advanced section below for an actual chat lockout.");
-        changed |= EffectToggle(DebuffKind.Stun, "Stun / Down for the Count", "Twinkling stars orbit near the top of the screen.");
-        changed |= EffectToggle(DebuffKind.Sleep, "Sleep", "Soft blue tint with drowsy Zs drifting up from the corners.");
-        changed |= EffectToggle(DebuffKind.Poison, "Poison", "Sickly green tint with drips falling from the top.");
+        // Alphabetical by the primary effect name. Purely a config-menu convenience; draw
+        // layering order is entirely separate (see EffectManager._order).
+        changed |= EffectToggle(DebuffKind.Amnesia, "Amnesia", "A hazy gray fog rolls in, with drifting question marks.");
         changed |= EffectToggle(DebuffKind.Bind, "Bind", "Roots creep up from the bottom of the screen.");
-        changed |= SkinPicker(DebuffKind.Bind, "##BindSkin");
-        changed |= EffectToggle(DebuffKind.Heavy, "Heavy", "A heavy dark pull with a dragging chain at the bottom of the screen.");
-        changed |= SkinPicker(DebuffKind.Heavy, "##HeavySkin");
-        changed |= EffectToggle(DebuffKind.Petrification, "Petrification", "Color drains out and stone cracks spread in from the edges.");
-        changed |= EffectToggle(DebuffKind.Amnesia, "Amnesia", "A hazy gray fog rolls in, with drifting question marks - like your memory's been wiped.");
         changed |= EffectToggle(DebuffKind.Bleeding, "Bleeding", "Dark red drips bead and fall from the top edge.");
-        changed |= EffectToggle(DebuffKind.Weakness, "Weakness / Brush with Death / Brink of Death", "A slow, heavy red pulse - faint for Weakness, strongest for Brink of Death.");
+        changed |= EffectToggle(DebuffKind.Blind, "Blind", "Screen darkens with a heavy vignette.");
         changed |= EffectToggle(DebuffKind.Burns, "Burns", "A warm orange glow with embers rising from the bottom edge.");
-        changed |= EffectToggle(DebuffKind.Charm, "Infatuated / Seduced", "A soft pink haze with drifting hearts - fainter for Infatuated, fuller for Seduced.");
-        changed |= EffectToggle(DebuffKind.Frost, "Frostbite / Deep Freeze", "Icy blue creeps in from the edges - a faint rime for Frostbite, a heavy crust for Deep Freeze.");
+        changed |= EffectToggle(DebuffKind.Charm, "Charmed / Seduced", "A soft pink haze with drifting hearts.");
         changed |= EffectToggle(DebuffKind.Disease, "Disease", "A dull, sickly olive tint with slow spores drifting past.");
         changed |= EffectToggle(DebuffKind.Doom, "Doom", "Dark red cracks creep in from the edges, pulsing like a countdown.");
         changed |= EffectToggle(DebuffKind.Dropsy, "Dropsy", "Heavy blue droplets drip from the top edge.");
         changed |= EffectToggle(DebuffKind.Electrocution, "Electrocution", "A buzzing yellow-white static flicker along the edges.");
-        changed |= EffectToggle(DebuffKind.Hysteria, "Hysteria", "Jittery purple-red scribbles at the edges, like your mind's coming apart.");
+        changed |= EffectToggle(DebuffKind.Frost, "Frostbite / Deep Freeze", "Icy blue creeps in from the edges.");
+        changed |= EffectToggle(DebuffKind.Heavy, "Heavy", "A heavy dark pull with a dragging chain at the bottom of the screen.");
+        changed |= EffectToggle(DebuffKind.Hysteria, "Hysteria", "Jittery purple-red scribbles at the edges.");
         changed |= EffectToggle(DebuffKind.Infirmity, "Infirmity", "A pale, washed-out tint with dust drifting slowly down.");
         changed |= EffectToggle(DebuffKind.Misery, "Misery", "A heavy dark-blue tint with slow, falling tears.");
         changed |= EffectToggle(DebuffKind.Pacification, "Pacification", "A soft restraining glow pulses along the bottom edge.");
-        changed |= EffectToggle(DebuffKind.Slow, "Slow", "A faint amber syrup drips slowly from the bottom - deliberately the subtlest effect here.");
+        changed |= EffectToggle(DebuffKind.Paralysis, "Paralysis", "Crackling electric arcs around the screen edges.");
+        changed |= EffectToggle(DebuffKind.Petrification, "Petrification", "Color drains out and stone cracks spread in from the edges.");
+        changed |= EffectToggle(DebuffKind.Poison, "Poison", "Sickly green tint with drips falling from the top.");
+        changed |= EffectToggle(DebuffKind.Silence, "Silence", "Floating purple glyphs drift from the edges. See the Advanced section below for an actual chat lockout.");
+        changed |= EffectToggle(DebuffKind.Sleep, "Sleep", "Soft blue tint with drowsy Zs drifting up from the corners.");
+        changed |= EffectToggle(DebuffKind.Slow, "Slow", "A faint amber syrup drips slowly from the bottom.");
         changed |= EffectToggle(DebuffKind.Sludge, "Sludge", "Thick brown mud drips from the top edge.");
-        changed |= EffectToggle(DebuffKind.Vulnerability, "Vulnerability Up", "A faint red edge outline, kept minimal since this is common in modern raids.");
+        changed |= EffectToggle(DebuffKind.Stun, "Stun / Down for the Count", "Twinkling stars orbit near the top of the screen.");
+        changed |= EffectToggle(DebuffKind.Vulnerability, "Vulnerability Up", "A faint red edge outline.");
+        changed |= EffectToggle(DebuffKind.Weakness, "Weakness / Brush with Death / Brink of Death", "A slow, heavy red pulse - faint for Weakness, strongest for Brink of Death.");
         changed |= EffectToggle(DebuffKind.Windburn, "Windburn", "Pale streaks blow across the screen edges.");
 
         ImGui.Separator();
@@ -314,17 +266,12 @@ public sealed class ConfigWindow : Window
         return changed;
     }
 
-    /// <summary>Everything that only fires because of a Moodles or Loci status: the name-based rule list, and the tooltip-keyword rule list (with its master toggle and tester).</summary>
     private bool DrawMoodlesTab()
     {
         bool changed = false;
-
         changed |= _customStatuses.Draw();
-
         ImGui.Separator();
-
         changed |= _tooltipKeywords.Draw();
-
         return changed;
     }
 
@@ -340,26 +287,5 @@ public sealed class ConfigWindow : Window
             ImGui.SetTooltip(description);
 
         return didChange;
-    }
-
-    private static readonly string[] StrandSkinNames = { "Tentacles", "Chains" };
-
-    /// <summary>
-    /// The small indented "Visual style" combo shown under a reskinnable effect's checkbox - see
-    /// IReskinnableEffect and Effects/IStrandSkin.cs. Only Bind and Heavy have one today, but any
-    /// future strand-based effect gets one for free just by adding a case to
-    /// Configuration.GetSkin/SetSkin and a call to this here.
-    /// </summary>
-    private bool SkinPicker(DebuffKind kind, string hiddenId)
-    {
-        int idx = (int)_config.GetSkin(kind);
-
-        ImGui.Indent();
-        ImGui.SetNextItemWidth(160);
-        bool changed = ImGui.Combo("Visual style" + hiddenId, ref idx, StrandSkinNames, StrandSkinNames.Length);
-        ImGui.Unindent();
-
-        if (changed) _config.SetSkin(kind, (StrandSkinKind)idx);
-        return changed;
     }
 }

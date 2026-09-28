@@ -133,7 +133,7 @@ public sealed class CustomStatusSnapshot
                 // stroke material can't fill a particle slot, so "made of lightning" on Burns is
                 // dropped rather than producing nonsense (Burns still gets its color).
                 string matType = PrefixOf(matName);
-                foreach (var hero in EffectHeroSlots.For(m.Kind))
+                foreach (var hero in EffectRegistry.HeroSlotsFor(m.Kind))
                 {
                     // Same-type match: material axis (stroke material on stroke hero, etc.).
                     if (string.Equals(hero.PrimitiveType, matType, StringComparison.OrdinalIgnoreCase))

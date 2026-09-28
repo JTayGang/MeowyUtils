@@ -390,4 +390,14 @@ public static class StrokeAutoEmitter
         }
         return null;
     }
+
+    private static string ResolveStrokeMaterial(in StrokePrimitive s, IReadOnlyDictionary<string, string>? overrides)
+    {
+        if (overrides != null &&
+            overrides.TryGetValue(MaterialOverrideKey.For(s.Owner, "Stroke", s.Role), out var name))
+            return name;
+
+        return EffectRegistry.DefaultFor(s.Owner, "Stroke", s.Role.ToString())
+            ?? EffectRegistry.FallbackStroke();
+    }
 }

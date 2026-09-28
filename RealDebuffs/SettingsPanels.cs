@@ -324,45 +324,20 @@ internal sealed class TooltipKeywordPanel
 /// shown. Copy exports the selected effect's style to the clipboard; Reset returns it to its
 /// built-in defaults. Both buttons act on the currently-selected effect only.
 ///
-/// Slots for effects not currently selected are still present in the Slots table (and still
-/// resolved by the renderer); they're simply hidden here to keep the panel from growing into a
-/// wall of dropdowns as more effects are added.
+/// The roster of effects shown in the combo, the slots each effect exposes, and every slot's
+/// default material all come from EffectRegistry, which is populated once by Plugin from the
+/// effects' own declarations. Nothing here is hardcoded: adding a new effect's slots means
+/// adding them to that effect's Slots property, and this panel picks them up on the next draw.
 /// </summary>
 internal sealed class EffectStylePanel
 {
-    /// <summary>
-    /// One swappable slot. Region slots leave Role unused and set RegionKind to the exact key
-    /// the renderer reads ("EdgeGlow" or "FlatFill"); strokes and particles use Role and leave
-    /// RegionKind null. This split exists because the renderer keys regions by edge mask, not
-    /// by role - see MaterialOverrideKey.ForRegion.
-    /// </summary>
-    private readonly record struct Slot(
-        DebuffKind Kind,
-        string PrimitiveType,
-        PrimitiveRole Role,
-        string Label,
-        string? RegionKind = null);
-
-    private static readonly Slot[] Slots =
-    {
-        new(DebuffKind.Blind,   "Region",   PrimitiveRole.MainStroke, "Screen wash",  "FlatFill"),
-        new(DebuffKind.Burns,   "Particle", PrimitiveRole.Ember,      "Fire particles"),
-        new(DebuffKind.Burns,   "Region",   PrimitiveRole.MainStroke, "Ground band",  "EdgeGlow"),
-        new(DebuffKind.Disease, "Stroke",   PrimitiveRole.MainStroke, "Tendrils"),
-        new(DebuffKind.Frost,   "Particle", PrimitiveRole.Snowflake,  "Snowflakes"),
-        new(DebuffKind.Frost,   "Particle", PrimitiveRole.Snow,       "Snow specks"),
-        new(DebuffKind.Frost,   "Particle", PrimitiveRole.Fog,        "Fog"),
-        new(DebuffKind.Frost,   "Region",   PrimitiveRole.MainStroke, "Intro flash",  "FlatFill"),
-        new(DebuffKind.Heavy,   "Stroke",   PrimitiveRole.MainStroke, "Chains"),
-    };
-
     private readonly Configuration _config;
 
     private string _testText = "";
 
     /// <summary>Which effect the editor below the tester is currently showing. Defaults to the
-    /// first effect in Slots; changed via the "Effect" combo. Persists for the session so
-    /// switching back and forth doesn't lose what was on screen.</summary>
+    /// first effect in the registry; changed via the "Effect" combo. Persists for the session
+    /// so switching back and forth doesn't lose what was on screen.</summary>
     private DebuffKind _selectedKind = DebuffKind.Blind;
 
     public EffectStylePanel(Configuration config) { _config = config; }
@@ -395,20 +370,22 @@ internal sealed class EffectStylePanel
 
     /// <summary>
     /// The effect editor: a combo picks which kind to show, Copy exports that kind's style,
-    /// Reset returns it to its defaults, and the slots for that kind follow below. Only the
-    /// selected kind's slots are drawn, so the panel height stays constant as the Slots table
-    /// grows.
+    /// Reset returns it to its defaults, and the slots for that kind follow below.
     ///
-    /// Changing the combo does NOT reset the effect being left. A user exploring options might
-    /// want to keep an edit around while they check another effect, and an automatic reset would
-    /// silently discard that. Reset is an explicit button next to Copy instead - one click when
-    /// you actually want it, no surprise when you don't.
+    /// Changing the combo does NOT reset the effect being left; Reset is an explicit button so a
+    /// user exploring options doesn't lose edits to a previous effect.
     /// </summary>
     private bool DrawEffectEditor()
     {
         bool changed = false;
 
-        var kinds = Slots.Select(s => s.Kind).Distinct().ToArray();
+        var kinds = EffectRegistry.KindsWithSlots;
+        if (kinds.Length == 0)
+        {
+            ImGui.TextDisabled("  (no effects with customizable materials yet)");
+            return false;
+        }
+
         var names = kinds.Select(k => k.ToString()).ToArray();
 
         int idx = Array.IndexOf(kinds, _selectedKind);
@@ -434,7 +411,6 @@ internal sealed class EffectStylePanel
         // gap read as intentional.
         ImGui.SameLine(0f, 32f);
 
-        // Warn-colored text so Reset reads as distinct from Copy rather than as its twin.
         ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.95f, 0.55f, 0.35f, 1f));
         if (ImGui.SmallButton("Reset##effectreset"))
         {
@@ -450,19 +426,16 @@ internal sealed class EffectStylePanel
 
         ImGui.Spacing();
 
-        foreach (var slot in Slots.Where(s => s.Kind == _selectedKind))
+        foreach (var slot in EffectRegistry.SlotsFor(_selectedKind))
         {
             // Evaluate both in order - can't use || because we still want to draw the emit row
             // even when the slot row reports a change.
-            bool slotChanged = DrawSlotRow(slot);
-            bool emitChanged = slot.PrimitiveType == "Stroke" && DrawEmitRow(slot);
+            bool slotChanged = DrawSlotRow(_selectedKind, slot);
+            bool emitChanged = slot.PrimitiveType == "Stroke" && DrawEmitRow(_selectedKind, slot);
 
             if (slotChanged || emitChanged)
             {
                 changed = true;
-
-                // Reflect the new configuration in the tester above, so the user can hit
-                // Preview immediately. Reads the config right after the mutation above.
                 _testText = BuildExportPhrase(_selectedKind);
             }
         }
@@ -474,22 +447,18 @@ internal sealed class EffectStylePanel
     /// Removes every material override belonging to <paramref name="kind"/> - both the material
     /// axis (stroke/particle/region) and the emit axis for any stroke slot. Returns true if
     /// anything was actually removed, so the caller can decide whether to save.
-    ///
-    /// Iterates the Slots table rather than scanning the dict by prefix, so the key format stays
-    /// owned by MaterialOverrideKey and any keys added by future effects are only cleared if
-    /// they're in the table.
     /// </summary>
     private bool ResetToDefaults(DebuffKind kind)
     {
         bool removedAny = false;
 
-        foreach (var slot in Slots.Where(s => s.Kind == kind))
+        foreach (var slot in EffectRegistry.SlotsFor(kind))
         {
-            if (_config.MaterialOverrides.Remove(KeyFor(slot)))
+            if (_config.MaterialOverrides.Remove(KeyFor(kind, slot)))
                 removedAny = true;
 
             if (slot.PrimitiveType == "Stroke"
-                && _config.MaterialOverrides.Remove(MaterialOverrideKey.ForStrokeEmit(slot.Kind, slot.Role)))
+                && _config.MaterialOverrides.Remove(MaterialOverrideKey.ForStrokeEmit(kind, slot.Role)))
                 removedAny = true;
         }
 
@@ -504,10 +473,7 @@ internal sealed class EffectStylePanel
     ///
     /// NOTE: material substitutions ("made of snow") are shown in the match list, but the
     /// Preview button only forces the KIND with its color. The material swap that a substitution
-    /// requests is applied per-frame via the effect's own config, not through DebugTester, so the
-    /// preview reflects whatever material the config currently has set for that kind - not the
-    /// material named in the pasted text. Use the effect editor below to change the material for
-    /// a live preview of a specific "made of X" phrase.
+    /// requests is applied per-frame via the effect's own config, not through DebugTester.
     /// </summary>
     private void DrawTester()
     {
@@ -570,18 +536,16 @@ internal sealed class EffectStylePanel
     /// <summary>
     /// The description phrase a user would paste into a Moodle/Loci status to reproduce this
     /// effect's style. Trigger word comes from the user's own rules; material word comes from
-    /// the "made of X" vocabulary. Material axis wins over emit axis when both are customized,
-    /// since a single description can only carry one material phrase.
+    /// the "made of X" vocabulary. Material axis wins over emit axis when both are customized.
     /// </summary>
     private string BuildExportPhrase(DebuffKind kind)
     {
         string trigger = CanonicalTrigger(kind);
 
-        var heroes = EffectHeroSlots.For(kind);
+        var heroes = EffectRegistry.HeroSlotsFor(kind);
         if (heroes.Length == 0) return trigger;
         var hero = heroes[0];
 
-        // Material axis: stroke or particle hero with a direct override.
         string matKey = MaterialOverrideKey.For(kind, hero.PrimitiveType, hero.Role);
         if (_config.MaterialOverrides.TryGetValue(matKey, out var matName))
         {
@@ -589,7 +553,6 @@ internal sealed class EffectStylePanel
             if (word != null) return $"{trigger} made of {word}";
         }
 
-        // Emit axis: stroke hero with a particle emitter override ("chains made of snow").
         if (hero.PrimitiveType == "Stroke")
         {
             string emitKey = MaterialOverrideKey.ForStrokeEmit(kind, hero.Role);
@@ -610,7 +573,7 @@ internal sealed class EffectStylePanel
         return c ?? kind.ToString().ToLowerInvariant();
     }
 
-    private bool DrawSlotRow(Slot slot)
+    private bool DrawSlotRow(DebuffKind kind, in SwappableSlot slot)
     {
         string[] names = slot.PrimitiveType switch
         {
@@ -622,8 +585,8 @@ internal sealed class EffectStylePanel
         if (names.Length == 0) return false;
 
         string[] labels = names.Select(FriendlyMaterialName).ToArray();
-        string key = KeyFor(slot);
-        string defaultName = DefaultMaterialNameFor(slot);
+        string key = KeyFor(kind, slot);
+        string defaultName = slot.DefaultMaterial;
 
         string current = _config.MaterialOverrides.TryGetValue(key, out var o) ? o : defaultName;
         int idx = Array.IndexOf(names, current);
@@ -644,7 +607,7 @@ internal sealed class EffectStylePanel
     /// Emit dropdown for stroke slots. Options: "(from material)", "(none)", and every particle
     /// material that declares at least one stroke emission.
     /// </summary>
-    private bool DrawEmitRow(Slot slot)
+    private bool DrawEmitRow(DebuffKind kind, in SwappableSlot slot)
     {
         var particleNames = new List<string>();
         var particleLabels = new List<string>();
@@ -665,7 +628,7 @@ internal sealed class EffectStylePanel
             .Concat(particleNames)
             .ToArray();
 
-        string key = MaterialOverrideKey.ForStrokeEmit(slot.Kind, slot.Role);
+        string key = MaterialOverrideKey.ForStrokeEmit(kind, slot.Role);
 
         string current = _config.MaterialOverrides.TryGetValue(key, out var o) ? o : "";
         int idx = Array.IndexOf(optionIds, current);
@@ -673,7 +636,7 @@ internal sealed class EffectStylePanel
 
         ImGui.Indent();
         ImGui.SetNextItemWidth(200f);
-        bool changed = ImGui.Combo($"Emits##{slot.Kind}{slot.Role}", ref idx, options, options.Length);
+        bool changed = ImGui.Combo($"Emits##{kind}{slot.Role}", ref idx, options, options.Length);
         ImGui.Unindent();
 
         if (changed)
@@ -689,24 +652,10 @@ internal sealed class EffectStylePanel
     /// The override-dictionary key for a slot. Region slots use the edge-mask-based key the
     /// renderer actually reads; strokes and particles use the (kind, type, role) key.
     /// </summary>
-    private static string KeyFor(Slot slot) =>
+    private static string KeyFor(DebuffKind kind, in SwappableSlot slot) =>
         slot.RegionKind is { } rk
-            ? MaterialOverrideKey.ForRegion(slot.Kind, rk)
-            : MaterialOverrideKey.For(slot.Kind, slot.PrimitiveType, slot.Role);
-
-    private static string DefaultMaterialNameFor(Slot slot)
-    {
-        string roleKey = slot.RegionKind ?? slot.Role.ToString();
-
-        return BuiltInDefaults.Get(slot.Kind, slot.PrimitiveType, roleKey)
-            ?? slot.PrimitiveType switch
-            {
-                "Stroke"   => BuiltInDefaults.FallbackStroke(),
-                "Particle" => BuiltInDefaults.FallbackParticle(slot.Role),
-                "Region"   => slot.RegionKind == "FlatFill" ? "region.flat-fill" : "region.edge-glow",
-                _ => "",
-            };
-    }
+            ? MaterialOverrideKey.ForRegion(kind, rk)
+            : MaterialOverrideKey.For(kind, slot.PrimitiveType, slot.Role);
 
     private static string FriendlyMaterialName(string name)
     {

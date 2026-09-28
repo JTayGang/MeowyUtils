@@ -15,7 +15,7 @@ namespace RealDebuffs.Effects;
 /// nothing about Blind was recolorable either. If a future recolored Blind is wanted, that's a
 /// different effect with a non-black authored tint.
 /// </summary>
-public sealed class BlindEffect : ISceneEffect, IHasHeroSlots
+public sealed class BlindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
 {
     public DebuffKind Kind => DebuffKind.Blind;
     public string DisplayName => "Blind";
@@ -30,6 +30,11 @@ public sealed class BlindEffect : ISceneEffect, IHasHeroSlots
     public EffectHeroSlot[] HeroSlots { get; } = new EffectHeroSlot[]
     {
         new("Region", PrimitiveRole.MainStroke),
+    };
+
+    public IReadOnlyList<SwappableSlot> Slots { get; } = new SwappableSlot[]
+    {
+        new("Region", PrimitiveRole.MainStroke, "Screen wash", "region.flat-fill", "FlatFill"),
     };
 
     private const uint Black = 0xFF000000u;

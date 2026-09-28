@@ -22,7 +22,7 @@ namespace RealDebuffs.Effects;
 ///  - Role.Snow      (particle.snow):      the fine white specks.
 ///  - Role.Fog       (particle.fog):       the creeping cold mist.
 /// </summary>
-public sealed class FrostEffect : ISceneEffect, IHasHeroSlots
+public sealed class FrostEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
 {
     public DebuffKind Kind => DebuffKind.Frost;
     public string DisplayName => "Frostbite / Deep Freeze";
@@ -38,6 +38,14 @@ public sealed class FrostEffect : ISceneEffect, IHasHeroSlots
     public EffectHeroSlot[] HeroSlots { get; } = new EffectHeroSlot[]
     {
         new("Particle", PrimitiveRole.Snowflake),
+    };
+
+    public IReadOnlyList<SwappableSlot> Slots { get; } = new SwappableSlot[]
+    {
+        new("Particle", PrimitiveRole.Snowflake,  "Snowflakes",  "particle.snowflake"),
+        new("Particle", PrimitiveRole.Snow,       "Snow specks", "particle.snow"),
+        new("Particle", PrimitiveRole.Fog,        "Fog",         "particle.fog"),
+        new("Region",   PrimitiveRole.MainStroke, "Intro flash", "region.flat-fill", "FlatFill"),
     };
 
     // ---- palette ----

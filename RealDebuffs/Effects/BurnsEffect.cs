@@ -32,7 +32,7 @@ namespace RealDebuffs.Effects;
 /// whichever particle material is assigned to that role (currently particle.ember). The vignette
 /// and ground band are ambient staging, deliberately quieter.
 /// </summary>
-public sealed class BurnsEffect : ISceneEffect, IHasHeroSlots
+public sealed class BurnsEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
 {
     public DebuffKind Kind => DebuffKind.Burns;
     public string DisplayName => "Burns";
@@ -47,6 +47,12 @@ public sealed class BurnsEffect : ISceneEffect, IHasHeroSlots
     public EffectHeroSlot[] HeroSlots { get; } = new EffectHeroSlot[]
     {
         new("Particle", PrimitiveRole.Ember),
+    };
+
+    public IReadOnlyList<SwappableSlot> Slots { get; } = new SwappableSlot[]
+    {
+        new("Particle", PrimitiveRole.Ember,      "Fire particles", "particle.ember"),
+        new("Region",   PrimitiveRole.MainStroke, "Ground band",    "region.edge-glow", "EdgeGlow"),
     };
 
     // ---- palette (only what the effect itself owns; fire colors live in particle.ember) ----

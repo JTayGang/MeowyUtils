@@ -24,7 +24,7 @@ namespace RealDebuffs.Effects;
 ///
 /// HERO SLOT: the chains, emitted as Stroke/MainStroke.
 /// </summary>
-public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots
+public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
 {
     public DebuffKind Kind => DebuffKind.Heavy;
     public string DisplayName => "Heavy";
@@ -39,6 +39,11 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots
     public EffectHeroSlot[] HeroSlots { get; } = new EffectHeroSlot[]
     {
         new("Stroke", PrimitiveRole.MainStroke),
+    };
+
+    public IReadOnlyList<SwappableSlot> Slots { get; } = new SwappableSlot[]
+    {
+        new("Stroke", PrimitiveRole.MainStroke, "Chains", "stroke.chain"),
     };
 
     // ---- timing ----

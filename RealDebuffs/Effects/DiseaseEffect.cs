@@ -29,7 +29,7 @@ namespace RealDebuffs.Effects;
 /// stroke.parasite. All visual detail lives in that material; this class owns only shape, timing,
 /// and the latch state machine.
 /// </summary>
-public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots
+public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
 {
     public DebuffKind Kind => DebuffKind.Disease;
     public string DisplayName => "Disease";
@@ -44,6 +44,11 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots
     public EffectHeroSlot[] HeroSlots { get; } = new EffectHeroSlot[]
     {
         new("Stroke", PrimitiveRole.MainStroke),
+    };
+
+    public IReadOnlyList<SwappableSlot> Slots { get; } = new SwappableSlot[]
+    {
+        new("Stroke", PrimitiveRole.MainStroke, "Tendrils", "stroke.parasite"),
     };
 
     // ---- timing ----

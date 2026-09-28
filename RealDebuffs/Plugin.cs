@@ -47,13 +47,8 @@ public sealed class Plugin : IDalamudPlugin
         // per-effect state like cast-in timers).
         IReadOnlyList<ISceneEffect> effects = EffectDiscovery.Discover();
 
-        // Effects that have hero slots register them here. Consumers (CustomStatusSnapshot,
-        // EffectStylePanel) look slots up by kind.
         foreach (var effect in effects)
-        {
-            if (effect is IHasHeroSlots withHeroes)
-                EffectHeroSlots.Register(effect.Kind, withHeroes.HeroSlots);
-        }
+            EffectRegistry.Register(effect);
 
         var catalog = new StatusCatalog(dataManager, effects, log);
         _chatBlocker = new ChatBlocker(hooks, log);

@@ -9,8 +9,8 @@ namespace RealDebuffs.Effects.Framework;
 /// primitive's ColorOverride is pushed around its material call.
 ///
 /// Material resolution order for each primitive:
-///  1. User override (Settings → Effect styles, or a tooltip "made of X" phrase).
-///  2. The effect's authored default (BuiltInDefaults).
+///  1. User override (Settings → Effect generator, or a tooltip "made of X" phrase).
+///  2. The effect's declared default (EffectRegistry).
 ///  3. A universal fallback (a plain stroke, a spark, a flat fill).
 /// Step 3 is a safety net so an unregistered material name never crashes the plugin.
 /// </summary>
@@ -46,7 +46,7 @@ public static class EffectSceneRenderer
             try
             {
                 var mat = MaterialRegistry.TryGetRegion(ResolveRegion(in r, materialOverrides))
-                          ?? MaterialRegistry.TryGetRegion(BuiltInDefaults.FallbackRegion(in r))
+                          ?? MaterialRegistry.TryGetRegion(EffectRegistry.FallbackRegion(in r))
                           ?? MaterialRegistry.TryGetRegion("region.flat-fill");
                 mat?.Draw(dl, in r, in ctx);
             }
@@ -60,7 +60,7 @@ public static class EffectSceneRenderer
             try
             {
                 var mat = MaterialRegistry.TryGetStroke(MaterialOverrideKey.ResolveStroke(in s, materialOverrides))
-                          ?? MaterialRegistry.TryGetStroke(BuiltInDefaults.FallbackStroke())
+                          ?? MaterialRegistry.TryGetStroke(EffectRegistry.FallbackStroke())
                           ?? MaterialRegistry.TryGetStroke("stroke.simple");
                 mat?.Draw(dl, in s, in ctx);
             }
@@ -74,7 +74,7 @@ public static class EffectSceneRenderer
             try
             {
                 var mat = MaterialRegistry.TryGetParticle(ResolveParticle(in p, materialOverrides))
-                          ?? MaterialRegistry.TryGetParticle(BuiltInDefaults.FallbackParticle(p.Role))
+                          ?? MaterialRegistry.TryGetParticle(EffectRegistry.FallbackParticle(p.Role))
                           ?? MaterialRegistry.TryGetParticle("particle.spark");
                 mat?.Draw(dl, in p, in ctx);
             }
@@ -92,8 +92,8 @@ public static class EffectSceneRenderer
             overrides.TryGetValue(MaterialOverrideKey.For(p.Owner, "Particle", p.Role), out var name))
             return name;
 
-        return BuiltInDefaults.Get(p.Owner, "Particle", p.Role.ToString())
-            ?? BuiltInDefaults.FallbackParticle(p.Role);
+        return EffectRegistry.DefaultFor(p.Owner, "Particle", p.Role.ToString())
+            ?? EffectRegistry.FallbackParticle(p.Role);
     }
 
     private static string ResolveRegion(in RegionPrimitive r, IReadOnlyDictionary<string, string>? overrides)
@@ -106,8 +106,8 @@ public static class EffectSceneRenderer
             overrides.TryGetValue(MaterialOverrideKey.ForRegion(r.Owner, regionKind), out var name))
             return name;
 
-        return BuiltInDefaults.Get(r.Owner, "Region", regionKind)
-            ?? BuiltInDefaults.FallbackRegion(in r);
+        return EffectRegistry.DefaultFor(r.Owner, "Region", regionKind)
+            ?? EffectRegistry.FallbackRegion(in r);
     }
 }
 
@@ -136,13 +136,15 @@ public static class MaterialOverrideKey
     /// <summary>
     /// Which stroke material should render this stroke, considering overrides first. Shared by
     /// the renderer and StrokeAutoEmitter so the two never disagree about which material is
-    /// actually on screen.
+    /// actually on screen. Public specifically so StrokeAutoEmitter (a different file) can call it.
     /// </summary>
     public static string ResolveStroke(in StrokePrimitive s, IReadOnlyDictionary<string, string>? overrides)
     {
-        if (overrides != null && overrides.TryGetValue(For(s.Owner, "Stroke", s.Role), out var name))
+        if (overrides != null &&
+            overrides.TryGetValue(For(s.Owner, "Stroke", s.Role), out var name))
             return name;
-        return BuiltInDefaults.Get(s.Owner, "Stroke", s.Role.ToString())
-            ?? BuiltInDefaults.FallbackStroke();
+
+        return EffectRegistry.DefaultFor(s.Owner, "Stroke", s.Role.ToString())
+            ?? EffectRegistry.FallbackStroke();
     }
 }

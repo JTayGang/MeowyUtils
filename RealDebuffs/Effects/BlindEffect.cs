@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Numerics;
 using RealDebuffs.Effects.Framework;
 
@@ -14,9 +15,22 @@ namespace RealDebuffs.Effects;
 /// nothing about Blind was recolorable either. If a future recolored Blind is wanted, that's a
 /// different effect with a non-black authored tint.
 /// </summary>
-public sealed class BlindEffect : ISceneEffect
+public sealed class BlindEffect : ISceneEffect, IHasHeroSlots
 {
     public DebuffKind Kind => DebuffKind.Blind;
+    public string DisplayName => "Blind";
+    public string Description => "Screen darkens with a heavy vignette.";
+    public int DrawOrder => 0;
+
+    public IReadOnlyDictionary<string, float> TriggerStatuses { get; } = new Dictionary<string, float>
+    {
+        ["Blind"] = 1.0f,
+    };
+
+    public EffectHeroSlot[] HeroSlots { get; } = new EffectHeroSlot[]
+    {
+        new("Region", PrimitiveRole.MainStroke),
+    };
 
     private const uint Black = 0xFF000000u;
 

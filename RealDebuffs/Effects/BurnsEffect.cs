@@ -32,9 +32,22 @@ namespace RealDebuffs.Effects;
 /// whichever particle material is assigned to that role (currently particle.ember). The vignette
 /// and ground band are ambient staging, deliberately quieter.
 /// </summary>
-public sealed class BurnsEffect : ISceneEffect
+public sealed class BurnsEffect : ISceneEffect, IHasHeroSlots
 {
     public DebuffKind Kind => DebuffKind.Burns;
+    public string DisplayName => "Burns";
+    public string Description => "A warm orange glow with embers rising from the bottom edge.";
+    public int DrawOrder => 1;
+
+    public IReadOnlyDictionary<string, float> TriggerStatuses { get; } = new Dictionary<string, float>
+    {
+        ["Burns"] = 1.0f,
+    };
+
+    public EffectHeroSlot[] HeroSlots { get; } = new EffectHeroSlot[]
+    {
+        new("Particle", PrimitiveRole.Ember),
+    };
 
     // ---- palette (only what the effect itself owns; fire colors live in particle.ember) ----
     private static readonly uint Soot  = DrawHelpers.ToU32(0.05f, 0.01f, 0.005f, 1f);

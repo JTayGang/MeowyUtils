@@ -1,8 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using RealDebuffs.Effects.Framework;
-using static RealDebuffs.Effects.Framework.DrawHelpers;
 
 namespace RealDebuffs.Effects;
 
@@ -13,29 +13,38 @@ namespace RealDebuffs.Effects;
 /// implementation - and hang there, pulling taut and slowly rotating at its grip while the rest
 /// of the tendril coils.
 ///
-/// SHAPE PIPELINE — how a tentacle's curve gets built each frame:
+/// SHAPE PIPELINE - how a tentacle's curve gets built each frame:
 ///   1. Integrate a low-resolution heading at ControlPoints samples: base angle + curl + sway.
 ///      This produces a coarse skeleton.
 ///   2. Resample that skeleton through a Catmull-Rom spline at FinalSamples samples. The spline
-///      smooths the piecewise-constant heading into a real curve, which is what eliminates the
-///      "blocky when bent" look the polyline version had.
-///   3. Apply the latch pin correction to the SMOOTH samples, so a latched tendril's bend stays
-///      smooth through the pinning.
-///   4. Rebuild the arc-length table (BuildArc) so the material samples evenly along the smooth
-///      path.
+///      smooths the piecewise-constant heading into a real curve.
+///   3. Apply the latch pin correction to the SMOOTH samples.
+///   4. Rebuild the arc-length table (BuildArc) so the material samples evenly.
 ///
-/// SEARCHING / GRABBING:  each tendril slow-pulses its length (a "reach") on its own cycle. When
-/// the free tip literally touches a screen edge (within a few pixels), a stochastic check may
-/// latch it. Latching pins the tip to that point and rotates the tip region slowly around it.
-/// All state transitions (bend-in, release) ramp over LatchBlendSeconds so nothing snaps.
+/// SEARCHING / GRABBING: each tendril slow-pulses its length (a "reach") on its own cycle. When
+/// the free tip literally touches a screen edge, a stochastic check may latch it. Latching pins
+/// the tip and rotates the tip region slowly around it.
 ///
 /// VISUALS: the tendrils use whatever stroke material is configured for Disease. Default is
-/// stroke.parasite (segmented flesh, suckers, hooked tip, ooze drips). All visual detail lives in
-/// that material; this class owns only shape, timing, and the latch state machine.
+/// stroke.parasite. All visual detail lives in that material; this class owns only shape, timing,
+/// and the latch state machine.
 /// </summary>
-public sealed class DiseaseEffect : ISceneEffect
+public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots
 {
     public DebuffKind Kind => DebuffKind.Disease;
+    public string DisplayName => "Disease";
+    public string Description => "Parasite tendrils creep in from the edges and reach for something to grip.";
+    public int DrawOrder => 4;
+
+    public IReadOnlyDictionary<string, float> TriggerStatuses { get; } = new Dictionary<string, float>
+    {
+        ["Disease"] = 1.0f,
+    };
+
+    public EffectHeroSlot[] HeroSlots { get; } = new EffectHeroSlot[]
+    {
+        new("Stroke", PrimitiveRole.MainStroke),
+    };
 
     // ---- timing ----
     private const float NewCastGapSeconds = 1.0f;
@@ -48,9 +57,6 @@ public sealed class DiseaseEffect : ISceneEffect
     private const int TotalCount  = BottomCount + SideCount * 2 + TopCount;
 
     // ---- curve sampling ----
-    // Control points produce the SHAPE (curl, sway, reach); final samples are the SMOOTH output
-    // that the material consumes. Keeping control points low means the Catmull-Rom pass has real
-    // work to do; a higher control count would just be a polyline in disguise.
     private const int ControlPoints = 10;
     private const int FinalSamples  = 40;
 
@@ -264,7 +270,7 @@ public sealed class DiseaseEffect : ISceneEffect
     }
 
     // =====================================================================================
-    // Path building — coarse skeleton + Catmull-Rom resample
+    // Path building - coarse skeleton + Catmull-Rom resample
     // =====================================================================================
 
     private void BuildTendrilPath(int idx, Vector2 screenSize, float shortSide, float time)
@@ -342,7 +348,7 @@ public sealed class DiseaseEffect : ISceneEffect
     }
 
     // =====================================================================================
-    // Latch pinning — u² correction + tip rotation, on the smooth path
+    // Latch pinning - u² correction + tip rotation, on the smooth path
     // =====================================================================================
 
     private void ApplyLatchPin(int idx)
@@ -466,4 +472,12 @@ public sealed class DiseaseEffect : ISceneEffect
         2 => new Vector2(0f, -1f),
         _ => new Vector2(1f, 0f),
     };
+
+    private static float Saturate(float x) => Math.Clamp(x, 0f, 1f);
+
+    private static float EaseOutCubic(float t)
+    {
+        float u = 1f - Saturate(t);
+        return 1f - u * u * u;
+    }
 }

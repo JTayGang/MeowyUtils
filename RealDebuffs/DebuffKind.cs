@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Dalamud.Game;
 using Dalamud.Plugin.Services;
+using RealDebuffs.Effects;
 
 namespace RealDebuffs;
 
@@ -11,9 +12,12 @@ namespace RealDebuffs;
 /// one kind when they're mechanically the same (Stun and Down for the Count both mean "can't
 /// act"), so this is a curated list of feelings, not a 1:1 mirror of every status name.
 ///
-/// To add a kind: add it here, add its name(s) to StatusCatalog.NameMap, and write an
-/// ISceneEffect. Add new kinds at the END - saved custom-status rules store the enum's number,
-/// so reordering would re-point existing rules.
+/// To add a kind: add it here at the END, then write an ISceneEffect that declares it. The
+/// effect's TriggerStatuses map the kind to in-game status names, and EffectDiscovery picks the
+/// effect up automatically - nothing else needs to change.
+///
+/// New kinds must go at the END. Saved custom-status rules, the DisabledKinds set, and material
+/// overrides all serialize the enum's numeric value.
 /// </summary>
 public enum DebuffKind
 {
@@ -50,77 +54,46 @@ public enum DebuffKind
 
 /// <summary>
 /// Resolves vanilla status IDs to DebuffKinds by loading the English Status sheet at startup and
-/// matching on the name. Matching by name (rather than hardcoded row IDs) survives a status's row
-/// ID shifting between patches. Always uses the English sheet regardless of the client's UI
-/// language, so the name matching here is stable.
+/// matching on the name. The name map is built from each effect's TriggerStatuses, so adding a
+/// new effect requires no changes here - the effect declares which statuses light it up, and
+/// StatusCatalog merges every effect's declarations into one table.
+///
+/// Always resolved against the English sheet regardless of the client's UI language: StatusIds
+/// themselves are language-independent, this just makes the name matching done here reliable
+/// regardless of what language the game client displays.
 /// </summary>
 public sealed class StatusCatalog
 {
-    /// <summary>
-    /// English status name -> DebuffKind. Names are matched exactly (ignoring case). See the README
-    /// for the full checklist when adding a new entry.
-    /// </summary>
-    public static readonly Dictionary<string, DebuffKind> NameMap = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["Blind"] = DebuffKind.Blind,
-        ["Paralysis"] = DebuffKind.Paralysis,
-        ["Silence"] = DebuffKind.Silence,
-        ["Stun"] = DebuffKind.Stun,
-        ["Down for the Count"] = DebuffKind.Stun,
-        ["Sleep"] = DebuffKind.Sleep,
-        ["Poison"] = DebuffKind.Poison,
-        ["Bind"] = DebuffKind.Bind,
-        ["Heavy"] = DebuffKind.Heavy,
-        ["Petrification"] = DebuffKind.Petrification,
-        ["Amnesia"] = DebuffKind.Amnesia,
-        ["Bleeding"] = DebuffKind.Bleeding,
-        ["Weakness"] = DebuffKind.Weakness,
-        ["Brush with Death"] = DebuffKind.Weakness,
-        ["Brink of Death"] = DebuffKind.Weakness,
-        ["Burns"] = DebuffKind.Burns,
-        ["Infatuated"] = DebuffKind.Charm,
-        ["Seduced"] = DebuffKind.Charm,
-        ["Charm"] = DebuffKind.Charm,    // not in today's English sheet, kept so they work if a
-        ["Charmed"] = DebuffKind.Charm,  // patch ever adds them
-        ["Seduce"] = DebuffKind.Charm,
-        ["Frostbite"] = DebuffKind.Frost,
-        ["Deep Freeze"] = DebuffKind.Frost,
-        ["Disease"] = DebuffKind.Disease,
-        ["Doom"] = DebuffKind.Doom,
-        ["Dropsy"] = DebuffKind.Dropsy,
-        ["Electrocution"] = DebuffKind.Electrocution,
-        ["Hysteria"] = DebuffKind.Hysteria,
-        ["Infirmity"] = DebuffKind.Infirmity,
-        ["Misery"] = DebuffKind.Misery,
-        ["Pacification"] = DebuffKind.Pacification,
-        ["Slow"] = DebuffKind.Slow,
-        ["Sludge"] = DebuffKind.Sludge,
-        ["Vulnerability Up"] = DebuffKind.Vulnerability,
-        ["Windburn"] = DebuffKind.Windburn,
-    };
-
-    /// <summary>
-    /// For kinds that cover several severities: how strong each name's effect is vs. the kind's
-    /// full look. A name not listed here is full strength.
-    /// </summary>
-    public static readonly Dictionary<string, float> Strengths = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["Weakness"] = 0.55f,
-        ["Brush with Death"] = 0.78f,
-        ["Frostbite"] = 0.55f,
-        ["Infatuated"] = 0.60f,
-        ["Charm"] = 0.60f,
-        ["Charmed"] = 0.60f,
-    };
-
     private readonly Dictionary<uint, DebuffKind> _idToKind = new();
     private readonly Dictionary<uint, float> _idToStrength = new();
     private readonly Dictionary<uint, string> _idToName = new();
     private readonly IPluginLog _log;
 
-    public StatusCatalog(IDataManager dataManager, IPluginLog log)
+    public StatusCatalog(IDataManager dataManager, IReadOnlyList<ISceneEffect> effects, IPluginLog log)
     {
         _log = log;
+
+        // Merge every effect's TriggerStatuses into one name -> kind table. Duplicate names
+        // (two effects claiming the same in-game status) are a configuration mistake worth
+        // surfacing: first effect wins, and a warning is logged.
+        var nameMap = new Dictionary<string, DebuffKind>(StringComparer.OrdinalIgnoreCase);
+        var strengths = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var effect in effects)
+        {
+            foreach (var (name, strength) in effect.TriggerStatuses)
+            {
+                if (nameMap.TryGetValue(name, out var existing))
+                {
+                    _log.Warning($"RealDebuffs: status name \"{name}\" claimed by both " +
+                                 $"{existing} and {effect.Kind}; using {existing}.");
+                    continue;
+                }
+                nameMap[name] = effect.Kind;
+                if (strength < 0.999f)
+                    strengths[name] = strength;
+            }
+        }
 
         var sheet = dataManager.GetExcelSheet<Lumina.Excel.Sheets.Status>(ClientLanguage.English);
         if (sheet == null)
@@ -134,22 +107,22 @@ public sealed class StatusCatalog
             var name = row.Name.ToString();
             if (string.IsNullOrEmpty(name)) continue;
             _idToName[row.RowId] = name;
-            if (NameMap.TryGetValue(name, out var kind))
+            if (nameMap.TryGetValue(name, out var kind))
             {
                 _idToKind[row.RowId] = kind;
-                if (Strengths.TryGetValue(name, out var strength))
+                if (strengths.TryGetValue(name, out var strength))
                     _idToStrength[row.RowId] = strength;
             }
         }
 
         int found = _idToKind.Values.Distinct().Count();
-        int expected = NameMap.Values.Distinct().Count();
+        int expected = nameMap.Values.Distinct().Count();
         _log.Debug($"RealDebuffs: resolved {_idToKind.Count} row(s) covering {found}/{expected} kinds.");
 
         if (found < expected)
-            _log.Warning("RealDebuffs: not every name in StatusCatalog.NameMap was found in the Status " +
-                         "sheet, so some effects may never trigger. A status's English name may have " +
-                         "changed in a recent patch - compare NameMap against the current sheet.");
+            _log.Warning("RealDebuffs: not every name in the effect roster's TriggerStatuses was found " +
+                         "in the Status sheet, so some effects may never trigger. A status's English " +
+                         "name may have changed in a recent patch.");
     }
 
     public bool TryGetKind(uint statusId, out DebuffKind kind) => _idToKind.TryGetValue(statusId, out kind);

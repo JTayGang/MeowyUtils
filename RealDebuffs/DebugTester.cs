@@ -2,11 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using RealDebuffs.Effects;
 
 namespace RealDebuffs;
 
 /// <summary>
-/// Preview an effect without needing a matching debuff to actually be active. Two callers: the
+/// Preview an effect without needing a matching debuff to actually be active. Callers: the
 /// dev-only test panel at the bottom of the settings window, and the tooltip-keyword tester's
 /// "preview on screen" button.
 ///
@@ -15,17 +16,12 @@ namespace RealDebuffs;
 /// could hide the checkbox you'd need to switch them off). Respects the master Enabled, per-effect
 /// toggles, cutscene/GPose hiding, and the intensity slider. Nothing is saved; reload clears it.
 ///
-/// To remove just the dev panel: delete the TEST-TOOLS line in ConfigWindow.Draw and DrawUi below,
-/// leaving Force/IsForced/GetForcedColor for the tooltip-tester preview button. To remove the file
-/// entirely, also delete the two remaining TEST-TOOLS lines (one in EffectManager.Draw, one in
-/// ConfigWindow.Draw); the color fallback line just above EffectManager's active check only needs
-/// trimming. The compiler will point at all of them either way.
+/// The panel iterates the effect roster passed by ConfigWindow, so only implemented effects get
+/// a checkbox. A DebuffKind without an ISceneEffect has nothing to preview and doesn't appear.
 /// </summary>
 internal static class DebugTester
 {
     public static float Seconds { get; set; } = 15f;
-
-    private static readonly DebuffKind[] Kinds = Enum.GetValues<DebuffKind>();
 
     // kind -> TickCount64 ms when its test ends. Missing or past = not being tested.
     private static readonly Dictionary<DebuffKind, long> EndsAt = new();
@@ -54,11 +50,12 @@ internal static class DebugTester
     }
 
     /// <summary>
-    /// Draws the panel. <paramref name="isShowing"/> says whether an effect is allowed to appear at
-    /// all right now; it's only used to add an "(off in settings)" hint so a test that shows
-    /// nothing explains itself.
+    /// Draws the panel. <paramref name="isShowing"/> says whether an effect is allowed to appear
+    /// at all right now; it's only used to add an "(off in settings)" hint so a test that shows
+    /// nothing explains itself. <paramref name="effects"/> is the roster to iterate; only
+    /// implemented effects get a checkbox.
     /// </summary>
-    public static void DrawUi(Func<DebuffKind, bool> isShowing)
+    public static void DrawUi(Func<DebuffKind, bool> isShowing, IReadOnlyList<ISceneEffect> effects)
     {
         ImGui.Separator();
         if (!ImGui.CollapsingHeader("Test effects (dev only)")) return;
@@ -73,10 +70,11 @@ internal static class DebugTester
                 "triggers the chat lockout. Effects switched off above still won't show.");
 
             long now = Environment.TickCount64;
-            foreach (var kind in Kinds)
+            foreach (var effect in effects)
             {
+                var kind = effect.Kind;
                 bool on = IsForced(kind);
-                if (ImGui.Checkbox(kind.ToString(), ref on))
+                if (ImGui.Checkbox(effect.DisplayName, ref on))
                     Force(kind, on);
 
                 if (EndsAt.TryGetValue(kind, out long end) && end > now)

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using RealDebuffs.Effects.Framework;
@@ -11,24 +12,33 @@ namespace RealDebuffs.Effects;
 ///
 /// INTRO (0.0 - ~0.9s): a pale blue-white flash the moment the debuff lands, plus a burst of
 /// particles from every edge - the "cold snap". Emission rates run at 4x and ease back to steady
-/// over the intro window, so it reads as a rush that settles into drizzle rather than a switch
-/// flip.
+/// over the intro window.
 ///
 /// STEADY STATE: snowflakes fall slowly from the top with wide lateral drift; snow specks fall
-/// faster and are denser; fog drifts in from all four edges and hangs. The whole field drifts
-/// one way in the wind, subtly, so nothing reads as static.
+/// faster and are denser; fog drifts in from all four edges and hangs.
 ///
-/// HERO ITEMS: three roles, each independently swappable later.
-///  - Role.Snowflake (particle.snowflake): the crystalline flakes, the effect's signature look.
-///  - Role.Snow      (particle.snow):      the fine white specks filling the air.
-///  - Role.Fog       (particle.fog):       the creeping cold mist at the edges.
-///
-/// All three are emitted every frame, so swapping any of them in config swaps one visual layer
-/// without touching the others.
+/// HERO ITEMS: three roles, each independently swappable.
+///  - Role.Snowflake (particle.snowflake): the crystalline flakes.
+///  - Role.Snow      (particle.snow):      the fine white specks.
+///  - Role.Fog       (particle.fog):       the creeping cold mist.
 /// </summary>
-public sealed class FrostEffect : ISceneEffect
+public sealed class FrostEffect : ISceneEffect, IHasHeroSlots
 {
     public DebuffKind Kind => DebuffKind.Frost;
+    public string DisplayName => "Frostbite / Deep Freeze";
+    public string Description => "Icy blue creeps in from the edges.";
+    public int DrawOrder => 3;
+
+    public IReadOnlyDictionary<string, float> TriggerStatuses { get; } = new Dictionary<string, float>
+    {
+        ["Frostbite"] = 0.55f,
+        ["Deep Freeze"] = 1.0f,
+    };
+
+    public EffectHeroSlot[] HeroSlots { get; } = new EffectHeroSlot[]
+    {
+        new("Particle", PrimitiveRole.Snowflake),
+    };
 
     // ---- palette ----
     private static readonly uint DeepCold = DrawHelpers.ToU32(0.06f, 0.16f, 0.32f, 1f); // vignette

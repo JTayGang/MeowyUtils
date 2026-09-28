@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using RealDebuffs.Effects;
 using RealDebuffs.Effects.Framework;
 
 namespace RealDebuffs;
@@ -15,23 +16,40 @@ internal sealed class CustomStatusPanel
     private const float NameWidth = 180f;
     private const float KindWidth = 130f;
 
-    private static readonly DebuffKind[] Kinds = Enum.GetValues<DebuffKind>();
-    private static readonly string[] KindNames = Array.ConvertAll(Kinds, k => k.ToString());
-
     private readonly Configuration _config;
     private readonly CustomStatusWatcher _watcher;
+    private readonly IReadOnlyList<ISceneEffect> _effects;
+
+    // Built from the effect roster: only kinds that have an effect behind them. Sorted
+    // alphabetically for scanning. Same list drives both the display in existing rules and
+    // the picker in the add row.
+    private readonly DebuffKind[] _kinds;
+    private readonly string[] _kindNames;
 
     private string _newName = "";
-    private int _newKind = Array.IndexOf(Kinds, DebuffKind.Bind);
+    private int _newKind = 0;
     private int _pick = -1;
 
     private CustomStatusSnapshot? _labelsFor;
     private string[] _labels = Array.Empty<string>();
 
-    public CustomStatusPanel(Configuration config, CustomStatusWatcher watcher)
+    public CustomStatusPanel(Configuration config, CustomStatusWatcher watcher, IReadOnlyList<ISceneEffect> effects)
     {
         _config = config;
         _watcher = watcher;
+        _effects = effects;
+
+        _kinds = effects
+            .OrderBy(e => e.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .Select(e => e.Kind)
+            .ToArray();
+        _kindNames = effects
+            .OrderBy(e => e.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .Select(e => e.DisplayName)
+            .ToArray();
+
+        _newKind = Array.IndexOf(_kinds, DebuffKind.Bind);
+        if (_newKind < 0) _newKind = 0;
     }
 
     public bool Draw()
@@ -72,9 +90,9 @@ internal sealed class CustomStatusPanel
                 if (ImGui.InputTextWithHint("##name", "Status name", ref name, 128)) { rule.Name = name; changed = true; }
 
                 ImGui.SameLine();
-                int kind = Math.Max(0, Array.IndexOf(Kinds, rule.Kind));
+                int kind = Math.Max(0, Array.IndexOf(_kinds, rule.Kind));
                 ImGui.SetNextItemWidth(KindWidth);
-                if (ImGui.Combo("##kind", ref kind, KindNames, KindNames.Length)) { rule.Kind = Kinds[kind]; changed = true; }
+                if (ImGui.Combo("##kind", ref kind, _kindNames, _kindNames.Length)) { rule.Kind = _kinds[kind]; changed = true; }
 
                 ImGui.SameLine();
                 if (ImGui.Button("X##rm")) removeAt = i;
@@ -111,11 +129,11 @@ internal sealed class CustomStatusPanel
 
             ImGui.SameLine();
             ImGui.SetNextItemWidth(KindWidth);
-            ImGui.Combo("##newkind", ref _newKind, KindNames, KindNames.Length);
+            ImGui.Combo("##newkind", ref _newKind, _kindNames, _kindNames.Length);
 
             string cleaned = StatusNames.Clean(_newName);
             string key = StatusNames.Key(cleaned);
-            var newKind = Kinds[Math.Clamp(_newKind, 0, Kinds.Length - 1)];
+            var newKind = _kinds[Math.Clamp(_newKind, 0, _kinds.Length - 1)];
             bool duplicate = rules.Any(r => r.Kind == newKind && r.GetKey() == key);
 
             ImGui.SameLine();
@@ -160,22 +178,31 @@ internal sealed class TooltipKeywordPanel
     private const float KeywordWidth = 240f;
     private const float KindWidth = 130f;
 
-    private static readonly DebuffKind[] Kinds = Enum.GetValues<DebuffKind>();
-    private static readonly string[] KindNames = Array.ConvertAll(Kinds, k => k.ToString());
-
     private readonly Configuration _config;
     private readonly CustomStatusWatcher _watcher;
 
+    private readonly DebuffKind[] _kinds;
+    private readonly string[] _kindNames;
+
     private string _newKeywords = "";
-    private int _newKind = Array.IndexOf(Kinds, DebuffKind.Bind);
+    private int _newKind = 0;
 
     private bool _clearAllRequested;
     private bool _resetDefaultsRequested;
 
-    public TooltipKeywordPanel(Configuration config, CustomStatusWatcher watcher)
+    public TooltipKeywordPanel(Configuration config, CustomStatusWatcher watcher, IReadOnlyList<ISceneEffect> effects)
     {
         _config = config;
         _watcher = watcher;
+
+        var sorted = effects
+            .OrderBy(e => e.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        _kinds = sorted.Select(e => e.Kind).ToArray();
+        _kindNames = sorted.Select(e => e.DisplayName).ToArray();
+
+        _newKind = Array.IndexOf(_kinds, DebuffKind.Bind);
+        if (_newKind < 0) _newKind = 0;
     }
 
     public bool Draw()
@@ -226,9 +253,9 @@ internal sealed class TooltipKeywordPanel
                     if (ImGui.InputTextWithHint("##keywords", "flame, burning, scorch...", ref keywords, 512)) { rule.Keywords = keywords; changed = true; }
 
                     ImGui.SameLine();
-                    int kind = Math.Max(0, Array.IndexOf(Kinds, rule.Kind));
+                    int kind = Math.Max(0, Array.IndexOf(_kinds, rule.Kind));
                     ImGui.SetNextItemWidth(KindWidth);
-                    if (ImGui.Combo("##kind", ref kind, KindNames, KindNames.Length)) { rule.Kind = Kinds[kind]; changed = true; }
+                    if (ImGui.Combo("##kind", ref kind, _kindNames, _kindNames.Length)) { rule.Kind = _kinds[kind]; changed = true; }
 
                     ImGui.SameLine();
                     if (ImGui.Button("X##rm")) removeAt = i;
@@ -248,10 +275,10 @@ internal sealed class TooltipKeywordPanel
 
                 ImGui.SameLine();
                 ImGui.SetNextItemWidth(KindWidth);
-                ImGui.Combo("##newkind", ref _newKind, KindNames, KindNames.Length);
+                ImGui.Combo("##newkind", ref _newKind, _kindNames, _kindNames.Length);
 
                 var parsedNew = TooltipKeywordRule.ParseKeywords(_newKeywords);
-                var newKind = Kinds[Math.Clamp(_newKind, 0, Kinds.Length - 1)];
+                var newKind = _kinds[Math.Clamp(_newKind, 0, _kinds.Length - 1)];
 
                 bool duplicate = parsedNew.Length > 0 && rules.Any(r =>
                     r.Kind == newKind &&

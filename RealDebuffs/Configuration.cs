@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Configuration;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
+using RealDebuffs.Effects;
 
 namespace RealDebuffs;
 
@@ -82,14 +84,16 @@ public sealed class ConfigWindow : Window
     private readonly CustomStatusPanel _customStatuses;
     private readonly TooltipKeywordPanel _tooltipKeywords;
     private readonly EffectStylePanel _effectStyles;
+    private readonly IReadOnlyList<ISceneEffect> _effects;
 
-    public ConfigWindow(Configuration config, Action save, CustomStatusWatcher customStatuses)
+    public ConfigWindow(Configuration config, Action save, CustomStatusWatcher customStatuses, IReadOnlyList<ISceneEffect> effects)
         : base("Real Debuffs Settings###RealDebuffsConfig")
     {
         _config = config;
         _save = save;
-        _customStatuses = new CustomStatusPanel(config, customStatuses);
-        _tooltipKeywords = new TooltipKeywordPanel(config, customStatuses);
+        _effects = effects;
+        _customStatuses = new CustomStatusPanel(config, customStatuses, effects);
+        _tooltipKeywords = new TooltipKeywordPanel(config, customStatuses, effects);
         _effectStyles = new EffectStylePanel(config);
         Size = new Vector2(470, 660);
         SizeCondition = ImGuiCond.FirstUseEver;
@@ -143,35 +147,11 @@ public sealed class ConfigWindow : Window
         ImGui.TextDisabled("Per-debuff effects");
         ImGui.Spacing();
 
-        // Alphabetical by primary effect name. Purely a config-menu convenience; draw layering
-        // order is entirely separate (see EffectManager._order).
-        changed |= EffectToggle(DebuffKind.Amnesia, "Amnesia", "A hazy gray fog rolls in, with drifting question marks.");
-        changed |= EffectToggle(DebuffKind.Bind, "Bind", "Roots creep up from the bottom of the screen.");
-        changed |= EffectToggle(DebuffKind.Bleeding, "Bleeding", "Dark red drips bead and fall from the top edge.");
-        changed |= EffectToggle(DebuffKind.Blind, "Blind", "Screen darkens with a heavy vignette.");
-        changed |= EffectToggle(DebuffKind.Burns, "Burns", "A warm orange glow with embers rising from the bottom edge.");
-        changed |= EffectToggle(DebuffKind.Charm, "Charmed / Seduced", "A soft pink haze with drifting hearts.");
-        changed |= EffectToggle(DebuffKind.Disease, "Disease", "A dull, sickly olive tint with slow spores drifting past.");
-        changed |= EffectToggle(DebuffKind.Doom, "Doom", "Dark red cracks creep in from the edges, pulsing like a countdown.");
-        changed |= EffectToggle(DebuffKind.Dropsy, "Dropsy", "Heavy blue droplets drip from the top edge.");
-        changed |= EffectToggle(DebuffKind.Electrocution, "Electrocution", "A buzzing yellow-white static flicker along the edges.");
-        changed |= EffectToggle(DebuffKind.Frost, "Frostbite / Deep Freeze", "Icy blue creeps in from the edges.");
-        changed |= EffectToggle(DebuffKind.Heavy, "Heavy", "A heavy dark pull with a dragging chain at the bottom of the screen.");
-        changed |= EffectToggle(DebuffKind.Hysteria, "Hysteria", "Jittery purple-red scribbles at the edges.");
-        changed |= EffectToggle(DebuffKind.Infirmity, "Infirmity", "A pale, washed-out tint with dust drifting slowly down.");
-        changed |= EffectToggle(DebuffKind.Misery, "Misery", "A heavy dark-blue tint with slow, falling tears.");
-        changed |= EffectToggle(DebuffKind.Pacification, "Pacification", "A soft restraining glow pulses along the bottom edge.");
-        changed |= EffectToggle(DebuffKind.Paralysis, "Paralysis", "Crackling electric arcs around the screen edges.");
-        changed |= EffectToggle(DebuffKind.Petrification, "Petrification", "Color drains out and stone cracks spread in from the edges.");
-        changed |= EffectToggle(DebuffKind.Poison, "Poison", "Sickly green tint with drips falling from the top.");
-        changed |= EffectToggle(DebuffKind.Silence, "Silence", "Floating purple glyphs drift from the edges. See the Advanced section below for an actual chat lockout.");
-        changed |= EffectToggle(DebuffKind.Sleep, "Sleep", "Soft blue tint with drowsy Zs drifting up from the corners.");
-        changed |= EffectToggle(DebuffKind.Slow, "Slow", "A faint amber syrup drips slowly from the bottom.");
-        changed |= EffectToggle(DebuffKind.Sludge, "Sludge", "Thick brown mud drips from the top edge.");
-        changed |= EffectToggle(DebuffKind.Stun, "Stun / Down for the Count", "Twinkling stars orbit near the top of the screen.");
-        changed |= EffectToggle(DebuffKind.Vulnerability, "Vulnerability Up", "A faint red edge outline.");
-        changed |= EffectToggle(DebuffKind.Weakness, "Weakness / Brush with Death / Brink of Death", "A slow, heavy red pulse - faint for Weakness, strongest for Brink of Death.");
-        changed |= EffectToggle(DebuffKind.Windburn, "Windburn", "Pale streaks blow across the screen edges.");
+        // Sorted alphabetically by DisplayName for scanning; EffectManager._order is a
+        // separate concern (layering). Sorts the same way the old hardcoded list did, so
+        // existing muscle memory still works.
+        foreach (var effect in _effects.OrderBy(e => e.DisplayName, StringComparer.OrdinalIgnoreCase))
+            changed |= EffectToggle(effect.Kind, effect.DisplayName, effect.Description);
 
         ImGui.Separator();
         ImGui.TextDisabled("Advanced");
@@ -185,7 +165,7 @@ public sealed class ConfigWindow : Window
             "any of the effects above need, so if a game update ever breaks something, this is the " +
             "first setting to try turning off - everything else is unaffected by it.");
 
-        DebugTester.DrawUi(kind => _config.Enabled && _config.IsEnabled(kind));
+        DebugTester.DrawUi(kind => _config.Enabled && _config.IsEnabled(kind), _effects);
 
         return changed;
     }

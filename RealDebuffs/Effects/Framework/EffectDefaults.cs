@@ -58,33 +58,40 @@ public static class BuiltInDefaults
 }
 
 /// <summary>
-/// The "hero" primitive slot(s) of each effect - the thing the effect is about, and the thing a
-/// "made of snow" / "made of lightning" phrase in a status description replaces.
+/// The "hero" primitive slot(s) of one effect - the thing the effect is about, and the thing a
+/// "made of snow" phrase in a status description replaces.
 ///
-/// Effects with no clear hero (purely atmospheric washes, edge accents) return an empty list;
-/// substitutions targeting them are silently dropped. Effects with more than one hero role can
-/// list several: a single material substitution applies to whichever slot type-matches it.
+/// PrimitiveType is the type key the renderer uses ("Stroke", "Particle", "Region"), matching
+/// the value passed to MaterialOverrideKey.For. Role is the primitive role within that type.
+/// A single effect can list several slots; a substitution applies to whichever one type-matches
+/// the material being substituted in.
+/// </summary>
+public readonly record struct EffectHeroSlot(string PrimitiveType, PrimitiveRole Role);
+
+/// <summary>
+/// Optional capability: an ISceneEffect that has one or more hero slots implements this so its
+/// slots can be discovered alongside the effect itself. Effects with no clear hero (purely
+/// atmospheric washes, edge accents) don't implement this, and their substitutions are silently
+/// dropped.
+/// </summary>
+public interface IHasHeroSlots
+{
+    EffectHeroSlot[] HeroSlots { get; }
+}
+
+/// <summary>
+/// Registry of every effect's hero slots, keyed by DebuffKind. Populated once by Plugin at
+/// startup from the effect roster discovered by EffectDiscovery. Effects self-describe their
+/// slots via IHasHeroSlots; this class just collates them so the tooltip substitution system
+/// (CustomStatusSnapshot) and the export-phrase builder (EffectStylePanel) can look them up by
+/// kind without carrying a reference to the roster.
 /// </summary>
 public static class EffectHeroSlots
 {
-    public readonly record struct HeroSlot(string PrimitiveType, PrimitiveRole Role);
+    private static readonly Dictionary<DebuffKind, EffectHeroSlot[]> _byKind = new();
 
-    private static readonly HeroSlot[] None = Array.Empty<HeroSlot>();
-    private static readonly HeroSlot[] BurnsHeroes    = { new("Particle", PrimitiveRole.Ember) };
-    private static readonly HeroSlot[] FrostHeroes    = { new("Particle", PrimitiveRole.Snowflake) };
-    private static readonly HeroSlot[] BlindHeroes    = { new("Region",   PrimitiveRole.MainStroke) };
-    private static readonly HeroSlot[] SilenceHeroes  = { new("Particle", PrimitiveRole.Rune) };
-    private static readonly HeroSlot[] HeavyHeroes    = { new("Stroke",   PrimitiveRole.MainStroke) };
-    private static readonly HeroSlot[] DiseaseHeroes  = { new("Stroke",   PrimitiveRole.MainStroke) };
+    public static void Register(DebuffKind kind, EffectHeroSlot[] slots) => _byKind[kind] = slots;
 
-    public static HeroSlot[] For(DebuffKind kind) => kind switch
-    {
-        DebuffKind.Burns   => BurnsHeroes,
-        DebuffKind.Frost   => FrostHeroes,
-        DebuffKind.Blind   => BlindHeroes,
-        DebuffKind.Silence => SilenceHeroes,
-        DebuffKind.Heavy   => HeavyHeroes,
-        DebuffKind.Disease => DiseaseHeroes,
-        _                  => None,
-    };
+    public static EffectHeroSlot[] For(DebuffKind kind) =>
+        _byKind.TryGetValue(kind, out var slots) ? slots : Array.Empty<EffectHeroSlot>();
 }

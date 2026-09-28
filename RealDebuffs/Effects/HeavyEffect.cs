@@ -1,8 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using RealDebuffs.Effects.Framework;
-using static RealDebuffs.Effects.Framework.DrawHelpers;
 
 namespace RealDebuffs.Effects;
 
@@ -11,31 +11,35 @@ namespace RealDebuffs.Effects;
 /// slow weighted sway while the ground darkens under their pull.
 ///
 /// CAST LAYOUT (fixed per cast, reseeded from cast start time):
-///  - 5 chains total. Two anchor to the top edge, two to the bottom, one is a free chain whose
+///  - 5 chains. Two anchor to the top edge, two to the bottom, one is a free chain whose
 ///    endpoints can be anywhere on the perimeter but at least a quarter apart.
-///  - Each chain is a quadratic bezier between its two edge endpoints, plus a parabolic sag and a
-///    slow travelling sway wave.
+///  - Each chain is a quadratic bezier between its two edge endpoints, plus a parabolic sag and
+///    a slow travelling sway wave.
 ///
 /// CAST-IN AND IMPACT:
 ///  - Each chain extends from its anchor over ~0.55s after its own stagger delay.
 ///  - The moment a chain reaches its full length, it BURSTS: a one-shot spray of spark particles
-///    fires off the tip, and a damped tension shake is applied to the chain body. Both use the
-///    same `sinceLock` timer, so they always read as one continuous event: SLAM, spark spray,
-///    chain whipping, settle.
+///    fires off the tip, and a damped tension shake is applied to the chain body.
 ///  - After the shake decays (~1s), the chain settles into steady sway.
 ///
-/// HERO SLOT: the chains, emitted as Stroke/MainStroke. The ground darkening is a Region that
-/// stays with the effect regardless of which material the chains use - it's the scene's mood, not
-/// the strand's.
-///
-/// Both the impact sparks and the chain itself can be swapped via config or a Moodle description
-/// ("chains made of lightning"): the sparks use Particle/Spark and the chains use Stroke/MainStroke,
-/// and EffectHeroSlots exposes both as Hero slots so a single substitution phrase reaches whichever
-/// type matches.
+/// HERO SLOT: the chains, emitted as Stroke/MainStroke.
 /// </summary>
-public sealed class HeavyEffect : ISceneEffect
+public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots
 {
     public DebuffKind Kind => DebuffKind.Heavy;
+    public string DisplayName => "Heavy";
+    public string Description => "A heavy dark pull with a dragging chain at the bottom of the screen.";
+    public int DrawOrder => 2;
+
+    public IReadOnlyDictionary<string, float> TriggerStatuses { get; } = new Dictionary<string, float>
+    {
+        ["Heavy"] = 1.0f,
+    };
+
+    public EffectHeroSlot[] HeroSlots { get; } = new EffectHeroSlot[]
+    {
+        new("Stroke", PrimitiveRole.MainStroke),
+    };
 
     // ---- timing ----
     private const float NewCastGapSeconds   = 1.0f;
@@ -44,11 +48,10 @@ public sealed class HeavyEffect : ISceneEffect
     private const float SettleEnd           = 1.80f;
     private const float SettleFlashSeconds  = 0.30f;
 
-    // Tension shake: peaks at lock-in, decays exponentially. Much higher frequency than the
-    // steady sway so it reads as a distinct "plucked string" jolt rather than a bigger sway.
+    // Tension shake: peaks at lock-in, decays exponentially.
     private const float ShakeDecaySeconds = 0.85f;
     private const float ShakeFrequency    = 11.0f;
-    private const float ShakeAmplitudeFrac = 0.022f; // of screen height
+    private const float ShakeAmplitudeFrac = 0.022f;
 
     // ---- geometry ----
     private const int   ChainSamples = 16;
@@ -60,15 +63,9 @@ public sealed class HeavyEffect : ISceneEffect
     private float _lastDrawTime = -100f;
     private float _castStart;
 
-    // One StrandPath per chain, sized once.
     private readonly StrandPath[] _strandPaths = new StrandPath[ChainCount];
-
-    // One spark emitter per chain. Burst-only: fires exactly once when its chain locks in.
     private readonly ParticleEmitter[] _chainSparks = new ParticleEmitter[ChainCount];
-
-    // Per-chain: time the burst fired, -1 if not yet. Reset on recast.
     private readonly float[] _burstAt = new float[ChainCount];
-
     private readonly Blueprint[] _blueprints = new Blueprint[ChainCount];
 
     private readonly struct Blueprint
@@ -102,7 +99,6 @@ public sealed class HeavyEffect : ISceneEffect
     {
         if (screenSize.X < 64f || screenSize.Y < 64f) return;
 
-        // Fresh cast: reset state, rebuild layout, drop any lingering sparks.
         if (time - _lastDrawTime > NewCastGapSeconds)
         {
             _castStart = time;
@@ -163,7 +159,7 @@ public sealed class HeavyEffect : ISceneEffect
             FireImpactBurst(idx, screenSize, in bp, path, time);
         }
 
-        // Cast-in reveal: 0 until this chain's delay, then eases to 1 over ChainExtendSeconds.
+        // Cast-in reveal.
         float gt = Saturate((age - bp.Delay) / ChainExtendSeconds);
         float reveal = EaseOutCubic(gt);
 
@@ -205,19 +201,15 @@ public sealed class HeavyEffect : ISceneEffect
     }
 
     /// <summary>
-    /// Fires the impact spark spray. Called once per chain, the frame it locks in. Direction is
-    /// opposite to the chain's approach at the tip (sparks ricochet off the impact), with a wide
-    /// angular spread and a slight downward gravity bias so the spray settles.
+    /// Fires the impact spark spray. Called once per chain, the frame it locks in.
     /// </summary>
     private void FireImpactBurst(int idx, Vector2 screenSize, in Blueprint bp, StrandPath path, float time)
     {
-        // Chain's approach direction at the tip: from second-to-last point to last.
         int n = path.Count;
         Vector2 approach = n >= 2
             ? Normalize(path.Points[n - 1] - path.Points[n - 2])
             : new Vector2(0f, 1f);
 
-        // Sparks bounce back off the impact: opposite the approach direction.
         float baseAngle = MathF.Atan2(-approach.Y, -approach.X);
 
         var tip = path.Points[n - 1];
@@ -227,15 +219,12 @@ public sealed class HeavyEffect : ISceneEffect
             time: time,
             spawnPos: seed =>
             {
-                // Small jitter around the impact point.
                 float dx = DrawHelpers.HashRange(seed + 20, -4f, 4f);
                 float dy = DrawHelpers.HashRange(seed + 21, -4f, 4f);
                 return tip + new Vector2(dx, dy);
             },
             spawnVelocity: seed =>
             {
-                // Cone spread of ±1.1 rad around the ricochet direction, speed 180-420 px/s,
-                // plus a downward gravity-ish bias.
                 float ang = baseAngle + DrawHelpers.HashRange(seed + 30, -1.1f, 1.1f);
                 float speed = DrawHelpers.HashRange(seed + 31, 180f, 420f);
                 var v = new Vector2(MathF.Cos(ang), MathF.Sin(ang)) * speed;
@@ -325,15 +314,6 @@ public sealed class HeavyEffect : ISceneEffect
     // Path
     // =====================================================================================
 
-    /// <summary>
-    /// Fills the given path with this frame's chain shape: quadratic bezier between anchor and
-    /// endpoint, sag bowing downward, and two superimposed motions:
-    ///  - steady sway (sine wave, ramping in over the settle window, matching the ground pulse)
-    ///  - tension shake (higher-frequency wave, peaks at lock-in and decays over ~1s)
-    ///
-    /// Both are damped to zero at the chain's endpoints via the parabolic `shape` factor, so the
-    /// anchors stay pinned to their edges and the chain reads as vibrating *between* two points.
-    /// </summary>
     private void BuildPath(StrandPath path, in Blueprint bp, Vector2 screenSize, float time, float age)
     {
         Vector2 start = bp.Start * screenSize;
@@ -346,8 +326,6 @@ public sealed class HeavyEffect : ISceneEffect
         float swayPhase = DrawHelpers.HashRange(bp.Seed, 0f, Tau);
         float swaySpeed = DrawHelpers.HashRange(bp.Seed + 1, 2.4f, 3.2f);
 
-        // Tension shake: envelope starts at 1 the moment the chain locks and decays. Uses
-        // sinceLock (not absolute time) so the shake starts at a predictable phase each cast.
         float sinceLock = age - (bp.Delay + ChainExtendSeconds);
         float shakeEnv = sinceLock > 0f ? MathF.Exp(-sinceLock / ShakeDecaySeconds) : 0f;
         float shakeAmp = screenSize.Y * ShakeAmplitudeFrac * shakeEnv;
@@ -360,14 +338,11 @@ public sealed class HeavyEffect : ISceneEffect
 
             Vector2 p = mt * mt * start + 2f * mt * t * ctrl + t * t * end;
 
-            float shape = 4f * t * (1f - t); // 0 at both ends, 1 at the middle
+            float shape = 4f * t * (1f - t);
             p.Y += sagBase * shape;
 
-            // Steady sway.
             p.Y += swayAmp * MathF.Sin(time * swaySpeed + t * 3.2f + swayPhase) * shape;
 
-            // Tension shake: vertical primary, horizontal secondary (offset phase so it reads as
-            // a 2D vibration, not a diagonal one).
             if (shakeEnv > 0.001f)
             {
                 p.Y += shakeAmp * MathF.Cos(shakePhase * ShakeFrequency + t * 14f + swayPhase) * shape;
@@ -389,5 +364,13 @@ public sealed class HeavyEffect : ISceneEffect
     {
         float len = v.Length();
         return len > 1e-5f ? v / len : new Vector2(0f, 1f);
+    }
+
+    private static float Saturate(float x) => Math.Clamp(x, 0f, 1f);
+
+    private static float EaseOutCubic(float t)
+    {
+        float u = 1f - Saturate(t);
+        return 1f - u * u * u;
     }
 }

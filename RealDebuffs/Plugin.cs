@@ -1,8 +1,11 @@
 using System;
+using System.Collections.Generic;
 using Dalamud.Game.Command;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using RealDebuffs.Effects;
+using RealDebuffs.Effects.Framework;
 
 namespace RealDebuffs;
 
@@ -39,12 +42,25 @@ public sealed class Plugin : IDalamudPlugin
 
         _config = _pi.GetPluginConfig() as Configuration ?? new Configuration();
 
-        var catalog = new StatusCatalog(dataManager, log);
+        // One discovery pass produces the effect roster everything else reads from. Cached for
+        // the session, so all consumers see the same instances (important: effects carry
+        // per-effect state like cast-in timers).
+        IReadOnlyList<ISceneEffect> effects = EffectDiscovery.Discover();
+
+        // Effects that have hero slots register them here. Consumers (CustomStatusSnapshot,
+        // EffectStylePanel) look slots up by kind.
+        foreach (var effect in effects)
+        {
+            if (effect is IHasHeroSlots withHeroes)
+                EffectHeroSlots.Register(effect.Kind, withHeroes.HeroSlots);
+        }
+
+        var catalog = new StatusCatalog(dataManager, effects, log);
         _chatBlocker = new ChatBlocker(hooks, log);
         _customStatuses = new CustomStatusWatcher(_pi, framework, objectTable, log, _config);
-        _effects = new EffectManager(clientState, objectTable, condition, gameGui, catalog, _config, _chatBlocker, _customStatuses, log);
+        _effects = new EffectManager(effects, clientState, objectTable, condition, gameGui, catalog, _config, _chatBlocker, _customStatuses, log);
 
-        _configWindow = new ConfigWindow(_config, SaveConfig, _customStatuses);
+        _configWindow = new ConfigWindow(_config, SaveConfig, _customStatuses, effects);
         _windowSystem.AddWindow(_configWindow);
 
         _cmd.AddHandler(CommandName, new CommandInfo(OnCommand)
@@ -55,7 +71,7 @@ public sealed class Plugin : IDalamudPlugin
         _pi.UiBuilder.Draw += OnDraw;
         _pi.UiBuilder.OpenConfigUi += OnOpenConfig;
 
-        _log.Information("RealDebuffs loaded.");
+        _log.Information($"RealDebuffs loaded. {effects.Count} effect(s) discovered.");
     }
 
     public void Dispose()

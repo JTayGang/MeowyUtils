@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Conditions;
@@ -13,45 +14,15 @@ namespace RealDebuffs;
 /// <summary>
 /// Reads the local player's statuses every frame, maps them to DebuffKinds via StatusCatalog plus
 /// any active Moodles/Loci statuses linked via CustomStatusWatcher, and dispatches every enabled
-/// effect's Emit call in a fixed order. Effects fade in/out smoothly rather than popping.
+/// effect's Emit call in DrawOrder. Effects fade in/out smoothly rather than popping.
 ///
-/// Every effect implements ISceneEffect: it writes primitives into a shared EffectScene and the
-/// framework renders the whole frame at once after the loop. This means the vignette is chosen
-/// once per frame (no stacking), each primitive's material can be swapped independently, and
-/// legacy draw calls no longer exist anywhere in the plugin.
-///
-/// Strength: kinds that cover several severities fold the active status's strength into the same
-/// 0..1 alpha every effect takes. Custom rules ask for 1.0.
-///
-/// Color: a real debuff or name-based CustomStatusRule never overrides an effect's authored color.
-/// A TooltipKeywordRule match can (see TooltipKeywordParser). Effects receive it via the
-/// colorOverride argument and attach it to their primitives; the renderer pushes it around each
-/// material call. If two sources share a kind at once, strength and color are tracked per-KIND
-/// rather than per-source - a rare edge case accepted as a simplification.
-///
-/// Material overrides: the settings panel exposes per-slot material choices via
-/// Configuration.MaterialOverrides, and tooltip descriptions can inject substitutions via
-/// TooltipMaterialOverrides (see CustomStatusSnapshot). Both are merged into one dict per frame
-/// and handed to the renderer, keyed by "{Kind}.{Type}.{Role}".
+/// The effect roster comes in from Plugin, which gets it from EffectDiscovery (reflection over
+/// the assembly, filtered to ISceneEffect implementations, sorted by DrawOrder). EffectManager
+/// owns the roster for the session; nothing else constructs effect instances.
 /// </summary>
 public sealed class EffectManager
 {
-    /// <summary>
-    /// Fixed draw order = stacking order; earlier entries underneath, later on top. The order is
-    /// chosen for the shipped effects; reorder to change layering once those exist. Suggested
-    /// layering (bottom to top): Blind, DoT/tint cluster, Heavy, Bind, Pacification, Doom, Frost,
-    /// Petrification, Sleep, Amnesia, Charm, Hysteria, Stun, Electrocution, Paralysis, Slow,
-    /// Vulnerability, Silence.
-    /// </summary>
-    private readonly ISceneEffect[] _order =
-    {
-        new BlindEffect(),
-        new BurnsEffect(),
-        new HeavyEffect(),
-        new FrostEffect(),
-        new DiseaseEffect(),
-        new VulnerabilityEffect(),
-    };
+    private readonly ISceneEffect[] _order;
 
     private const float FadeInPerSecond = 1f / 0.35f;
     private const float FadeOutPerSecond = 1f / 0.6f;
@@ -72,7 +43,7 @@ public sealed class EffectManager
 
     /// <summary>
     /// Per-frame merged material overrides. Global config entries are merged first, then
-    /// tooltip-derived entries layered on top (more specific intent wins). Handed to the renderer.
+    /// tooltip-derived entries layered on top.
     /// </summary>
     private readonly Dictionary<string, string> _materialOverridesScratch = new(StringComparer.Ordinal);
 
@@ -90,10 +61,13 @@ public sealed class EffectManager
     private readonly IPluginLog _log;
 
     public EffectManager(
+        IReadOnlyList<ISceneEffect> effects,
         IClientState clientState, IObjectTable objectTable, ICondition condition, IGameGui gameGui,
         StatusCatalog catalog, Configuration config, ChatBlocker chatBlocker,
         CustomStatusWatcher customStatuses, IPluginLog log)
     {
+        _order = effects.ToArray();
+
         _clientState = clientState;
         _objectTable = objectTable;
         _condition = condition;
@@ -107,6 +81,12 @@ public sealed class EffectManager
         foreach (var effect in _order)
             _currentAlpha[effect.Kind] = 0f;
     }
+
+    /// <summary>
+    /// The implemented effects, in draw order. Exposed for UI lists that need to know which
+    /// kinds actually have an effect behind them.
+    /// </summary>
+    public IReadOnlyList<ISceneEffect> Effects => _order;
 
     public void Draw()
     {
@@ -144,9 +124,8 @@ public sealed class EffectManager
         }
 
         // Custom Moodles/Loci rules feed the same _activeScratch set real debuffs do, so an effect
-        // already on from either source is never doubled or restarted - it stays on until the last
-        // thing asking for it goes away. Runs BEFORE the chat-block line on purpose: a custom
-        // Silence rule then drives the hard chat lockout exactly like a real Silence debuff.
+        // already on from either source is never doubled or restarted. Runs BEFORE the chat-block
+        // line on purpose: a custom Silence rule then drives the hard chat lockout too.
         if (!suppressed && player != null)
         {
             var snapshot = _customStatuses.Snapshot;
@@ -158,8 +137,6 @@ public sealed class EffectManager
                     _targetStrength[rule.Kind] = 1f;
             }
 
-            // Tooltip keyword matches are precomputed once per snapshot refresh (see
-            // CustomStatusSnapshot); this just merges the already-computed answer.
             foreach (var kind in snapshot.TooltipKinds)
                 _activeScratch.Add(kind);
 
@@ -169,8 +146,6 @@ public sealed class EffectManager
                     _colorOverrides[kind] = color;
             }
 
-            // Merge material overrides: global config first, then tooltip-derived on top.
-            // The scratch dict was cleared at the top of Draw, so this is a fresh fill each frame.
             foreach (var kv in _config.MaterialOverrides)
                 _materialOverridesScratch[kv.Key] = kv.Value;
             foreach (var kv in snapshot.TooltipMaterialOverrides)
@@ -187,7 +162,6 @@ public sealed class EffectManager
 
         foreach (var effect in _order)
         {
-            // Skip anything that has already thrown this session.
             if (_crashedKinds.Contains(effect.Kind)) continue;
 
             bool active = !suppressed && _config.IsEnabled(effect.Kind) && _activeScratch.Contains(effect.Kind);
@@ -227,10 +201,8 @@ public sealed class EffectManager
     }
 
     /// <summary>
-    /// Backs /realdebuffs statuses: logs every status currently on the local player, its real name,
-    /// and whether RealDebuffs maps it to an effect - so "is the debuff I'm looking at actually
-    /// being detected, under what name" is answerable directly rather than by guessing from the
-    /// visual result.
+    /// Backs /realdebuffs statuses: logs every status currently on the local player, its real
+    /// name, and whether RealDebuffs maps it to an effect.
     /// </summary>
     public void LogCurrentStatuses()
     {
@@ -263,8 +235,7 @@ public sealed class EffectManager
     /// <summary>
     /// The Moodles/Loci half of /realdebuffs statuses: what the two plugins report after
     /// name-merging, which name-rule(s) each status matches, and - when tooltip parsing is on -
-    /// what TooltipKeywordRules find in its description and what color (if any) that resolved to.
-    /// Reflects the most recent once-a-second read.
+    /// what TooltipKeywordRules find in its description.
     /// </summary>
     private void LogCustomStatuses()
     {

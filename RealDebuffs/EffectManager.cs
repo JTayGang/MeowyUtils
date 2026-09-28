@@ -49,6 +49,7 @@ public sealed class EffectManager
         new BurnsEffect(),
         new HeavyEffect(),
         new FrostEffect(),
+        new DiseaseEffect(),
         new VulnerabilityEffect(),
     };
 
@@ -210,7 +211,8 @@ public sealed class EffectManager
             }
         }
 
-        // Ambient particles along strokes, then the frame render.
+        // Ambient stroke emissions: path-following first (behind), free-flying second (on top).
+        StrokeFlowEmitter.Emit(_scene, time, dt, _materialOverridesScratch);
         StrokeAutoEmitter.Emit(_scene, time, dt, _materialOverridesScratch);
         EffectSceneRenderer.Render(dl, _scene, screenSize, time, _config.GlobalIntensity, _materialOverridesScratch);
     }

@@ -23,6 +23,12 @@ public sealed class ParticleEmitter
         public int   Seed;
     }
 
+    /// <summary>
+    /// Per-particle gravity applied to every emission from this emitter, in px/s². Effects set
+    /// this once at construction for constant gravity, or leave it zero for free-flying particles.
+    /// </summary>
+    public Vector2 Gravity;
+
     private readonly Particle[] _pool;
     private int _count;
     private float _nextSpawnAt;
@@ -150,6 +156,9 @@ public sealed class ParticleEmitter
         _count = w;
 
         for (int i = 0; i < _count; i++)
+        {
+            _pool[i].Velocity += Gravity * dt;
             _pool[i].Pos += _pool[i].Velocity * dt;
+        }
     }
 }

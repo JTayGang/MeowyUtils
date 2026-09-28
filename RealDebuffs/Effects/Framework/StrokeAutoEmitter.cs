@@ -23,13 +23,14 @@ public static class StrokeAutoEmitter
     {
         public Vector2 Pos;
         public Vector2 Vel;
+        public Vector2 Gravity;
         public float Born;
         public float Lifespan;
         public float Size;
-        public float Brightness;      // stroke's alpha at spawn, stays fixed
+        public float Brightness;
         public int Seed;
         public PrimitiveRole Role;
-        public string? MaterialName;  // set when an emit-axis override spawned this
+        public string? MaterialName;
         public DebuffKind Owner;
         public Vector4? ColorOverride;
     }
@@ -49,9 +50,12 @@ public static class StrokeAutoEmitter
         }
         _count = w;
 
-        // 2. Integrate live particles.
+        // 2. Integrate live particles (with gravity).
         for (int i = 0; i < _count; i++)
+        {
+            Pool[i].Vel += Pool[i].Gravity * dt;
             Pool[i].Pos += Pool[i].Vel * dt;
+        }
 
         // 3. Spawn new particles along every stroke in the scene.
         int strokeCount = scene.Strokes.Count;
@@ -150,6 +154,7 @@ public static class StrokeAutoEmitter
             {
                 Pos = pos,
                 Vel = dir * speed + e.BiasVelocity,
+                Gravity = e.Gravity,
                 Born = time,
                 Lifespan = DrawHelpers.HashRange(seed + 3, e.LifespanMin, e.LifespanMax),
                 Size = DrawHelpers.HashRange(seed + 4, e.SizeMin, e.SizeMax),

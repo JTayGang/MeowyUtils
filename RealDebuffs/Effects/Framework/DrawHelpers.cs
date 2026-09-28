@@ -49,18 +49,17 @@ internal static class DrawHelpers
         _colorOverride = ColorOverrideStack.Count > 0 ? ColorOverrideStack.Pop() : null;
 
     /// <summary>
-    /// Re-hues the active override. Only HUE is replaced - Saturation and Value are preserved
-    /// exactly as authored. This is what keeps a palette's light/dark AND muted/vivid structure
-    /// intact under any override: a near-white hot core stays pale (its authored saturation is
-    /// low), a saturated mid-tone stays saturated, a dark soot stays dark. Replacing saturation
-    /// as well would collapse every tone to the same vividness and leave only a brightness
-    /// gradient, which destroys exactly the "pale core, saturated body, dark edge" reading that
-    /// makes a fire look like fire.
+    /// Re-hues the active override. Hue is replaced, Saturation and Value are preserved from the
+    /// source tone - so a palette's vivid/pale/dark structure survives any override: a hot core
+    /// stays pale, a saturated body stays saturated, a dark shadow stays dark.
     ///
-    /// The one case where a purely achromatic source tone (saturation near 0, like a gray or a
-    /// pure white) would be invisible under a hue-only shift is handled by falling back to the
-    /// override's saturation for those. That keeps genuinely grayscale elements (which have no
-    /// hue to shift) recolored by whatever tint the user chose rather than ignoring it.
+    /// Two special cases:
+    ///  - Achromatic OVERRIDE (grey / white / black): force the output to be achromatic too,
+    ///    preserving only brightness. Without this, the override's hue of 0 (undefined, since
+    ///    there's no real hue) would be treated as red and every tone would come out red.
+    ///  - Achromatic SOURCE tone with a chromatic override: use the override's saturation. A
+    ///    genuinely grey input has no hue of its own, so accepting the override's hue AND its
+    ///    saturation is the only way to make it visibly adopt the requested color.
     /// </summary>
     private static uint ApplyColorOverride(uint color)
     {
@@ -73,11 +72,30 @@ internal static class DrawHelpers
 
         var (_, origS, origV) = RgbToHsv(r, g, b);
 
-        // Preserve authored saturation whenever there is one; fall back to the override's for
-        // genuinely achromatic tones so they don't stay gray after being asked to go red.
-        float s = origS < 0.05f ? ov.Saturation : origS;
+        float s;
+        float hue;
 
-        var (nr, ng, nb) = HsvToRgb(ov.Hue, s, origV);
+        if (ov.Saturation < 0.05f)
+        {
+            // Override is achromatic: flatten everything to grey at original brightness.
+            hue = 0f;
+            s = 0f;
+        }
+        else if (origS < 0.05f)
+        {
+            // Chromatic override on a grey source tone: the source has no hue to preserve, so
+            // adopt both the override's hue and its saturation.
+            hue = ov.Hue;
+            s = ov.Saturation;
+        }
+        else
+        {
+            // Normal case: chromatic override, chromatic source. Keep the source's saturation.
+            hue = ov.Hue;
+            s = origS;
+        }
+
+        var (nr, ng, nb) = HsvToRgb(hue, s, origV);
 
         uint R = (uint)Math.Clamp((int)MathF.Round(nr * 255f), 0, 255);
         uint G = (uint)Math.Clamp((int)MathF.Round(ng * 255f), 0, 255);

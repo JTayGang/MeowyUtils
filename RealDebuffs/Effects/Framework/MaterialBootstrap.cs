@@ -18,6 +18,7 @@ public static class MaterialBootstrap
         // Stroke materials.
         MaterialRegistry.Register(new StrokeSimple());
         MaterialRegistry.Register(new StrokeChain());
+        MaterialRegistry.Register(new StrokeParasite());
 
         // Particle materials.
         MaterialRegistry.Register(new ParticleEmber());
@@ -25,5 +26,6 @@ public static class MaterialBootstrap
         MaterialRegistry.Register(new ParticleSnow());
         MaterialRegistry.Register(new ParticleFog());
         MaterialRegistry.Register(new ParticleSpark());
+        MaterialRegistry.Register(new ParticleDrip());
     }
 }

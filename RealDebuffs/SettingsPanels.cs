@@ -351,14 +351,15 @@ internal sealed class EffectStylePanel
 
     private static readonly Slot[] Slots =
     {
-        new(DebuffKind.Blind, "Region",   PrimitiveRole.MainStroke, "Screen wash"),
-        new(DebuffKind.Burns, "Particle", PrimitiveRole.Ember,      "Fire particles"),
-        new(DebuffKind.Burns, "Region",   PrimitiveRole.MainStroke, "Ground band"),
-        new(DebuffKind.Frost, "Particle", PrimitiveRole.Snowflake,  "Snowflakes"),
-        new(DebuffKind.Frost, "Particle", PrimitiveRole.Snow,       "Snow specks"),
-        new(DebuffKind.Frost, "Particle", PrimitiveRole.Fog,        "Fog"),
-        new(DebuffKind.Frost, "Region",   PrimitiveRole.MainStroke, "Intro flash"),
-        new(DebuffKind.Heavy, "Stroke",   PrimitiveRole.MainStroke, "Chains"),
+        new(DebuffKind.Blind,   "Region",   PrimitiveRole.MainStroke, "Screen wash"),
+        new(DebuffKind.Burns,   "Particle", PrimitiveRole.Ember,      "Fire particles"),
+        new(DebuffKind.Burns,   "Region",   PrimitiveRole.MainStroke, "Ground band"),
+        new(DebuffKind.Disease, "Stroke",   PrimitiveRole.MainStroke, "Tendrils"),
+        new(DebuffKind.Frost,   "Particle", PrimitiveRole.Snowflake,  "Snowflakes"),
+        new(DebuffKind.Frost,   "Particle", PrimitiveRole.Snow,       "Snow specks"),
+        new(DebuffKind.Frost,   "Particle", PrimitiveRole.Fog,        "Fog"),
+        new(DebuffKind.Frost,   "Region",   PrimitiveRole.MainStroke, "Intro flash"),
+        new(DebuffKind.Heavy,   "Stroke",   PrimitiveRole.MainStroke, "Chains"),
     };
 
     private readonly Configuration _config;

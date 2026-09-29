@@ -68,7 +68,7 @@ public sealed class FrostEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
     // ---- emitters ----
     private readonly ParticleEmitter _snowflakes  = new(maxParticles: 45, seedSalt: 0xF00500);
     private readonly ParticleEmitter _snow        = new(maxParticles: 220, seedSalt: 0xF00501);
-    private readonly ParticleEmitter _fog         = new(maxParticles: 30, seedSalt: 0xF00502);
+    private readonly ParticleEmitter _fog = new(maxParticles: 240, seedSalt: 0xF00502);
     private readonly ParticleEmitter _iceCrystals = new(maxParticles: 24, seedSalt: 0xF00503);
 
     // ---- state ----
@@ -163,31 +163,48 @@ public sealed class FrostEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
         _snow.Emit(scene, time, PrimitiveRole.Snow,
                    brightnessMul: alpha, colorOverride, swayPerParticle: 5f);
 
-        // ---- 5. fog: large soft wisps drifting in from the edges ----
+        // ---- 5. fog: a field of independent soft blobs creeping in from the edges ----
+        // Spawn is heavily edge-biased: pick a random perimeter edge, a random position along it, then
+        // offset inward by a distance drawn from pow(hash, 2.4) - which clusters most spawns close to
+        // the edge with a long tail that occasionally reaches further in. That's the "hugging the
+        // screen edges" behavior; uniform spawn had every particle filling the middle of the screen.
+        //
+        // Velocity has a small inward component so particles drift toward the center rather than
+        // sitting statically on the edge; lifespans are short enough (3-6.5s) that they die before
+        // reaching the middle, so the visual density stays concentrated near the borders.
         _fog.Update(
             time, dt,
-            spawnIntervalMin: 0.28f, spawnIntervalMax: 0.75f,
+            spawnIntervalMin: 0.015f, spawnIntervalMax: 0.045f,
             spawnPos: seed =>
             {
                 int edge = (int)(DrawHelpers.Hash01(seed) * 4f);
-                float along = DrawHelpers.HashRange(seed + 10, 0f, 1f);
-                const float margin = 40f;
+                float along = DrawHelpers.HashRange(seed + 10, -0.05f, 1.05f);
+
+                // pow(h, 2.4): ~40% of spawns land within ~10% of the edge, ~80% within ~30%.
+                // The remaining tail reaches deeper in, so the field still has some volume - but the
+                // density gradient is strongly toward the borders.
+                float inwardMax = shortSide * 0.30f;
+                float inward = MathF.Pow(DrawHelpers.Hash01(seed + 11), 2.4f) * inwardMax;
+
                 return edge switch
                 {
-                    0 => new Vector2(along * screenSize.X, -margin),
-                    1 => new Vector2(screenSize.X + margin, along * screenSize.Y),
-                    2 => new Vector2(along * screenSize.X, screenSize.Y + margin),
-                    _ => new Vector2(-margin, along * screenSize.Y),
+                    0 => new Vector2(along * screenSize.X, -6f + inward),                     // top
+                    1 => new Vector2(screenSize.X + 6f - inward, along * screenSize.Y),        // right
+                    2 => new Vector2(along * screenSize.X, screenSize.Y + 6f - inward),        // bottom
+                    _ => new Vector2(-6f + inward, along * screenSize.Y),                     // left
                 };
             },
             spawnVelocity: seed => new Vector2(
-                DrawHelpers.HashRange(seed + 20, -14f, 14f),
-                DrawHelpers.HashRange(seed + 21, -6f, 18f)),
-            lifespanMin: 5.0f, lifespanMax: 10.0f,
-            sizeMin: shortSide * 0.14f, sizeMax: shortSide * 0.26f);   // <- was 0.10/0.20
+                DrawHelpers.HashRange(seed + 20, -10f, 10f),
+                DrawHelpers.HashRange(seed + 21, -6f, 2f)),   // slight upward / inward creep
+            lifespanMin: 3.0f, lifespanMax: 6.5f,
+            sizeMin: shortSide * 0.05f, sizeMax: shortSide * 0.10f);
 
         _fog.Emit(scene, time, PrimitiveRole.Fog,
-                  brightnessMul: alpha, colorOverride, swayPerParticle: 12f);
+                  brightnessMul: alpha, colorOverride, swayPerParticle: 20f);
+
+        _fog.Emit(scene, time, PrimitiveRole.Fog,
+                  brightnessMul: alpha, colorOverride, swayPerParticle: 20f);
 
         // ---- 6. ice crystals: angular shards tumbling slowly across the field ----
         // Spawned from just above the top so they cross the whole screen before despawning; a

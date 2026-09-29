@@ -341,6 +341,24 @@ internal sealed class EffectStylePanel
     /// so switching back and forth doesn't lose what was on screen.</summary>
     private DebuffKind _selectedKind = DebuffKind.Blind;
 
+    // Stored values, one per dropdown entry (after the implicit "(default)"). "rainbow" is the
+    // canonical value for the animated hue; "rgb" is still accepted by the tooltip parser (see
+    // TooltipKeywordParser.RainbowWords) so existing Moodle descriptions keep working, but it's
+    // no longer a separate dropdown entry.
+    private static readonly string[] _colorNames = TooltipKeywordParser.NamedColors.Keys
+        .Concat(new[] { "rainbow" })
+        .OrderBy(k => k, StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+
+    // Parallel to _colorNames. Display names differ from stored names only for rainbow, which
+    // is labelled "Rainbow/RGB" so users can see both spellings are accepted in tooltip text.
+    private static readonly string[] _colorOptions = new[] { "(default)" }
+        .Concat(_colorNames.Select(DisplayNameForColor))
+        .ToArray();
+
+    private static string DisplayNameForColor(string name) =>
+        string.Equals(name, "rainbow", StringComparison.OrdinalIgnoreCase) ? "Rainbow/RGB" : name;
+
     public EffectStylePanel(Configuration config) { _config = config; }
 
     public bool Draw()
@@ -395,7 +413,10 @@ internal sealed class EffectStylePanel
         ImGui.TextDisabled("Effect");
         ImGui.SetNextItemWidth(180f);
         if (ImGui.Combo("##effectselect", ref idx, names, names.Length))
+        {
             _selectedKind = kinds[idx];
+            _testText = BuildExportPhrase(_selectedKind);
+        };
 
         ImGui.SameLine();
         if (ImGui.SmallButton("Copy##effectcopy"))
@@ -427,6 +448,15 @@ internal sealed class EffectStylePanel
 
         ImGui.Spacing();
 
+        if (DrawColorRow(_selectedKind))
+        {
+            changed = true;
+            _testText = BuildExportPhrase(_selectedKind);
+            RefreshActivePreview();
+        }
+
+        ImGui.Spacing();
+
         foreach (var slot in EffectRegistry.SlotsFor(_selectedKind))
         {
             // Evaluate both in order - can't use || because we still want to draw the emit row
@@ -452,6 +482,9 @@ internal sealed class EffectStylePanel
     private bool ResetToDefaults(DebuffKind kind)
     {
         bool removedAny = false;
+
+        if (_config.ColorOverrides.Remove(kind))
+            removedAny = true;
 
         foreach (var slot in EffectRegistry.SlotsFor(kind))
         {
@@ -543,6 +576,18 @@ internal sealed class EffectStylePanel
     {
         string trigger = CanonicalTrigger(kind);
 
+        // Preset names and rainbow words are the only two families that round-trip cleanly as
+        // adjectives. Hex codes and 0x-prefixed values are still accepted by the parser but
+        // have no natural-language spelling, so they're skipped here. "rgb" is normalized to
+        // "rainbow" so the exported phrase uses the canonical spelling.
+        if (_config.ColorOverrides.TryGetValue(kind, out var colorName)
+            && TooltipKeywordParser.IsColorWord(colorName))
+        {
+            if (string.Equals(colorName, "rgb", StringComparison.OrdinalIgnoreCase))
+                colorName = "rainbow";
+            trigger = $"{colorName} {trigger}";
+        }
+
         var heroes = EffectRegistry.HeroSlotsFor(kind);
         if (heroes.Length == 0) return trigger;
         var hero = heroes[0];
@@ -603,6 +648,83 @@ internal sealed class EffectStylePanel
         }
         return changed;
     }
+
+/// <summary>
+/// Re-parses the current tester text and refreshes the forced color on any kind that's
+/// currently being previewed. Called after the color dropdown changes so a running preview
+/// recolors to match without needing Preview clicked again.
+///
+/// The parse path is deliberately the same one Preview uses (tooltip text -> matches ->
+/// per-match color), so the forced color reflects exactly what a Moodle with that description
+/// would actually produce. Going through TryResolveColorToken on the raw config value instead
+/// would miss the clause-color resolution the parser does - e.g. "black flame" resolves the
+/// color from the word in the same clause, not from the dropdown state directly.
+///
+/// No-op when nothing is being previewed (UpdateForcedColor checks the timer) or when the
+/// rebuilt phrase no longer matches anything (e.g. the user has deleted their Burns keyword
+/// rules, so the phrase became "black burns" and nothing fires).
+/// </summary>
+private void RefreshActivePreview()
+{
+    foreach (var m in TooltipKeywordParser.Parse(_testText, _config.TooltipKeywordRules))
+        DebugTester.UpdateForcedColor(m.Kind, m.Color);
+}
+
+/// <summary>
+/// Per-effect color dropdown. Sits above the material slots in the editor and shares their
+/// layout conventions: fixed-width control, label to the right, swatch to the right of that.
+/// "(default)" removes any override; picking a color stores its name in
+/// <see cref="Configuration.ColorOverrides"/>. Returns true if the config changed.
+/// </summary>
+private bool DrawColorRow(DebuffKind kind)
+{
+    bool changed = false;
+
+    string current = _config.ColorOverrides.TryGetValue(kind, out var name) ? name : "";
+
+    // "rgb" used to be its own dropdown entry. A config saved before the merge still stores
+    // "rgb"; map it to "rainbow" here so the dropdown shows the right selection instead of
+    // falling back to "(default)" while the effect is still visibly rainbow.
+    if (string.Equals(current, "rgb", StringComparison.OrdinalIgnoreCase))
+        current = "rainbow";
+
+    int idx = 0;
+    if (current.Length > 0)
+    {
+        int found = Array.FindIndex(_colorNames, n => string.Equals(n, current, StringComparison.OrdinalIgnoreCase));
+        if (found >= 0) idx = found + 1;
+    }
+
+    ImGui.SetNextItemWidth(200f);
+    if (ImGui.Combo("Color", ref idx, _colorOptions, _colorOptions.Length))
+    {
+        if (idx == 0)
+        {
+            if (_config.ColorOverrides.Remove(kind)) changed = true;
+        }
+        else
+        {
+            _config.ColorOverrides[kind] = _colorNames[idx - 1];
+            changed = true;
+        }
+    }
+
+    // Swatch, drawn with the window's draw list rather than ColorButton so it stays a pure
+    // read-only indicator (ColorButton would open a picker, and a picked custom color has no
+    // name to store back in ColorOverrides).
+    if (current.Length > 0 && TooltipKeywordParser.TryResolveColorToken(current, out var swatchRgb))
+    {
+        ImGui.SameLine();
+        Vector2 swatchMin  = ImGui.GetCursorScreenPos();
+        Vector2 swatchSize = new(16f, ImGui.GetTextLineHeight());
+        ImGui.GetWindowDrawList().AddRectFilled(
+            swatchMin, swatchMin + swatchSize,
+            ImGui.ColorConvertFloat4ToU32(swatchRgb), 3f);
+        ImGui.Dummy(swatchSize);
+    }
+
+    return changed;
+}
 
     /// <summary>
     /// Emit dropdown for stroke slots. Options: "(from material)", "(none)", and every particle

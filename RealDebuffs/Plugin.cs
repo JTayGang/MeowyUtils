@@ -23,6 +23,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly EffectManager _effects;
     private readonly WindowSystem _windowSystem = new("RealDebuffs");
     private readonly ConfigWindow _configWindow;
+    private bool _configWasOpen;
 
     public Plugin(
         IDalamudPluginInterface pluginInterface,
@@ -41,6 +42,10 @@ public sealed class Plugin : IDalamudPlugin
         _log = log;
 
         _config = _pi.GetPluginConfig() as Configuration ?? new Configuration();
+
+        // Anything sitting in the generator override dicts at load time is a leftover from a previous
+        // session's preview session - see ClearGeneratorOverrides for why we don't want to keep it.
+        ClearGeneratorOverrides();
 
         // One discovery pass produces the effect roster everything else reads from. Cached for
         // the session, so all consumers see the same instances (important: effects carry
@@ -118,12 +123,43 @@ public sealed class Plugin : IDalamudPlugin
 
     private void SaveConfig() => _pi.SavePluginConfig(_config);
 
+    /// <summary>
+        /// Wipes the ephemeral generator overrides (material substitutions and color tints chosen
+    /// from the Effect generator panel). These are live-preview settings, not persisted
+    /// customizations: leaving them in config would silently tint or re-material a vanilla debuff
+    /// the next time the player gets it naturally, long after they've forgotten what the menu
+    /// was set to. Called when the settings window closes, and once at load to clean up anything
+    /// left over from a previous session that ran before this behavior existed.
+    ///
+    /// The real persistence mechanism for "I want Burns to look like X" is a Moodle/Loci status
+    /// description - those tooltip-derived overrides live in the per-frame snapshot, not in
+    /// config, and correctly only apply while the status is active.
+    /// </summary>
+    private void ClearGeneratorOverrides()
+    {
+        if (_config.MaterialOverrides.Count == 0 && _config.ColorOverrides.Count == 0)
+            return;
+
+        _config.MaterialOverrides.Clear();
+        _config.ColorOverrides.Clear();
+        SaveConfig();
+    }
+
     private void OnDraw()
     {
         try
         {
             _windowSystem.Draw();
             _effects.Draw();
+
+            // Detect the settings window closing: the generator's live overrides are meant to be
+            // preview settings, and any that survive past the menu closing would tint or re-material
+            // the vanilla effect in normal gameplay without the user realizing. Watch the
+            // open -> closed transition rather than just "is closed" so this runs exactly once.
+            bool isOpen = _configWindow.IsOpen;
+            if (_configWasOpen && !isOpen)
+                ClearGeneratorOverrides();
+            _configWasOpen = isOpen;
         }
         catch (Exception ex)
         {

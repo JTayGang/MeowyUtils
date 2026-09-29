@@ -52,6 +52,15 @@ public class Configuration : IPluginConfiguration
     /// </summary>
     public Dictionary<string, string> MaterialOverrides { get; set; } = new();
 
+    /// <summary>
+    /// Per-effect color overrides applied when no tooltip-derived or dev-test color is present.
+    /// Key is the DebuffKind; value is a color word from
+    /// <see cref="TooltipKeywordParser.NamedColors"/> (e.g. "azure"). Resolved to a Vector4 at
+    /// render time via <see cref="TooltipKeywordParser.TryResolveColorToken"/>. Set from the
+    /// Effect generator panel's Color dropdown; cleared by that panel's Reset button.
+    /// </summary>
+    public Dictionary<DebuffKind, string> ColorOverrides { get; set; } = new();
+
     /// <summary>"While I have this custom status, show this effect" links - see <see cref="CustomStatusRule"/>.</summary>
     public List<CustomStatusRule> CustomStatusRules { get; set; } = new();
 

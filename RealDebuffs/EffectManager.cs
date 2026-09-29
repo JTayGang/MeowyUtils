@@ -174,7 +174,7 @@ public sealed class EffectManager
             if (current <= 0.001f) continue;
 
             float strength = _targetStrength.TryGetValue(effect.Kind, out var targetStrength) ? targetStrength : 1f;
-            Vector4? color = _colorOverrides.TryGetValue(effect.Kind, out var c) ? c : DebugTester.GetForcedColor(effect.Kind);
+            Vector4? color = ResolveColorOverride(effect.Kind);
 
             _scene.CurrentOwner = effect.Kind;
 
@@ -192,6 +192,28 @@ public sealed class EffectManager
         // Ambient stroke emissions: path-following first (behind), free-flying second (on top).
         StrokeAutoEmitter.Emit(_scene, time, dt, _materialOverridesScratch);
         EffectSceneRenderer.Render(dl, _scene, screenSize, time, _config.GlobalIntensity, _materialOverridesScratch);
+    }
+
+    /// <summary>
+    /// Priority order for an effect's color override:
+    ///   1. Tooltip-derived color (per-frame, context-specific).
+    ///   2. Dev-tester forced color (explicit "show me this, now").
+    ///   3. Config override (the Effect generator's Color dropdown, a persistent baseline).
+    /// Returning null means the effect shows in its own authored palette.
+    /// </summary>
+    private Vector4? ResolveColorOverride(DebuffKind kind)
+    {
+        if (_colorOverrides.TryGetValue(kind, out var tooltipColor))
+            return tooltipColor;
+
+        if (DebugTester.GetForcedColor(kind) is { } forcedColor)
+            return forcedColor;
+
+        if (_config.ColorOverrides.TryGetValue(kind, out var name)
+            && TooltipKeywordParser.TryResolveColorToken(name, out var rgb))
+            return rgb;
+
+        return null;
     }
 
     private static float MoveTowards(float current, float target, float maxDelta)

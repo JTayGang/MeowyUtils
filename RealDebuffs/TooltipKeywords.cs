@@ -192,6 +192,19 @@ public static class TooltipKeywordParser
     }
 
     /// <summary>
+    /// True if the token is a recognized color word - a fixed-color name from
+    /// <see cref="NamedColors"/> or one of the cycling <see cref="RainbowWords"/>. Used by the
+    /// effect generator's export-phrase builder to decide whether a stored ColorOverrides value
+    /// can be rendered as an adjective in a status description.
+    /// </summary>
+    public static bool IsColorWord(string? token)
+    {
+        if (string.IsNullOrWhiteSpace(token)) return false;
+        var t = token.Trim();
+        return NamedColors.ContainsKey(t) || RainbowWords.Contains(t);
+    }
+
+    /// <summary>
     /// The shortest phrase from <c>MaterialWords</c> that maps to a given material name, for
     /// producing "made of X" export text. Null when the material has no natural-language word
     /// (region materials, or any material added to the registry without a matching entry).
@@ -222,46 +235,28 @@ public static class TooltipKeywordParser
     /// Common English color words that can appear in plain flavor text. A fixed list rather than a
     /// user-editable one: unlike keywords (arbitrary RP flavor text), color names are a closed
     /// English vocabulary. Add entries here if you use one regularly that's missing.
+    ///
+    /// This is also the source for the Effect generator's Color dropdown, which is why the list
+    /// stays trimmed: past about 25-30 entries the picker stops being scannable. The greyscale
+    /// family is deliberately just three words - white, grayscale, black - because they map onto
+    /// the three value buckets in DrawHelpers.PushColorOverride.
     /// </summary>
-    private static readonly Dictionary<string, Vector4> NamedColors = new(StringComparer.OrdinalIgnoreCase)
+    public static readonly IReadOnlyDictionary<string, Vector4> NamedColors = new Dictionary<string, Vector4>(StringComparer.OrdinalIgnoreCase)
     {
-        ["red"] = Rgb(0.85f, 0.15f, 0.15f),
-        ["crimson"] = Rgb(0.75f, 0.05f, 0.15f),
-        ["scarlet"] = Rgb(0.90f, 0.15f, 0.05f),
-        ["maroon"] = Rgb(0.50f, 0.08f, 0.12f),
-        ["orange"] = Rgb(0.95f, 0.50f, 0.10f),
-        ["amber"] = Rgb(0.95f, 0.65f, 0.10f),
-        ["yellow"] = Rgb(0.95f, 0.85f, 0.15f),
-        ["gold"] = Rgb(0.90f, 0.75f, 0.20f),
-        ["green"] = Rgb(0.20f, 0.80f, 0.25f),
-        ["emerald"] = Rgb(0.10f, 0.70f, 0.40f),
-        ["jade"] = Rgb(0.30f, 0.75f, 0.55f),
-        ["olive"] = Rgb(0.45f, 0.50f, 0.15f),
-        ["teal"] = Rgb(0.10f, 0.65f, 0.65f),
-        ["cyan"] = Rgb(0.20f, 0.85f, 0.90f),
-        ["turquoise"] = Rgb(0.15f, 0.75f, 0.70f),
-        ["blue"] = Rgb(0.20f, 0.45f, 0.90f),
-        ["azure"] = Rgb(0.15f, 0.55f, 0.95f),
-        ["sapphire"] = Rgb(0.10f, 0.30f, 0.80f),
-        ["navy"] = Rgb(0.08f, 0.15f, 0.45f),
-        ["indigo"] = Rgb(0.30f, 0.15f, 0.65f),
-        ["violet"] = Rgb(0.55f, 0.25f, 0.85f),
-        ["purple"] = Rgb(0.55f, 0.20f, 0.75f),
-        ["lavender"] = Rgb(0.70f, 0.60f, 0.90f),
-        ["magenta"] = Rgb(0.85f, 0.15f, 0.75f),
-        ["pink"] = Rgb(0.95f, 0.45f, 0.70f),
-        ["rose"] = Rgb(0.90f, 0.35f, 0.55f),
-        ["fuchsia"] = Rgb(0.90f, 0.15f, 0.80f),
-        ["brown"] = Rgb(0.45f, 0.30f, 0.15f),
-        ["tan"] = Rgb(0.70f, 0.55f, 0.35f),
-        ["white"] = Rgb(0.95f, 0.95f, 0.95f),
-        ["ivory"] = Rgb(0.95f, 0.93f, 0.85f),
-        ["silver"] = Rgb(0.75f, 0.75f, 0.78f),
-        ["gray"] = Rgb(0.55f, 0.55f, 0.55f),
-        ["grey"] = Rgb(0.55f, 0.55f, 0.55f),
-        ["black"] = Rgb(0.06f, 0.06f, 0.06f),
-        ["bronze"] = Rgb(0.60f, 0.40f, 0.20f),
-        ["copper"] = Rgb(0.72f, 0.45f, 0.25f),
+    ["black"] = Rgb(0.06f, 0.06f, 0.06f),
+    ["blue"] = Rgb(0.20f, 0.45f, 0.90f),
+    ["cyan"] = Rgb(0.20f, 0.85f, 0.90f),
+    ["grayscale"] = Rgb(0.55f, 0.55f, 0.55f),
+    ["green"] = Rgb(0.20f, 0.80f, 0.25f),
+    ["magenta"] = Rgb(0.85f, 0.15f, 0.75f),
+    ["navy"] = Rgb(0.08f, 0.15f, 0.45f),
+    ["orange"] = Rgb(0.95f, 0.50f, 0.10f),
+    ["pink"] = Rgb(0.95f, 0.45f, 0.70f),
+    ["purple"] = Rgb(0.55f, 0.20f, 0.75f),
+    ["red"] = Rgb(0.85f, 0.15f, 0.15f),
+    ["teal"] = Rgb(0.10f, 0.65f, 0.65f),
+    ["white"] = Rgb(0.95f, 0.95f, 0.95f),
+    ["yellow"] = Rgb(0.95f, 0.85f, 0.15f),
     };
 
     /// <summary>
@@ -321,9 +316,12 @@ public static class TooltipKeywordParser
     /// Parses one tooltip against every enabled rule. At most one match per distinct Kind. Never
     /// throws; unresolvable color tokens and blank keyword rules are silently skipped.
     ///
-    /// The material phrase is found FIRST, and any keyword falling inside its span is skipped, so
-    /// "frost made of flames" activates only Frost (not Burns via the "flames" rule) while still
-    /// attaching the ember material to Frost's hero slot.
+    /// Material scoping: material phrases ("made of snow", "of lightning") are matched per
+    /// CLAUSE, not globally. A description that names several effects - "red tentacle made of
+    /// snow, black flame made of sparks" - attaches each clause's own material to the match(es)
+    /// in that clause, so the two effects don't share one material. Any keyword falling inside
+    /// any material phrase's span is skipped, so "flames" in "made of flames" acts as a
+    /// modifier on the effect in that clause rather than firing its own rule.
     /// </summary>
     public static IReadOnlyList<TooltipEffectMatch> Parse(string? tooltipText, IReadOnlyList<TooltipKeywordRule> rules)
     {
@@ -337,19 +335,13 @@ public static class TooltipKeywordParser
         var colorWords = ColorWordPattern.Matches(plain);
         var best = new Dictionary<DebuffKind, TooltipEffectMatch>();
 
-        // Locate the material phrase before keyword matching. Its span is used below to suppress
-        // any keyword rule that would otherwise fire on a word inside it.
-        string? material = null;
-        int matStart = -1, matEnd = -1;
+        // Locate EVERY material phrase and its span, not just the first. The spans are used both
+        // for keyword suppression (below) and for per-clause resolution (MaterialInSameClause).
+        var materialPhrases = new List<(int Start, int End, string Material)>();
         foreach (Match m in MaterialPhrase.Matches(plain))
         {
             if (MaterialWords.TryGetValue(m.Groups["material"].Value, out var matName))
-            {
-                material = matName;
-                matStart = m.Index;
-                matEnd = m.Index + m.Length;
-                break;
-            }
+                materialPhrases.Add((m.Index, m.Index + m.Length, matName));
         }
 
         foreach (var rule in rules)
@@ -360,9 +352,18 @@ public static class TooltipKeywordParser
 
             foreach (Match m in pattern.Matches(plain))
             {
-                // Skip keywords that fall inside the material phrase ("flames" in "made of
-                // flames"). Those words are modifiers, not activation keywords.
-                if (matStart >= 0 && m.Index >= matStart && m.Index < matEnd) continue;
+                // Skip keywords inside ANY material phrase. Those words are modifiers, not
+                // activation keywords.
+                bool insideMaterial = false;
+                for (int i = 0; i < materialPhrases.Count; i++)
+                {
+                    if (m.Index >= materialPhrases[i].Start && m.Index < materialPhrases[i].End)
+                    {
+                        insideMaterial = true;
+                        break;
+                    }
+                }
+                if (insideMaterial) continue;
 
                 Vector4? tagColor = FindTagColor(colorRuns, m.Index);
                 Vector4? clauseColor = tagColor == null ? FindClauseColor(clauses, colorWords, m.Index) : null;
@@ -372,7 +373,11 @@ public static class TooltipKeywordParser
                     : clauseColor != null ? TooltipColorSource.Clause
                     : TooltipColorSource.None;
 
-                var candidate = new TooltipEffectMatch(rule.Kind, resolved, source);
+                // Attach only the material phrase that lives in the same clause as this match.
+                // A material in a different clause describes a different effect.
+                string? matchMaterial = MaterialInSameClause(clauses, materialPhrases, m.Index);
+
+                var candidate = new TooltipEffectMatch(rule.Kind, resolved, source, matchMaterial);
                 if (!best.TryGetValue(rule.Kind, out var existing) || (candidate.Color != null && existing.Color == null))
                     best[rule.Kind] = candidate;
             }
@@ -381,14 +386,34 @@ public static class TooltipKeywordParser
         if (best.Count == 0) return Array.Empty<TooltipEffectMatch>();
 
         var result = new List<TooltipEffectMatch>(best.Count);
-        foreach (var kv in best)
-        {
-            var match = kv.Value;
-            if (material != null)
-                match = match with { MaterialSubstitution = material };
-            result.Add(match);
-        }
+        foreach (var kv in best) result.Add(kv.Value);
         return result;
+    }
+
+    /// <summary>
+    /// The material phrase belonging to the clause that contains <paramref name="idx"/>, if any.
+    /// A clause can carry only one material - the first phrase found in it wins, matching the
+    /// "first declaration sticks" convention used elsewhere (StatusCatalog, MaterialRegistry).
+    /// Returns null when the match's clause has no material, or the index falls in no clause.
+    /// </summary>
+    private static string? MaterialInSameClause(
+        List<(int Start, int End)> clauses,
+        List<(int Start, int End, string Material)> materialPhrases,
+        int idx)
+    {
+        for (int c = 0; c < clauses.Count; c++)
+        {
+            var (start, end) = clauses[c];
+            if (idx < start || idx >= end) continue;
+
+            for (int p = 0; p < materialPhrases.Count; p++)
+            {
+                var mp = materialPhrases[p];
+                if (mp.Start >= start && mp.Start < end) return mp.Material;
+            }
+            return null;
+        }
+        return null;
     }
 
     /// <summary>

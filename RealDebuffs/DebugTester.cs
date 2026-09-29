@@ -50,6 +50,18 @@ internal static class DebugTester
     }
 
     /// <summary>
+    /// Updates the color on an already-forced test without touching its end time. Used by the
+    /// effect generator so changing the color dropdown mid-preview recolors the running preview
+    /// instead of requiring the user to re-click Preview (which would restart the 15s timer).
+    /// No-op when the kind isn't currently being tested.
+    /// </summary>
+    public static void UpdateForcedColor(DebuffKind kind, Vector4? color)
+    {
+        if (EndsAt.TryGetValue(kind, out long end) && end > Environment.TickCount64)
+            ForcedColor[kind] = color;
+    }
+
+    /// <summary>
     /// Draws the panel. <paramref name="isShowing"/> says whether an effect is allowed to appear
     /// at all right now; it's only used to add an "(off in settings)" hint so a test that shows
     /// nothing explains itself. <paramref name="effects"/> is the roster to iterate; only

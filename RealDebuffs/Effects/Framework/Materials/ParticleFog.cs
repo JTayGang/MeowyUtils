@@ -5,21 +5,22 @@ using Dalamud.Bindings.ImGui;
 namespace RealDebuffs.Effects.Framework.Materials;
 
 /// <summary>
-/// A creeping cold mist wisp. The key insight: a symmetric radial cluster of circles always
-/// reads as a blob no matter how many lobes it has - the eye pattern-matches "circular." Real
-/// fog is stretched along the direction it drifts, so each wisp here gets its own elongation
-/// axis and length, and the lobes are distributed ALONG that axis rather than around a center.
-/// The result is a spindle-shaped silhouette: narrow at the tips, ragged through the middle.
+/// A single soft fog blob. Fog as a whole is a FIELD of these: many independent particles, each
+/// with its own spawn, position, velocity, sway, and lifespan, drifting and dying on its own
+/// clock. The only thing that makes fog look like fog rather than snow is that these particles
+/// are large, slow, long-lived, and drawn very softly.
 ///
-/// ANIMATION: each lobe has its own drift - its own X speed, Y speed, phase, and amplitude,
-/// all seeded from the particle's own seed. Lobes wander in small ellipses (different
-/// frequencies on each axis, so the paths aren't closed circles), and each lobe's radius
-/// breathes slightly out of phase with its neighbors. The wisp as a whole still translates
-/// and sways via p.Position and p.Sway; the per-lobe motion is layered ON TOP of that, so the
-/// cloud moves as one thing while its interior visibly churns.
+/// SHAPE: each particle draws as several small same-alpha sub-circles at fixed per-seed offsets.
+/// They do NOT move relative to each other - they're the particle's silhouette, not animation.
+/// The reason for many small rather than one large circle (or two concentric circles) is that
+/// concentric layers of different radii always produce a visible "rim with a core," no matter
+/// how soft each edge is, because the eye pattern-matches the fixed radii. Several sub-circles
+/// at the SAME alpha overlap into an irregular aggregate with a smooth falloff from the middle
+/// - no distinct radius anywhere for a ring to form at.
 ///
-/// The per-lobe alpha is very low (0.038), because with nine body lobes plus three outliers,
-/// heavy overlap is what turns individual soft circles into a continuous hazy mass.
+/// The individual sub-lobe offsets and radii are seed-derived, so no two particles have the same
+/// outline. This is the same reason snow and sparks read correctly: each particle is small,
+/// soft, and slightly different from its neighbors, and the aggregate is what makes the field.
 /// </summary>
 public sealed class ParticleFog : IParticleMaterial
 {
@@ -28,8 +29,7 @@ public sealed class ParticleFog : IParticleMaterial
 
     private static readonly uint Tint = DrawHelpers.ToU32(0.72f, 0.82f, 0.94f, 1f);
 
-    private const int BodyLobes    = 9;
-    private const int OutlierLobes = 3;
+    private const int SubLobes = 5;
 
     public void Draw(ImDrawListPtr dl, in ParticlePrimitive p, in MaterialContext ctx)
     {
@@ -38,7 +38,8 @@ public sealed class ParticleFog : IParticleMaterial
         float alpha = p.Brightness * ctx.Alpha;
         if (alpha <= 0.003f) return;
 
-        // Very slow envelope — fog drifts in, hangs, drifts out.
+        // Slow envelope - fog drifts in, hangs, drifts out. Broader hold than other particles
+        // so a blob's appearance and disappearance are gradual.
         float sizeT;
         if      (p.AgeRatio < 0.30f) sizeT = 0.55f + 0.45f * (p.AgeRatio / 0.30f);
         else if (p.AgeRatio < 0.70f) sizeT = 1f;
@@ -49,89 +50,19 @@ public sealed class ParticleFog : IParticleMaterial
 
         var pos = p.Position + new Vector2(p.Sway, 0f);
 
-        // Elongation: every wisp has its own stretch axis and length. Fixed per-particle (seed
-        // derived), so the wisp's overall silhouette stays coherent as it drifts. The INTERNAL
-        // lobes drift independently of this axis (see below); only the base layout uses it.
-        float axisAngle = DrawHelpers.HashRange(p.Seed,     0f, MathF.Tau);
-        float stretch   = DrawHelpers.HashRange(p.Seed + 1, 1.8f, 3.0f);
-        Vector2 axisDir = new(MathF.Cos(axisAngle), MathF.Sin(axisAngle));
-        Vector2 perpDir = new(-axisDir.Y, axisDir.X);
-
-        float halfLen  = size * stretch;
-        float bodyHalf = size * 0.55f; // half-width of the central body, pre-taper
-
-        // Body lobes: distributed along the stretch axis, laterally jittered with a taper that
-        // is widest at the middle and pinches at the ends. That's what produces the spindle
-        // silhouette instead of a uniform oval.
-        for (int i = 0; i < BodyLobes; i++)
+        // Same alpha on every sub-lobe: no concentric structure, no rim. Overlap does the
+        // softening. Offsets sit well inside the parent radius so the aggregate silhouette is
+        // roughly circular but visibly irregular, not a cluster of distinct circles.
+        for (int i = 0; i < SubLobes; i++)
         {
-            int s = p.Seed + i * 197 + 53;
+            int s = p.Seed + i * 197;
 
-            float t = (i + 0.5f) / BodyLobes - 0.5f;   // -0.5 .. +0.5
-            float along = t * halfLen * 2f;
-            float taper = 1f - MathF.Abs(t) * 1.6f;
-            if (taper < 0.15f) taper = 0.15f;
+            float ang  = DrawHelpers.HashRange(s,     0f, MathF.Tau);
+            float dist = DrawHelpers.HashRange(s + 1, 0.10f, 0.40f) * size;
+            float r    = DrawHelpers.HashRange(s + 2, 0.55f, 0.80f) * size;
 
-            float lateralSpread = bodyHalf * taper;
-            float lateralJitter = DrawHelpers.HashRange(s, -0.35f, 0.35f) * bodyHalf;
-            float lateral = DrawHelpers.HashRange(s + 1, -lateralSpread, lateralSpread) + lateralJitter;
-
-            float r = size * DrawHelpers.HashRange(s + 2, 0.40f, 0.70f) * taper;
-
-            Vector2 baseAt = pos + axisDir * along + perpDir * lateral;
-
-            // ---- per-lobe independent motion ----
-            // World-space drift (not axis-space): lobes move freely in all directions rather
-            // than being constrained to slide along the wisp's own long axis, which is what
-            // real fog does. Different frequencies on X and Y mean the lobe traces a small
-            // open curve rather than a closed loop, so it never visibly "resets."
-            float driftAmp    = size * DrawHelpers.HashRange(s + 3, 0.10f, 0.22f);
-            float driftSpeedX = DrawHelpers.HashRange(s + 4, 0.35f, 0.85f);
-            float driftSpeedY = DrawHelpers.HashRange(s + 5, 0.28f, 0.72f);
-            float driftPhaseX = DrawHelpers.HashRange(s + 6, 0f, MathF.Tau);
-            float driftPhaseY = DrawHelpers.HashRange(s + 7, 0f, MathF.Tau);
-
-            float dx = MathF.Sin(ctx.Time * driftSpeedX + driftPhaseX) * driftAmp;
-            float dy = MathF.Cos(ctx.Time * driftSpeedY + driftPhaseY) * driftAmp * 0.85f;
-            Vector2 drift = new(dx, dy);
-
-            // Slight radius breathing, at the lobe's own X frequency but offset in phase so
-            // radius doesn't peak exactly when the lobe is at its extreme drift position.
-            float radiusPulse = 1f + 0.18f * MathF.Sin(ctx.Time * driftSpeedX * 0.9f + driftPhaseX + 1.3f);
-
-            // Nine lobes at 0.038 alpha overlap into a continuous haze. The individual circles
-            // stop being distinguishable and only the aggregate silhouette remains.
-            dl.AddCircleFilled(baseAt + drift, r * radiusPulse,
-                DrawHelpers.WithAlpha(Tint, alpha * 0.038f));
-        }
-
-        // Outlier lobes: placed further out, very faint. These break up the outline so the
-        // wisp's edge is ragged and organic rather than a smooth oval, and they hang off the
-        // main body in a way that reads as trailing mist rather than as a separate particle.
-        // Each gets its own drift too - slightly larger amplitude than the body lobes, so the
-        // frayed edges of the wisp churn a bit more than its core.
-        for (int i = 0; i < OutlierLobes; i++)
-        {
-            int s = p.Seed + 900 + i * 131;
-            float t = DrawHelpers.HashRange(s, -0.85f, 0.85f);
-            float along = t * halfLen * 2f;
-            float lateral = DrawHelpers.HashRange(s + 1, -bodyHalf * 0.9f, bodyHalf * 0.9f);
-            float r = size * DrawHelpers.HashRange(s + 2, 0.25f, 0.45f);
-
-            Vector2 baseAt = pos + axisDir * along + perpDir * lateral;
-
-            float driftAmp    = size * DrawHelpers.HashRange(s + 3, 0.15f, 0.30f);
-            float driftSpeedX = DrawHelpers.HashRange(s + 4, 0.28f, 0.65f);
-            float driftSpeedY = DrawHelpers.HashRange(s + 5, 0.24f, 0.58f);
-            float driftPhaseX = DrawHelpers.HashRange(s + 6, 0f, MathF.Tau);
-            float driftPhaseY = DrawHelpers.HashRange(s + 7, 0f, MathF.Tau);
-
-            float dx = MathF.Sin(ctx.Time * driftSpeedX + driftPhaseX) * driftAmp;
-            float dy = MathF.Cos(ctx.Time * driftSpeedY + driftPhaseY) * driftAmp * 0.85f;
-            Vector2 drift = new(dx, dy);
-
-            dl.AddCircleFilled(baseAt + drift, r,
-                DrawHelpers.WithAlpha(Tint, alpha * 0.028f));
+            Vector2 offset = new(MathF.Cos(ang) * dist, MathF.Sin(ang) * dist);
+            dl.AddCircleFilled(pos + offset, r, DrawHelpers.WithAlpha(Tint, alpha * 0.045f));
         }
     }
 

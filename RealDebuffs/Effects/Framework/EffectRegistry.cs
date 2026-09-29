@@ -116,16 +116,17 @@ public static class EffectRegistry
 
     public static string FallbackStroke() => "stroke.simple";
 
-    public static string FallbackParticle(PrimitiveRole role) => role switch
-    {
-        PrimitiveRole.Ember     => "particle.ember",
-        PrimitiveRole.Snowflake => "particle.snowflake",
-        PrimitiveRole.Snow      => "particle.snow",
-        PrimitiveRole.Fog       => "particle.fog",
-        PrimitiveRole.Drip      => "particle.drip",
-        PrimitiveRole.Flow      => "particle.drip",
-        _                       => "particle.spark",
-    };
+public static string FallbackParticle(PrimitiveRole role) => role switch
+{
+    PrimitiveRole.Ember      => "particle.ember",
+    PrimitiveRole.Snowflake  => "particle.snowflake",
+    PrimitiveRole.Snow       => "particle.snow",
+    PrimitiveRole.Fog        => "particle.fog",
+    PrimitiveRole.IceCrystal => "particle.ice-crystal",
+    PrimitiveRole.Drip       => "particle.drip",
+    PrimitiveRole.Flow       => "particle.drip",
+    _                        => "particle.spark",
+};
 
     public static string FallbackRegion(in RegionPrimitive r) =>
         (r.Top || r.Bottom || r.Left || r.Right) ? "region.edge-glow" : "region.flat-fill";

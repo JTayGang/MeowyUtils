@@ -5,15 +5,15 @@ using Dalamud.Bindings.ImGui;
 namespace RealDebuffs.Effects.Framework.Materials;
 
 /// <summary>
-/// A snow particle: a small bright white speck with a soft pale-blue halo. When used as a stroke
-/// emitter ("chains made of snow", "frosty tentacles"), it declares TWO emissions side by side:
-/// dense specks as the primary field, plus a sparse layer of crystalline snowflakes rendered by
-/// particle.snowflake. The combined look is a proper snowfall rather than just a scatter of
-/// specks, and the flake half still uses its own renderer so the visuals stay distinct.
+/// A fine snow speck. Small bright white core with a soft pale-blue halo, drawn as a plain dot
+/// most of the time - that's what fine snow should look like, and turning every speck into a
+/// star would overwhelm the field. But roughly a quarter get a tiny four-point crystalline
+/// glint cross, which reads as light catching an ice grain and gives the field visible variance
+/// as it falls.
 ///
-/// A user wanting only specks can select this material as a stroke emitter and expect the flake
-/// half to show up too — that's the point. A user wanting only flakes should select
-/// particle.snowflake instead, which has no speck layer.
+/// When used as a stroke emitter ("frosty tentacles", "chains made of snow"), it declares TWO
+/// emissions side by side: dense specks as the primary field, plus a sparse layer of crystalline
+/// snowflakes rendered by particle.snowflake.
 /// </summary>
 public sealed class ParticleSnow : IParticleMaterial
 {
@@ -42,16 +42,20 @@ public sealed class ParticleSnow : IParticleMaterial
 
         dl.AddCircleFilled(pos, size * 2.2f, DrawHelpers.WithAlpha(Halo, alpha * 0.22f));
         dl.AddCircleFilled(pos, size,        DrawHelpers.WithAlpha(Core, alpha * 0.92f));
+
+        // ~25% of specks get a glint cross. Deterministic per particle (seed-based), so a given
+        // speck keeps its glint for its whole life rather than flickering between the two.
+        if ((p.Seed & 3) == 0)
+        {
+            float crossR = size * 2.6f;
+            uint glint = DrawHelpers.WithAlpha(Core, alpha * 0.55f);
+            dl.AddLine(pos + new Vector2(-crossR, 0f), pos + new Vector2(crossR, 0f), glint, 0.7f);
+            dl.AddLine(pos + new Vector2(0f, -crossR), pos + new Vector2(0f, crossR), glint, 0.7f);
+        }
     }
 
     public ReadOnlySpan<StrokeEmission> Emissions => EmissionSpecs;
 
-    /// <summary>
-    /// Two emissions running side by side. The speck emission is the primary field; the flake
-    /// emission is a sparse crystalline layer that renders as particle.snowflake. Each has its
-    /// own RenderMaterial so the two halves don't collapse to the same visual even when this
-    /// material is invoked via an emit-axis override that would otherwise force one name.
-    /// </summary>
     private static readonly StrokeEmission[] EmissionSpecs =
     {
         // Specks — the existing single-emission behavior, unchanged.
@@ -65,8 +69,7 @@ public sealed class ParticleSnow : IParticleMaterial
             PrimaryDirection: new Vector2(0f, 1f),
             RenderMaterial: "particle.snow"),
 
-        // Flakes — sparse crystalline layer. Bigger, slower, longer-lived than the specks,
-        // so the eye reads them as distinct objects rather than as brighter specks.
+        // Flakes — sparse crystalline layer.
         new(Role: PrimitiveRole.Snowflake,
             DensityPer100px: 0.6f,
             SpeedMin: 10f, SpeedMax: 25f,

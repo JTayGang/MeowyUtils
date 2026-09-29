@@ -21,6 +21,7 @@ public enum PrimitiveRole
     Snowflake,
     Snow,
     Fog,
+    IceCrystal,
 
     // Decorative
     Ring,

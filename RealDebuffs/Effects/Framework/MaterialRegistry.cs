@@ -42,6 +42,7 @@ public static class MaterialRegistry
         Register(new ParticleSnowflake());
         Register(new ParticleSnow());
         Register(new ParticleFog());
+        Register(new ParticleIceCrystal());   // <- new
         Register(new ParticleSpark());
         Register(new ParticleDrip());
     }

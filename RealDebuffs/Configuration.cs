@@ -61,10 +61,17 @@ public class Configuration : IPluginConfiguration
     /// <summary>
     /// "If a status's tooltip contains this word, show this effect" links - see
     /// <see cref="TooltipKeywordRule"/>. Only consulted while <see cref="ParseCustomStatusTooltips"/>
-    /// is on. Seeded with a default set; a save from before this field existed picks the defaults
-    /// up on first load.
+    /// is on. Seeded at load from each effect's TriggerKeywords; see
+    /// <see cref="TooltipKeywordRule.SeedNewEffects"/>.
     /// </summary>
-    public List<TooltipKeywordRule> TooltipKeywordRules { get; set; } = TooltipKeywordRule.Defaults();
+    public List<TooltipKeywordRule> TooltipKeywordRules { get; set; } = new();
+
+    /// <summary>
+    /// Kinds whose default tooltip-keyword rule has already been seeded into TooltipKeywordRules.
+    /// New effects are added automatically on load; a kind already in here is never re-seeded, so a
+    /// user who deliberately deleted a rule keeps it deleted. "Reset to defaults" clears this.
+    /// </summary>
+    public HashSet<DebuffKind> SeededKinds { get; set; } = new();
 
     /// <summary>OFF by default: actually stop outgoing chat while silenced. See ChatBlocker.cs.</summary>
     public bool SilenceBlocksChat { get; set; } = false;

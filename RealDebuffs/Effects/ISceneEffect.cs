@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Numerics;
 using RealDebuffs.Effects.Framework;
@@ -48,6 +49,13 @@ public interface ISceneEffect
     /// Brink of Death) lists each with its own strength. A strength of 1.0 means "full effect".
     /// </summary>
     IReadOnlyDictionary<string, float> TriggerStatuses { get; }
+
+    /// <summary>
+    /// Words/phrases a status tooltip can contain to trigger this effect. Used to seed the user's
+    /// TooltipKeywordRules on first load (see TooltipKeywordRule.SeedNewEffects). An effect that
+    /// leaves this empty simply contributes no default rule - the user can still add one by hand.
+    /// </summary>
+    IReadOnlyList<string> TriggerKeywords => System.Array.Empty<string>();
 
     /// <summary>
     /// Emit this frame's primitives into <paramref name="scene"/>. Called only while

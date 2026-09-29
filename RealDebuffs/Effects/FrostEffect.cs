@@ -35,6 +35,11 @@ public sealed class FrostEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
         ["Deep Freeze"] = 1.0f,
     };
 
+    public IReadOnlyList<string> TriggerKeywords { get; } = new[]
+    {
+        "frost", "frozen", "freezing", "chill"
+    };
+
     public EffectHeroSlot[] HeroSlots { get; } = new EffectHeroSlot[]
     {
         new("Particle", PrimitiveRole.Snowflake),

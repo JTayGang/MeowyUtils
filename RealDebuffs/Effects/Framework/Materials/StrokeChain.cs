@@ -20,6 +20,7 @@ namespace RealDebuffs.Effects.Framework.Materials;
 public sealed class StrokeChain : IStrokeMaterial
 {
     public string Name => "stroke.chain";
+    public string[] NaturalLanguageWords { get; } = { "chain", "chains", "links" };
 
     // Chain links have a natural size range: too small and the interlock pattern is illegible
     // (they read as a string of beads), too large and a single link dominates the frame instead

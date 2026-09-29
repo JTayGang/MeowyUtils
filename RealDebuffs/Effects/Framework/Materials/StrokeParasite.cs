@@ -30,6 +30,7 @@ namespace RealDebuffs.Effects.Framework.Materials;
 public sealed class StrokeParasite : IStrokeMaterial
 {
     public string Name => "stroke.parasite";
+    public string[] NaturalLanguageWords { get; } = { "tentacle", "tentacles", "tendril", "tendrils", "parasite", "parasites" };
 
     // ---- palette: sickly green parasite flesh ----
     private static readonly uint Halo    = DrawHelpers.ToU32(0.015f, 0.030f, 0.010f, 1f);

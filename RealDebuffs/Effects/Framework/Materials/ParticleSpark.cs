@@ -12,6 +12,7 @@ namespace RealDebuffs.Effects.Framework.Materials;
 public sealed class ParticleSpark : IParticleMaterial
 {
     public string Name => "particle.spark";
+    public string[] NaturalLanguageWords { get; } = { "spark", "sparks" };
 
     private static readonly uint White = DrawHelpers.ToU32(1.00f, 1.00f, 0.96f, 1f);
     private static readonly uint Gold  = DrawHelpers.ToU32(1.00f, 0.78f, 0.32f, 1f);

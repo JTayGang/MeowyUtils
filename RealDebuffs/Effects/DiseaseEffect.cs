@@ -41,6 +41,11 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         ["Disease"] = 1.0f,
     };
 
+    public IReadOnlyList<string> TriggerKeywords { get; } = new[]
+    {
+        "parasite", "parasites", "infest", "infested", "tentacle", "tentacles"
+    };
+
     public EffectHeroSlot[] HeroSlots { get; } = new EffectHeroSlot[]
     {
         new("Stroke", PrimitiveRole.MainStroke),

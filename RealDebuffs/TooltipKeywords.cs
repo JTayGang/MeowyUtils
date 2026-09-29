@@ -4,6 +4,8 @@ using System.Linq;
 using System.Numerics;
 using System.Text;
 using System.Text.RegularExpressions;
+using RealDebuffs.Effects.Framework;
+using RealDebuffs.Effects;
 
 namespace RealDebuffs;
 
@@ -80,35 +82,75 @@ public sealed class TooltipKeywordRule
     }
 
     /// <summary>
-    /// A modest starting set covering common RP flavor-text vocabulary. Deliberately not
-    /// exhaustive - the more mechanical kinds (Vulnerability, Slow, Pacification, etc.) have no
-    /// universal vocabulary to guess at.
+    /// One rule per effect that declares TriggerKeywords, for the "Reset to defaults" button. Each
+    /// rule's Keywords string is the effect's own declared words joined with commas; effects that
+    /// declare none contribute no rule.
     /// </summary>
-    public static List<TooltipKeywordRule> Defaults()
+    public static List<TooltipKeywordRule> BuildDefaults(IReadOnlyList<ISceneEffect> effects)
     {
-        (string Keywords, DebuffKind Kind)[] seed =
+        var list = new List<TooltipKeywordRule>();
+        foreach (var effect in effects)
         {
-            ("tentacle, tentacles, bind, bound, restrain, restrained, coil, coiled", DebuffKind.Bind),
-            ("shock, shocking, shocked, paralyze, paralyzed, paralysis", DebuffKind.Paralysis),
-            ("electrocute, electrocuted, voltage, live wire", DebuffKind.Electrocution),
-            ("flame, flames, burning, scorch, ignite", DebuffKind.Burns),
-            ("frost, frozen, freezing, chill", DebuffKind.Frost),
-            ("chains, shackle, shackled", DebuffKind.Heavy),
-            ("sleepy, drowsy, slumber", DebuffKind.Sleep),
-            ("poison, poisoned, venom, venomous", DebuffKind.Poison),
-            ("blindfold, blinded", DebuffKind.Blind),
-            ("silenced, gagged, muted", DebuffKind.Silence),
-            ("charmed, infatuated, seduced, enthralled", DebuffKind.Charm),
-            ("petrified, turned to stone", DebuffKind.Petrification),
-            ("bleeding, gash", DebuffKind.Bleeding),
-            ("stunned, dazed", DebuffKind.Stun),
-            ("cursed, marked for death", DebuffKind.Doom),
-        };
-
-        var list = new List<TooltipKeywordRule>(seed.Length);
-        foreach (var (keywords, kind) in seed)
-            list.Add(new TooltipKeywordRule { Keywords = keywords, Kind = kind });
+            if (effect.TriggerKeywords.Count == 0) continue;
+            list.Add(new TooltipKeywordRule
+            {
+                Keywords = string.Join(", ", effect.TriggerKeywords),
+                Kind = effect.Kind,
+            });
+        }
         return list;
+    }
+
+    /// <summary>
+    /// Option-C merge pass, called once per session from Plugin after effect discovery. For every
+    /// effect whose kind isn't already in <see cref="Configuration.SeededKinds"/>: mark it seeded,
+    /// and - only if the user has no rule for that kind yet - add the effect's default rule. A rule
+    /// the user deleted stays deleted (the kind is seeded, so we don't touch it); a newly-added
+    /// effect gets a rule automatically (the kind isn't seeded yet). Returns true if config changed.
+    /// </summary>
+    public static bool SeedNewEffects(Configuration config, IReadOnlyList<ISceneEffect> effects)
+    {
+        bool changed = false;
+        var rules = config.TooltipKeywordRules;
+
+        foreach (var effect in effects)
+        {
+            if (config.SeededKinds.Contains(effect.Kind)) continue;
+            config.SeededKinds.Add(effect.Kind);
+            changed = true;
+
+            if (effect.TriggerKeywords.Count == 0) continue;
+            if (rules.Any(r => r.Kind == effect.Kind)) continue;
+
+            rules.Add(new TooltipKeywordRule
+            {
+                Keywords = string.Join(", ", effect.TriggerKeywords),
+                Kind = effect.Kind,
+            });
+        }
+
+        return changed;
+    }
+
+    /// <summary>
+    /// "Reset to defaults": wipe the user's rules and the seeded set, then re-seed every effect
+    /// from its declared TriggerKeywords in one pass.
+    /// </summary>
+    public static void ResetToDefaults(Configuration config, IReadOnlyList<ISceneEffect> effects)
+    {
+        config.TooltipKeywordRules.Clear();
+        config.SeededKinds.Clear();
+
+        foreach (var effect in effects)
+        {
+            config.SeededKinds.Add(effect.Kind);
+            if (effect.TriggerKeywords.Count == 0) continue;
+            config.TooltipKeywordRules.Add(new TooltipKeywordRule
+            {
+                Keywords = string.Join(", ", effect.TriggerKeywords),
+                Kind = effect.Kind,
+            });
+        }
     }
 }
 
@@ -233,45 +275,17 @@ public static class TooltipKeywordParser
 
     /// <summary>
     /// Words a user can write after "made of" / "of" / "as" / "from" / "with" to substitute an
-    /// effect's hero visuals. Values are material names from MaterialRegistry. Because the
-    /// substitution is type-checked at the point of application (see EffectHeroSlots), a phrase
-    /// like "made of lightning" on a Burns effect - whose hero is a particle role - is silently
-    /// dropped rather than producing nonsense; Burns still gets its color from the phrase.
+    /// effect's hero visuals. Sourced from MaterialRegistry.Vocabulary, which is built from each
+    /// material's own NaturalLanguageWords declaration - adding a new material with words is a
+    /// one-file change (the material), and this field picks it up at next load.
+    ///
+    /// Values are material names. Because the substitution is type-checked at the point of
+    /// application (see EffectRegistry.HeroSlotsFor), a phrase like "made of lightning" on a
+    /// Burns effect - whose hero is a particle role - is silently dropped rather than producing
+    /// nonsense; Burns still gets its color from the phrase.
     /// </summary>
-    private static readonly Dictionary<string, string> MaterialWords = new(StringComparer.OrdinalIgnoreCase)
-    {
-        // Particle materials
-        ["snow"]        = "particle.snow",
-        ["snowflake"]   = "particle.snowflake",
-        ["snowflakes"]  = "particle.snowflake",
-        ["fog"]         = "particle.fog",
-        ["mist"]        = "particle.fog",
-        ["fire"]        = "particle.ember",
-        ["flame"]       = "particle.ember",
-        ["flames"]      = "particle.ember",
-        ["embers"]      = "particle.ember",
-        ["spark"]       = "particle.spark",
-        ["sparks"]      = "particle.spark",
-        ["droplet"]     = "particle.drip",
-        ["droplets"]    = "particle.drip",
-        ["drip"]        = "particle.drip",
-        ["drips"]       = "particle.drip",
-
-        // Stroke materials
-        ["lightning"]   = "stroke.lightning",
-        ["electricity"] = "stroke.lightning",
-        ["bolt"]        = "stroke.lightning",
-        ["bolts"]       = "stroke.lightning",
-        ["tentacle"]    = "stroke.parasite",
-        ["tentacles"]   = "stroke.parasite",
-        ["tendril"]     = "stroke.parasite",
-        ["tendrils"]    = "stroke.parasite",
-        ["chain"]       = "stroke.chain",
-        ["chains"]      = "stroke.chain",
-        ["links"]       = "stroke.chain",
-        ["parasite"]    = "stroke.parasite",
-        ["parasites"]   = "stroke.parasite",
-    };
+    private static readonly Dictionary<string, string> MaterialWords = MaterialRegistry.Vocabulary as Dictionary<string, string>
+        ?? new Dictionary<string, string>(MaterialRegistry.Vocabulary, StringComparer.OrdinalIgnoreCase);
 
     // Both regexes are built from their dictionaries above so they can never drift out of sync.
     // Textual ordering matters: fields initialize in declaration order, so the dictionaries must

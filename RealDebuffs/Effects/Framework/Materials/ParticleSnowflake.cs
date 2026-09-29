@@ -19,6 +19,7 @@ namespace RealDebuffs.Effects.Framework.Materials;
 public sealed class ParticleSnowflake : IParticleMaterial
 {
     public string Name => "particle.snowflake";
+    public string[] NaturalLanguageWords { get; } = { "snowflake", "snowflakes" };
 
     private static readonly uint Glow = DrawHelpers.ToU32(0.62f, 0.82f, 1.00f, 1f); // pale blue haze
     private static readonly uint Core = DrawHelpers.ToU32(0.94f, 0.98f, 1.00f, 1f); // near-white ice

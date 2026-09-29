@@ -183,6 +183,7 @@ internal sealed class TooltipKeywordPanel
 
     private readonly DebuffKind[] _kinds;
     private readonly string[] _kindNames;
+    private readonly IReadOnlyList<ISceneEffect> _effects;
 
     private string _newKeywords = "";
     private int _newKind = 0;
@@ -194,6 +195,7 @@ internal sealed class TooltipKeywordPanel
     {
         _config = config;
         _watcher = watcher;
+        _effects = effects;
 
         var sorted = effects
             .OrderBy(e => e.DisplayName, StringComparer.OrdinalIgnoreCase)
@@ -307,8 +309,7 @@ internal sealed class TooltipKeywordPanel
             if (_resetDefaultsRequested)
             {
                 _resetDefaultsRequested = false;
-                rules.Clear();
-                rules.AddRange(TooltipKeywordRule.Defaults());
+                TooltipKeywordRule.ResetToDefaults(_config, _effects);
                 changed = true;
             }
         }

@@ -20,6 +20,7 @@ namespace RealDebuffs.Effects.Framework.Materials;
 public sealed class ParticleEmber : IParticleMaterial
 {
     public string Name => "particle.ember";
+    public string[] NaturalLanguageWords { get; } = { "fire", "flame", "flames", "ember", "embers" };
 
     // ---- fire color ramp, hot to cold ----
     private static readonly uint HotWhite = DrawHelpers.ToU32(1.00f, 0.97f, 0.82f, 1f);

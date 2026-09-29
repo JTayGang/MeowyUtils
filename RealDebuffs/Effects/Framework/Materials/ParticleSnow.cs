@@ -18,6 +18,7 @@ namespace RealDebuffs.Effects.Framework.Materials;
 public sealed class ParticleSnow : IParticleMaterial
 {
     public string Name => "particle.snow";
+    public string[] NaturalLanguageWords { get; } = { "snow" };
 
     private static readonly uint Halo = DrawHelpers.ToU32(0.72f, 0.86f, 1.00f, 1f);
     private static readonly uint Core = DrawHelpers.ToU32(0.98f, 1.00f, 1.00f, 1f);

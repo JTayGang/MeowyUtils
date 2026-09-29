@@ -36,6 +36,11 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
         ["Heavy"] = 1.0f,
     };
 
+    public IReadOnlyList<string> TriggerKeywords { get; } = new[]
+    {
+        "chains", "shackle", "shackled"
+    };
+
     public EffectHeroSlot[] HeroSlots { get; } = new EffectHeroSlot[]
     {
         new("Stroke", PrimitiveRole.MainStroke),

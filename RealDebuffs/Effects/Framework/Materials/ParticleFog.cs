@@ -16,6 +16,7 @@ namespace RealDebuffs.Effects.Framework.Materials;
 public sealed class ParticleFog : IParticleMaterial
 {
     public string Name => "particle.fog";
+    public string[] NaturalLanguageWords { get; } = { "fog", "mist" };
 
     private static readonly uint Tint = DrawHelpers.ToU32(0.72f, 0.82f, 0.94f, 1f);
 

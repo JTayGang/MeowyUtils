@@ -50,6 +50,9 @@ public sealed class Plugin : IDalamudPlugin
         foreach (var effect in effects)
             EffectRegistry.Register(effect);
 
+        if (TooltipKeywordRule.SeedNewEffects(_config, effects))
+            SaveConfig();
+
         var catalog = new StatusCatalog(dataManager, effects, log);
         _chatBlocker = new ChatBlocker(hooks, log);
         _customStatuses = new CustomStatusWatcher(_pi, framework, objectTable, log, _config);
@@ -65,6 +68,21 @@ public sealed class Plugin : IDalamudPlugin
 
         _pi.UiBuilder.Draw += OnDraw;
         _pi.UiBuilder.OpenConfigUi += OnOpenConfig;
+
+        // A material that has no NaturalLanguageWords isn't unreachable - the user can still
+        // select it by hand in the Effect generator - but it can't be exported or referenced in a
+        // "made of X" phrase. That's correct for region materials and stroke.simple; it's worth
+        // a warning for anything else, so a new material author who forgets gets a signal.
+        foreach (var material in MaterialRegistry.AllMaterials)
+        {
+            if (material.NaturalLanguageWords.Length == 0
+                && !material.Name.StartsWith("region.", StringComparison.Ordinal)
+                && material.Name != "stroke.simple")
+            {
+                _log.Warning($"RealDebuffs: material \"{material.Name}\" declares no NaturalLanguageWords - " +
+                             "it can't be referenced by a \"made of X\" phrase.");
+            }
+        }
 
         _log.Information($"RealDebuffs loaded. {effects.Count} effect(s) discovered.");
     }

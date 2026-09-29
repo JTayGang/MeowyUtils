@@ -12,6 +12,7 @@ namespace RealDebuffs.Effects.Framework.Materials;
 public sealed class ParticleDrip : IParticleMaterial
 {
     public string Name => "particle.drip";
+    public string[] NaturalLanguageWords { get; } = { "drip", "drips", "droplet", "droplets" };
 
     private static readonly uint Body      = DrawHelpers.ToU32(0.55f, 0.75f, 0.20f, 1f);
     private static readonly uint Highlight = DrawHelpers.ToU32(0.92f, 1.00f, 0.55f, 1f);

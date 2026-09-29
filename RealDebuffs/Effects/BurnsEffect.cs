@@ -44,6 +44,11 @@ public sealed class BurnsEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
         ["Burns"] = 1.0f,
     };
 
+    public IReadOnlyList<string> TriggerKeywords { get; } = new[]
+    {
+        "flame", "flames", "burning", "scorch", "ignite"
+    };
+
     public EffectHeroSlot[] HeroSlots { get; } = new EffectHeroSlot[]
     {
         new("Particle", PrimitiveRole.Ember),

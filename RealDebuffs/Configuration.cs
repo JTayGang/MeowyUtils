@@ -1,11 +1,7 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Configuration;
 using Dalamud.Interface.Windowing;
-using Dalamud.Plugin;
 using RealDebuffs.Effects;
 
 namespace RealDebuffs;
@@ -18,7 +14,7 @@ public class Configuration : IPluginConfiguration
     public bool Enabled { get; set; } = true;
     public bool HideDuringCutscenes { get; set; } = true;
 
-    /// <summary>Multiplies every effect's alpha/intensity. 1.0 = as-authored.</summary>
+    /// <summary>Multiplies every effect's alpha/intensity, between MinIntensity and MaxIntensity. Defaults to the max.</summary>
     public float GlobalIntensity { get; set; } = MaxIntensity;
 
     public const float MinIntensity = 0.1f;
@@ -29,10 +25,6 @@ public class Configuration : IPluginConfiguration
     /// set rather than one bool per kind, so adding a new DebuffKind requires no change here -
     /// a new kind is simply "not in the set" and therefore on by default. The per-kind label
     /// and description still live in the settings panel.
-    ///
-    /// NOTE: the enum's numeric values are what get serialized. Under the existing convention
-    /// (CustomStatusRule.Kind already stores the enum number the same way), new kinds must be
-    /// added at the END of DebuffKind, never inserted or reordered.
     /// </summary>
     public HashSet<DebuffKind> DisabledKinds { get; set; } = new();
 
@@ -65,7 +57,7 @@ public class Configuration : IPluginConfiguration
     public List<CustomStatusRule> CustomStatusRules { get; set; } = new();
 
     /// <summary>Also scan each active status's tooltip text for <see cref="TooltipKeywordRules"/>. Off by default.</summary>
-    public bool ParseCustomStatusTooltips { get; set; } = false;
+    public bool ParseCustomStatusTooltips { get; set; }
 
     /// <summary>
     /// "If a status's tooltip contains this word, show this effect" links - see
@@ -83,9 +75,8 @@ public class Configuration : IPluginConfiguration
     public HashSet<DebuffKind> SeededKinds { get; set; } = new();
 
     /// <summary>OFF by default: actually stop outgoing chat while silenced. See ChatBlocker.cs.</summary>
-    public bool SilenceBlocksChat { get; set; } = false;
+    public bool SilenceBlocksChat { get; set; }
 
-    public void Save(IDalamudPluginInterface pi) => pi.SavePluginConfig(this);
 }
 
 /// <summary>
@@ -101,6 +92,7 @@ public sealed class ConfigWindow : Window
     private readonly TooltipKeywordPanel _tooltipKeywords;
     private readonly EffectStylePanel _effectStyles;
     private readonly IReadOnlyList<ISceneEffect> _effects;
+    private readonly ISceneEffect[] _sortedEffects;
 
     public ConfigWindow(Configuration config, Action save, CustomStatusWatcher customStatuses, IReadOnlyList<ISceneEffect> effects)
         : base("Real Debuffs Settings###RealDebuffsConfig")
@@ -108,6 +100,7 @@ public sealed class ConfigWindow : Window
         _config = config;
         _save = save;
         _effects = effects;
+        _sortedEffects = effects.OrderBy(e => e.DisplayName, StringComparer.OrdinalIgnoreCase).ToArray();
         _customStatuses = new CustomStatusPanel(config, customStatuses, effects);
         _tooltipKeywords = new TooltipKeywordPanel(config, customStatuses, effects);
         _effectStyles = new EffectStylePanel(config);
@@ -166,7 +159,7 @@ public sealed class ConfigWindow : Window
         // Sorted alphabetically by DisplayName for scanning; EffectManager._order is a
         // separate concern (layering). Sorts the same way the old hardcoded list did, so
         // existing muscle memory still works.
-        foreach (var effect in _effects.OrderBy(e => e.DisplayName, StringComparer.OrdinalIgnoreCase))
+        foreach (var effect in _sortedEffects)
             changed |= EffectToggle(effect.Kind, effect.DisplayName, effect.Description);
 
         ImGui.Separator();

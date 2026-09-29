@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 
@@ -100,7 +99,7 @@ public static class EffectSceneRenderer
     {
         // Regions don't have a meaningful Role beyond "which kind of region is this", so the
         // override key uses a coarse tag derived from the edge mask instead of Role.ToString().
-        string regionKind = (r.Top || r.Bottom || r.Left || r.Right) ? "EdgeGlow" : "FlatFill";
+        string regionKind = r.HasEdge ? "EdgeGlow" : "FlatFill";
 
         if (overrides != null &&
             overrides.TryGetValue(MaterialOverrideKey.ForRegion(r.Owner, regionKind), out var name))
@@ -127,7 +126,7 @@ public static class MaterialOverrideKey
         $"{kind}.Region.{regionKind}";
 
     public static string ForRegion(DebuffKind kind, in RegionPrimitive r) =>
-        ForRegion(kind, (r.Top || r.Bottom || r.Left || r.Right) ? "EdgeGlow" : "FlatFill");
+        ForRegion(kind, r.HasEdge ? "EdgeGlow" : "FlatFill");
 
     /// <summary>Emit axis: which particle material this stroke sheds along its length.</summary>
     public static string ForStrokeEmit(DebuffKind kind, PrimitiveRole role) =>

@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Numerics;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -45,7 +42,6 @@ public sealed class TooltipKeywordRule
         set { _keywords = value ?? ""; _parsed = null; _pattern = null; }
     }
 
-    /// <summary>Saved as the enum's number, so new kinds must go at the END of DebuffKind.</summary>
     public DebuffKind Kind { get; set; } = DebuffKind.Bind;
 
     public bool Enabled { get; set; } = true;
@@ -76,30 +72,16 @@ public sealed class TooltipKeywordRule
         if (string.IsNullOrWhiteSpace(raw)) return Array.Empty<string>();
         return raw
             .Split(new[] { ',', '\n', '\r', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(k => k.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }
 
-    /// <summary>
-    /// One rule per effect that declares TriggerKeywords, for the "Reset to defaults" button. Each
-    /// rule's Keywords string is the effect's own declared words joined with commas; effects that
-    /// declare none contribute no rule.
-    /// </summary>
-    public static List<TooltipKeywordRule> BuildDefaults(IReadOnlyList<ISceneEffect> effects)
+    /// <summary>The default rule for an effect: its own declared TriggerKeywords, comma-joined.</summary>
+    private static TooltipKeywordRule DefaultRuleFor(ISceneEffect effect) => new()
     {
-        var list = new List<TooltipKeywordRule>();
-        foreach (var effect in effects)
-        {
-            if (effect.TriggerKeywords.Count == 0) continue;
-            list.Add(new TooltipKeywordRule
-            {
-                Keywords = string.Join(", ", effect.TriggerKeywords),
-                Kind = effect.Kind,
-            });
-        }
-        return list;
-    }
+        Keywords = string.Join(", ", effect.TriggerKeywords),
+        Kind = effect.Kind,
+    };
 
     /// <summary>
     /// Option-C merge pass, called once per session from Plugin after effect discovery. For every
@@ -122,11 +104,7 @@ public sealed class TooltipKeywordRule
             if (effect.TriggerKeywords.Count == 0) continue;
             if (rules.Any(r => r.Kind == effect.Kind)) continue;
 
-            rules.Add(new TooltipKeywordRule
-            {
-                Keywords = string.Join(", ", effect.TriggerKeywords),
-                Kind = effect.Kind,
-            });
+            rules.Add(DefaultRuleFor(effect));
         }
 
         return changed;
@@ -145,11 +123,7 @@ public sealed class TooltipKeywordRule
         {
             config.SeededKinds.Add(effect.Kind);
             if (effect.TriggerKeywords.Count == 0) continue;
-            config.TooltipKeywordRules.Add(new TooltipKeywordRule
-            {
-                Keywords = string.Join(", ", effect.TriggerKeywords),
-                Kind = effect.Kind,
-            });
+            config.TooltipKeywordRules.Add(DefaultRuleFor(effect));
         }
     }
 }
@@ -165,7 +139,7 @@ public sealed class TooltipKeywordRule
 ///     split on `. , ; ! ?` and standalone "and"/"but". First word in the clause wins.
 ///  3. Nothing - the effect shows in its own color.
 ///
-/// Material substitution: any "<connector> <material>" phrase ("made of snow", "of lightning",
+/// Material substitution: any "connector + material" phrase ("made of snow", "of lightning",
 /// "with chains") anywhere in the text attaches a material name to every matched kind. The
 /// target effect's hero slots determine where it actually lands at application time; if the
 /// material type doesn't match (a stroke material on a particle hero, say), it's dropped and the
@@ -243,20 +217,20 @@ public static class TooltipKeywordParser
     /// </summary>
     public static readonly IReadOnlyDictionary<string, Vector4> NamedColors = new Dictionary<string, Vector4>(StringComparer.OrdinalIgnoreCase)
     {
-    ["black"] = Rgb(0.06f, 0.06f, 0.06f),
-    ["blue"] = Rgb(0.20f, 0.45f, 0.90f),
-    ["cyan"] = Rgb(0.20f, 0.85f, 0.90f),
-    ["grayscale"] = Rgb(0.55f, 0.55f, 0.55f),
-    ["green"] = Rgb(0.20f, 0.80f, 0.25f),
-    ["magenta"] = Rgb(0.85f, 0.15f, 0.75f),
-    ["navy"] = Rgb(0.08f, 0.15f, 0.45f),
-    ["orange"] = Rgb(0.95f, 0.50f, 0.10f),
-    ["pink"] = Rgb(0.95f, 0.45f, 0.70f),
-    ["purple"] = Rgb(0.55f, 0.20f, 0.75f),
-    ["red"] = Rgb(0.85f, 0.15f, 0.15f),
-    ["teal"] = Rgb(0.10f, 0.65f, 0.65f),
-    ["white"] = Rgb(0.95f, 0.95f, 0.95f),
-    ["yellow"] = Rgb(0.95f, 0.85f, 0.15f),
+        ["black"] = Rgb(0.06f, 0.06f, 0.06f),
+        ["blue"] = Rgb(0.20f, 0.45f, 0.90f),
+        ["cyan"] = Rgb(0.20f, 0.85f, 0.90f),
+        ["grayscale"] = Rgb(0.55f, 0.55f, 0.55f),
+        ["green"] = Rgb(0.20f, 0.80f, 0.25f),
+        ["magenta"] = Rgb(0.85f, 0.15f, 0.75f),
+        ["navy"] = Rgb(0.08f, 0.15f, 0.45f),
+        ["orange"] = Rgb(0.95f, 0.50f, 0.10f),
+        ["pink"] = Rgb(0.95f, 0.45f, 0.70f),
+        ["purple"] = Rgb(0.55f, 0.20f, 0.75f),
+        ["red"] = Rgb(0.85f, 0.15f, 0.15f),
+        ["teal"] = Rgb(0.10f, 0.65f, 0.65f),
+        ["white"] = Rgb(0.95f, 0.95f, 0.95f),
+        ["yellow"] = Rgb(0.95f, 0.85f, 0.15f),
     };
 
     /// <summary>

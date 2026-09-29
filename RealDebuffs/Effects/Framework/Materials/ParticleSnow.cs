@@ -1,4 +1,3 @@
-using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 
@@ -58,7 +57,7 @@ public sealed class ParticleSnow : IParticleMaterial
 
     private static readonly StrokeEmission[] EmissionSpecs =
     {
-        // Specks — the existing single-emission behavior, unchanged.
+        // Specks.
         new(Role: PrimitiveRole.Snow,
             DensityPer100px: 4f,
             SpeedMin: 18f, SpeedMax: 45f,

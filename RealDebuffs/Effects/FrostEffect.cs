@@ -1,5 +1,3 @@
-using System;
-using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using RealDebuffs.Effects.Framework;
@@ -72,14 +70,11 @@ public sealed class FrostEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
     private readonly ParticleEmitter _iceCrystals = new(maxParticles: 24, seedSalt: 0xF00503);
 
     // ---- state ----
-    private Vector2 _screenSize;
     private float _castStart = -1f;
     private float _lastDrawTime = -100f;
 
     public void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, Vector4? colorOverride)
     {
-        _screenSize = screenSize;
-
         // Fresh application: reset the intro and drop any particles from the previous cast.
         if (time - _lastDrawTime > NewCastGapSeconds)
         {
@@ -203,9 +198,6 @@ public sealed class FrostEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
         _fog.Emit(scene, time, PrimitiveRole.Fog,
                   brightnessMul: alpha, colorOverride, swayPerParticle: 20f);
 
-        _fog.Emit(scene, time, PrimitiveRole.Fog,
-                  brightnessMul: alpha, colorOverride, swayPerParticle: 20f);
-
         // ---- 6. ice crystals: angular shards tumbling slowly across the field ----
         // Spawned from just above the top so they cross the whole screen before despawning; a
         // small upward bias in the velocity slows their descent relative to the snow so the
@@ -219,8 +211,8 @@ public sealed class FrostEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
             spawnVelocity: seed => new Vector2(
                 DrawHelpers.HashRange(seed + 10, -22f, 22f),
                 DrawHelpers.HashRange(seed + 11, 18f, 48f)),
-            lifespanMin: 4.0f, lifespanMax: 8.0f,                      // <- was 7.0/13.0
-            sizeMin: shortSide * 0.005f, sizeMax: shortSide * 0.012f); // <- was 0.008/0.018
+            lifespanMin: 4.0f, lifespanMax: 8.0f,
+            sizeMin: shortSide * 0.005f, sizeMax: shortSide * 0.012f);
 
         _iceCrystals.Emit(scene, time, PrimitiveRole.IceCrystal,
                           brightnessMul: alpha, colorOverride, swayPerParticle: 6f);

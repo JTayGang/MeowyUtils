@@ -1,5 +1,3 @@
-using System;
-using System.Collections.Generic;
 using System.Numerics;
 
 namespace RealDebuffs.Effects.Framework;
@@ -18,9 +16,7 @@ namespace RealDebuffs.Effects.Framework;
 /// </summary>
 public static class StrokeAutoEmitter
 {
-    // =====================================================================================
-    // Free-flying pool
-    // =====================================================================================
+    // ---- Free-flying pool ----
 
     private const int FreeFlyCapacity = 2000;
 
@@ -43,9 +39,7 @@ public static class StrokeAutoEmitter
     private static readonly FreeFlyParticle[] FreeFlyPool = new FreeFlyParticle[FreeFlyCapacity];
     private static int _freeFlyCount;
 
-    // =====================================================================================
-    // Flow pool
-    // =====================================================================================
+    // ---- Flow pool ----
 
     private const int FlowCapacity = 600;
 
@@ -77,9 +71,7 @@ public static class StrokeAutoEmitter
     private static readonly FlowingParticle[] FlowPool = new FlowingParticle[FlowCapacity];
     private static int _flowCount;
 
-    // =====================================================================================
-    // Public entry point
-    // =====================================================================================
+    // ---- Public entry point ----
 
     public static void Emit(EffectScene scene, float time, float dt,
                             IReadOnlyDictionary<string, string>? overrides)
@@ -106,9 +98,8 @@ public static class StrokeAutoEmitter
 
             if (emitOverride is not null)
             {
-                IParticleMaterial emitter;
-                try { emitter = MaterialRegistry.GetParticle(emitOverride); }
-                catch { continue; }
+                var emitter = MaterialRegistry.TryGetParticle(emitOverride);
+                if (emitter is null) continue;
 
                 var specs = emitter.Emissions;
                 for (int e = 0; e < specs.Length; e++)
@@ -117,9 +108,8 @@ public static class StrokeAutoEmitter
             }
 
             string materialName = MaterialOverrideKey.ResolveStroke(in s, overrides);
-            IStrokeMaterial material;
-            try { material = MaterialRegistry.GetStroke(materialName); }
-            catch { continue; }
+            var material = MaterialRegistry.TryGetStroke(materialName);
+            if (material is null) continue;
 
             var emissions = material.Emissions;
             for (int e = 0; e < emissions.Length; e++)
@@ -150,9 +140,7 @@ public static class StrokeAutoEmitter
         }
     }
 
-    // =====================================================================================
-    // Spawning from a stroke
-    // =====================================================================================
+    // ---- Spawning from a stroke ----
 
     private static void SpawnFromStroke(in StrokePrimitive s, in StrokeEmission e,
                                         string? forcedMaterial, float time, float dt)
@@ -293,9 +281,7 @@ public static class StrokeAutoEmitter
         };
     }
 
-    // =====================================================================================
-    // Free-flying integration
-    // =====================================================================================
+    // ---- Free-flying integration ----
 
     private static void CullFreeFly(float time)
     {
@@ -317,9 +303,7 @@ public static class StrokeAutoEmitter
         }
     }
 
-    // =====================================================================================
-    // Flow advancement
-    // =====================================================================================
+    // ---- Flow advancement ----
 
     private static void CullFlows(float time)
     {
@@ -389,15 +373,5 @@ public static class StrokeAutoEmitter
                 return s;
         }
         return null;
-    }
-
-    private static string ResolveStrokeMaterial(in StrokePrimitive s, IReadOnlyDictionary<string, string>? overrides)
-    {
-        if (overrides != null &&
-            overrides.TryGetValue(MaterialOverrideKey.For(s.Owner, "Stroke", s.Role), out var name))
-            return name;
-
-        return EffectRegistry.DefaultFor(s.Owner, "Stroke", s.Role.ToString())
-            ?? EffectRegistry.FallbackStroke();
     }
 }

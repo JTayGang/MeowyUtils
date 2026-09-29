@@ -1,4 +1,3 @@
-using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 namespace RealDebuffs.Effects.Framework;
@@ -71,7 +70,7 @@ public interface IRegionMaterial : IMaterial
 
 /// <summary>
 /// One thing a stroke material (or a particle material used as a stroke emitter) sheds along its
-/// length. See the previous version of this file for the full field-by-field remarks; unchanged.
+/// length.
 /// </summary>
 public readonly record struct StrokeEmission(
     PrimitiveRole Role,
@@ -91,7 +90,7 @@ public readonly record struct StrokeEmission(
     float ClusterWindowSeconds = 0f,
     float ClusterConeRadians = 0f);
 
-/// <summary>The path-following half of a stroke emission. Unchanged.</summary>
+/// <summary>The path-following half of a stroke emission.</summary>
 public readonly record struct StrokeFlowOptions(
     float Share,
     float SpeedMin,

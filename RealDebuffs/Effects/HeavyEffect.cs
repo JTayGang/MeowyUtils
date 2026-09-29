@@ -1,5 +1,3 @@
-using System;
-using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using RealDebuffs.Effects.Framework;
@@ -127,7 +125,7 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
         float linkBase = minDim * 0.044f;
 
         // ---- ground darkening ----
-        float castIn = Saturate(age / 0.6f);
+        float castIn = DrawHelpers.Saturate(age / 0.6f);
         float pulse = DrawHelpers.Pulse(time, 2.2f);
         float depth = screenSize.Y * (0.14f + 0.035f * pulse) * castIn;
         if (depth > 1f)
@@ -148,9 +146,7 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
             EmitChain(scene, i, in _blueprints[i], screenSize, linkBase, dt, time, age, alpha, colorOverride);
     }
 
-    // =====================================================================================
-    // Per-chain emission
-    // =====================================================================================
+    // ---- Per-chain emission ----
 
     private void EmitChain(EffectScene scene, int idx, in Blueprint bp, Vector2 screenSize,
                            float linkBase, float dt, float time, float age,
@@ -170,8 +166,8 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
         }
 
         // Cast-in reveal.
-        float gt = Saturate((age - bp.Delay) / ChainExtendSeconds);
-        float reveal = EaseOutCubic(gt);
+        float gt = DrawHelpers.Saturate((age - bp.Delay) / ChainExtendSeconds);
+        float reveal = DrawHelpers.EaseOutCubic(gt);
 
         // Tip flare: full while extending, then a short settle flash right after lock-in.
         float tipFlare;
@@ -244,9 +240,7 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
             sizeMin: screenSize.X * 0.0016f, sizeMax: screenSize.X * 0.0035f);
     }
 
-    // =====================================================================================
-    // Blueprint layout
-    // =====================================================================================
+    // ---- Blueprint layout ----
 
     private void BuildBlueprints(int castSeed)
     {
@@ -320,9 +314,7 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
         return new Vector2(0f, 1f - p);
     }
 
-    // =====================================================================================
-    // Path
-    // =====================================================================================
+    // ---- Path ----
 
     private void BuildPath(StrandPath path, in Blueprint bp, Vector2 screenSize, float time, float age)
     {
@@ -331,7 +323,7 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
         Vector2 ctrl = bp.Control * screenSize;
         float sagBase = bp.Sag * screenSize.Y;
 
-        float settle = Saturate((age - SettleStart) / (SettleEnd - SettleStart));
+        float settle = DrawHelpers.Saturate((age - SettleStart) / (SettleEnd - SettleStart));
         float swayAmp = screenSize.Y * 0.014f * settle;
         float swayPhase = DrawHelpers.HashRange(bp.Seed, 0f, Tau);
         float swaySpeed = DrawHelpers.HashRange(bp.Seed + 1, 2.4f, 3.2f);
@@ -366,21 +358,11 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
         path.BuildArc();
     }
 
-    // =====================================================================================
-    // Helpers
-    // =====================================================================================
+    // ---- Helpers ----
 
     private static Vector2 Normalize(Vector2 v)
     {
         float len = v.Length();
         return len > 1e-5f ? v / len : new Vector2(0f, 1f);
-    }
-
-    private static float Saturate(float x) => Math.Clamp(x, 0f, 1f);
-
-    private static float EaseOutCubic(float t)
-    {
-        float u = 1f - Saturate(t);
-        return 1f - u * u * u;
     }
 }

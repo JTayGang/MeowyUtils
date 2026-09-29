@@ -1,5 +1,3 @@
-using System;
-using System.Collections.Generic;
 using RealDebuffs.Effects.Framework.Materials;
 
 namespace RealDebuffs.Effects.Framework;
@@ -42,7 +40,7 @@ public static class MaterialRegistry
         Register(new ParticleSnowflake());
         Register(new ParticleSnow());
         Register(new ParticleFog());
-        Register(new ParticleIceCrystal());   // <- new
+        Register(new ParticleIceCrystal());
         Register(new ParticleSpark());
         Register(new ParticleDrip());
     }

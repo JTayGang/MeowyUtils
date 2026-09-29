@@ -1,5 +1,3 @@
-using System;
-using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using RealDebuffs.Effects.Framework;
@@ -137,7 +135,7 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
 
         // Ground shadow: same bottom-edge darkening shape Heavy uses, but sickly green rather
         // than sooty black. It's Disease's ambience, not part of the tentacle material.
-        float castIn = Saturate(age / 0.6f);
+        float castIn = DrawHelpers.Saturate(age / 0.6f);
         float pulse = DrawHelpers.Pulse(time, 3.2f);
         float depth = screenSize.Y * (0.10f + 0.03f * pulse) * castIn;
         if (depth > 1f)
@@ -155,7 +153,7 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
 
         for (int i = 0; i < TotalCount; i++)
         {
-            float revealT = EaseOutCubic(Saturate((age - _tendrils[i].Delay) / GrowSeconds));
+            float revealT = DrawHelpers.EaseOutCubic(DrawHelpers.Saturate((age - _tendrils[i].Delay) / GrowSeconds));
             if (revealT <= 0.001f) continue;
 
             BuildTendrilPath(i, screenSize, shortSide, time);
@@ -184,9 +182,7 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         }
     }
 
-    // =====================================================================================
-    // Layout baking
-    // =====================================================================================
+    // ---- Layout baking ----
 
     private void BuildTendrils(int castSeed)
     {
@@ -279,9 +275,7 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         return mag * sign;
     }
 
-    // =====================================================================================
-    // Path building - coarse skeleton + Catmull-Rom resample
-    // =====================================================================================
+    // ---- Path building - coarse skeleton + Catmull-Rom resample ----
 
     private void BuildTendrilPath(int idx, Vector2 screenSize, float shortSide, float time)
     {
@@ -357,9 +351,7 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         }
     }
 
-    // =====================================================================================
-    // Latch pinning - u² correction + tip rotation, on the smooth path
-    // =====================================================================================
+    // ---- Latch pinning - u² correction + tip rotation, on the smooth path ----
 
     private void ApplyLatchPin(int idx)
     {
@@ -394,9 +386,7 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         }
     }
 
-    // =====================================================================================
-    // Latch state machine
-    // =====================================================================================
+    // ---- Latch state machine ----
 
     private void UpdateLatch(int idx, Vector2 screenSize, float shortSide, float time, float dt, float revealT)
     {
@@ -459,9 +449,7 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         t.HoldUntil = time + 1.8f + 1.6f * DrawHelpers.Hash01(t.Seed + 500);
     }
 
-    // =====================================================================================
-    // Helpers
-    // =====================================================================================
+    // ---- Helpers ----
 
     private static Vector2 EdgeAnchor(Vector2 size, float shortSide, byte edge, float along)
     {
@@ -482,12 +470,4 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         2 => new Vector2(0f, -1f),
         _ => new Vector2(1f, 0f),
     };
-
-    private static float Saturate(float x) => Math.Clamp(x, 0f, 1f);
-
-    private static float EaseOutCubic(float t)
-    {
-        float u = 1f - Saturate(t);
-        return 1f - u * u * u;
-    }
 }

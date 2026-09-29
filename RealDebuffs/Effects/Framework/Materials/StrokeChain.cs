@@ -1,4 +1,3 @@
-using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 
@@ -11,11 +10,10 @@ namespace RealDebuffs.Effects.Framework.Materials;
 /// side. That alternation is what makes the strand read as one continuous chain rather than a
 /// string of beads.
 ///
-/// Ported from the original ChainSkin with no geometry changes. Uses the path's arc-length table
-/// (StrandPath.SampleAtArc) so link placement is even regardless of the incoming path's own point
-/// spacing, and so the chain continues past either end of the path rather than terminating on the
-/// frame. FlushStart tells it to skip the off-screen link before a strand whose base sits exactly
-/// on a hard edge.
+/// Uses the path's arc-length table (StrandPath.SampleAtArc) so link placement is even regardless
+/// of the incoming path's own point spacing, and so the chain continues past either end of the
+/// path rather than terminating on the frame. FlushStart tells it to skip the off-screen link
+/// before a strand whose base sits exactly on a hard edge.
 /// </summary>
 public sealed class StrokeChain : IStrokeMaterial
 {

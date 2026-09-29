@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System.Numerics;
 using RealDebuffs.Effects.Framework;
 
@@ -10,10 +9,8 @@ namespace RealDebuffs.Effects;
 /// overlay. Vignette priority 100 (highest): if Blind is up, it owns the vignette, and anything
 /// else that wanted one this frame yields.
 ///
-/// Note: the black tint has no hue (Value = 0 in HSV terms), so a tooltip color override passed
-/// through with this effect won't visibly change anything - matching the original behavior, where
-/// nothing about Blind was recolorable either. If a future recolored Blind is wanted, that's a
-/// different effect with a non-black authored tint.
+/// Note: the black tint has no hue (Value = 0 in HSV terms), so a tooltip color override has no
+/// visible effect on Blind.
 /// </summary>
 public sealed class BlindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
 {

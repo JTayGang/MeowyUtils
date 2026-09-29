@@ -1,7 +1,4 @@
-using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Conditions;
@@ -82,12 +79,6 @@ public sealed class EffectManager
             _currentAlpha[effect.Kind] = 0f;
     }
 
-    /// <summary>
-    /// The implemented effects, in draw order. Exposed for UI lists that need to know which
-    /// kinds actually have an effect behind them.
-    /// </summary>
-    public IReadOnlyList<ISceneEffect> Effects => _order;
-
     public void Draw()
     {
         float time = (float)_clock.Elapsed.TotalSeconds;
@@ -164,8 +155,8 @@ public sealed class EffectManager
         {
             if (_crashedKinds.Contains(effect.Kind)) continue;
 
-            bool active = !suppressed && _config.IsEnabled(effect.Kind) && _activeScratch.Contains(effect.Kind);
-            active |= !suppressed && _config.IsEnabled(effect.Kind) && DebugTester.IsForced(effect.Kind);
+            bool active = !suppressed && _config.IsEnabled(effect.Kind)
+                && (_activeScratch.Contains(effect.Kind) || DebugTester.IsForced(effect.Kind));
             float target = active ? 1f : 0f;
             float rate = active ? FadeInPerSecond : FadeOutPerSecond;
             float current = MoveTowards(_currentAlpha[effect.Kind], target, rate * dt);

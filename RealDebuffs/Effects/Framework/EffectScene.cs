@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System.Numerics;
 
 namespace RealDebuffs.Effects.Framework;
@@ -65,13 +64,6 @@ public struct ParticlePrimitive
     /// particles carry their emitter's material with them. Null = resolve via role.
     /// </summary>
     public string? MaterialName;
-
-    public int    GlyphIndex;
-    public string? Text;
-    public float  Rotation;
-
-    public bool  FollowsStroke;
-    public float PathT;
 }
 
 public struct RegionPrimitive
@@ -83,6 +75,8 @@ public struct RegionPrimitive
     public float Alpha;
     public PrimitiveRole Role;
     public bool Top, Bottom, Left, Right;
+
+    public readonly bool HasEdge => Top || Bottom || Left || Right;
 }
 
 public sealed class EffectScene

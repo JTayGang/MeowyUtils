@@ -1,5 +1,3 @@
-using System;
-using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 
@@ -45,8 +43,8 @@ internal static class DrawHelpers
 
     /// <summary>
     /// From now until the matching PopColorOverride, every color that passes through WithAlpha is
-    /// re-hued toward rgb. EffectManager no longer wraps the Draw call in push/pop - the
-    /// EffectSceneRenderer pushes per-primitive using that primitive's own ColorOverride.
+    /// re-hued toward rgb. EffectSceneRenderer pushes per primitive, using that primitive's own
+    /// ColorOverride.
     ///
     /// Chromatic overrides replace hue and preserve the source's own saturation, leaving
     /// brightness alone. Achromatic overrides strip hue and shape the value curve by bucket:
@@ -69,7 +67,7 @@ internal static class DrawHelpers
 
         if (s >= 0.05f)
         {
-            // Chromatic override: re-hue only, leave value alone. Unchanged behavior.
+            // Chromatic override: re-hue only, leave value alone.
             _colorOverride = new HueOverride(h, s);
             return;
         }
@@ -254,62 +252,5 @@ internal static class DrawHelpers
         // No separate corner fill: the top/bottom bands span the FULL width, the left/right bands
         // span the FULL height, so every corner is double-covered and alpha-composites darker on
         // its own. A flat corner fill on top of that gradient was the hard-black-squares bug.
-    }
-
-    public static void DrawGlowText(ImDrawListPtr dl, Vector2 pos, string text, uint color, float size, float glow = 1f)
-    {
-        var font = ImGui.GetFont();
-        if (glow > 0f)
-        {
-            uint outerCol = WithAlpha(color, 0.18f * glow);
-            float outerOffset = size * 0.22f;
-            foreach (var (dx, dy) in GlowOffsets)
-                dl.AddText(font, size, V(pos.X + dx * outerOffset, pos.Y + dy * outerOffset), outerCol, text);
-
-            uint innerCol = WithAlpha(color, 0.4f * glow);
-            float innerOffset = size * 0.1f;
-            foreach (var (dx, dy) in GlowOffsets)
-                dl.AddText(font, size, V(pos.X + dx * innerOffset, pos.Y + dy * innerOffset), innerCol, text);
-        }
-
-        float textAlpha01 = ((color >> 24) & 0xFF) / 255f;
-        dl.AddText(font, size, V(pos.X + 1f, pos.Y + 1f), WithAlpha(0xFF000000, 0.6f * textAlpha01), text);
-        dl.AddText(font, size, pos, color, text);
-    }
-
-    private static readonly (float dx, float dy)[] GlowOffsets =
-    {
-        (1, 0), (-1, 0), (0, 1), (0, -1), (0.7f, 0.7f), (-0.7f, 0.7f), (0.7f, -0.7f), (-0.7f, -0.7f),
-    };
-
-    public static void AddJaggedRectLoop(ImDrawListPtr dl, Vector2 size, float inset, float jaggedness, int seedBase, uint color, float thickness)
-    {
-        Span<Vector2> pts = stackalloc Vector2[PerimeterPointCount];
-        BuildJaggedPerimeter(pts, size, inset, jaggedness, seedBase);
-        for (int i = 0; i < pts.Length; i++)
-            dl.AddLine(pts[i], pts[(i + 1) % pts.Length], color, thickness);
-    }
-
-    private const int PerimeterPointCount = 48;
-
-    private static void BuildJaggedPerimeter(Span<Vector2> pts, Vector2 size, float inset, float jaggedness, int seedBase)
-    {
-        float w = MathF.Max(1f, size.X - inset * 2f);
-        float h = MathF.Max(1f, size.Y - inset * 2f);
-        float perim = 2f * (w + h);
-
-        for (int i = 0; i < pts.Length; i++)
-        {
-            float d = perim * i / pts.Length;
-            Vector2 basePos, normal;
-
-            if (d < w) { basePos = V(inset + d, inset); normal = V(0, -1); }
-            else if (d < w + h) { basePos = V(inset + w, inset + (d - w)); normal = V(1, 0); }
-            else if (d < 2 * w + h) { basePos = V(inset + w - (d - w - h), inset + h); normal = V(0, 1); }
-            else { basePos = V(inset, inset + h - (d - 2 * w - h)); normal = V(-1, 0); }
-
-            float n = HashRange(seedBase + i, -1f, 1f) * jaggedness;
-            pts[i] = basePos + normal * n;
-        }
     }
 }

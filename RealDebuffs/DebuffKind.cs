@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using Dalamud.Game;
 using Dalamud.Plugin.Services;
 using RealDebuffs.Effects;
@@ -125,9 +122,7 @@ public sealed class StatusCatalog
                          "name may have changed in a recent patch.");
     }
 
-    public bool TryGetKind(uint statusId, out DebuffKind kind) => _idToKind.TryGetValue(statusId, out kind);
-
-    /// <summary>Like <see cref="TryGetKind"/>, plus how strong this particular status should look (1.0 = full).</summary>
+    /// <summary>Maps a status ID to its kind, plus how strong that status should look (1.0 = full).</summary>
     public bool TryGetEffect(uint statusId, out DebuffKind kind, out float strength)
     {
         strength = 1f;

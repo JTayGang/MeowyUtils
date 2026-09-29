@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Numerics;
 using System.Text.RegularExpressions;
 using Dalamud.Plugin;
@@ -361,7 +358,6 @@ public class CustomStatusRule
         set { _name = value ?? ""; _key = null; }
     }
 
-    /// <summary>Saved as the enum's number, so new kinds must go at the END of DebuffKind.</summary>
     public DebuffKind Kind { get; set; } = DebuffKind.Bind;
 
     /// <summary>Lets a rule be switched off without deleting it.</summary>

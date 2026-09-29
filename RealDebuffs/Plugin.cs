@@ -1,5 +1,3 @@
-using System;
-using System.Collections.Generic;
 using Dalamud.Game.Command;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
@@ -124,16 +122,12 @@ public sealed class Plugin : IDalamudPlugin
     private void SaveConfig() => _pi.SavePluginConfig(_config);
 
     /// <summary>
-        /// Wipes the ephemeral generator overrides (material substitutions and color tints chosen
-    /// from the Effect generator panel). These are live-preview settings, not persisted
-    /// customizations: leaving them in config would silently tint or re-material a vanilla debuff
-    /// the next time the player gets it naturally, long after they've forgotten what the menu
-    /// was set to. Called when the settings window closes, and once at load to clean up anything
-    /// left over from a previous session that ran before this behavior existed.
-    ///
-    /// The real persistence mechanism for "I want Burns to look like X" is a Moodle/Loci status
-    /// description - those tooltip-derived overrides live in the per-frame snapshot, not in
-    /// config, and correctly only apply while the status is active.
+    /// Wipes the ephemeral generator overrides (material substitutions and color tints chosen in
+    /// the Effect generator panel). They are live-preview settings, not customizations: left in
+    /// config they would silently re-skin a vanilla debuff long after the menu was forgotten.
+    /// Runs when the settings window closes, and once at load to clear leftovers from older
+    /// versions. Lasting "make Burns look like X" customization goes through a Moodle/Loci status
+    /// description; those overrides live in the per-frame snapshot and apply only while active.
     /// </summary>
     private void ClearGeneratorOverrides()
     {

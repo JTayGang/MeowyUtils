@@ -1,5 +1,3 @@
-using System;
-using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using RealDebuffs.Effects.Framework;
@@ -92,7 +90,6 @@ public sealed class BurnsEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
         public float MinSpeed;          // px/s upward (positive number; sign flipped at spawn)
         public float MaxSpeed;
         public float Sway;              // horizontal wobble amplitude in px
-        public bool  IsPuff;            // informational; the material decides shape from Size
     }
 
     private readonly List<FireEmitter> _emitters = new();
@@ -151,7 +148,6 @@ public sealed class BurnsEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
                 SizeMinFrac = 0.018f, SizeMaxFrac = 0.045f,
                 MinSpeed = 130f, MaxSpeed = 280f,
                 Sway = 3f,
-                IsPuff = true,
             });
 
             // Spark emitter: same position, faster, smaller, hotter. Different osc phase so
@@ -170,7 +166,6 @@ public sealed class BurnsEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
                 SizeMinFrac = 0.003f, SizeMaxFrac = 0.010f,
                 MinSpeed = 380f, MaxSpeed = 700f,
                 Sway = 4f,
-                IsPuff = false,
             });
         }
 
@@ -211,7 +206,6 @@ public sealed class BurnsEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
                     SizeMinFrac = 0.012f, SizeMaxFrac = 0.032f,
                     MinSpeed = 100f, MaxSpeed = 220f,
                     Sway = 3f,
-                    IsPuff = true,
                 });
 
                 _emitters.Add(new FireEmitter
@@ -228,7 +222,6 @@ public sealed class BurnsEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
                     SizeMinFrac = 0.003f, SizeMaxFrac = 0.008f,
                     MinSpeed = 320f, MaxSpeed = 600f,
                     Sway = 4f,
-                    IsPuff = false,
                 });
             }
         }

@@ -1,5 +1,3 @@
-using System;
-using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using RealDebuffs.Effects;
@@ -21,7 +19,7 @@ namespace RealDebuffs;
 /// </summary>
 internal static class DebugTester
 {
-    public static float Seconds { get; set; } = 15f;
+    private const float Seconds = 15f;
 
     // kind -> TickCount64 ms when its test ends. Missing or past = not being tested.
     private static readonly Dictionary<DebuffKind, long> EndsAt = new();
@@ -57,7 +55,7 @@ internal static class DebugTester
     /// </summary>
     public static void UpdateForcedColor(DebuffKind kind, Vector4? color)
     {
-        if (EndsAt.TryGetValue(kind, out long end) && end > Environment.TickCount64)
+        if (IsForced(kind))
             ForcedColor[kind] = color;
     }
 

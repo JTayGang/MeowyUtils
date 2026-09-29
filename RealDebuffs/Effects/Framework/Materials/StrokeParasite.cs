@@ -1,4 +1,3 @@
-using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 
@@ -193,9 +192,7 @@ public sealed class StrokeParasite : IStrokeMaterial
                 LateralOffsetFrac: 0.45f)),
     };
 
-    // =====================================================================================
-    // Layers
-    // =====================================================================================
+    // ---- Layers ----
 
     private static void DrawRidges(ImDrawListPtr dl, Span<Vector2> positions, Span<Vector2> tangents,
                                    int stepCount, float baseWidth, float alpha, float visibleLen, float px)
@@ -338,9 +335,7 @@ public sealed class StrokeParasite : IStrokeMaterial
         dl.AddCircleFilled(tip, bulbR * 0.45f,  DrawHelpers.WithAlpha(CoreHot, alpha * 0.95f * k));
     }
 
-    // =====================================================================================
-    // Helpers
-    // =====================================================================================
+    // ---- Helpers ----
 
     /// <summary>
     /// Non-linear taper. Power curve (rather than linear) keeps the base full-bodied longer and

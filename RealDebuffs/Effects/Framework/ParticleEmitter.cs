@@ -28,6 +28,22 @@ public sealed class ParticleEmitter
     /// </summary>
     public Vector2 Gravity;
 
+    /// <summary>
+    /// Linear drag in 1/s (0 = none). Velocity decays by this fraction per second, so a fast launch
+    /// settles into a drift. Opt-in: effects that never set it integrate exactly as before.
+    /// </summary>
+    public float Drag;
+
+    /// <summary>
+    /// Horizontal wander acceleration in px/s² (0 = none). Each particle gets its own smooth,
+    /// zero-mean side-to-side push (seed-phased, two incommensurate sine waves) so rising cinders
+    /// and smoke meander the way they do in convective air instead of flying dead straight.
+    /// </summary>
+    public float Wander;
+
+    /// <summary>Base frequency of the wander push, in cycles per second.</summary>
+    public float WanderHz = 0.9f;
+
     private readonly Particle[] _pool;
     private int _count;
     private float _nextSpawnAt;
@@ -97,7 +113,7 @@ public sealed class ParticleEmitter
     /// <summary>Pushes every live particle into the scene.</summary>
     public void Emit(EffectScene scene, float time, PrimitiveRole role,
                      float brightnessMul = 1f, Vector4? colorOverride = null,
-                     float swayPerParticle = 0f)
+                     float swayPerParticle = 0f, int variant = 0)
     {
         for (int i = 0; i < _count; i++)
         {
@@ -121,6 +137,7 @@ public sealed class ParticleEmitter
                 Seed = p.Seed,
                 Role = role,
                 ColorOverride = colorOverride,
+                Variant = variant,
             });
         }
     }
@@ -154,9 +171,24 @@ public sealed class ParticleEmitter
         }
         _count = w;
 
+        bool shaped = Wander > 0f || Drag > 0f;
+        float dragK = Drag > 0f ? MathF.Max(0f, 1f - Drag * dt) : 1f;
+
         for (int i = 0; i < _count; i++)
         {
             _pool[i].Velocity += Gravity * dt;
+
+            if (shaped)
+            {
+                if (Wander > 0f)
+                {
+                    float ph = time * WanderHz * MathF.Tau + _pool[i].Seed * 0.61f;
+                    float push = MathF.Sin(ph) * 0.65f + MathF.Sin(ph * 0.37f + _pool[i].Seed * 1.7f) * 0.35f;
+                    _pool[i].Velocity.X += push * Wander * dt;
+                }
+                _pool[i].Velocity *= dragK;
+            }
+
             _pool[i].Pos += _pool[i].Velocity * dt;
         }
     }

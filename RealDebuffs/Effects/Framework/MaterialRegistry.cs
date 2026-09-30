@@ -29,6 +29,7 @@ public static class MaterialRegistry
         // Region materials.
         Register(new RegionFlatFill());
         Register(new RegionEdgeGlow());
+        Register(new RegionFirelight());
 
         // Stroke materials.
         Register(new StrokeSimple());
@@ -37,6 +38,8 @@ public static class MaterialRegistry
 
         // Particle materials.
         Register(new ParticleEmber());
+        Register(new ParticleCinder());
+        Register(new ParticleSmoke());
         Register(new ParticleSnowflake());
         Register(new ParticleSnow());
         Register(new ParticleFog());

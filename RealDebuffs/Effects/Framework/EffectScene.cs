@@ -27,6 +27,10 @@ public enum PrimitiveRole
     Flare,
     Tip,
     Node,
+
+    // Added later (appended so existing numeric values never shift).
+    Smoke,
+    Cinder,
 }
 
 public struct StrokePrimitive
@@ -64,6 +68,13 @@ public struct ParticlePrimitive
     /// particles carry their emitter's material with them. Null = resolve via role.
     /// </summary>
     public string? MaterialName;
+
+    /// <summary>
+    /// Material-defined sub-kind, 0 by default. A material that renders several related looks from
+    /// one role reads this instead of guessing from Size (particle.ember uses it for flame layers:
+    /// 0 = body, 1 = back/cool, 2 = front/hot, 3 = low wide bed). Materials that don't care ignore it.
+    /// </summary>
+    public int Variant;
 }
 
 public struct RegionPrimitive

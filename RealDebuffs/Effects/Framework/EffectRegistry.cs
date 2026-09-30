@@ -115,6 +115,8 @@ public static class EffectRegistry
     public static string FallbackParticle(PrimitiveRole role) => role switch
     {
         PrimitiveRole.Ember      => "particle.ember",
+    PrimitiveRole.Smoke      => "particle.smoke",
+    PrimitiveRole.Cinder     => "particle.cinder",
         PrimitiveRole.Snowflake  => "particle.snowflake",
         PrimitiveRole.Snow       => "particle.snow",
         PrimitiveRole.Fog        => "particle.fog",

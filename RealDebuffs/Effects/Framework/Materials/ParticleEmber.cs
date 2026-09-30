@@ -31,6 +31,21 @@ namespace RealDebuffs.Effects.Framework.Materials;
 /// </summary>
 public sealed class ParticleEmber : IParticleMaterial
 {
+    // FRINGE SHAPING. The renderer only has straight alpha blending, so a dim, dark color drawn at
+    // moderate alpha does not read as "faint glow" the way it would with additive light - it DARKENS
+    // whatever is under it. The low end of the heat ramp is dull red-brown, so a flame's fringe (and
+    // the valleys where noise erodes its interior) used to draw thin dark contours around every
+    // tongue, which is what gave the fire a cartoon, inked-outline look.
+    // Two fixes, both needed:
+    //  - RimLo/RimHi: alpha stays at zero until density passes RimLo and only reaches full at RimHi,
+    //    so the darkest part of the fringe is close to transparent instead of half-opaque;
+    //  - TempFloor: lifts the bottom of the ramp, so whatever fringe remains is a luminous red-orange
+    //    rather than a dark brown.
+    // Raise RimLo / TempFloor for a softer, less outlined fire; lower them for crisper, more contrasty
+    // flames. (RimLo 0, RimHi 0.588, TempFloor 0 restores the earlier inked-edge look.)
+    private const float RimLo = 0.12f, RimHi = 0.52f;
+    private const float TempFloor = 0.20f;
+
     public string Name => "particle.ember";
     public string[] NaturalLanguageWords { get; } = { "fire", "flame", "flames", "ember", "embers" };
 
@@ -141,7 +156,10 @@ public sealed class ParticleEmber : IParticleMaterial
                 d = d < 0f ? 0f : (d > 1f ? 1f : d);
 
                 float temp = d * (1.30f - 0.62f * v) * heat;
-                float a = d * 1.7f; a = a > 1f ? 1f : a;
+                temp = TempFloor + (1f - TempFloor) * temp;
+
+                float a = (d - RimLo) / (RimHi - RimLo);
+                a = a < 0f ? 0f : (a > 1f ? 1f : a);
                 a = a * a * (3f - 2f * a);
 
                 MeshDraw.P[i] = new Vector2(cx + u * half, cy);

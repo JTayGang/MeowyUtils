@@ -1,7 +1,5 @@
-using System.Numerics;
-using Dalamud.Bindings.ImGui;
+using System.Text.RegularExpressions;
 using Dalamud.Configuration;
-using Dalamud.Interface.Windowing;
 using RealDebuffs.Effects;
 
 namespace RealDebuffs;
@@ -80,127 +78,135 @@ public class Configuration : IPluginConfiguration
 }
 
 /// <summary>
-/// Settings window. Two tabs:
-///  - "Effects": master switches, intensity, per-debuff toggles, chat lockout, dev test panel.
-///  - "Moodles/Loci Support": custom-status rules, tooltip keyword rules, and effect styles.
+/// One "while I have THIS custom status, show THAT effect" link. Matched by title - the only thing
+/// a user can read off the screen and that a mirror plugin carries across unchanged. Rules can
+/// overlap freely (one name -> several effects, several names -> one effect); EffectManager
+/// dedupes via a set, so nothing stacks.
 /// </summary>
-public sealed class ConfigWindow : Window
+public class CustomStatusRule
 {
-    private readonly Configuration _config;
-    private readonly Action _save;
-    private readonly CustomStatusPanel _customStatuses;
-    private readonly TooltipKeywordPanel _tooltipKeywords;
-    private readonly EffectStylePanel _effectStyles;
-    private readonly IReadOnlyList<ISceneEffect> _effects;
-    private readonly ISceneEffect[] _sortedEffects;
+    private string _name = "";
+    private string? _key;
 
-    public ConfigWindow(Configuration config, Action save, CustomStatusWatcher customStatuses, IReadOnlyList<ISceneEffect> effects)
-        : base("Real Debuffs Settings###RealDebuffsConfig")
+    /// <summary>The status title to watch for, as the user typed or picked it.</summary>
+    public string Name
     {
-        _config = config;
-        _save = save;
-        _effects = effects;
-        _sortedEffects = effects.OrderBy(e => e.DisplayName, StringComparer.OrdinalIgnoreCase).ToArray();
-        _customStatuses = new CustomStatusPanel(config, customStatuses, effects);
-        _tooltipKeywords = new TooltipKeywordPanel(config, customStatuses, effects);
-        _effectStyles = new EffectStylePanel(config);
-        Size = new Vector2(470, 660);
-        SizeCondition = ImGuiCond.FirstUseEver;
+        get => _name;
+        set { _name = value ?? ""; _key = null; }
     }
 
-    public override void Draw()
+    public DebuffKind Kind { get; set; } = DebuffKind.Bind;
+
+    /// <summary>Lets a rule be switched off without deleting it.</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>Cached key; EffectManager asks every frame. Method, not property, so it isn't saved.</summary>
+    public string GetKey() => _key ??= StatusNames.Key(_name);
+}
+
+/// <summary>
+/// One "if a status's tooltip contains any of these words, show that effect" link. A rule can
+/// carry several comma-separated keywords - they all drive the same Kind. Rules can freely name
+/// the same Kind; the parser still produces at most one result per kind.
+/// </summary>
+public sealed class TooltipKeywordRule
+{
+    private string _keywords = "";
+    private string[]? _parsed;
+    private Regex? _pattern;
+
+    /// <summary>
+    /// Comma/newline/semicolon-separated words or short phrases. Each is matched as a whole word
+    /// (word boundaries both sides) case-insensitively. Blanks and duplicates are dropped.
+    /// </summary>
+    public string Keywords
     {
-        bool changed = false;
-
-        if (ImGui.BeginTabBar("##RealDebuffsTabs"))
-        {
-            if (ImGui.BeginTabItem("Effects"))
-            {
-                changed |= DrawEffectsTab();
-                ImGui.EndTabItem();
-            }
-
-            if (ImGui.BeginTabItem("Moodles/Loci Support"))
-            {
-                changed |= DrawMoodlesTab();
-                ImGui.EndTabItem();
-            }
-
-            ImGui.EndTabBar();
-        }
-
-        if (changed)
-            _save();
+        get => _keywords;
+        set { _keywords = value ?? ""; _parsed = null; _pattern = null; }
     }
 
-    private bool DrawEffectsTab()
+    public DebuffKind Kind { get; set; } = DebuffKind.Bind;
+
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>Cached. Invalidated by the Keywords setter.</summary>
+    public IReadOnlyList<string> ParsedKeywords => _parsed ??= ParseKeywords(_keywords);
+
+    /// <summary>
+    /// One word-boundary, case-insensitive alternation over every keyword, or null if there are
+    /// none. Cached (method, not property, so it isn't saved) and invalidated by Keywords.
+    /// </summary>
+    public Regex? GetPattern()
+    {
+        if (_pattern != null) return _pattern;
+        var parsed = ParsedKeywords;
+        if (parsed.Count == 0) return null;
+
+        string alternation = parsed.Count == 1
+            ? Regex.Escape(parsed[0])
+            : "(?:" + string.Join("|", parsed.Select(Regex.Escape)) + ")";
+
+        return _pattern = new Regex($@"\b{alternation}\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    }
+
+    /// <summary>Splits a raw keyword box into non-blank, de-duplicated (case-insensitive) entries.</summary>
+    public static string[] ParseKeywords(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return Array.Empty<string>();
+        return raw
+            .Split(new[] { ',', '\n', '\r', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    /// <summary>The default rule for an effect: its own declared TriggerKeywords, comma-joined.</summary>
+    private static TooltipKeywordRule DefaultRuleFor(ISceneEffect effect) => new()
+    {
+        Keywords = string.Join(", ", effect.TriggerKeywords),
+        Kind = effect.Kind,
+    };
+
+    /// <summary>
+    /// Option-C merge pass, called once per session from Plugin after effect discovery. For every
+    /// effect whose kind isn't already in <see cref="Configuration.SeededKinds"/>: mark it seeded,
+    /// and - only if the user has no rule for that kind yet - add the effect's default rule. A rule
+    /// the user deleted stays deleted (the kind is seeded, so we don't touch it); a newly-added
+    /// effect gets a rule automatically (the kind isn't seeded yet). Returns true if config changed.
+    /// </summary>
+    public static bool SeedNewEffects(Configuration config, IReadOnlyList<ISceneEffect> effects)
     {
         bool changed = false;
+        var rules = config.TooltipKeywordRules;
 
-        bool enabled = _config.Enabled;
-        if (ImGui.Checkbox("Enabled", ref enabled)) { _config.Enabled = enabled; changed = true; }
-
-        bool hideCutscenes = _config.HideDuringCutscenes;
-        if (ImGui.Checkbox("Hide during cutscenes", ref hideCutscenes)) { _config.HideDuringCutscenes = hideCutscenes; changed = true; }
-
-        float intensity = _config.GlobalIntensity;
-        float percent = (intensity - Configuration.MinIntensity) / (Configuration.MaxIntensity - Configuration.MinIntensity) * 100f;
-        ImGui.SetNextItemWidth(220);
-        if (ImGui.SliderFloat("Overall intensity", ref percent, 0f, 100f, "%.0f%%"))
+        foreach (var effect in effects)
         {
-            _config.GlobalIntensity = Configuration.MinIntensity + (percent / 100f) * (Configuration.MaxIntensity - Configuration.MinIntensity);
+            if (config.SeededKinds.Contains(effect.Kind)) continue;
+            config.SeededKinds.Add(effect.Kind);
             changed = true;
+
+            if (effect.TriggerKeywords.Count == 0) continue;
+            if (rules.Any(r => r.Kind == effect.Kind)) continue;
+
+            rules.Add(DefaultRuleFor(effect));
         }
 
-        ImGui.Separator();
-        ImGui.TextDisabled("Per-debuff effects");
-        ImGui.Spacing();
-
-        // Sorted alphabetically by DisplayName for scanning; EffectManager._order is a
-        // separate concern (layering). Sorts the same way the old hardcoded list did, so
-        // existing muscle memory still works.
-        foreach (var effect in _sortedEffects)
-            changed |= EffectToggle(effect.Kind, effect.DisplayName, effect.Description);
-
-        ImGui.Separator();
-        ImGui.TextDisabled("Advanced");
-        ImGui.Spacing();
-
-        bool blockChat = _config.SilenceBlocksChat;
-        if (ImGui.Checkbox("Silence also blocks sending chat", ref blockChat)) { _config.SilenceBlocksChat = blockChat; changed = true; }
-        ImGui.TextWrapped(
-            "Hooks the game's chat-send function so messages don't actually go out while you're " +
-            "silenced, rather than only showing the visual effect. This is a deeper game hook than " +
-            "any of the effects above need, so if a game update ever breaks something, this is the " +
-            "first setting to try turning off - everything else is unaffected by it.");
-
-        DebugTester.DrawUi(kind => _config.Enabled && _config.IsEnabled(kind), _effects);
-
         return changed;
     }
 
-    private bool DrawMoodlesTab()
+    /// <summary>
+    /// "Reset to defaults": wipe the user's rules and the seeded set, then re-seed every effect
+    /// from its declared TriggerKeywords in one pass.
+    /// </summary>
+    public static void ResetToDefaults(Configuration config, IReadOnlyList<ISceneEffect> effects)
     {
-        bool changed = false;
-        changed |= _customStatuses.Draw();
-        ImGui.Separator();
-        changed |= _tooltipKeywords.Draw();
-        ImGui.Separator();
-        changed |= _effectStyles.Draw();
-        return changed;
-    }
+        config.TooltipKeywordRules.Clear();
+        config.SeededKinds.Clear();
 
-    private bool EffectToggle(DebuffKind kind, string label, string description)
-    {
-        bool value = _config.IsEnabled(kind);
-        bool didChange = ImGui.Checkbox(label, ref value);
-        if (didChange) _config.SetEnabled(kind, value);
-
-        ImGui.SameLine();
-        ImGui.TextDisabled("(?)");
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip(description);
-
-        return didChange;
+        foreach (var effect in effects)
+        {
+            config.SeededKinds.Add(effect.Kind);
+            if (effect.TriggerKeywords.Count == 0) continue;
+            config.TooltipKeywordRules.Add(DefaultRuleFor(effect));
+        }
     }
 }

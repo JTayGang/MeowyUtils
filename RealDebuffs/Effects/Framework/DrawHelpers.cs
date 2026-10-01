@@ -36,10 +36,48 @@ internal static class DrawHelpers
             ValuePower = valuePower;
             ValueScale = valueScale;
         }
+
+        public bool SameAs(in HueOverride o) =>
+            Hue == o.Hue && Saturation == o.Saturation && ValuePower == o.ValuePower && ValueScale == o.ValueScale;
     }
 
     private static readonly Stack<HueOverride?> ColorOverrideStack = new();
     private static HueOverride? _colorOverride;
+
+    // ApplyColorOverride is a pure function of (color, active override) but costs an RGB->HSV round
+    // trip, a Pow and an HSV->RGB, and materials call it for every vertex or shape. The palettes
+    // feeding it hold a few hundred distinct colors, so results are memoized in a direct-mapped cache.
+    //
+    // Entries are tagged with the override's VALUE (a small id from KnownOverrides), not with "the
+    // current push": the renderer pushes and pops once per primitive, so the active override flips
+    // between "none" and the effect's color constantly, and anything keyed on the flips would be
+    // thrown away every primitive.
+    private const int OverrideCacheBits = 11;
+    private static readonly uint[] OverrideIn  = new uint[1 << OverrideCacheBits];
+    private static readonly uint[] OverrideOut = new uint[1 << OverrideCacheBits];
+    private static readonly int[]  OverrideTag = new int[1 << OverrideCacheBits];     // 0 = empty
+    private static readonly HueOverride[] KnownOverrides = new HueOverride[15];
+    private static int _knownCount;
+    private static int _overrideId;                                                   // 0 = no override, else 1 + index into KnownOverrides
+
+    private static void SetOverride(HueOverride? next)
+    {
+        _colorOverride = next;
+        if (next is not { } ov) { _overrideId = 0; return; }
+
+        for (int i = 0; i < _knownCount; i++)
+        {
+            if (KnownOverrides[i].SameAs(ov)) { _overrideId = i + 1; return; }
+        }
+
+        if (_knownCount == KnownOverrides.Length)       // more distinct overrides than we track: start over
+        {
+            _knownCount = 0;
+            Array.Clear(OverrideTag);                    // ids are about to be reassigned
+        }
+        KnownOverrides[_knownCount] = ov;
+        _overrideId = ++_knownCount;
+    }
 
     /// <summary>
     /// From now until the matching PopColorOverride, every color that passes through WithAlpha is
@@ -59,7 +97,7 @@ internal static class DrawHelpers
 
         if (rgb is not { } c)
         {
-            _colorOverride = null;
+            SetOverride(null);
             return;
         }
 
@@ -68,7 +106,7 @@ internal static class DrawHelpers
         if (s >= 0.05f)
         {
             // Chromatic override: re-hue only, leave value alone.
-            _colorOverride = new HueOverride(h, s);
+            SetOverride(new HueOverride(h, s));
             return;
         }
 
@@ -79,15 +117,15 @@ internal static class DrawHelpers
         // preserve the top of the range while crushing the rest: the core of a fire stays
         // readable as a dim hot spot, while everything below it collapses into near-black.
         if (v >= 0.72f)
-            _colorOverride = new HueOverride(h, s, valuePower: 0.35f);                    // white / silver
+            SetOverride(new HueOverride(h, s, valuePower: 0.35f));                    // white / silver
         else if (v <= 0.20f)
-            _colorOverride = new HueOverride(h, s, valuePower: 4.0f, valueScale: 0.55f);  // black
+            SetOverride(new HueOverride(h, s, valuePower: 4.0f, valueScale: 0.55f));  // black
         else
-            _colorOverride = new HueOverride(h, s);                                       // grey
+            SetOverride(new HueOverride(h, s));                                       // grey
     }
 
     public static void PopColorOverride() =>
-        _colorOverride = ColorOverrideStack.Count > 0 ? ColorOverrideStack.Pop() : null;
+        SetOverride(ColorOverrideStack.Count > 0 ? ColorOverrideStack.Pop() : null);
 
     /// <summary>
     /// Re-hues the active override. Hue is replaced, Saturation and Value are preserved from the
@@ -107,6 +145,19 @@ internal static class DrawHelpers
     {
         if (_colorOverride is not { } ov) return color;
 
+        int id = _overrideId;
+        int slot = (int)(unchecked((color ^ (uint)(id * 0x9E3779B1)) * 2654435761u) >> (32 - OverrideCacheBits));
+        if (OverrideTag[slot] == id && OverrideIn[slot] == color) return OverrideOut[slot];
+
+        uint result = ComputeColorOverride(color, ov);
+        OverrideIn[slot] = color;
+        OverrideOut[slot] = result;
+        OverrideTag[slot] = id;
+        return result;
+    }
+
+    private static uint ComputeColorOverride(uint color, in HueOverride ov)
+    {
         float r = (color & 0xFF) / 255f;
         float g = ((color >> 8) & 0xFF) / 255f;
         float b = ((color >> 16) & 0xFF) / 255f;

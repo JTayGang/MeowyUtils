@@ -1,5 +1,4 @@
 using System.Numerics;
-using Dalamud.Bindings.ImGui;
 using RealDebuffs.Effects.Framework;
 
 namespace RealDebuffs.Effects;
@@ -50,7 +49,6 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
     };
 
     // ---- timing ----
-    private const float NewCastGapSeconds   = 1.0f;
     private const float ChainExtendSeconds  = 0.55f;
     private const float SettleStart         = 0.55f;
     private const float SettleEnd           = 1.80f;
@@ -68,8 +66,7 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
 
     private static readonly uint GroundShade = DrawHelpers.ToU32(0.03f, 0.03f, 0.04f, 1f);
 
-    private float _lastDrawTime = -100f;
-    private float _castStart;
+    private readonly CastTracker _cast = new();
 
     private readonly StrandPath[] _strandPaths = new StrandPath[ChainCount];
     private readonly ParticleEmitter[] _chainSparks = new ParticleEmitter[ChainCount];
@@ -103,24 +100,21 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
         }
     }
 
-    public void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, Vector4? colorOverride)
+    public void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride)
     {
         if (screenSize.X < 64f || screenSize.Y < 64f) return;
 
-        if (time - _lastDrawTime > NewCastGapSeconds)
+        if (_cast.Begin(time))
         {
-            _castStart = time;
-            BuildBlueprints(unchecked((int)(_castStart * 1000f)));
+            BuildBlueprints(unchecked((int)(_cast.Start * 1000f)));
             for (int i = 0; i < ChainCount; i++)
             {
                 _chainSparks[i].Clear();
                 _burstAt[i] = -1f;
             }
         }
-        _lastDrawTime = time;
-        float age = time - _castStart;
+        float age = time - _cast.Start;
 
-        float dt = ImGui.GetIO().DeltaTime;
         float minDim = MathF.Min(screenSize.X, screenSize.Y);
         float linkBase = minDim * 0.044f;
 

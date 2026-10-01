@@ -1,5 +1,4 @@
 using System.Numerics;
-using Dalamud.Bindings.ImGui;
 using RealDebuffs.Effects.Framework;
 
 namespace RealDebuffs.Effects;
@@ -55,7 +54,6 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
     };
 
     // ---- timing ----
-    private const float NewCastGapSeconds = 1.0f;
     private const float GrowSeconds       = 0.70f;
 
     // ---- layout ----
@@ -109,8 +107,7 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
     private readonly StrandPath[] _paths    = new StrandPath[TotalCount];
     private readonly Vector2[]    _coarse   = new Vector2[ControlPoints];
 
-    private float _lastDrawTime = -100f;
-    private float _castStart;
+    private readonly CastTracker _cast = new();
 
     public DiseaseEffect()
     {
@@ -118,20 +115,17 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
             _paths[i] = new StrandPath(FinalSamples);
     }
 
-    public void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, Vector4? colorOverride)
+    public void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride)
     {
         if (screenSize.X < 64f || screenSize.Y < 64f) return;
 
-        if (time - _lastDrawTime > NewCastGapSeconds)
+        if (_cast.Begin(time))
         {
-            _castStart = time;
-            BuildTendrils(unchecked((int)(_castStart * 1000f)));
+            BuildTendrils(unchecked((int)(_cast.Start * 1000f)));
         }
-        _lastDrawTime = time;
-        float age = time - _castStart;
+        float age = time - _cast.Start;
 
         float shortSide = MathF.Min(screenSize.X, screenSize.Y);
-        float dt = Math.Clamp(ImGui.GetIO().DeltaTime, 0f, 0.25f);
 
         // Ground shadow: same bottom-edge darkening shape Heavy uses, but sickly green rather
         // than sooty black. It's Disease's ambience, not part of the tentacle material.

@@ -22,6 +22,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly WindowSystem _windowSystem = new("RealDebuffs");
     private readonly ConfigWindow _configWindow;
     private bool _configWasOpen;
+    private bool _drawFailed;
 
     public Plugin(
         IDalamudPluginInterface pluginInterface,
@@ -61,7 +62,7 @@ public sealed class Plugin : IDalamudPlugin
         _customStatuses = new CustomStatusWatcher(_pi, framework, objectTable, log, _config);
         _effects = new EffectManager(effects, clientState, objectTable, condition, gameGui, catalog, _config, _chatBlocker, _customStatuses, log);
 
-        _configWindow = new ConfigWindow(_config, SaveConfig, _customStatuses, effects);
+        _configWindow = new ConfigWindow(_config, OnConfigEdited, _customStatuses, effects);
         _windowSystem.AddWindow(_configWindow);
 
         _cmd.AddHandler(CommandName, new CommandInfo(OnCommand)
@@ -122,6 +123,17 @@ public sealed class Plugin : IDalamudPlugin
     private void SaveConfig() => _pi.SavePluginConfig(_config);
 
     /// <summary>
+    /// The settings window's save callback: persist, then have the next frame pick the edit up
+    /// (a fresh status read and re-resolved settings) instead of waiting out the heartbeat.
+    /// </summary>
+    private void OnConfigEdited()
+    {
+        SaveConfig();
+        _customStatuses.RequestRefresh();
+        _effects.Invalidate();
+    }
+
+    /// <summary>
     /// Wipes the ephemeral generator overrides (material substitutions and color tints chosen in
     /// the Effect generator panel). They are live-preview settings, not customizations: left in
     /// config they would silently re-skin a vanilla debuff long after the menu was forgotten.
@@ -129,14 +141,15 @@ public sealed class Plugin : IDalamudPlugin
     /// versions. Lasting "make Burns look like X" customization goes through a Moodle/Loci status
     /// description; those overrides live in the per-frame snapshot and apply only while active.
     /// </summary>
-    private void ClearGeneratorOverrides()
+    private bool ClearGeneratorOverrides()
     {
         if (_config.MaterialOverrides.Count == 0 && _config.ColorOverrides.Count == 0)
-            return;
+            return false;
 
         _config.MaterialOverrides.Clear();
         _config.ColorOverrides.Clear();
         SaveConfig();
+        return true;
     }
 
     private void OnDraw()
@@ -144,20 +157,26 @@ public sealed class Plugin : IDalamudPlugin
         try
         {
             _windowSystem.Draw();
-            _effects.Draw();
 
             // Detect the settings window closing: the generator's live overrides are meant to be
             // preview settings, and any that survive past the menu closing would tint or re-material
             // the vanilla effect in normal gameplay without the user realizing. Watch the
-            // open -> closed transition rather than just "is closed" so this runs exactly once.
+            // open -> closed transition rather than just "is closed" so this runs exactly once, and
+            // do it before the effects draw so a failure there can't skip it.
             bool isOpen = _configWindow.IsOpen;
-            if (_configWasOpen && !isOpen)
-                ClearGeneratorOverrides();
+            if (_configWasOpen && !isOpen && ClearGeneratorOverrides())
+                _effects.Invalidate();
             _configWasOpen = isOpen;
+
+            _effects.Draw();
+            _drawFailed = false;
         }
         catch (Exception ex)
         {
-            _log.Error(ex, "RealDebuffs: unhandled exception in draw.");
+            // Once per failure streak, not once per frame.
+            if (!_drawFailed)
+                _log.Error(ex, "RealDebuffs: unhandled exception in draw (repeats are suppressed until a draw succeeds).");
+            _drawFailed = true;
         }
     }
 }

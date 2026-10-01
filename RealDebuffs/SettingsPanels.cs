@@ -1,9 +1,135 @@
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Windowing;
 using RealDebuffs.Effects;
 using RealDebuffs.Effects.Framework;
-
 namespace RealDebuffs;
+
+/// <summary>
+/// Settings window. Two tabs:
+///  - "Effects": master switches, intensity, per-debuff toggles, chat lockout, dev test panel.
+///  - "Moodles/Loci Support": custom-status rules, tooltip keyword rules, and effect styles.
+/// </summary>
+public sealed class ConfigWindow : Window
+{
+    private readonly Configuration _config;
+    private readonly Action _save;
+    private readonly CustomStatusPanel _customStatuses;
+    private readonly TooltipKeywordPanel _tooltipKeywords;
+    private readonly EffectStylePanel _effectStyles;
+    private readonly IReadOnlyList<ISceneEffect> _effects;
+    private readonly ISceneEffect[] _sortedEffects;
+
+    public ConfigWindow(Configuration config, Action save, CustomStatusWatcher customStatuses, IReadOnlyList<ISceneEffect> effects)
+        : base("Real Debuffs Settings###RealDebuffsConfig")
+    {
+        _config = config;
+        _save = save;
+        _effects = effects;
+        _sortedEffects = effects.OrderBy(e => e.DisplayName, StringComparer.OrdinalIgnoreCase).ToArray();
+        _customStatuses = new CustomStatusPanel(config, customStatuses, effects);
+        _tooltipKeywords = new TooltipKeywordPanel(config, customStatuses, effects);
+        _effectStyles = new EffectStylePanel(config);
+        Size = new Vector2(470, 660);
+        SizeCondition = ImGuiCond.FirstUseEver;
+    }
+
+    public override void Draw()
+    {
+        bool changed = false;
+
+        if (ImGui.BeginTabBar("##RealDebuffsTabs"))
+        {
+            if (ImGui.BeginTabItem("Effects"))
+            {
+                changed |= DrawEffectsTab();
+                ImGui.EndTabItem();
+            }
+
+            if (ImGui.BeginTabItem("Moodles/Loci Support"))
+            {
+                changed |= DrawMoodlesTab();
+                ImGui.EndTabItem();
+            }
+
+            ImGui.EndTabBar();
+        }
+
+        if (changed)
+            _save();
+    }
+
+    private bool DrawEffectsTab()
+    {
+        bool changed = false;
+
+        bool enabled = _config.Enabled;
+        if (ImGui.Checkbox("Enabled", ref enabled)) { _config.Enabled = enabled; changed = true; }
+
+        bool hideCutscenes = _config.HideDuringCutscenes;
+        if (ImGui.Checkbox("Hide during cutscenes", ref hideCutscenes)) { _config.HideDuringCutscenes = hideCutscenes; changed = true; }
+
+        float intensity = _config.GlobalIntensity;
+        float percent = (intensity - Configuration.MinIntensity) / (Configuration.MaxIntensity - Configuration.MinIntensity) * 100f;
+        ImGui.SetNextItemWidth(220);
+        if (ImGui.SliderFloat("Overall intensity", ref percent, 0f, 100f, "%.0f%%"))
+        {
+            _config.GlobalIntensity = Configuration.MinIntensity + (percent / 100f) * (Configuration.MaxIntensity - Configuration.MinIntensity);
+            changed = true;
+        }
+
+        ImGui.Separator();
+        ImGui.TextDisabled("Per-debuff effects");
+        ImGui.Spacing();
+
+        // Sorted alphabetically by DisplayName for scanning; EffectManager._order is a
+        // separate concern (layering). Sorts the same way the old hardcoded list did, so
+        // existing muscle memory still works.
+        foreach (var effect in _sortedEffects)
+            changed |= EffectToggle(effect.Kind, effect.DisplayName, effect.Description);
+
+        ImGui.Separator();
+        ImGui.TextDisabled("Advanced");
+        ImGui.Spacing();
+
+        bool blockChat = _config.SilenceBlocksChat;
+        if (ImGui.Checkbox("Silence also blocks sending chat", ref blockChat)) { _config.SilenceBlocksChat = blockChat; changed = true; }
+        ImGui.TextWrapped(
+            "Hooks the game's chat-send function so messages don't actually go out while you're " +
+            "silenced, rather than only showing the visual effect. This is a deeper game hook than " +
+            "any of the effects above need, so if a game update ever breaks something, this is the " +
+            "first setting to try turning off - everything else is unaffected by it.");
+
+        DebugTester.DrawUi(kind => _config.Enabled && _config.IsEnabled(kind), _effects);
+
+        return changed;
+    }
+
+    private bool DrawMoodlesTab()
+    {
+        bool changed = false;
+        changed |= _customStatuses.Draw();
+        ImGui.Separator();
+        changed |= _tooltipKeywords.Draw();
+        ImGui.Separator();
+        changed |= _effectStyles.Draw();
+        return changed;
+    }
+
+    private bool EffectToggle(DebuffKind kind, string label, string description)
+    {
+        bool value = _config.IsEnabled(kind);
+        bool didChange = ImGui.Checkbox(label, ref value);
+        if (didChange) _config.SetEnabled(kind, value);
+
+        ImGui.SameLine();
+        ImGui.TextDisabled("(?)");
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip(description);
+
+        return didChange;
+    }
+}
 
 /// <summary>
 /// "Custom statuses" section: name -> effect rules.
@@ -773,5 +899,111 @@ internal sealed class EffectStylePanel
             parts[i] = char.ToUpperInvariant(parts[i][0]) + parts[i][1..];
         }
         return string.Join(' ', parts);
+    }
+}
+
+/// <summary>
+/// Preview an effect without needing a matching debuff to actually be active. Callers: the
+/// dev-only test panel at the bottom of the settings window, and the tooltip-keyword tester's
+/// "preview on screen" button.
+///
+/// Visual only - hooked in after EffectManager tells ChatBlocker whether you're silenced, so a
+/// test never blocks real chat. Always temporary (some effects, like Blind at high intensity,
+/// could hide the checkbox you'd need to switch them off). Respects the master Enabled, per-effect
+/// toggles, cutscene/GPose hiding, and the intensity slider. Nothing is saved; reload clears it.
+///
+/// The panel iterates the effect roster passed by ConfigWindow, so only implemented effects get
+/// a checkbox. A DebuffKind without an ISceneEffect has nothing to preview and doesn't appear.
+/// </summary>
+internal static class DebugTester
+{
+    private const float Seconds = 15f;
+
+    // kind -> TickCount64 ms when its test ends. Missing or past = not being tested.
+    private static readonly Dictionary<DebuffKind, long> EndsAt = new();
+
+    // kind -> color to force, set alongside EndsAt. Only meaningful while IsForced is also true.
+    private static readonly Dictionary<DebuffKind, Vector4?> ForcedColor = new();
+
+    public static bool IsForced(DebuffKind kind) =>
+        EndsAt.TryGetValue(kind, out long end) && end > Environment.TickCount64;
+
+    /// <summary>What color a forced test wants, or null for "use the effect's own".</summary>
+    public static Vector4? GetForcedColor(DebuffKind kind) =>
+        ForcedColor.TryGetValue(kind, out var c) ? c : null;
+
+    public static void Force(DebuffKind kind, bool on) => Force(kind, on, null);
+
+    /// <summary>
+    /// Starts or stops a test, optionally recolored (see DrawHelpers.PushColorOverride for what a
+    /// non-null color does). Used by the dev checkboxes (always null) and the tooltip-tester's
+    /// preview button (whatever it just parsed).
+    /// </summary>
+    public static void Force(DebuffKind kind, bool on, Vector4? color)
+    {
+        EndsAt[kind] = on ? Environment.TickCount64 + (long)(Seconds * 1000f) : 0L;
+        ForcedColor[kind] = color;
+    }
+
+    /// <summary>
+    /// Updates the color on an already-forced test without touching its end time. Used by the
+    /// effect generator so changing the color dropdown mid-preview recolors the running preview
+    /// instead of requiring the user to re-click Preview (which would restart the 15s timer).
+    /// No-op when the kind isn't currently being tested.
+    /// </summary>
+    public static void UpdateForcedColor(DebuffKind kind, Vector4? color)
+    {
+        if (IsForced(kind))
+            ForcedColor[kind] = color;
+    }
+
+    /// <summary>
+    /// Draws the panel. <paramref name="isShowing"/> says whether an effect is allowed to appear
+    /// at all right now; it's only used to add an "(off in settings)" hint so a test that shows
+    /// nothing explains itself. <paramref name="effects"/> is the roster to iterate; only
+    /// implemented effects get a checkbox.
+    /// </summary>
+    public static void DrawUi(Func<DebuffKind, bool> isShowing, IReadOnlyList<ISceneEffect> effects)
+    {
+        ImGui.Separator();
+        if (!ImGui.CollapsingHeader("Test effects (dev only)")) return;
+
+        // Own ID scope: labels repeat the settings-window checkboxes, and ImGui would otherwise
+        // treat them as the same widgets (ticking one would tick both).
+        ImGui.PushID("TestTools");
+        try
+        {
+            ImGui.TextWrapped(
+                $"Shows an effect for {Seconds:0}s as if you had the debuff. Visual only - it never " +
+                "triggers the chat lockout. Effects switched off above still won't show.");
+
+            long now = Environment.TickCount64;
+            foreach (var effect in effects)
+            {
+                var kind = effect.Kind;
+                bool on = IsForced(kind);
+                if (ImGui.Checkbox(effect.DisplayName, ref on))
+                    Force(kind, on);
+
+                if (EndsAt.TryGetValue(kind, out long end) && end > now)
+                {
+                    ImGui.SameLine();
+                    ImGui.TextDisabled($"{(end - now + 999) / 1000}s");
+                }
+
+                if (!isShowing(kind))
+                {
+                    ImGui.SameLine();
+                    ImGui.TextDisabled("(off in settings)");
+                }
+            }
+
+            if (ImGui.Button("All off"))
+                EndsAt.Clear();
+        }
+        finally
+        {
+            ImGui.PopID();
+        }
     }
 }

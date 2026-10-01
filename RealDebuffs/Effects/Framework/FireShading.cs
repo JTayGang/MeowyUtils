@@ -58,10 +58,6 @@ internal static class FireNoise
         return (top + v * (bot - top)) * 1.25f;
     }
 
-    /// <summary>Two-octave fractal sum, still roughly [-1, 1].</summary>
-    public static float Fbm2(float x, float y)
-        => Perlin(x, y) * 0.65f + Perlin(x * 2.13f + 17.3f, y * 2.13f - 9.1f) * 0.35f;
-
     private static float Grad(int ix, int iy, float dx, float dy)
     {
         uint h = unchecked((uint)ix * 0x27d4eb2du ^ (uint)iy * 0x165667b1u);
@@ -121,7 +117,8 @@ internal static class FireColor
     /// <summary>Opaque palette color for a 0..1 temperature.</summary>
     public static uint Heat(float t)
     {
-        t = t < 0f ? 0f : (t > 1f ? 1f : t);
+        // Written so NaN lands on 0: casting NaN to int gives int.MinValue and would throw below.
+        t = t > 0f ? (t < 1f ? t : 1f) : 0f;
         return Lut[(int)(t * (N - 1) + 0.5f)];
     }
 
@@ -208,9 +205,10 @@ internal static class MeshDraw
     }
 
     /// <summary>
-    /// A soft radial blob: a center vertex plus <paramref name="rings"/> concentric rings of
-    /// <paramref name="segs"/> vertices. Radii and colors per ring are given innermost-first; make
-    /// the outermost ring fully transparent for a glow with no visible edge. <paramref name="irregular"/>
+    /// A soft radial blob: a center vertex plus one concentric ring of <paramref name="segs"/>
+    /// vertices per entry in <paramref name="ringRadius"/>. Radii and colors per ring are given
+    /// innermost-first; make the outermost ring fully transparent for a glow with no visible edge.
+    /// <paramref name="irregular"/>
     /// (0..1) wobbles each angular slice's radius by a seed-derived amount, so smoke and haze don't
     /// read as perfect discs. <paramref name="squashY"/> flattens it into an ellipse.
     /// </summary>

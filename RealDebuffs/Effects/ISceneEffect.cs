@@ -58,6 +58,31 @@ public interface ISceneEffect
     /// <summary>
     /// Emit this frame's primitives into <paramref name="scene"/>. Called only while
     /// <paramref name="alpha"/> is above zero, which includes the fade-in/fade-out window.
+    /// <paramref name="dt"/> is the seconds since the previous frame, already clamped to
+    /// [0, 0.25] so a hitch can't fling particles across the screen.
     /// </summary>
-    void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, Vector4? colorOverride);
+    void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride);
+}
+
+/// <summary>
+/// Detects a "fresh application" of an effect. Emit is only called while the effect is visible, so
+/// a gap of more than a second between calls means the status was gone and has just been
+/// (re)applied: cast-in animations and particle pools should restart. Start is the time of the most
+/// recent fresh application.
+/// </summary>
+public sealed class CastTracker
+{
+    private const float NewCastGapSeconds = 1.0f;
+    private float _last = -100f;
+
+    public float Start { get; private set; }
+
+    /// <summary>Call once per Emit. Returns true when this call begins a fresh application.</summary>
+    public bool Begin(float time)
+    {
+        bool fresh = time - _last > NewCastGapSeconds;
+        if (fresh) Start = time;
+        _last = time;
+        return fresh;
+    }
 }

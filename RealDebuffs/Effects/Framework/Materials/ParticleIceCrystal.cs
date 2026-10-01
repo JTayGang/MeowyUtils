@@ -79,8 +79,6 @@ public sealed class ParticleIceCrystal : IParticleMaterial
         dl.AddCircleFilled(pos, MathF.Max(0.7f, size * 0.18f), DrawHelpers.WithAlpha(Hot, alpha * 0.90f));
     }
 
-    private static Vector2 Dir(float a) => new(MathF.Cos(a), MathF.Sin(a));
-
     public ReadOnlySpan<StrokeEmission> Emissions => EmissionSpecs;
 
     private static readonly StrokeEmission[] EmissionSpecs =

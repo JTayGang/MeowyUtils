@@ -2,7 +2,6 @@ using System.Numerics;
 using System.Text;
 using System.Text.RegularExpressions;
 using RealDebuffs.Effects.Framework;
-using RealDebuffs.Effects;
 
 namespace RealDebuffs;
 
@@ -22,113 +21,6 @@ public readonly record struct TooltipEffectMatch(
     string? MaterialSubstitution = null);
 
 /// <summary>
-/// One "if a status's tooltip contains any of these words, show that effect" link. A rule can
-/// carry several comma-separated keywords - they all drive the same Kind. Rules can freely name
-/// the same Kind; the parser still produces at most one result per kind.
-/// </summary>
-public sealed class TooltipKeywordRule
-{
-    private string _keywords = "";
-    private string[]? _parsed;
-    private Regex? _pattern;
-
-    /// <summary>
-    /// Comma/newline/semicolon-separated words or short phrases. Each is matched as a whole word
-    /// (word boundaries both sides) case-insensitively. Blanks and duplicates are dropped.
-    /// </summary>
-    public string Keywords
-    {
-        get => _keywords;
-        set { _keywords = value ?? ""; _parsed = null; _pattern = null; }
-    }
-
-    public DebuffKind Kind { get; set; } = DebuffKind.Bind;
-
-    public bool Enabled { get; set; } = true;
-
-    /// <summary>Cached. Invalidated by the Keywords setter.</summary>
-    public IReadOnlyList<string> ParsedKeywords => _parsed ??= ParseKeywords(_keywords);
-
-    /// <summary>
-    /// One word-boundary, case-insensitive alternation over every keyword, or null if there are
-    /// none. Cached (method, not property, so it isn't saved) and invalidated by Keywords.
-    /// </summary>
-    public Regex? GetPattern()
-    {
-        if (_pattern != null) return _pattern;
-        var parsed = ParsedKeywords;
-        if (parsed.Count == 0) return null;
-
-        string alternation = parsed.Count == 1
-            ? Regex.Escape(parsed[0])
-            : "(?:" + string.Join("|", parsed.Select(Regex.Escape)) + ")";
-
-        return _pattern = new Regex($@"\b{alternation}\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-    }
-
-    /// <summary>Splits a raw keyword box into non-blank, de-duplicated (case-insensitive) entries.</summary>
-    public static string[] ParseKeywords(string? raw)
-    {
-        if (string.IsNullOrWhiteSpace(raw)) return Array.Empty<string>();
-        return raw
-            .Split(new[] { ',', '\n', '\r', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-    }
-
-    /// <summary>The default rule for an effect: its own declared TriggerKeywords, comma-joined.</summary>
-    private static TooltipKeywordRule DefaultRuleFor(ISceneEffect effect) => new()
-    {
-        Keywords = string.Join(", ", effect.TriggerKeywords),
-        Kind = effect.Kind,
-    };
-
-    /// <summary>
-    /// Option-C merge pass, called once per session from Plugin after effect discovery. For every
-    /// effect whose kind isn't already in <see cref="Configuration.SeededKinds"/>: mark it seeded,
-    /// and - only if the user has no rule for that kind yet - add the effect's default rule. A rule
-    /// the user deleted stays deleted (the kind is seeded, so we don't touch it); a newly-added
-    /// effect gets a rule automatically (the kind isn't seeded yet). Returns true if config changed.
-    /// </summary>
-    public static bool SeedNewEffects(Configuration config, IReadOnlyList<ISceneEffect> effects)
-    {
-        bool changed = false;
-        var rules = config.TooltipKeywordRules;
-
-        foreach (var effect in effects)
-        {
-            if (config.SeededKinds.Contains(effect.Kind)) continue;
-            config.SeededKinds.Add(effect.Kind);
-            changed = true;
-
-            if (effect.TriggerKeywords.Count == 0) continue;
-            if (rules.Any(r => r.Kind == effect.Kind)) continue;
-
-            rules.Add(DefaultRuleFor(effect));
-        }
-
-        return changed;
-    }
-
-    /// <summary>
-    /// "Reset to defaults": wipe the user's rules and the seeded set, then re-seed every effect
-    /// from its declared TriggerKeywords in one pass.
-    /// </summary>
-    public static void ResetToDefaults(Configuration config, IReadOnlyList<ISceneEffect> effects)
-    {
-        config.TooltipKeywordRules.Clear();
-        config.SeededKinds.Clear();
-
-        foreach (var effect in effects)
-        {
-            config.SeededKinds.Add(effect.Kind);
-            if (effect.TriggerKeywords.Count == 0) continue;
-            config.TooltipKeywordRules.Add(DefaultRuleFor(effect));
-        }
-    }
-}
-
-/// <summary>
 /// Scans a tooltip for every enabled rule's keywords and resolves each match's color from the
 /// text. Pure and stateless apart from one wall-clock read for the "rainbow" word, so it can run
 /// on the settings tester's freshly-typed text as easily as on real status descriptions.
@@ -138,12 +30,6 @@ public sealed class TooltipKeywordRule
 ///  2. A plain color word ("pink", "green", ..., or a rainbow word) in the same clause. Clauses
 ///     split on `. , ; ! ?` and standalone "and"/"but". First word in the clause wins.
 ///  3. Nothing - the effect shows in its own color.
-///
-/// Material substitution: any "connector + material" phrase ("made of snow", "of lightning",
-/// "with chains") anywhere in the text attaches a material name to every matched kind. The
-/// target effect's hero slots determine where it actually lands at application time; if the
-/// material type doesn't match (a stroke material on a particle hero, say), it's dropped and the
-/// color still applies.
 ///
 /// Same-kind ties: prefer a match with a color over one without, else first match in rule order.
 /// </summary>
@@ -206,14 +92,11 @@ public static class TooltipKeywordParser
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     /// <summary>
-    /// Common English color words that can appear in plain flavor text. A fixed list rather than a
-    /// user-editable one: unlike keywords (arbitrary RP flavor text), color names are a closed
-    /// English vocabulary. Add entries here if you use one regularly that's missing.
-    ///
-    /// This is also the source for the Effect generator's Color dropdown, which is why the list
-    /// stays trimmed: past about 25-30 entries the picker stops being scannable. The greyscale
-    /// family is deliberately just three words - white, grayscale, black - because they map onto
-    /// the three value buckets in DrawHelpers.PushColorOverride.
+    /// Common English color words that can appear in plain flavor text - a fixed list, since color
+    /// names are a closed vocabulary (unlike keywords). Also the source of the Effect generator's
+    /// Color dropdown, so it's kept short: past ~25-30 entries the picker stops being scannable.
+    /// The greyscale family is just white, grayscale and black because they map onto the three
+    /// value buckets in DrawHelpers.PushColorOverride.
     /// </summary>
     public static readonly IReadOnlyDictionary<string, Vector4> NamedColors = new Dictionary<string, Vector4>(StringComparer.OrdinalIgnoreCase)
     {
@@ -244,17 +127,11 @@ public static class TooltipKeywordParser
 
     /// <summary>
     /// Words a user can write after "made of" / "of" / "as" / "from" / "with" to substitute an
-    /// effect's hero visuals. Sourced from MaterialRegistry.Vocabulary, which is built from each
-    /// material's own NaturalLanguageWords declaration - adding a new material with words is a
-    /// one-file change (the material), and this field picks it up at next load.
-    ///
-    /// Values are material names. Because the substitution is type-checked at the point of
-    /// application (see EffectRegistry.HeroSlotsFor), a phrase like "made of lightning" on a
-    /// Burns effect - whose hero is a particle role - is silently dropped rather than producing
-    /// nonsense; Burns still gets its color from the phrase.
+    /// effect's hero visuals, mapped to material names. Comes from MaterialRegistry.Vocabulary, so
+    /// a new material's words need no change here. A phrase whose material type doesn't fit the
+    /// target effect's hero (see EffectRegistry.HeroSlotsFor) is dropped and the color still applies.
     /// </summary>
-    private static readonly Dictionary<string, string> MaterialWords = MaterialRegistry.Vocabulary as Dictionary<string, string>
-        ?? new Dictionary<string, string>(MaterialRegistry.Vocabulary, StringComparer.OrdinalIgnoreCase);
+    private static readonly IReadOnlyDictionary<string, string> MaterialWords = MaterialRegistry.Vocabulary;
 
     // Both regexes are built from their dictionaries above so they can never drift out of sync.
     // Textual ordering matters: fields initialize in declaration order, so the dictionaries must

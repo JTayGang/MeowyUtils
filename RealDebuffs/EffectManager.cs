@@ -13,6 +13,11 @@ namespace RealDebuffs;
 /// any active Moodles/Loci statuses linked via CustomStatusWatcher, and dispatches every enabled
 /// effect's Emit call in DrawOrder. Effects fade in/out smoothly rather than popping.
 ///
+/// Timing: the in-game status list is scanned every frame (it's tiny, and a stun that appeared a
+/// second late would feel broken). Everything derived from the Moodles/Loci snapshot and the
+/// settings is resolved once per CustomStatusWatcher heartbeat, or immediately after a settings
+/// edit (Invalidate), rather than every frame.
+///
 /// The effect roster comes in from Plugin, which gets it from EffectDiscovery (reflection over
 /// the assembly, filtered to ISceneEffect implementations, sorted by DrawOrder). EffectManager
 /// owns the roster for the session; nothing else constructs effect instances.
@@ -34,15 +39,19 @@ public sealed class EffectManager
     private readonly Dictionary<DebuffKind, float> _currentAlpha = new();
     private readonly HashSet<DebuffKind> _activeScratch = new();
     private readonly Dictionary<DebuffKind, float> _targetStrength = new();
-    private readonly Dictionary<DebuffKind, Vector4> _colorOverrides = new();
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private float _lastTime;
 
-    /// <summary>
-    /// Per-frame merged material overrides. Global config entries are merged first, then
-    /// tooltip-derived entries layered on top.
-    /// </summary>
-    private readonly Dictionary<string, string> _materialOverridesScratch = new(StringComparer.Ordinal);
+    // ---- inputs resolved per heartbeat (see ResolveInputs) ----
+    // The dictionaries are replaced, never mutated, once published: EffectSceneRenderer keys its
+    // material cache on the instance, so a stale in-place edit would go unnoticed.
+    private static readonly IReadOnlyDictionary<string, string> NoOverrides = new Dictionary<string, string>();
+    private int _resolvedTick = -1;
+    private volatile bool _inputsStale = true;
+    private CustomStatusSnapshot _snapshot = CustomStatusSnapshot.Empty;
+    private DebuffKind[] _ruleKinds = Array.Empty<DebuffKind>();
+    private IReadOnlyDictionary<string, string> _materialOverrides = NoOverrides;
+    private Dictionary<DebuffKind, Vector4> _configColors = new();
 
     /// <summary>Per-frame buffer effects emit into. Cleared at the start of Draw, rendered after the loop.</summary>
     private readonly EffectScene _scene = new();
@@ -87,8 +96,6 @@ public sealed class EffectManager
 
         _activeScratch.Clear();
         _targetStrength.Clear();
-        _colorOverrides.Clear();
-        _materialOverridesScratch.Clear();
 
         bool suppressed = !_config.Enabled
             || _gameGui.GameUiHidden
@@ -99,10 +106,20 @@ public sealed class EffectManager
                 _condition[ConditionFlag.OccupiedInCutSceneEvent] ||
                 _condition[ConditionFlag.CreatingCharacter]));
 
-        var player = _objectTable.LocalPlayer;
-        if (!suppressed && player != null)
+        // Tick before snapshot: if a beat lands in between we re-sync next frame, never miss one.
+        int tick = _customStatuses.Tick;
+        if (_inputsStale || tick != _resolvedTick)
         {
-            foreach (var status in player.StatusList)
+            _inputsStale = false;
+            _resolvedTick = tick;
+            ResolveInputs(_customStatuses.Snapshot);
+        }
+
+        var player = _objectTable.LocalPlayer;
+        bool live = !suppressed && player != null;
+        if (live)
+        {
+            foreach (var status in player!.StatusList)
             {
                 if (status.StatusId == 0) continue;
                 if (_catalog.TryGetEffect(status.StatusId, out var kind, out var strength))
@@ -112,36 +129,21 @@ public sealed class EffectManager
                         _targetStrength[kind] = strength;
                 }
             }
-        }
 
-        // Custom Moodles/Loci rules feed the same _activeScratch set real debuffs do, so an effect
-        // already on from either source is never doubled or restarted. Runs BEFORE the chat-block
-        // line on purpose: a custom Silence rule then drives the hard chat lockout too.
-        if (!suppressed && player != null)
-        {
-            var snapshot = _customStatuses.Snapshot;
-            snapshot.AddActiveKinds(_config.CustomStatusRules, _activeScratch);
-
-            foreach (var rule in _config.CustomStatusRules)
+            // Custom Moodles/Loci rules feed the same _activeScratch set real debuffs do, so an
+            // effect already on from either source is never doubled or restarted. Runs BEFORE the
+            // chat-block line on purpose: a custom Silence rule then drives the hard chat lockout too.
+            foreach (var kind in _ruleKinds)
             {
-                if (rule.Enabled && snapshot.Contains(rule.GetKey()))
-                    _targetStrength[rule.Kind] = 1f;
-            }
-
-            foreach (var kind in snapshot.TooltipKinds)
                 _activeScratch.Add(kind);
-
-            foreach (var (kind, color) in snapshot.TooltipColors)
-            {
-                if (!_colorOverrides.ContainsKey(kind))
-                    _colorOverrides[kind] = color;
+                _targetStrength[kind] = 1f;
             }
 
-            foreach (var kv in _config.MaterialOverrides)
-                _materialOverridesScratch[kv.Key] = kv.Value;
-            foreach (var kv in snapshot.TooltipMaterialOverrides)
-                _materialOverridesScratch[kv.Key] = kv.Value;
+            foreach (var kind in _snapshot.TooltipKinds)
+                _activeScratch.Add(kind);
         }
+
+        var materialOverrides = live ? _materialOverrides : NoOverrides;
 
         _chatBlocker.SetSilenced(_config.SilenceBlocksChat && _activeScratch.Contains(DebuffKind.Silence));
 
@@ -165,13 +167,13 @@ public sealed class EffectManager
             if (current <= 0.001f) continue;
 
             float strength = _targetStrength.TryGetValue(effect.Kind, out var targetStrength) ? targetStrength : 1f;
-            Vector4? color = ResolveColorOverride(effect.Kind);
+            Vector4? color = ResolveColorOverride(effect.Kind, live);
 
             _scene.CurrentOwner = effect.Kind;
 
             try
             {
-                effect.Emit(_scene, screenSize, current * strength, time, color);
+                effect.Emit(_scene, screenSize, current * strength, time, dt, color);
             }
             catch (Exception ex)
             {
@@ -181,30 +183,60 @@ public sealed class EffectManager
         }
 
         // Ambient stroke emissions: path-following first (behind), free-flying second (on top).
-        StrokeAutoEmitter.Emit(_scene, time, dt, _materialOverridesScratch);
-        EffectSceneRenderer.Render(dl, _scene, screenSize, time, _config.GlobalIntensity, _materialOverridesScratch);
+        StrokeAutoEmitter.Emit(_scene, time, dt, materialOverrides);
+        EffectSceneRenderer.Render(dl, _scene, screenSize, time, _config.GlobalIntensity, materialOverrides);
+    }
+
+    /// <summary>Call after any settings edit so the next frame re-resolves instead of waiting for the heartbeat.</summary>
+    public void Invalidate() => _inputsStale = true;
+
+    /// <summary>
+    /// Rebuilds everything derived from the Moodles/Loci snapshot and the settings: which kinds the
+    /// name rules light up, the merged material overrides (settings first, tooltip phrases layered
+    /// on top), and the settings' color choices. Runs once per heartbeat or edit, not per frame.
+    /// </summary>
+    private void ResolveInputs(CustomStatusSnapshot snapshot)
+    {
+        _snapshot = snapshot;
+
+        var ruleKinds = new List<DebuffKind>();
+        foreach (var rule in _config.CustomStatusRules)
+        {
+            if (rule.Enabled && snapshot.Contains(rule.GetKey()) && !ruleKinds.Contains(rule.Kind))
+                ruleKinds.Add(rule.Kind);
+        }
+        _ruleKinds = ruleKinds.ToArray();
+
+        var overrides = new Dictionary<string, string>(_config.MaterialOverrides, StringComparer.Ordinal);
+        foreach (var kv in snapshot.TooltipMaterialOverrides)
+            overrides[kv.Key] = kv.Value;
+        _materialOverrides = overrides;
+
+        var colors = new Dictionary<DebuffKind, Vector4>();
+        foreach (var (kind, name) in _config.ColorOverrides)
+        {
+            if (TooltipKeywordParser.TryResolveColorToken(name, out var rgb))
+                colors[kind] = rgb;
+        }
+        _configColors = colors;
     }
 
     /// <summary>
     /// Priority order for an effect's color override:
-    ///   1. Tooltip-derived color (per-frame, context-specific).
+    ///   1. Tooltip-derived color (context-specific; only while custom statuses are live).
     ///   2. Dev-tester forced color (explicit "show me this, now").
     ///   3. Config override (the Effect generator's Color dropdown, a persistent baseline).
     /// Returning null means the effect shows in its own authored palette.
     /// </summary>
-    private Vector4? ResolveColorOverride(DebuffKind kind)
+    private Vector4? ResolveColorOverride(DebuffKind kind, bool live)
     {
-        if (_colorOverrides.TryGetValue(kind, out var tooltipColor))
+        if (live && _snapshot.TooltipColors.TryGetValue(kind, out var tooltipColor))
             return tooltipColor;
 
         if (DebugTester.GetForcedColor(kind) is { } forcedColor)
             return forcedColor;
 
-        if (_config.ColorOverrides.TryGetValue(kind, out var name)
-            && TooltipKeywordParser.TryResolveColorToken(name, out var rgb))
-            return rgb;
-
-        return null;
+        return _configColors.TryGetValue(kind, out var configColor) ? configColor : null;
     }
 
     private static float MoveTowards(float current, float target, float maxDelta)

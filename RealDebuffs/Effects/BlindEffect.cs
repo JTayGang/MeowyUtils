@@ -36,7 +36,7 @@ public sealed class BlindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
 
     private const uint Black = 0xFF000000u;
 
-    public void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, Vector4? colorOverride)
+    public void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride)
     {
         float breathe = 0.92f + 0.08f * DrawHelpers.Pulse(time, 2.6f);
         float a = alpha * breathe;

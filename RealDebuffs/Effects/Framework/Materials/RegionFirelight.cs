@@ -39,6 +39,20 @@ public sealed class RegionFirelight : IRegionMaterial
 
         // ---- bottom glow ----
         int cols = Math.Clamp((int)(width / 46f), 10, 40);
+
+        // Brighter mid-screen (flames are tallest there), plus per-column flicker that drifts. Both
+        // depend only on the column, so they're computed once per column rather than once per vertex.
+        Span<float> mid = stackalloc float[cols + 1];
+        Span<float> flick = stackalloc float[cols + 1];
+        for (int c = 0; c <= cols; c++)
+        {
+            float x01 = c / (float)cols;
+            mid[c] = 1f - 0.32f * MathF.Abs(x01 - 0.5f) * 2f;
+            float f = 0.68f + 0.32f * (0.5f + 0.5f * FireNoise.Perlin(x01 * 7.5f + 3.1f, t * 1.15f));
+            f *= 0.90f + 0.10f * (0.5f + 0.5f * FireNoise.Perlin(x01 * 19f, t * 3.4f));
+            flick[c] = f;
+        }
+
         int i = 0;
         for (int row = 0; row <= Rows; row++)
         {
@@ -49,14 +63,8 @@ public sealed class RegionFirelight : IRegionMaterial
 
             for (int c = 0; c <= cols; c++)
             {
-                float x01 = c / (float)cols;
-                // brighter mid-screen (flames are tallest there), plus per-column flicker that drifts
-                float mid = 1f - 0.32f * MathF.Abs(x01 - 0.5f) * 2f;
-                float flick = 0.68f + 0.32f * (0.5f + 0.5f * FireNoise.Perlin(x01 * 7.5f + 3.1f, t * 1.15f));
-                flick *= 0.90f + 0.10f * (0.5f + 0.5f * FireNoise.Perlin(x01 * 19f, t * 3.4f));
-
-                MeshDraw.P[i] = new Vector2(left + x01 * width, y);
-                MeshDraw.C[i] = DrawHelpers.WithAlpha(baseCol, a * fall * mid * flick);
+                MeshDraw.P[i] = new Vector2(left + c / (float)cols * width, y);
+                MeshDraw.C[i] = DrawHelpers.WithAlpha(baseCol, a * fall * mid[c] * flick[c]);
                 i++;
             }
         }
@@ -66,6 +74,10 @@ public sealed class RegionFirelight : IRegionMaterial
         float sideW = MathF.Min(width * 0.20f, ctx.ShortSide * 0.34f);
         float sideH = MathF.Min(reach * 1.25f, ctx.ScreenH * 0.55f);
         const int sCols = 5, sRows = 8;
+        Span<float> hFall = stackalloc float[sCols + 1];
+        for (int c = 0; c <= sCols; c++)
+            hFall[c] = MathF.Pow(1f - c / (float)sCols, 2.0f);    // c/sCols: 0 at the screen edge -> 1 inward
+
         for (int side = 0; side < 2; side++)
         {
             i = 0;
@@ -74,16 +86,15 @@ public sealed class RegionFirelight : IRegionMaterial
                 float sy = row / (float)sRows;
                 float y = bottom - sy * sideH;
                 float vFall = MathF.Pow(1f - sy, 1.6f);
-                float flick = 0.7f + 0.3f * (0.5f + 0.5f * FireNoise.Perlin(sy * 3f + side * 11f, t * 1.3f));
+                float rowFlick = 0.7f + 0.3f * (0.5f + 0.5f * FireNoise.Perlin(sy * 3f + side * 11f, t * 1.3f));
+                uint col = FireColor.Heat(0.55f - 0.30f * sy);
 
                 for (int c = 0; c <= sCols; c++)
                 {
-                    float sx = c / (float)sCols;                 // 0 at the screen edge -> 1 inward
-                    float hFall = MathF.Pow(1f - sx, 2.0f);
+                    float sx = c / (float)sCols;
                     float x = side == 0 ? left + sx * sideW : right - sx * sideW;
-                    uint col = FireColor.Heat(0.55f - 0.30f * sy);
                     MeshDraw.P[i] = new Vector2(x, y);
-                    MeshDraw.C[i] = DrawHelpers.WithAlpha(col, a * 0.62f * hFall * vFall * flick);
+                    MeshDraw.C[i] = DrawHelpers.WithAlpha(col, a * 0.62f * hFall[c] * vFall * rowFlick);
                     i++;
                 }
             }

@@ -1,5 +1,4 @@
 using System.Numerics;
-using Dalamud.Bindings.ImGui;
 using RealDebuffs.Effects.Framework;
 
 namespace RealDebuffs.Effects;
@@ -77,8 +76,6 @@ public sealed class BurnsEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
     private static readonly uint Glow = DrawHelpers.ToU32(1.00f, 0.42f, 0.07f, 1f);
 
     // ---- timing ----
-    private const float NewCastGapSeconds = 1.0f;
-
     // Intro build: after an emitter (and its layer) ignites, its flames start at BuildFloor of full
     // size and ease up to 100% over BuildSeconds, so the fire visibly CLIMBS instead of appearing
     // at full height. Layers join in sequence (see LayerDelayFor), which is what makes the build
@@ -152,8 +149,7 @@ public sealed class BurnsEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
     private Vector2 _screenSize;
     private float _shortSide;
 
-    private float _castStart = -1f;
-    private float _lastDrawTime = -100f;
+    private readonly CastTracker _cast = new();
 
     // Fire sites: enough that neighbors overlap, few enough to stay cheap.
     private const int BottomSites = 14;
@@ -383,7 +379,7 @@ public sealed class BurnsEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
 
     // ---- per-frame ----
 
-    public void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, Vector4? colorOverride)
+    public void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride)
     {
         _screenSize = screenSize;
         _shortSide = MathF.Min(screenSize.X, screenSize.Y);
@@ -391,16 +387,13 @@ public sealed class BurnsEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
         // A gap since the last Emit means a fresh application: restart the ignition, drop anything
         // left over from the previous cast, and lay out a new fire. The layout is reseeded from the
         // cast start time (the same convention HeavyEffect uses) so every cast looks different.
-        if (time - _lastDrawTime > NewCastGapSeconds)
+        if (_cast.Begin(time))
         {
-            _castStart = time;
             foreach (var e in _all) { e.Pool.Clear(); e.Burned = false; }
-            BuildLayout(unchecked((int)(_castStart * 1000f)));
+            BuildLayout(unchecked((int)(_cast.Start * 1000f)));
         }
-        _lastDrawTime = time;
-        float age = time - _castStart;
+        float age = time - _cast.Start;
 
-        float dt = ImGui.GetIO().DeltaTime;
         float shortSide = _shortSide;
 
         // Three-octave flicker drives the vignette, the firelight and the flames' brightness together,

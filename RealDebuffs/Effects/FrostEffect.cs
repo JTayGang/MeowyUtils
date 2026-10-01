@@ -1,5 +1,4 @@
 using System.Numerics;
-using Dalamud.Bindings.ImGui;
 using RealDebuffs.Effects.Framework;
 
 namespace RealDebuffs.Effects;
@@ -60,7 +59,6 @@ public sealed class FrostEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
     private static readonly uint Flash    = DrawHelpers.ToU32(0.88f, 0.96f, 1.00f, 1f); // intro flash
 
     // ---- timing ----
-    private const float NewCastGapSeconds = 1.0f;
     private const float IntroDuration     = 1.10f;
 
     // ---- emitters ----
@@ -70,24 +68,20 @@ public sealed class FrostEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
     private readonly ParticleEmitter _iceCrystals = new(maxParticles: 24, seedSalt: 0xF00503);
 
     // ---- state ----
-    private float _castStart = -1f;
-    private float _lastDrawTime = -100f;
+    private readonly CastTracker _cast = new();
 
-    public void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, Vector4? colorOverride)
+    public void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride)
     {
         // Fresh application: reset the intro and drop any particles from the previous cast.
-        if (time - _lastDrawTime > NewCastGapSeconds)
+        if (_cast.Begin(time))
         {
-            _castStart = time;
             _snowflakes.Clear();
             _snow.Clear();
             _fog.Clear();
             _iceCrystals.Clear();
         }
-        _lastDrawTime = time;
 
-        float age = time - _castStart;
-        float dt = ImGui.GetIO().DeltaTime;
+        float age = time - _cast.Start;
         float shortSide = MathF.Min(screenSize.X, screenSize.Y);
 
         // Intro curve: emission boost of 4x easing to 1x over IntroDuration, plus a brief flash.

@@ -5,14 +5,11 @@ using RealDebuffs.Effects.Framework;
 
 namespace RealDebuffs;
 
-/// <summary>Where a match's color came from - for the settings-window tester.</summary>
 public enum TooltipColorSource { None, Tag, Clause }
 
 /// <summary>
 /// One resolved "this kind should be active, looking like this" result. MaterialSubstitution is
-/// set when a "made of X" / "of X" / "with X" phrase appeared anywhere in the tooltip text and
-/// resolved to a material name; it's type-checked at application time (see CustomStatusSnapshot
-/// + EffectHeroSlots), so it may be silently dropped if it doesn't fit the target effect's hero.
+/// set when a "made of X" phrase resolved to a material name; type-checked at application time.
 /// </summary>
 public readonly record struct TooltipEffectMatch(
     DebuffKind Kind,
@@ -22,24 +19,12 @@ public readonly record struct TooltipEffectMatch(
 
 /// <summary>
 /// Scans a tooltip for every enabled rule's keywords and resolves each match's color from the
-/// text. Pure and stateless apart from one wall-clock read for the "rainbow" word, so it can run
-/// on the settings tester's freshly-typed text as easily as on real status descriptions.
-///
-/// Color priority per match, highest first:
-///  1. A [color=...] tag wrapping the match.
-///  2. A plain color word ("pink", "green", ..., or a rainbow word) in the same clause. Clauses
-///     split on `. , ; ! ?` and standalone "and"/"but". First word in the clause wins.
-///  3. Nothing - the effect shows in its own color.
-///
-/// Same-kind ties: prefer a match with a color over one without, else first match in rule order.
+/// text. Color priority: [color=] tag wrapping the match, then a plain color word in the same
+/// clause. Same-kind ties: prefer a match with a color, else first match in rule order.
 /// </summary>
 public static class TooltipKeywordParser
 {
-    /// <summary>
-    /// A canonical trigger word for a kind, drawn from the user's own enabled keyword rules so
-    /// an exported phrase is guaranteed to fire against their config. Null if no enabled rule
-    /// targets this kind; the caller falls back to the kind's name.
-    /// </summary>
+    /// <summary>The first enabled keyword for a kind, for building export phrases.</summary>
     public static string? CanonicalTriggerWord(DebuffKind kind, IReadOnlyList<TooltipKeywordRule> rules)
     {
         foreach (var rule in rules)
@@ -51,12 +36,7 @@ public static class TooltipKeywordParser
         return null;
     }
 
-    /// <summary>
-    /// True if the token is a recognized color word - a fixed-color name from
-    /// <see cref="NamedColors"/> or one of the cycling <see cref="RainbowWords"/>. Used by the
-    /// effect generator's export-phrase builder to decide whether a stored ColorOverrides value
-    /// can be rendered as an adjective in a status description.
-    /// </summary>
+    /// <summary>True if the token is a recognized color word (fixed or rainbow).</summary>
     public static bool IsColorWord(string? token)
     {
         if (string.IsNullOrWhiteSpace(token)) return false;
@@ -64,11 +44,7 @@ public static class TooltipKeywordParser
         return NamedColors.ContainsKey(t) || RainbowWords.Contains(t);
     }
 
-    /// <summary>
-    /// The shortest phrase from <c>MaterialWords</c> that maps to a given material name, for
-    /// producing "made of X" export text. Null when the material has no natural-language word
-    /// (region materials, or any material added to the registry without a matching entry).
-    /// </summary>
+    /// <summary>Shortest natural-language word for a material, for "made of X" export text.</summary>
     public static string? CanonicalMaterialWord(string materialName)
     {
         string? best = null;
@@ -91,13 +67,7 @@ public static class TooltipKeywordParser
         @"[.,;!?]+|\band\b|\bbut\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
-    /// <summary>
-    /// Common English color words that can appear in plain flavor text - a fixed list, since color
-    /// names are a closed vocabulary (unlike keywords). Also the source of the Effect generator's
-    /// Color dropdown, so it's kept short: past ~25-30 entries the picker stops being scannable.
-    /// The greyscale family is just white, grayscale and black because they map onto the three
-    /// value buckets in DrawHelpers.PushColorOverride.
-    /// </summary>
+    /// <summary>Closed vocabulary of color words. Also the source of the Effect generator's Color dropdown.</summary>
     public static readonly IReadOnlyDictionary<string, Vector4> NamedColors = new Dictionary<string, Vector4>(StringComparer.OrdinalIgnoreCase)
     {
         ["black"] = Rgb(0.06f, 0.06f, 0.06f),
@@ -116,26 +86,16 @@ public static class TooltipKeywordParser
         ["yellow"] = Rgb(0.95f, 0.85f, 0.15f),
     };
 
-    /// <summary>
-    /// Words that resolve to a hue cycling over time rather than a fixed color. Kept separate from
-    /// NamedColors so that dictionary stays a plain word-&gt;RGB lookup.
-    /// </summary>
+    /// <summary>Words that resolve to a hue cycling over time. Kept separate from NamedColors.</summary>
     private static readonly HashSet<string> RainbowWords = new(StringComparer.OrdinalIgnoreCase)
     {
         "rgb", "rainbow",
     };
 
-    /// <summary>
-    /// Words a user can write after "made of" / "of" / "as" / "from" / "with" to substitute an
-    /// effect's hero visuals, mapped to material names. Comes from MaterialRegistry.Vocabulary, so
-    /// a new material's words need no change here. A phrase whose material type doesn't fit the
-    /// target effect's hero (see EffectRegistry.HeroSlotsFor) is dropped and the color still applies.
-    /// </summary>
+    /// <summary>Words a user can write after "made of" / "of" / "as" / "from" / "with" to substitute
+    /// an effect's hero visuals. Comes from MaterialRegistry.Vocabulary.</summary>
     private static readonly IReadOnlyDictionary<string, string> MaterialWords = MaterialRegistry.Vocabulary;
 
-    // Both regexes are built from their dictionaries above so they can never drift out of sync.
-    // Textual ordering matters: fields initialize in declaration order, so the dictionaries must
-    // be declared before these.
     private static readonly Regex ColorWordPattern = BuildColorWordPattern();
     private static readonly Regex MaterialPhrase   = BuildMaterialPhrase();
 
@@ -144,7 +104,6 @@ public static class TooltipKeywordParser
         var escaped = new List<string>(NamedColors.Count + RainbowWords.Count);
         foreach (var name in NamedColors.Keys) escaped.Add(Regex.Escape(name));
         foreach (var name in RainbowWords) escaped.Add(Regex.Escape(name));
-        // Longest-first so e.g. a hypothetical "sea green" would beat "green".
         escaped.Sort((a, b) => b.Length.CompareTo(a.Length));
         return new Regex($@"\b({string.Join("|", escaped)})\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     }
@@ -153,7 +112,6 @@ public static class TooltipKeywordParser
     {
         var escaped = new List<string>(MaterialWords.Count);
         foreach (var word in MaterialWords.Keys) escaped.Add(Regex.Escape(word));
-        // Longest-first: "snowflakes" before "snow", "tentacles" before "tentacle".
         escaped.Sort((a, b) => b.Length.CompareTo(a.Length));
         var alternation = string.Join("|", escaped);
         return new Regex(
@@ -164,15 +122,10 @@ public static class TooltipKeywordParser
     private static Vector4 Rgb(float r, float g, float b) => new(r, g, b, 1f);
 
     /// <summary>
-    /// Parses one tooltip against every enabled rule. At most one match per distinct Kind. Never
-    /// throws; unresolvable color tokens and blank keyword rules are silently skipped.
-    ///
-    /// Material scoping: material phrases ("made of snow", "of lightning") are matched per
-    /// CLAUSE, not globally. A description that names several effects - "red tentacle made of
-    /// snow, black flame made of sparks" - attaches each clause's own material to the match(es)
-    /// in that clause, so the two effects don't share one material. Any keyword falling inside
-    /// any material phrase's span is skipped, so "flames" in "made of flames" acts as a
-    /// modifier on the effect in that clause rather than firing its own rule.
+    /// Parses one tooltip against every enabled rule. At most one match per distinct Kind. Material
+    /// phrases are matched per CLAUSE, so a description naming several effects attaches each
+    /// clause's own material to the match(es) in that clause. Any keyword inside a material phrase
+    /// is skipped, so "flames" in "made of flames" modifies rather than activating.
     /// </summary>
     public static IReadOnlyList<TooltipEffectMatch> Parse(string? tooltipText, IReadOnlyList<TooltipKeywordRule> rules)
     {
@@ -186,8 +139,6 @@ public static class TooltipKeywordParser
         var colorWords = ColorWordPattern.Matches(plain);
         var best = new Dictionary<DebuffKind, TooltipEffectMatch>();
 
-        // Locate EVERY material phrase and its span, not just the first. The spans are used both
-        // for keyword suppression (below) and for per-clause resolution (MaterialInSameClause).
         var materialPhrases = new List<(int Start, int End, string Material)>();
         foreach (Match m in MaterialPhrase.Matches(plain))
         {
@@ -203,8 +154,6 @@ public static class TooltipKeywordParser
 
             foreach (Match m in pattern.Matches(plain))
             {
-                // Skip keywords inside ANY material phrase. Those words are modifiers, not
-                // activation keywords.
                 bool insideMaterial = false;
                 for (int i = 0; i < materialPhrases.Count; i++)
                 {
@@ -224,8 +173,6 @@ public static class TooltipKeywordParser
                     : clauseColor != null ? TooltipColorSource.Clause
                     : TooltipColorSource.None;
 
-                // Attach only the material phrase that lives in the same clause as this match.
-                // A material in a different clause describes a different effect.
                 string? matchMaterial = MaterialInSameClause(clauses, materialPhrases, m.Index);
 
                 var candidate = new TooltipEffectMatch(rule.Kind, resolved, source, matchMaterial);
@@ -241,12 +188,7 @@ public static class TooltipKeywordParser
         return result;
     }
 
-    /// <summary>
-    /// The material phrase belonging to the clause that contains <paramref name="idx"/>, if any.
-    /// A clause can carry only one material - the first phrase found in it wins, matching the
-    /// "first declaration sticks" convention used elsewhere (StatusCatalog, MaterialRegistry).
-    /// Returns null when the match's clause has no material, or the index falls in no clause.
-    /// </summary>
+    /// <summary>The material phrase belonging to the clause containing idx, if any. First wins.</summary>
     private static string? MaterialInSameClause(
         List<(int Start, int End)> clauses,
         List<(int Start, int End, string Material)> materialPhrases,
@@ -268,8 +210,8 @@ public static class TooltipKeywordParser
     }
 
     /// <summary>
-    /// Resolves one color token: hex triplet/quad (with or without # / 0x, or CSS 3/4-digit
-    /// shorthand), a NamedColors name, or a rainbow word. Returns false for anything else.
+    /// Resolves one color token: hex triplet/quad (with or without # / 0x, or CSS shorthand),
+    /// a NamedColors name, or a rainbow word.
     /// </summary>
     public static bool TryResolveColorToken(string? token, out Vector4 rgb)
     {
@@ -298,18 +240,13 @@ public static class TooltipKeywordParser
         return TryResolveWord(t, out rgb);
     }
 
-    /// <summary>Both the clause path and TryResolveColorToken route through here so they can't drift on which words they recognize.</summary>
     private static bool TryResolveWord(string word, out Vector4 rgb)
     {
         if (RainbowWords.Contains(word)) { rgb = RainbowColor(Environment.TickCount64); return true; }
         return NamedColors.TryGetValue(word, out rgb);
     }
 
-    /// <summary>
-    /// Rainbow at a given time: hue advances one step per second across a 256-step wheel. Cached
-    /// as part of a match, so it picks up the next step on the watcher's next refresh - which is
-    /// why it lines up with the once-a-second re-read instead of needing its own timer.
-    /// </summary>
+    /// <summary>Rainbow at a given time: hue advances one step per second across a 256-step wheel.</summary>
     private static Vector4 RainbowColor(long nowMs)
     {
         int hue = (int)((nowMs / 1000) % 256);
@@ -342,9 +279,8 @@ public static class TooltipKeywordParser
     }
 
     /// <summary>
-    /// Strips markup and records which stretch of the STRIPPED result each [color=] run covers,
-    /// so a later keyword match's plain-text index can be checked against it directly.
-    /// An unresolvable color value is treated as no color at that tag (still stripped).
+    /// Strips markup and records which stretch of the stripped result each [color=] run covers,
+    /// so a later keyword match's plain-text index can be checked directly.
     /// </summary>
     private static (string Plain, List<(int Start, int End, Vector4 Color)> ColorRuns) StripAndMapColors(string raw)
     {
@@ -376,7 +312,6 @@ public static class TooltipKeywordParser
                 FlushRun(plain.Length);
                 currentColor = null;
             }
-            // [glow=]/[/glow]/[i]/[/i]: already removed from `plain`, no color-run bookkeeping.
         }
 
         plain.Append(raw, cursor, raw.Length - cursor);
@@ -414,7 +349,7 @@ public static class TooltipKeywordParser
                 if (cw.Index < c.Start || cw.Index >= c.End) continue;
                 return TryResolveWord(cw.Value, out var rgb) ? rgb : null;
             }
-            break; // found the containing clause; it just has no color word in it
+            break;
         }
         return null;
     }

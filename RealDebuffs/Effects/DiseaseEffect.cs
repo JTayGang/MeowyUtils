@@ -4,27 +4,12 @@ using RealDebuffs.Effects.Framework;
 namespace RealDebuffs.Effects;
 
 /// <summary>
-/// Disease: parasitic tendrils creep in from the edges and curl inward, searching for something
-/// to grip. Most come from the bottom edge; a few from the sides and the top. As each reaches
-/// the end of its reach, it may LATCH onto whatever it touched - a screen edge in this
-/// implementation - and hang there, pulling taut and slowly rotating at its grip while the rest
-/// of the tendril coils.
+/// Disease: parasitic tendrils creep in from the edges and curl inward, searching for something to
+/// grip. A tendril that touches a screen edge may LATCH there and hang, pulling taut and rotating
+/// slowly at its grip while the rest of the tendril coils.
 ///
-/// SHAPE PIPELINE - how a tentacle's curve gets built each frame:
-///   1. Integrate a low-resolution heading at ControlPoints samples: base angle + curl + sway.
-///      This produces a coarse skeleton.
-///   2. Resample that skeleton through a Catmull-Rom spline at FinalSamples samples. The spline
-///      smooths the piecewise-constant heading into a real curve.
-///   3. Apply the latch pin correction to the SMOOTH samples.
-///   4. Rebuild the arc-length table (BuildArc) so the material samples evenly.
-///
-/// SEARCHING / GRABBING: each tendril slow-pulses its length (a "reach") on its own cycle. When
-/// the free tip literally touches a screen edge, a stochastic check may latch it. Latching pins
-/// the tip and rotates the tip region slowly around it.
-///
-/// VISUALS: the tendrils use whatever stroke material is configured for Disease. Default is
-/// stroke.parasite. All visual detail lives in that material; this class owns only shape, timing,
-/// and the latch state machine.
+/// Shape pipeline: coarse heading integrated at ControlPoints samples (base angle + curl + sway),
+/// resampled through Catmull-Rom to FinalSamples, latch pin correction applied, then arc rebuilt.
 /// </summary>
 public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
 {
@@ -53,20 +38,17 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         new("Stroke", PrimitiveRole.MainStroke, "Tendrils", "stroke.parasite"),
     };
 
-    // ---- timing ----
     private const float GrowSeconds       = 0.70f;
 
-    // ---- layout ----
     private const int BottomCount = 10;
     private const int SideCount   = 5;
     private const int TopCount    = 3;
     private const int TotalCount  = BottomCount + SideCount * 2 + TopCount;
 
-    // ---- curve sampling ----
     private const int ControlPoints = 10;
     private const int FinalSamples  = 40;
 
-    // ---- latch tuning ----
+    // Latch tuning.
     private const float LatchBlendSeconds  = 5.0f;
     private const float ContactEpsilonFrac = 0.001f;
     private const float LatchInsetFrac     = 0.006f;
@@ -120,15 +102,11 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         if (screenSize.X < 64f || screenSize.Y < 64f) return;
 
         if (_cast.Begin(time))
-        {
             BuildTendrils(unchecked((int)(_cast.Start * 1000f)));
-        }
         float age = time - _cast.Start;
 
         float shortSide = MathF.Min(screenSize.X, screenSize.Y);
 
-        // Ground shadow: same bottom-edge darkening shape Heavy uses, but sickly green rather
-        // than sooty black. It's Disease's ambience, not part of the tentacle material.
         float castIn = DrawHelpers.Saturate(age / 0.6f);
         float pulse = DrawHelpers.Pulse(time, 3.2f);
         float depth = screenSize.Y * (0.10f + 0.03f * pulse) * castIn;
@@ -151,7 +129,6 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
             if (revealT <= 0.001f) continue;
 
             BuildTendrilPath(i, screenSize, shortSide, time);
-
             UpdateLatch(i, screenSize, shortSide, time, dt, revealT);
 
             if (_tendrils[i].LatchBlend > 0.001f)
@@ -175,8 +152,6 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
             scene.AddStroke(stroke);
         }
     }
-
-    // ---- Layout baking ----
 
     private void BuildTendrils(int castSeed)
     {
@@ -269,8 +244,6 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         return mag * sign;
     }
 
-    // ---- Path building - coarse skeleton + Catmull-Rom resample ----
-
     private void BuildTendrilPath(int idx, Vector2 screenSize, float shortSide, float time)
     {
         ref readonly var t = ref _tendrils[idx];
@@ -293,7 +266,6 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         float step = totalLen / (ControlPoints - 1);
         float swayTime = time * t.Speed;
 
-        // 1. Coarse skeleton.
         Vector2 cursor = start;
         _coarse[0] = cursor;
 
@@ -308,16 +280,11 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
             _coarse[i] = cursor;
         }
 
-        // 2. Catmull-Rom resample to the smooth final path.
         CatmullRomResample(_coarse, ControlPoints, path.Points, FinalSamples);
         path.Count = FinalSamples;
     }
 
-    /// <summary>
-    /// Standard Catmull-Rom interpolation. Endpoints are duplicated for the phantom outer
-    /// control points, which makes the curve terminate on the actual endpoints rather than
-    /// overshooting past them.
-    /// </summary>
+    /// <summary>Endpoints duplicated for the phantom outer control points so the curve terminates on the endpoints.</summary>
     private static void CatmullRomResample(Vector2[] src, int srcCount, Vector2[] dst, int dstCount)
     {
         float scale = (float)(srcCount - 1) / (dstCount - 1);
@@ -344,8 +311,6 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
                 (-p0 + 3f * p1 - 3f * p2 + p3) * t3);
         }
     }
-
-    // ---- Latch pinning - u² correction + tip rotation, on the smooth path ----
 
     private void ApplyLatchPin(int idx)
     {
@@ -379,8 +344,6 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
             }
         }
     }
-
-    // ---- Latch state machine ----
 
     private void UpdateLatch(int idx, Vector2 screenSize, float shortSide, float time, float dt, float revealT)
     {
@@ -442,8 +405,6 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         t.LatchRotation = 0f;
         t.HoldUntil = time + 1.8f + 1.6f * DrawHelpers.Hash01(t.Seed + 500);
     }
-
-    // ---- Helpers ----
 
     private static Vector2 EdgeAnchor(Vector2 size, float shortSide, byte edge, float along)
     {

@@ -7,34 +7,25 @@ internal static class DrawHelpers
 {
     public static Vector2 V(float x, float y) => new(x, y);
 
-    // ToU32 is BAKING, not painting - it's how materials build their authored palettes once. It
-    // deliberately does NOT apply PushColorOverride; if it did, whichever activation happened to
-    // draw first would recolor the material's palette permanently. WithAlpha is the choke point
-    // instead, because every material calls it fresh on every color every frame.
+    // ToU32 bakes authored palettes once and deliberately does NOT apply PushColorOverride -
+    // WithAlpha is the choke point instead, since every material calls it fresh each frame.
     public static uint ToU32(float r, float g, float b, float a) =>
         ImGui.ColorConvertFloat4ToU32(new Vector4(r, g, b, a));
 
     /// <summary>
-    /// A hue/saturation override plus an optional value curve. Hue and Saturation come from the
-    /// override color; ValuePower and ValueScale shape the source tone's brightness. Power less
-    /// than 1 lifts mid-tones (white/silver), power greater than 1 crushes them (black), and a
-    /// scale under 1 caps the ceiling. All defaults are 1, so a grey override - which only strips
-    /// hue - falls through untouched.
+    /// Hue/saturation override plus an optional value curve. Hue and Saturation come from the
+    /// override color; ValuePower/ValueScale shape the source tone's brightness (defaults are 1).
     /// </summary>
     private readonly struct HueOverride
     {
         public readonly float Hue;
         public readonly float Saturation;
-        public readonly float ValuePower;   // 1 = no curve; <1 lifts mid-tones; >1 crushes them
-        public readonly float ValueScale;   // 1 = no cap; <1 lowers the ceiling after the curve
+        public readonly float ValuePower;
+        public readonly float ValueScale;
 
-        public HueOverride(float hue, float saturation,
-                           float valuePower = 1f, float valueScale = 1f)
+        public HueOverride(float hue, float saturation, float valuePower = 1f, float valueScale = 1f)
         {
-            Hue = hue;
-            Saturation = saturation;
-            ValuePower = valuePower;
-            ValueScale = valueScale;
+            Hue = hue; Saturation = saturation; ValuePower = valuePower; ValueScale = valueScale;
         }
 
         public bool SameAs(in HueOverride o) =>
@@ -44,21 +35,16 @@ internal static class DrawHelpers
     private static readonly Stack<HueOverride?> ColorOverrideStack = new();
     private static HueOverride? _colorOverride;
 
-    // ApplyColorOverride is a pure function of (color, active override) but costs an RGB->HSV round
-    // trip, a Pow and an HSV->RGB, and materials call it for every vertex or shape. The palettes
-    // feeding it hold a few hundred distinct colors, so results are memoized in a direct-mapped cache.
-    //
-    // Entries are tagged with the override's VALUE (a small id from KnownOverrides), not with "the
-    // current push": the renderer pushes and pops once per primitive, so the active override flips
-    // between "none" and the effect's color constantly, and anything keyed on the flips would be
-    // thrown away every primitive.
+    // ApplyColorOverride costs an RGB->HSV round trip plus a Pow, and materials call it per vertex.
+    // Memoized in a direct-mapped cache keyed on the override's id (not "the current push", which
+    // flips constantly as the renderer pushes/pops per primitive).
     private const int OverrideCacheBits = 11;
     private static readonly uint[] OverrideIn  = new uint[1 << OverrideCacheBits];
     private static readonly uint[] OverrideOut = new uint[1 << OverrideCacheBits];
-    private static readonly int[]  OverrideTag = new int[1 << OverrideCacheBits];     // 0 = empty
+    private static readonly int[]  OverrideTag = new int[1 << OverrideCacheBits];
     private static readonly HueOverride[] KnownOverrides = new HueOverride[15];
     private static int _knownCount;
-    private static int _overrideId;                                                   // 0 = no override, else 1 + index into KnownOverrides
+    private static int _overrideId;
 
     private static void SetOverride(HueOverride? next)
     {
@@ -70,26 +56,19 @@ internal static class DrawHelpers
             if (KnownOverrides[i].SameAs(ov)) { _overrideId = i + 1; return; }
         }
 
-        if (_knownCount == KnownOverrides.Length)       // more distinct overrides than we track: start over
+        if (_knownCount == KnownOverrides.Length)
         {
             _knownCount = 0;
-            Array.Clear(OverrideTag);                    // ids are about to be reassigned
+            Array.Clear(OverrideTag);
         }
         KnownOverrides[_knownCount] = ov;
         _overrideId = ++_knownCount;
     }
 
     /// <summary>
-    /// From now until the matching PopColorOverride, every color that passes through WithAlpha is
-    /// re-hued toward rgb. EffectSceneRenderer pushes per primitive, using that primitive's own
-    /// ColorOverride.
-    ///
-    /// Chromatic overrides replace hue and preserve the source's own saturation, leaving
-    /// brightness alone. Achromatic overrides strip hue and shape the value curve by bucket:
-    ///   white / silver - power less than 1, lifting mid-tones and leaving the top end hot.
-    ///   grey           - no value change at all; pure hue strip.
-    ///   black          - strong power crush plus a scale cap, so bright cores stay readable
-    ///                    (darker, but visible) while the rest collapses to near-black.
+    /// From now until the matching Pop, every color passing through WithAlpha is re-hued toward
+    /// rgb. Chromatic overrides replace hue, preserve saturation. Achromatic overrides strip hue
+    /// and shape the value curve by bucket (white lifts mid-tones, black crushes them).
     /// </summary>
     public static void PushColorOverride(Vector4? rgb)
     {
@@ -105,17 +84,10 @@ internal static class DrawHelpers
 
         if (s >= 0.05f)
         {
-            // Chromatic override: re-hue only, leave value alone.
             SetOverride(new HueOverride(h, s));
             return;
         }
 
-        // Achromatic override. White, silver, grey, and black all strip hue - that's what "grey
-        // family" means as a tint. But they do different things to brightness, bucketed here by
-        // the override's own V so the user gets three distinct looks instead of three identical
-        // flat-grey ones. A power curve (rather than a lerp toward a target) is what lets black
-        // preserve the top of the range while crushing the rest: the core of a fire stays
-        // readable as a dim hot spot, while everything below it collapses into near-black.
         if (v >= 0.72f)
             SetOverride(new HueOverride(h, s, valuePower: 0.35f));                    // white / silver
         else if (v <= 0.20f)
@@ -128,18 +100,8 @@ internal static class DrawHelpers
         SetOverride(ColorOverrideStack.Count > 0 ? ColorOverrideStack.Pop() : null);
 
     /// <summary>
-    /// Re-hues the active override. Hue is replaced, Saturation and Value are preserved from the
-    /// source tone - so a palette's vivid/pale/dark structure survives any override: a hot core
-    /// stays pale, a saturated body stays saturated, a dark shadow stays dark.
-    ///
-    /// Two special cases on the saturation axis:
-    ///  - Achromatic OVERRIDE (grey / white / black): force the output to be achromatic too,
-    ///    preserving only brightness (which the value curve then shapes). Without this, the
-    ///    override's hue of 0 (undefined, since there's no real hue) would be treated as red and
-    ///    every tone would come out red.
-    ///  - Achromatic SOURCE tone with a chromatic override: use the override's saturation. A
-    ///    genuinely grey input has no hue of its own, so accepting the override's hue AND its
-    ///    saturation is the only way to make it visibly adopt the requested color.
+    /// Re-hues the active override. Hue is replaced; saturation and value come from the source
+    /// tone so a palette's vivid/pale/dark structure survives.
     /// </summary>
     private static uint ApplyColorOverride(uint color)
     {
@@ -170,26 +132,20 @@ internal static class DrawHelpers
 
         if (ov.Saturation < 0.05f)
         {
-            // Override is achromatic: flatten everything to grey at the shaped brightness.
             hue = 0f;
             s = 0f;
         }
         else if (origS < 0.05f)
         {
-            // Chromatic override on a grey source tone: the source has no hue to preserve, so
-            // adopt both the override's hue and its saturation.
             hue = ov.Hue;
             s = ov.Saturation;
         }
         else
         {
-            // Normal case: chromatic override, chromatic source. Keep the source's saturation.
             hue = ov.Hue;
             s = origS;
         }
 
-        // Power first (curve the range), then scale (cap the ceiling). Both defaults are 1, so a
-        // chromatic override or grey falls through untouched.
         float v = MathF.Pow(origV, ov.ValuePower) * ov.ValueScale;
 
         var (nr, ng, nb) = HsvToRgb(hue, s, v);
@@ -282,10 +238,9 @@ internal static class DrawHelpers
         (MathF.Sin((time / periodSeconds + phase) * MathF.PI * 2f) + 1f) * 0.5f;
 
     /// <summary>
-    /// Draws a soft vignette. The EffectSceneRenderer calls this once per frame for the winning
-    /// vignette request; materials should never call it directly (regions handle their own fills).
-    /// Fades to the same color at zero alpha - ImGui blends without premultiplying, so fading to
-    /// transparent black would grey it.
+    /// Draws a soft vignette. Fades to the same color at zero alpha - ImGui blends without
+    /// premultiplying, so fading to transparent black would grey it. The top/bottom bands span
+    /// the full width and the left/right bands the full height, so corners double-cover.
     /// </summary>
     public static void DrawVignette(ImDrawListPtr dl, Vector2 size, uint color, float thicknessFrac, float alpha)
     {
@@ -299,9 +254,5 @@ internal static class DrawHelpers
         dl.AddRectFilledMultiColor(V(0, size.Y - t), V(size.X, size.Y), clear, clear, edge, edge);
         dl.AddRectFilledMultiColor(V(0, 0), V(t, size.Y), edge, clear, clear, edge);
         dl.AddRectFilledMultiColor(V(size.X - t, 0), V(size.X, size.Y), clear, edge, edge, clear);
-
-        // No separate corner fill: the top/bottom bands span the FULL width, the left/right bands
-        // span the FULL height, so every corner is double-covered and alpha-composites darker on
-        // its own. A flat corner fill on top of that gradient was the hard-black-squares bug.
     }
 }

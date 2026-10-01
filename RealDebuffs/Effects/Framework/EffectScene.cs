@@ -3,7 +3,7 @@ using System.Numerics;
 namespace RealDebuffs.Effects.Framework;
 
 /// <summary>
-/// The numeric values are pinned: StrokeAutoEmitter mixes them into its per-particle seeds, so
+/// The numeric values are pinned: StrokeAutoEmitter mixes them into per-particle seeds, so
 /// renumbering would reshuffle the random scatter. Add new roles with a new, unused number.
 /// </summary>
 public enum PrimitiveRole
@@ -24,7 +24,7 @@ public enum PrimitiveRole
 
 public struct StrokePrimitive
 {
-    public DebuffKind Owner;         // stamped by EffectScene; do not set in effects
+    public DebuffKind Owner;
     public StrandPath Path;
     public PrimitiveRole Role;
     public Vector4? ColorOverride;
@@ -51,24 +51,16 @@ public struct ParticlePrimitive
 
     public PrimitiveRole Role;
 
-    /// <summary>
-    /// Forces this particle to render with a specific material name, bypassing role lookup.
-    /// Set by StrokeAutoEmitter when a user override specified "emit particle X" so the spawned
-    /// particles carry their emitter's material with them. Null = resolve via role.
-    /// </summary>
+    /// <summary>Forces this particle to render with a specific material name, bypassing role lookup.</summary>
     public string? MaterialName;
 
-    /// <summary>
-    /// Material-defined sub-kind, 0 by default. A material that renders several related looks from
-    /// one role reads this instead of guessing from Size (particle.ember uses it for flame layers:
-    /// 0 = body, 1 = back/cool, 2 = front/hot, 3 = low wide bed). Materials that don't care ignore it.
-    /// </summary>
+    /// <summary>Material-defined sub-kind. particle.ember uses it for flame layers (0 body, 1 back, 2 front, 3 bed).</summary>
     public int Variant;
 }
 
 public struct RegionPrimitive
 {
-    public DebuffKind Owner;         // stamped by EffectScene
+    public DebuffKind Owner;
     public Vector2 Min, Max;
     public Vector4? ColorOverride;
     public uint Tint;
@@ -112,10 +104,7 @@ public sealed class EffectScene
         var copy = r; copy.Owner = CurrentOwner; Regions.Add(copy);
     }
 
-    /// <summary>
-    /// For post-effect emission passes (see StrokeAutoEmitter) where CurrentOwner isn't set to
-    /// the right effect anymore. Caller supplies the owner explicitly.
-    /// </summary>
+    /// <summary>For post-effect emission passes where CurrentOwner isn't the right effect anymore.</summary>
     public void AddParticleForOwner(in ParticlePrimitive p, DebuffKind owner)
     {
         var copy = p; copy.Owner = owner; Particles.Add(copy);
@@ -146,17 +135,15 @@ public struct VignetteRequest
 }
 
 /// <summary>
-/// A sampled polyline skeleton for one strand, rebuilt fresh every frame by an effect's own shape
-/// logic and consumed by whichever material is drawing it. Point spacing does not need to be
-/// even; materials that need true even spacing sample by arc length via SampleAtArc rather than
-/// assuming index position implies distance. Sized once at construction; never reallocated.
+/// A sampled polyline skeleton for one strand. Point spacing need not be even; materials that
+/// need even spacing sample via SampleAtArc. Sized once at construction.
 /// </summary>
 public sealed class StrandPath
 {
     public readonly Vector2[] Points;
     public readonly float[] Arc;
 
-    /// <summary>How many of Points/Arc are valid this frame. Set after writing Points, before BuildArc.</summary>
+    /// <summary>How many of Points/Arc are valid this frame.</summary>
     public int Count;
 
     public StrandPath(int capacity)
@@ -169,11 +156,7 @@ public sealed class StrandPath
 
     public float Length => Count > 0 ? Arc[Count - 1] : 0f;
 
-    /// <summary>
-    /// Recomputes Arc[0..Count-1] from Points[0..Count-1]. Call once per frame after the strand's
-    /// FINAL points are in place (i.e. after any in-place adjustment like a latch pin) and before
-    /// drawing or sampling.
-    /// </summary>
+    /// <summary>Recomputes Arc from Points. Call once per frame after final points are in place.</summary>
     public void BuildArc()
     {
         if (Count <= 0) return;
@@ -183,10 +166,8 @@ public sealed class StrandPath
     }
 
     /// <summary>
-    /// Position and unit tangent at arc length <paramref name="s"/>. Values outside [0, Length]
-    /// are linearly extrapolated along the nearest endpoint's tangent, so a material can place
-    /// decoration slightly before the base or past the tip and have it read as the strand
-    /// continuing rather than stopping dead.
+    /// Position and unit tangent at arc length s. Values outside [0, Length] are linearly
+    /// extrapolated along the nearest endpoint's tangent.
     /// </summary>
     public void SampleAtArc(float s, out Vector2 pos, out Vector2 tangent)
     {

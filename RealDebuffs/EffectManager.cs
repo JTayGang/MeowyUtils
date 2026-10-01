@@ -9,18 +9,11 @@ using RealDebuffs.Effects.Framework;
 namespace RealDebuffs;
 
 /// <summary>
-/// Reads the local player's statuses every frame, maps them to DebuffKinds via StatusCatalog plus
-/// any active Moodles/Loci statuses linked via CustomStatusWatcher, and dispatches every enabled
-/// effect's Emit call in DrawOrder. Effects fade in/out smoothly rather than popping.
+/// Reads the local player's statuses every frame, maps them to DebuffKinds, and dispatches every
+/// enabled effect's Emit call in DrawOrder. Effects fade in/out smoothly rather than popping.
 ///
-/// Timing: the in-game status list is scanned every frame (it's tiny, and a stun that appeared a
-/// second late would feel broken). Everything derived from the Moodles/Loci snapshot and the
-/// settings is resolved once per CustomStatusWatcher heartbeat, or immediately after a settings
-/// edit (Invalidate), rather than every frame.
-///
-/// The effect roster comes in from Plugin, which gets it from EffectDiscovery (reflection over
-/// the assembly, filtered to ISceneEffect implementations, sorted by DrawOrder). EffectManager
-/// owns the roster for the session; nothing else constructs effect instances.
+/// The in-game status list is scanned every frame; everything derived from the Moodles/Loci
+/// snapshot and the settings is resolved once per heartbeat or after a settings edit, not per frame.
 /// </summary>
 public sealed class EffectManager
 {
@@ -29,11 +22,7 @@ public sealed class EffectManager
     private const float FadeInPerSecond = 1f / 0.35f;
     private const float FadeOutPerSecond = 1f / 0.6f;
 
-    /// <summary>
-    /// Effects that have thrown during this session. They're skipped for the rest of the session
-    /// but left enabled in config - an effect that crashed isn't the user's problem, and mutating
-    /// config from inside the draw loop previously leaked the disable across sessions.
-    /// </summary>
+    /// <summary>Effects that have thrown this session; skipped until reload. Config is left untouched.</summary>
     private readonly HashSet<DebuffKind> _crashedKinds = new();
 
     private readonly Dictionary<DebuffKind, float> _currentAlpha = new();
@@ -42,9 +31,8 @@ public sealed class EffectManager
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private float _lastTime;
 
-    // ---- inputs resolved per heartbeat (see ResolveInputs) ----
-    // The dictionaries are replaced, never mutated, once published: EffectSceneRenderer keys its
-    // material cache on the instance, so a stale in-place edit would go unnoticed.
+    // Inputs resolved per heartbeat. The dictionaries are replaced, never mutated, once published:
+    // EffectSceneRenderer keys its material cache on the instance.
     private static readonly IReadOnlyDictionary<string, string> NoOverrides = new Dictionary<string, string>();
     private int _resolvedTick = -1;
     private volatile bool _inputsStale = true;
@@ -53,7 +41,7 @@ public sealed class EffectManager
     private IReadOnlyDictionary<string, string> _materialOverrides = NoOverrides;
     private Dictionary<DebuffKind, Vector4> _configColors = new();
 
-    /// <summary>Per-frame buffer effects emit into. Cleared at the start of Draw, rendered after the loop.</summary>
+    /// <summary>Per-frame buffer effects emit into.</summary>
     private readonly EffectScene _scene = new();
 
     private readonly IClientState _clientState;
@@ -73,7 +61,6 @@ public sealed class EffectManager
         CustomStatusWatcher customStatuses, IPluginLog log)
     {
         _order = effects.ToArray();
-
         _clientState = clientState;
         _objectTable = objectTable;
         _condition = condition;
@@ -130,9 +117,9 @@ public sealed class EffectManager
                 }
             }
 
-            // Custom Moodles/Loci rules feed the same _activeScratch set real debuffs do, so an
-            // effect already on from either source is never doubled or restarted. Runs BEFORE the
-            // chat-block line on purpose: a custom Silence rule then drives the hard chat lockout too.
+            // Custom status rules feed the same set real debuffs do, so an effect already on from
+            // either source is never doubled. Runs before the chat-block line so a custom Silence
+            // rule also drives the hard chat lockout.
             foreach (var kind in _ruleKinds)
             {
                 _activeScratch.Add(kind);
@@ -182,7 +169,6 @@ public sealed class EffectManager
             }
         }
 
-        // Ambient stroke emissions: path-following first (behind), free-flying second (on top).
         StrokeAutoEmitter.Emit(_scene, time, dt, materialOverrides);
         EffectSceneRenderer.Render(dl, _scene, screenSize, time, _config.GlobalIntensity, materialOverrides);
     }
@@ -190,11 +176,7 @@ public sealed class EffectManager
     /// <summary>Call after any settings edit so the next frame re-resolves instead of waiting for the heartbeat.</summary>
     public void Invalidate() => _inputsStale = true;
 
-    /// <summary>
-    /// Rebuilds everything derived from the Moodles/Loci snapshot and the settings: which kinds the
-    /// name rules light up, the merged material overrides (settings first, tooltip phrases layered
-    /// on top), and the settings' color choices. Runs once per heartbeat or edit, not per frame.
-    /// </summary>
+    /// <summary>Rebuilds everything derived from the Moodles/Loci snapshot and the settings.</summary>
     private void ResolveInputs(CustomStatusSnapshot snapshot)
     {
         _snapshot = snapshot;
@@ -222,11 +204,8 @@ public sealed class EffectManager
     }
 
     /// <summary>
-    /// Priority order for an effect's color override:
-    ///   1. Tooltip-derived color (context-specific; only while custom statuses are live).
-    ///   2. Dev-tester forced color (explicit "show me this, now").
-    ///   3. Config override (the Effect generator's Color dropdown, a persistent baseline).
-    /// Returning null means the effect shows in its own authored palette.
+    /// Color priority: tooltip-derived (live only), then dev-tester forced, then config override.
+    /// Null means the effect shows in its own authored palette.
     /// </summary>
     private Vector4? ResolveColorOverride(DebuffKind kind, bool live)
     {
@@ -245,10 +224,7 @@ public sealed class EffectManager
         return current + MathF.Sign(target - current) * maxDelta;
     }
 
-    /// <summary>
-    /// Backs /realdebuffs statuses: logs every status currently on the local player, its real
-    /// name, and whether RealDebuffs maps it to an effect.
-    /// </summary>
+    /// <summary>Backs /realdebuffs statuses: logs every active status and whether it maps to an effect.</summary>
     public void LogCurrentStatuses()
     {
         var player = _objectTable.LocalPlayer;
@@ -277,11 +253,7 @@ public sealed class EffectManager
         LogCustomStatuses();
     }
 
-    /// <summary>
-    /// The Moodles/Loci half of /realdebuffs statuses: what the two plugins report after
-    /// name-merging, which name-rule(s) each status matches, and - when tooltip parsing is on -
-    /// what TooltipKeywordRules find in its description.
-    /// </summary>
+    /// <summary>Moodles/Loci half of /realdebuffs statuses: active custom statuses and their matches.</summary>
     private void LogCustomStatuses()
     {
         var sources = $"Moodles: {(_customStatuses.MoodlesAvailable ? "connected" : "not found")}, " +

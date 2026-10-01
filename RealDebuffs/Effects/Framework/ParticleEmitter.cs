@@ -4,11 +4,9 @@ namespace RealDebuffs.Effects.Framework;
 
 /// <summary>
 /// A small pool of short-lived particles. Three usage modes:
-///  - Interval emission: call Update(...) each frame. Regular spawns on a timer.
-///  - Burst-only: call Burst(...) when an event happens, plus UpdateBurstOnly(...) each frame.
-///    Nothing spawns on its own; particles only appear when the effect asks.
-///  - Mixed: Update(...) for ambient, Burst(...) for one-shot moments. Both integrate through
-///    the same pool and can coexist.
+///  - Interval emission: call Update(...) each frame.
+///  - Burst-only: call Burst(...) on an event, plus UpdateBurstOnly(...) each frame.
+///  - Mixed: Update for ambient, Burst for one-shot moments.
 /// </summary>
 public sealed class ParticleEmitter
 {
@@ -22,26 +20,9 @@ public sealed class ParticleEmitter
         public int   Seed;
     }
 
-    /// <summary>
-    /// Per-particle gravity applied to every emission from this emitter, in px/s². Effects set
-    /// this once at construction for constant gravity, or leave it zero for free-flying particles.
-    /// </summary>
     public Vector2 Gravity;
-
-    /// <summary>
-    /// Linear drag in 1/s (0 = none). Velocity decays by this fraction per second, so a fast launch
-    /// settles into a drift. Opt-in: effects that never set it integrate exactly as before.
-    /// </summary>
     public float Drag;
-
-    /// <summary>
-    /// Horizontal wander acceleration in px/s² (0 = none). Each particle gets its own smooth,
-    /// zero-mean side-to-side push (seed-phased, two incommensurate sine waves) so rising cinders
-    /// and smoke meander the way they do in convective air instead of flying dead straight.
-    /// </summary>
     public float Wander;
-
-    /// <summary>Base frequency of the wander push, in cycles per second.</summary>
     public float WanderHz = 0.9f;
 
     private readonly Particle[] _pool;
@@ -57,16 +38,13 @@ public sealed class ParticleEmitter
 
     public int Count => _count;
 
-    /// <summary>0 at spawn/despawn, 1 in the steady middle. Materials use this to fade each particle individually.</summary>
+    /// <summary>0 at spawn/despawn, 1 in the steady middle.</summary>
     public static float FadeFor(float age01) =>
         age01 < 0.25f ? age01 / 0.25f
         : age01 > 0.7f ? MathF.Max(0f, (1f - age01) / 0.3f)
         : 1f;
 
-    /// <summary>
-    /// Interval emission: spawns on a timer and integrates existing particles. Call every frame
-    /// while the effect is active.
-    /// </summary>
+    /// <summary>Interval emission: spawns on a timer and integrates existing particles.</summary>
     public void Update(
         float time, float dt,
         float spawnIntervalMin, float spawnIntervalMax,
@@ -86,16 +64,10 @@ public sealed class ParticleEmitter
         }
     }
 
-    /// <summary>
-    /// Burst-only: integrates existing particles without spawning anything. Use alongside Burst.
-    /// </summary>
+    /// <summary>Burst-only: integrates existing particles without spawning anything.</summary>
     public void UpdateBurstOnly(float time, float dt) => Integrate(time, dt);
 
-    /// <summary>
-    /// One-shot spawn: pushes <paramref name="count"/> particles into the pool immediately.
-    /// Each gets its own hashed seed derived from the supplied time and an offset, so two bursts
-    /// at the same time produce different particles.
-    /// </summary>
+    /// <summary>One-shot spawn. Each particle gets a hashed seed so two bursts at the same time differ.</summary>
     public void Burst(int count, float time,
                       Func<int, Vector2> spawnPos, Func<int, Vector2> spawnVelocity,
                       float lifespanMin, float lifespanMax,
@@ -142,7 +114,7 @@ public sealed class ParticleEmitter
         }
     }
 
-    /// <summary>Drops every live particle and resets the spawn timer. Call on effect recast.</summary>
+    /// <summary>Drops every live particle and resets the spawn timer.</summary>
     public void Clear()
     {
         _count = 0;

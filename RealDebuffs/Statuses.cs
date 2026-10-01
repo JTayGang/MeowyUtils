@@ -8,23 +8,14 @@ using RealDebuffs.Effects;
 using RealDebuffs.Effects.Framework;
 
 // Moodles and Loci hand a status back over IPC as a tuple whose first five fields are
-// (Version, GUID, IconID, Title, Description). Declaring only what we read lets either plugin
-// append fields later without breaking us. Description is kept raw for the keyword parser, which
-// needs the [color=] tags still in place.
+// (Version, GUID, IconID, Title, Description). Description is kept raw for the keyword parser.
 using StatusHead = (int Version, System.Guid GUID, long IconID, string Title, string Description);
 namespace RealDebuffs;
 
 /// <summary>
-/// The set of visual debuff "families" this plugin renders. Several vanilla statuses can map to
-/// one kind when they're mechanically the same (Stun and Down for the Count both mean "can't
-/// act"), so this is a curated list of feelings, not a 1:1 mirror of every status name.
-///
-/// To add a kind: add it here at the END, then write an ISceneEffect that declares it. The
-/// effect's TriggerStatuses map the kind to in-game status names, and EffectDiscovery picks the
-/// effect up automatically - nothing else needs to change.
-///
-/// New kinds must go at the END. Saved custom-status rules, the DisabledKinds set, and material
-/// overrides all serialize the enum's numeric value.
+/// Visual debuff families. Several vanilla statuses can map to one kind when they're mechanically
+/// the same. To add a kind: add it at the END (numeric values are serialized), then write an
+/// ISceneEffect that declares it; EffectDiscovery picks it up automatically.
 /// </summary>
 public enum DebuffKind
 {
@@ -38,13 +29,12 @@ public enum DebuffKind
     Heavy,
     Petrification,
 
-    // Added later.
     Amnesia,
     Bleeding,
-    Weakness,       // Weakness, Brush with Death, Brink of Death - one look at three strengths
+    Weakness,
     Burns,
-    Charm,          // Infatuated and Seduced - one look at two strengths
-    Frost,          // Frostbite and Deep Freeze - one look at two strengths
+    Charm,
+    Frost,
     Disease,
     Doom,
     Dropsy,
@@ -61,13 +51,8 @@ public enum DebuffKind
 
 /// <summary>
 /// Resolves vanilla status IDs to DebuffKinds by loading the English Status sheet at startup and
-/// matching on the name. The name map is built from each effect's TriggerStatuses, so adding a
-/// new effect requires no changes here - the effect declares which statuses light it up, and
-/// StatusCatalog merges every effect's declarations into one table.
-///
-/// Always resolved against the English sheet regardless of the client's UI language: StatusIds
-/// themselves are language-independent, this just makes the name matching done here reliable
-/// regardless of what language the game client displays.
+/// matching on name. The name map is built from each effect's TriggerStatuses, so adding a new
+/// effect requires no changes here.
 /// </summary>
 public sealed class StatusCatalog
 {
@@ -79,9 +64,6 @@ public sealed class StatusCatalog
     {
         _dataManager = dataManager;
 
-        // Merge every effect's TriggerStatuses into one name -> kind table. Duplicate names
-        // (two effects claiming the same in-game status) are a configuration mistake worth
-        // surfacing: first effect wins, and a warning is logged.
         var nameMap = new Dictionary<string, DebuffKind>(StringComparer.OrdinalIgnoreCase);
         var strengths = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
 
@@ -123,7 +105,6 @@ public sealed class StatusCatalog
                          "name may have changed in a recent patch.");
     }
 
-    /// <summary>Maps a status ID to its kind, plus how strong that status should look (1.0 = full).</summary>
     public bool TryGetEffect(uint statusId, out DebuffKind kind, out float strength)
     {
         strength = 1f;
@@ -132,7 +113,7 @@ public sealed class StatusCatalog
         return true;
     }
 
-    /// <summary>Human-readable name for any status ID, for /realdebuffs statuses. Looked up on demand.</summary>
+    /// <summary>Human-readable name for any status ID, for /realdebuffs statuses.</summary>
     public string GetName(uint statusId)
     {
         var sheet = _dataManager.GetExcelSheet<Lumina.Excel.Sheets.Status>(ClientLanguage.English);
@@ -141,25 +122,17 @@ public sealed class StatusCatalog
     }
 }
 
-/// <summary>Which plugin(s) are currently reporting a status.</summary>
 [Flags]
 public enum StatusSource { None = 0, Moodles = 1, Loci = 2 }
 
-/// <summary>One distinct custom status currently on the player.</summary>
 public sealed record ActiveCustomStatus(
     string Key, string Name, string Description, StatusSource Sources,
     IReadOnlyList<TooltipEffectMatch> TooltipMatches);
 
 /// <summary>
 /// Immutable snapshot of "which Moodles/Loci statuses are on the player right now", merged across
-/// both plugins by name (a mirrored status counts once). The watcher swaps in a fresh one whenever
-/// it re-reads; draw code can hold a reference for a frame without any locking.
-///
-/// Tooltip keyword matching is done ONCE per Build, not per frame: it's real text processing on
-/// text that's already only as fresh as the last IPC read, so caching matches the read cadence.
-/// The Tooltip* aggregates are what EffectManager merges per frame; each status's own
-/// TooltipMatches is for the diagnostic view. Name-based rules are cheap, so they keep matching
-/// fresh every frame - see AddActiveKinds.
+/// both plugins by name. Tooltip keyword matching is done once per Build; name-based rules are
+/// matched fresh every frame.
 /// </summary>
 public sealed class CustomStatusSnapshot
 {
@@ -171,20 +144,13 @@ public sealed class CustomStatusSnapshot
 
     private readonly HashSet<string> _keys;
 
-    /// <summary>Every distinct active status, sorted by name.</summary>
     public IReadOnlyList<ActiveCustomStatus> Statuses { get; }
-
-    /// <summary>Every kind any active status's tooltip asks for. Empty when keyword parsing is off.</summary>
     public IReadOnlyCollection<DebuffKind> TooltipKinds { get; }
-
-    /// <summary>Per-kind color from whichever tooltip match resolved one first.</summary>
     public IReadOnlyDictionary<DebuffKind, Vector4> TooltipColors { get; }
 
     /// <summary>
-    /// Per-kind material substitutions resolved from description text, keyed by the same
-    /// "{Kind}.{Type}.{Role}" format the renderer uses. Populated only for phrases that type-match
-    /// the target effect's hero slots (see EffectHeroSlots); phrases on non-hero types, or on
-    /// effects with no hero slots, are silently dropped.
+    /// Per-kind material substitutions from description text, keyed by the "{Kind}.{Type}.{Role}"
+    /// format the renderer uses. Only populated for phrases that type-match the effect's hero slots.
     /// </summary>
     public IReadOnlyDictionary<string, string> TooltipMaterialOverrides { get; }
 
@@ -201,13 +167,12 @@ public sealed class CustomStatusSnapshot
         TooltipMaterialOverrides = tooltipMaterials;
     }
 
-    /// <summary>True if a status with this comparison key (see <see cref="StatusNames.Key"/>) is active.</summary>
+    /// <summary>True if a status with this key is active.</summary>
     public bool Contains(string key) => key.Length > 0 && _keys.Contains(key);
 
     /// <summary>
-    /// Merges the two plugins' status lists by name (a non-empty description already on record wins
-    /// over a conflicting later one), then resolves tooltip keywords once over the merged
-    /// descriptions. Pass an empty rule list to skip keyword parsing.
+    /// Merges the two plugins' status lists by name (a non-empty description already on record
+    /// wins), then resolves tooltip keywords once over the merged descriptions.
     /// </summary>
     internal static CustomStatusSnapshot Build(
         IEnumerable<StatusHead> moodlesStatuses,
@@ -254,22 +219,18 @@ public sealed class CustomStatusSnapshot
 
                 if (m.MaterialSubstitution is not { } matName) continue;
 
-                // Resolve the substitution against the effect's hero slots. Type must match: a
-                // stroke material can't fill a particle slot, so "made of lightning" on Burns is
-                // dropped rather than producing nonsense (Burns still gets its color).
+                // Type-check the substitution against the effect's hero slots. A stroke material
+                // can't fill a particle slot; a particle material on a stroke hero routes to the
+                // emit axis ("chains made of flames" - chains keep their material, shed fire).
                 string matType = PrefixOf(matName);
                 foreach (var hero in EffectRegistry.HeroSlotsFor(m.Kind))
                 {
-                    // Same-type match: material axis (stroke material on stroke hero, etc.).
                     if (string.Equals(hero.PrimitiveType, matType, StringComparison.OrdinalIgnoreCase))
                     {
                         string key = MaterialOverrideKey.For(m.Kind, hero.PrimitiveType, hero.Role);
                         if (!tooltipMaterials.ContainsKey(key))
                             tooltipMaterials[key] = matName;
                     }
-                    // Cross-type on a stroke: a particle material means "emit this along the
-                    // stroke", routed to the emit axis. This is what makes "chains made of
-                    // flames" work: chains keep their material, but shed fire particles.
                     else if (string.Equals(hero.PrimitiveType, "Stroke", StringComparison.OrdinalIgnoreCase)
                              && string.Equals(matType, "particle", StringComparison.OrdinalIgnoreCase))
                     {
@@ -277,7 +238,6 @@ public sealed class CustomStatusSnapshot
                         if (!tooltipMaterials.ContainsKey(key))
                             tooltipMaterials[key] = matName;
                     }
-                    // Any other cross-type (stroke material on particle hero, etc.) is dropped.
                 }
             }
         }
@@ -290,7 +250,6 @@ public sealed class CustomStatusSnapshot
         return new CustomStatusSnapshot(statuses, tooltipKinds, tooltipColors, tooltipMaterials);
     }
 
-    /// <summary>"particle.snow" → "particle". Used to type-check a material against a hero slot.</summary>
     private static string PrefixOf(string materialName)
     {
         int dot = materialName.IndexOf('.');
@@ -300,15 +259,8 @@ public sealed class CustomStatusSnapshot
 
 /// <summary>
 /// Reads Moodles and Loci over IPC and publishes a CustomStatusSnapshot. This is the plugin's one
-/// periodic heartbeat: once a second (or sooner when the settings change, see RequestRefresh) it
-/// rebuilds the snapshot and advances Tick. Everything that only needs to be current to within a
-/// second - including EffectManager's resolved settings - refreshes off Tick instead of running
-/// its own timer or redoing the work every frame.
-///
-/// Presence in the plugin's own list is the only "is it active" signal available (duration is
-/// configured length, not time-remaining) - which is fine, because both plugins drop expired
-/// statuses themselves. A missing plugin just reports nothing and is re-probed on a slow timer, so
-/// installing mid-session picks up without a reload.
+/// periodic heartbeat: once a second (or sooner when settings change) it rebuilds the snapshot and
+/// advances Tick. A missing plugin just reports nothing and is re-probed on a slow timer.
 /// </summary>
 public sealed class CustomStatusWatcher : IDisposable
 {
@@ -339,17 +291,14 @@ public sealed class CustomStatusWatcher : IDisposable
     private volatile bool _refreshRequested;
     private volatile int _tick;
 
-    /// <summary>The current picture (at most about a second old); never null.</summary>
     public CustomStatusSnapshot Snapshot => _snapshot;
 
     /// <summary>
-    /// Advances once per heartbeat, whether or not anything changed (the snapshot stays the shared
-    /// Empty instance while no custom statuses are active). Read it BEFORE Snapshot: if a beat lands
-    /// in between, the caller re-syncs next frame instead of missing an update.
+    /// Advances once per heartbeat. Read BEFORE Snapshot: if a beat lands in between, the caller
+    /// re-syncs next frame instead of missing an update.
     /// </summary>
     public int Tick => _tick;
 
-    /// <summary>Makes the next frame's update run now instead of waiting out the heartbeat.</summary>
     public void RequestRefresh() => _refreshRequested = true;
     public bool MoodlesAvailable => _moodles.Available;
     public bool LociAvailable => _loci.Available;
@@ -361,8 +310,6 @@ public sealed class CustomStatusWatcher : IDisposable
         _log = log;
         _config = config;
 
-        // Same IPC endpoints SkyrimCompass uses for its mirroring. Plain calls only - no event
-        // subscriptions to register or clean up.
         var moodlesVersion = pi.GetIpcSubscriber<int>("Moodles.Version");
         var moodlesGet = pi.GetIpcSubscriber<List<StatusHead>>("Moodles.GetClientStatusManagerInfoV2");
         var lociApiVersion = pi.GetIpcSubscriber<(int, int)>("Loci.ApiVersion");
@@ -388,7 +335,7 @@ public sealed class CustomStatusWatcher : IDisposable
     private void OnUpdate(IFramework framework)
     {
         long now = Environment.TickCount64;
-        if (now < _nextReadAt && !_refreshRequested) return; // every frame, but only beats once per interval
+        if (now < _nextReadAt && !_refreshRequested) return;
         _refreshRequested = false;
         _nextReadAt = now + HeartbeatMs;
 
@@ -408,8 +355,6 @@ public sealed class CustomStatusWatcher : IDisposable
     {
         if (_objectTable.LocalPlayer == null) { _snapshot = CustomStatusSnapshot.Empty; return; }
 
-        // Empty (not skipped) when the checkbox is off: Build still runs its normal merge, just
-        // with no rules to match against - one code path either way.
         IReadOnlyList<TooltipKeywordRule> tooltipRules = _config.ParseCustomStatusTooltips
             ? _config.TooltipKeywordRules
             : Array.Empty<TooltipKeywordRule>();
@@ -417,10 +362,7 @@ public sealed class CustomStatusWatcher : IDisposable
         _snapshot = CustomStatusSnapshot.Build(ReadSource(_moodles, now), ReadSource(_loci, now), tooltipRules);
     }
 
-    /// <summary>
-    /// Reads one plugin's current statuses. Never throws: a missing or misbehaving plugin just
-    /// contributes nothing. Logs one warning per failure streak, not one per read.
-    /// </summary>
+    /// <summary>Reads one plugin's statuses. Never throws; logs one warning per failure streak.</summary>
     private IReadOnlyList<StatusHead> ReadSource(Source s, long now)
     {
         if (!s.Available)
@@ -429,7 +371,7 @@ public sealed class CustomStatusWatcher : IDisposable
             s.NextProbeAt = now + ProbeMs;
 
             bool found;
-            try { found = s.Probe(); } catch { found = false; } // IpcNotReadyError: not loaded (yet)
+            try { found = s.Probe(); } catch { found = false; }
             if (!found) return Array.Empty<StatusHead>();
 
             s.Available = true;
@@ -446,7 +388,7 @@ public sealed class CustomStatusWatcher : IDisposable
         catch (Exception ex)
         {
             s.Available = false;
-            s.NextProbeAt = s.Failing ? now + ProbeMs : now; // one retry right away in case of a blip
+            s.NextProbeAt = s.Failing ? now + ProbeMs : now;
             if (!s.Failing)
             {
                 s.Failing = true;
@@ -460,9 +402,7 @@ public sealed class CustomStatusWatcher : IDisposable
 }
 
 /// <summary>
-/// How status titles are compared. Titles are user-typed free text and may carry Moodles/Loci
-/// markup ([color=..], [glow=..], [i], and their closing tags), so comparison strips tags,
-/// collapses whitespace, and lowercases.
+/// How status titles are compared. Strips Moodles/Loci markup, collapses whitespace, lowercases.
 /// </summary>
 public static class StatusNames
 {
@@ -479,6 +419,6 @@ public static class StatusNames
         return Spaces.Replace(Markup.Replace(title, ""), " ").Trim();
     }
 
-    /// <summary>Comparison form: <see cref="Clean"/> plus lower-casing. Empty never matches.</summary>
+    /// <summary>Comparison form: Clean plus lowercasing. Empty never matches.</summary>
     public static string Key(string? title) => Clean(title).ToLowerInvariant();
 }

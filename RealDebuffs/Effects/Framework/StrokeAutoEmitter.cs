@@ -4,20 +4,11 @@ namespace RealDebuffs.Effects.Framework;
 
 /// <summary>
 /// Spawns and advances everything a stroke material sheds along its length: free-flying particles
-/// (sparks, falling drips, embers) and path-following particles (drips running down the strand).
-/// Both kinds come from a single StrokeEmission list — each emission carries an optional Flow
-/// block that enables the path-following half — and both are resolved through the same material
-/// lookup, so an emit-axis override ("chains with drips") reaches both.
-///
-/// Owns two internal pools: one for free-flying particles (position + velocity + gravity), one
-/// for flowing particles (arc position along a parent stroke, direction, wobble, obstacle sync).
-/// Both persist across frames and are culled as lifespans expire or (for flows) as parent
-/// strokes disappear from the scene.
+/// and path-following particles. Both come from a single StrokeEmission list; both resolve through
+/// the same material lookup, so an emit-axis override reaches both.
 /// </summary>
 public static class StrokeAutoEmitter
 {
-    // ---- Free-flying pool ----
-
     private const int FreeFlyCapacity = 2000;
 
     private struct FreeFlyParticle
@@ -38,8 +29,6 @@ public static class StrokeAutoEmitter
 
     private static readonly FreeFlyParticle[] FreeFlyPool = new FreeFlyParticle[FreeFlyCapacity];
     private static int _freeFlyCount;
-
-    // ---- Flow pool ----
 
     private const int FlowCapacity = 600;
 
@@ -71,28 +60,21 @@ public static class StrokeAutoEmitter
     private static readonly FlowingParticle[] FlowPool = new FlowingParticle[FlowCapacity];
     private static int _flowCount;
 
-    // ---- Public entry point ----
-
     public static void Emit(EffectScene scene, float time, float dt,
                             IReadOnlyDictionary<string, string>? overrides)
     {
-        // 1. Free-flying: cull, integrate, and (further down) spawn.
         CullFreeFly(time);
         IntegrateFreeFly(dt);
 
-        // 2. Flowing: cull expired, advance along parents, and (further down) spawn.
         CullFlows(time);
         AdvanceFlows(scene, time, dt);
 
-        // 3. Spawn from every stroke in the scene.
         for (int i = 0; i < scene.Strokes.Count; i++)
         {
             var s = scene.Strokes[i];
             if (s.Path.Count < 2 || s.Reveal <= 0.001f) continue;
 
-            // Emit-axis override: forces every emission (free-flying and flowing) to use the
-            // override material's spec. Falls through to the stroke material's own emissions if
-            // no override is set.
+            // Emit-axis override forces every emission to use the override material's spec.
             string? emitOverride = overrides?.GetValueOrDefault(
                 MaterialOverrideKey.ForStrokeEmit(s.Owner, s.Role));
 
@@ -116,8 +98,6 @@ public static class StrokeAutoEmitter
                 SpawnFromStroke(in s, in emissions[e], forcedMaterial: null, time, dt);
         }
 
-        // 4. Push every live free-flying particle into the scene for this frame's render.
-        // Flowing particles were pushed during AdvanceFlows above.
         for (int i = 0; i < _freeFlyCount; i++)
         {
             ref readonly var p = ref FreeFlyPool[i];
@@ -139,8 +119,6 @@ public static class StrokeAutoEmitter
             }, p.Owner);
         }
     }
-
-    // ---- Spawning from a stroke ----
 
     private static void SpawnFromStroke(in StrokePrimitive s, in StrokeEmission e,
                                         string? forcedMaterial, float time, float dt)
@@ -165,9 +143,7 @@ public static class StrokeAutoEmitter
             flowToTip = tipPos.Y > basePos.Y;
         }
 
-        // Cluster direction: computed once per SpawnFromStroke call, then shared by every
-        // particle spawned from this emission this frame. When clustering is off, or no fixed
-        // launch axis is declared, this stays null and each particle picks its own direction.
+        // Cluster direction is computed once per call and shared by every particle this frame.
         Vector2? clusterBaseDir = null;
         if (e.ClusterWindowSeconds > 0f && e.PrimaryDirection is { } axis && axis.LengthSquared() > 1e-6f)
         {
@@ -200,10 +176,6 @@ public static class StrokeAutoEmitter
         float arc = visibleLen * DrawHelpers.Hash01(seed);
         s.Path.SampleAtArc(arc, out Vector2 pos, out Vector2 tan);
 
-        // Direction resolution:
-        //  - In a cluster: gust direction is the base; per-particle jitter is ClusterConeRadians.
-        //  - Otherwise: base is PrimaryDirection or the local perpendicular; jitter is
-        //    SpreadRadians.
         Vector2 baseDir;
         float directionSpread;
 
@@ -281,8 +253,6 @@ public static class StrokeAutoEmitter
         };
     }
 
-    // ---- Free-flying integration ----
-
     private static void CullFreeFly(float time)
     {
         int w = 0;
@@ -302,8 +272,6 @@ public static class StrokeAutoEmitter
             FreeFlyPool[i].Pos += FreeFlyPool[i].Vel * dt;
         }
     }
-
-    // ---- Flow advancement ----
 
     private static void CullFlows(float time)
     {

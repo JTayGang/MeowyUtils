@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using RealDebuffs.Effects.Framework.Materials;
 
 namespace RealDebuffs.Effects.Framework;
@@ -86,6 +87,8 @@ public static class EffectRegistry
         PrimitiveRole.IceCrystal => "particle.ice-crystal",
         PrimitiveRole.Drip       => "particle.drip",
         PrimitiveRole.Flow       => "particle.drip",
+        PrimitiveRole.Dust       => "particle.dust",
+        PrimitiveRole.Flake      => "particle.flake",
         _                        => "particle.spark",
     };
 
@@ -132,6 +135,8 @@ public static class MaterialRegistry
         Add(Particles, new ParticleIceCrystal());
         Add(Particles, new ParticleSpark());
         Add(Particles, new ParticleDrip());
+        Add(Particles, new ParticleDust());
+        Add(Particles, new ParticleFlake());
 
         var vocabulary = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var material in All)
@@ -167,26 +172,46 @@ public static class MaterialRegistry
 /// </summary>
 public static class MaterialOverrideKey
 {
+    // These keys are looked up per stroke / region / particle, every frame. Building the string each
+    // time allocated on every call; there are only a handful of distinct keys, so build each once.
+    // (GetOrAdd with a static lambda allocates nothing on a hit; thread-safe in case a settings
+    // window and the draw loop ever ask at once.)
+    private static readonly ConcurrentDictionary<(DebuffKind, string, PrimitiveRole), string> ForKeys = new();
+    private static readonly ConcurrentDictionary<(DebuffKind, string), string> RegionKeys = new();
+    private static readonly ConcurrentDictionary<(DebuffKind, PrimitiveRole), string> EmitKeys = new();
+    private static readonly ConcurrentDictionary<PrimitiveRole, string> RoleNames = new();
+
+    /// <summary>
+    /// A role's name without the boxing allocation of <c>role.ToString()</c> (an enum has to be boxed
+    /// to call it), which on a per-stroke, per-frame path adds up to garbage every frame.
+    /// </summary>
+    public static string RoleName(PrimitiveRole role) =>
+        RoleNames.GetOrAdd(role, static r => r.ToString());
+
     public static string For(DebuffKind kind, string type, PrimitiveRole role) =>
-        $"{kind}.{type}.{role}";
+        ForKeys.GetOrAdd((kind, type, role), static k => $"{k.Item1}.{k.Item2}.{k.Item3}");
 
     public static string ForRegion(DebuffKind kind, string regionKind) =>
-        $"{kind}.Region.{regionKind}";
+        RegionKeys.GetOrAdd((kind, regionKind), static k => $"{k.Item1}.Region.{k.Item2}");
 
     public static string ForRegion(DebuffKind kind, in RegionPrimitive r) =>
         ForRegion(kind, r.HasEdge ? "EdgeGlow" : "FlatFill");
 
     public static string ForStrokeEmit(DebuffKind kind, PrimitiveRole role) =>
-        $"{kind}.Stroke.{role}.Emit";
+        EmitKeys.GetOrAdd((kind, role), static k => $"{k.Item1}.Stroke.{k.Item2}.Emit");
 
     /// <summary>Which stroke material should render this stroke, considering overrides first.</summary>
-    public static string ResolveStroke(in StrokePrimitive s, IReadOnlyDictionary<string, string>? overrides)
+    public static string ResolveStroke(in StrokePrimitive s, IReadOnlyDictionary<string, string>? overrides) =>
+        ResolveStroke(s.Owner, s.Role, overrides);
+
+    /// <summary>Same resolution without a primitive in hand (impacts name an owner and role only).</summary>
+    public static string ResolveStroke(DebuffKind owner, PrimitiveRole role, IReadOnlyDictionary<string, string>? overrides)
     {
         if (overrides != null &&
-            overrides.TryGetValue(For(s.Owner, "Stroke", s.Role), out var name))
+            overrides.TryGetValue(For(owner, "Stroke", role), out var name))
             return name;
 
-        return EffectRegistry.DefaultFor(s.Owner, "Stroke", s.Role.ToString())
+        return EffectRegistry.DefaultFor(owner, "Stroke", RoleName(role))
             ?? EffectRegistry.FallbackStroke();
     }
 }

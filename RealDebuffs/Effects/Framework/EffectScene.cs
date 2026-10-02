@@ -20,6 +20,8 @@ public enum PrimitiveRole
     IceCrystal = 13,
     Smoke = 18,
     Cinder = 19,
+    Dust = 20,
+    Flake = 21,
 }
 
 public struct StrokePrimitive
@@ -35,6 +37,30 @@ public struct StrokePrimitive
     public int   Seed;
     public float Phase;
     public bool  FlushStart;
+
+    // ---- Optional, material-agnostic hints. Zero is always "neutral", so an effect that never ----
+    // ---- sets these draws exactly as it did before they existed.                             ----
+
+    /// <summary>
+    /// The path is a closed loop (last point coincides with the first). Materials that repeat an
+    /// element along the path (chain links, beads, rune glyphs) close the seam so the pattern wraps
+    /// cleanly instead of ending in a half-element. This is what lets a ring-shaped stroke, such as
+    /// a magic circle, be "made of chains".
+    /// </summary>
+    public bool  Closed;
+
+    /// <summary>
+    /// 0 = at the focal plane (crisp, full contrast), 1 = far away (hazier, lower contrast, softer
+    /// edges, shorter shadow). Lets an effect layer several strands into a believable depth stack
+    /// by setting one number, and every material that cares can respond in its own way.
+    /// </summary>
+    public float Depth;
+
+    /// <summary>
+    /// 0..1: how hard the strand is being shaken right now (decays after an impact or a tug).
+    /// Materials use it for transient energy: specular flare, link rattle, shed rate.
+    /// </summary>
+    public float Agitation;
 }
 
 public struct ParticlePrimitive
@@ -71,11 +97,38 @@ public struct RegionPrimitive
     public readonly bool HasEdge => Top || Bottom || Left || Right;
 }
 
+/// <summary>
+/// "Something just hit something" - a one-frame event, not something that is drawn. An effect says
+/// WHERE and HOW HARD; the framework asks the owner's stroke material (whatever it currently is,
+/// after any user or tooltip override) what such an impact throws, so a chain shows sparks and
+/// rust, a rope shows dust and fibres, and the effect never has to know which it is.
+/// </summary>
+public struct ImpactPrimitive
+{
+    public DebuffKind Owner;
+
+    /// <summary>The owner's stroke role whose material should answer (almost always MainStroke).</summary>
+    public PrimitiveRole StrokeRole;
+
+    public Vector2 Position;
+
+    /// <summary>Unit vector debris is thrown along (typically away from the surface that was hit).</summary>
+    public Vector2 Direction;
+
+    /// <summary>0..1. Scales how much is thrown, and how hard.</summary>
+    public float Strength;
+
+    public float Brightness;
+    public int   Seed;
+    public Vector4? ColorOverride;
+}
+
 public sealed class EffectScene
 {
     public readonly List<StrokePrimitive>   Strokes   = new(256);
     public readonly List<ParticlePrimitive> Particles = new(2048);
     public readonly List<RegionPrimitive>   Regions   = new(64);
+    public readonly List<ImpactPrimitive>   Impacts   = new(8);
 
     public VignetteRequest Vignette;
     public DebuffKind CurrentOwner;
@@ -85,6 +138,7 @@ public sealed class EffectScene
         Strokes.Clear();
         Particles.Clear();
         Regions.Clear();
+        Impacts.Clear();
         Vignette = default;
         CurrentOwner = default;
     }
@@ -102,6 +156,11 @@ public sealed class EffectScene
     public void AddRegion(in RegionPrimitive r)
     {
         var copy = r; copy.Owner = CurrentOwner; Regions.Add(copy);
+    }
+
+    public void AddImpact(in ImpactPrimitive i)
+    {
+        var copy = i; copy.Owner = CurrentOwner; Impacts.Add(copy);
     }
 
     /// <summary>For post-effect emission passes where CurrentOwner isn't the right effect anymore.</summary>
@@ -155,6 +214,39 @@ public sealed class StrandPath
     }
 
     public float Length => Count > 0 ? Arc[Count - 1] : 0f;
+
+    /// <summary>
+    /// Resamples a coarse control polyline into <paramref name="dstCount"/> evenly parameterised
+    /// points along a Catmull-Rom spline. The end points are duplicated as phantom outer control
+    /// points so the curve terminates exactly on them. Does not touch Count or the arc table; call
+    /// BuildArc afterwards.
+    /// </summary>
+    public static void CatmullRomResample(Vector2[] src, int srcCount, Vector2[] dst, int dstCount)
+    {
+        float scale = (float)(srcCount - 1) / (dstCount - 1);
+
+        for (int i = 0; i < dstCount; i++)
+        {
+            float t = i * scale;
+            int seg = (int)t;
+            if (seg >= srcCount - 1) { seg = srcCount - 2; t = srcCount - 1; }
+            float localT = t - seg;
+
+            Vector2 p0 = src[Math.Max(0, seg - 1)];
+            Vector2 p1 = src[seg];
+            Vector2 p2 = src[Math.Min(srcCount - 1, seg + 1)];
+            Vector2 p3 = src[Math.Min(srcCount - 1, seg + 2)];
+
+            float t2 = localT * localT;
+            float t3 = t2 * localT;
+
+            dst[i] = 0.5f * (
+                2f * p1 +
+                (p2 - p0) * localT +
+                (2f * p0 - 5f * p1 + 4f * p2 - p3) * t2 +
+                (-p0 + 3f * p1 - 3f * p2 + p3) * t3);
+        }
+    }
 
     /// <summary>Recomputes Arc from Points. Call once per frame after final points are in place.</summary>
     public void BuildArc()

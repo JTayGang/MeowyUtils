@@ -49,6 +49,15 @@ public interface IStrokeMaterial : IMaterial
     /// particles. See StrokeEmission.
     /// </summary>
     ReadOnlySpan<StrokeEmission> Emissions => ReadOnlySpan<StrokeEmission>.Empty;
+
+    /// <summary>
+    /// What this material throws when an effect reports an impact on it (EffectScene.AddImpact): a
+    /// one-shot burst, as opposed to Emissions, which is a steady trickle along the strand. Empty
+    /// (the default) means "nothing visibly happens", so a material only declares this if hitting
+    /// it is a spectacle. Each entry is spawned independently, so a material can throw several
+    /// different things at once (sparks AND flakes AND dust).
+    /// </summary>
+    ReadOnlySpan<ImpactEmission> ImpactEmissions => ReadOnlySpan<ImpactEmission>.Empty;
 }
 
 public interface IParticleMaterial : IMaterial
@@ -89,6 +98,25 @@ public readonly record struct StrokeEmission(
     string? RenderMaterial = null,
     float ClusterWindowSeconds = 0f,
     float ClusterConeRadians = 0f);
+
+/// <summary>
+/// One thing a stroke material throws in a single burst when it is hit. Counts are scaled by the
+/// impact's Strength (a feeble tap throws a fraction of the minimum, never zero if Strength > 0).
+/// Direction comes from the impact itself; ConeRadians is the half-angle the particles fan across.
+/// </summary>
+public readonly record struct ImpactEmission(
+    PrimitiveRole Role,
+    int CountMin,
+    int CountMax,
+    float SpeedMin,
+    float SpeedMax,
+    float LifespanMin,
+    float LifespanMax,
+    float SizeMin,
+    float SizeMax,
+    float ConeRadians,
+    Vector2 Gravity = default,
+    string? RenderMaterial = null);
 
 /// <summary>The path-following half of a stroke emission.</summary>
 public readonly record struct StrokeFlowOptions(

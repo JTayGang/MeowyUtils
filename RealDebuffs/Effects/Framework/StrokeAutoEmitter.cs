@@ -98,6 +98,10 @@ public static class StrokeAutoEmitter
                 SpawnFromStroke(in s, in emissions[e], forcedMaterial: null, time, dt);
         }
 
+        // Impacts are spawned after the strokes so a burst born this frame is drawn this frame.
+        for (int i = 0; i < scene.Impacts.Count; i++)
+            SpawnImpact(scene.Impacts[i], overrides, time);
+
         for (int i = 0; i < _freeFlyCount; i++)
         {
             ref readonly var p = ref FreeFlyPool[i];
@@ -164,6 +168,93 @@ public static class StrokeAutoEmitter
                 SpawnFlow(in s, in e, e.Flow!.Value, particleMaterial, seed, visibleLen, flowToTip, time);
             else
                 SpawnFreeFly(in s, in e, particleMaterial, seed, visibleLen, time, clusterBaseDir);
+        }
+    }
+
+    /// <summary>
+    /// Resolves what the impacted owner's stroke material throws and spawns it. Resolution mirrors
+    /// the trickle emitters exactly, so a user override or a "made of X" phrase changes impacts
+    /// along with everything else: a swapped-in material throws ITS debris, and a particle
+    /// override on the emit axis ("chains made of flames") bursts that particle instead.
+    /// </summary>
+    private static void SpawnImpact(in ImpactPrimitive hit, IReadOnlyDictionary<string, string>? overrides, float time)
+    {
+        if (hit.Strength <= 0.001f) return;
+
+        Vector2 dir = hit.Direction.LengthSquared() > 1e-6f
+            ? Vector2.Normalize(hit.Direction)
+            : new Vector2(0f, -1f);
+
+        string? emitOverride = overrides?.GetValueOrDefault(
+            MaterialOverrideKey.ForStrokeEmit(hit.Owner, hit.StrokeRole));
+
+        if (emitOverride is not null)
+        {
+            var emitter = MaterialRegistry.TryGetParticle(emitOverride);
+            if (emitter is null) return;
+
+            // A particle material only declares a trickle, so derive a burst from it: a handful of
+            // particles on the trickle's own speeds, lifespans and sizes, fanned at least ~40 deg.
+            var specs = emitter.Emissions;
+            for (int e = 0; e < specs.Length; e++)
+            {
+                ref readonly var t = ref specs[e];
+                var burst = new ImpactEmission(
+                    t.Role,
+                    CountMin: 3, CountMax: 3 + Math.Clamp((int)(t.DensityPer100px * 2f), 1, 10),
+                    t.SpeedMin, t.SpeedMax, t.LifespanMin, t.LifespanMax, t.SizeMin, t.SizeMax,
+                    ConeRadians: MathF.Max(t.SpreadRadians, 0.7f),
+                    Gravity: t.Gravity,
+                    RenderMaterial: t.RenderMaterial ?? emitOverride);
+                SpawnBurst(in hit, dir, in burst, e, time);
+            }
+            return;
+        }
+
+        var material = MaterialRegistry.TryGetStroke(
+            MaterialOverrideKey.ResolveStroke(hit.Owner, hit.StrokeRole, overrides));
+        if (material is null) return;
+
+        var impacts = material.ImpactEmissions;
+        for (int e = 0; e < impacts.Length; e++)
+            SpawnBurst(in hit, dir, in impacts[e], e, time);
+    }
+
+    private static void SpawnBurst(in ImpactPrimitive hit, Vector2 dir, in ImpactEmission e, int salt, float time)
+    {
+        float k = Math.Clamp(hit.Strength, 0f, 1f);
+
+        int seed0 = unchecked(hit.Seed + (int)e.Role * 7919 + salt * 4421);
+        float countF = DrawHelpers.HashRange(seed0, e.CountMin, e.CountMax + 0.999f);
+        int count = Math.Max(1, (int)(countF * (0.35f + 0.65f * k)));
+
+        float brightness = hit.Brightness > 0f ? hit.Brightness : 1f;
+
+        for (int i = 0; i < count; i++)
+        {
+            if (_freeFlyCount >= FreeFlyCapacity) return;
+
+            int seed = unchecked(seed0 + i * 131);
+            Vector2 d = Rotate(dir, DrawHelpers.HashRange(seed + 1, -e.ConeRadians, e.ConeRadians));
+            float speed = DrawHelpers.HashRange(seed + 2, e.SpeedMin, e.SpeedMax) * (0.55f + 0.45f * k);
+
+            Vector2 jitter = new(DrawHelpers.HashRange(seed + 5, -3f, 3f), DrawHelpers.HashRange(seed + 6, -3f, 3f));
+
+            FreeFlyPool[_freeFlyCount++] = new FreeFlyParticle
+            {
+                Pos = hit.Position + jitter,
+                Vel = d * speed,
+                Gravity = e.Gravity,
+                Born = time,
+                Lifespan = DrawHelpers.HashRange(seed + 3, e.LifespanMin, e.LifespanMax),
+                Size = DrawHelpers.HashRange(seed + 4, e.SizeMin, e.SizeMax),
+                Brightness = brightness,
+                Seed = seed,
+                Role = e.Role,
+                MaterialName = e.RenderMaterial,
+                Owner = hit.Owner,
+                ColorOverride = hit.ColorOverride,
+            };
         }
     }
 

@@ -280,36 +280,8 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
             _coarse[i] = cursor;
         }
 
-        CatmullRomResample(_coarse, ControlPoints, path.Points, FinalSamples);
+        StrandPath.CatmullRomResample(_coarse, ControlPoints, path.Points, FinalSamples);
         path.Count = FinalSamples;
-    }
-
-    /// <summary>Endpoints duplicated for the phantom outer control points so the curve terminates on the endpoints.</summary>
-    private static void CatmullRomResample(Vector2[] src, int srcCount, Vector2[] dst, int dstCount)
-    {
-        float scale = (float)(srcCount - 1) / (dstCount - 1);
-
-        for (int i = 0; i < dstCount; i++)
-        {
-            float t = i * scale;
-            int seg = (int)t;
-            if (seg >= srcCount - 1) { seg = srcCount - 2; t = srcCount - 1; }
-            float localT = t - seg;
-
-            Vector2 p0 = src[Math.Max(0, seg - 1)];
-            Vector2 p1 = src[seg];
-            Vector2 p2 = src[Math.Min(srcCount - 1, seg + 1)];
-            Vector2 p3 = src[Math.Min(srcCount - 1, seg + 2)];
-
-            float t2 = localT * localT;
-            float t3 = t2 * localT;
-
-            dst[i] = 0.5f * (
-                2f * p1 +
-                (p2 - p0) * localT +
-                (2f * p0 - 5f * p1 + 4f * p2 - p3) * t2 +
-                (-p0 + 3f * p1 - 3f * p2 + p3) * t3);
-        }
     }
 
     private void ApplyLatchPin(int idx)
@@ -406,23 +378,9 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         t.HoldUntil = time + 1.8f + 1.6f * DrawHelpers.Hash01(t.Seed + 500);
     }
 
-    private static Vector2 EdgeAnchor(Vector2 size, float shortSide, byte edge, float along)
-    {
-        float overhang = shortSide * 0.02f;
-        return edge switch
-        {
-            0 => new Vector2(along * size.X, -overhang),
-            1 => new Vector2(size.X + overhang, along * size.Y),
-            2 => new Vector2(along * size.X, size.Y + overhang),
-            _ => new Vector2(-overhang, along * size.Y),
-        };
-    }
+    // Edge numbering here (0 top, 1 right, 2 bottom, 3 left) is ScreenEdge's, so these just delegate.
+    private static Vector2 EdgeAnchor(Vector2 size, float shortSide, byte edge, float along) =>
+        ScreenEdges.Anchor(size, (ScreenEdge)edge, along, overhang: shortSide * 0.02f);
 
-    private static Vector2 InwardDir(byte edge) => edge switch
-    {
-        0 => new Vector2(0f, 1f),
-        1 => new Vector2(-1f, 0f),
-        2 => new Vector2(0f, -1f),
-        _ => new Vector2(1f, 0f),
-    };
+    private static Vector2 InwardDir(byte edge) => ScreenEdges.Inward((ScreenEdge)edge);
 }

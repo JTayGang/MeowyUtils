@@ -4,34 +4,20 @@ using RealDebuffs.Effects.Framework;
 namespace RealDebuffs.Effects;
 
 /// <summary>
-/// Heavy: iron chains are flung in from the edges of the screen, whip across it, snap taut with a
-/// shower of sparks, and then hang there under their own weight, straining.
+/// Heavy: iron chains flung in from the edges, whipped across, snapped taut with a shower of
+/// sparks, then left hanging under their own weight.
 ///
-/// WHAT THIS EFFECT OWNS: the layout of the chains, the choreography (throw, snap, strain, tug) and
-/// the mood (a dark vignette, a gloom at the screen's edge, dust in the air). WHAT IT DOES NOT OWN:
-/// what a chain looks like, or what flies off it. Every chain is a plain stroke on the hero slot,
-/// and every impact is a plain event; the stroke material answers both. That separation is the
-/// whole point of the hero slot:
-///   - "heavy made of rope" swaps stroke.chain for a rope: the same physics, the same whip and snap,
-///     now throwing dust and fibres instead of sparks and rust;
-///   - another effect can make its own strokes out of stroke.chain without any of this.
+/// MOTION. The throw is kinematic — each frame the chain is laid on the drape it would hang in
+/// between its anchors, paid out from an off-screen anchor. A chain on a drape cannot fold.
+/// The hang is simulated (VerletStrand); the stop sends a real shock down the chain, it rings
+/// down, sways, and is occasionally yanked.
 ///
-/// MOTION has two phases, each chosen for what it can guarantee (VerletStrand). THE THROW is
-/// kinematic: every frame the chain is laid exactly along the drape it would hang in between its
-/// anchors (a parabola of the right length), paid out from an off-screen anchor as the head travels.
-/// A chain placed on a drape cannot fold or knot, which free physics under a fast-moving end will
-/// do. THE HANG is simulated: the moment the head arrives the chain is released with the velocity
-/// it already had, so the stop sends a real shock down it, it rings down over about a second,
-/// sways in a faint air current, and every few seconds one chain is yanked, as if something on the
-/// far end were still pulling. The impact is reported to the framework as an event.
+/// CHAINS and IMPACTS are hero slots. This effect owns layout, choreography, and mood; the
+/// material answers what a chain looks like and what flies off it. "heavy made of rope" swaps
+/// stroke.chain for a rope and gets the same physics throwing fibres instead of sparks.
 ///
-/// RANDOMISATION: each application reseeds everything from its start time: how many chains (4-5),
-/// where each one is anchored, how slack it is, which are near (big, crisp) and which are far
-/// (small, hazy), the throw timing, the tug schedule, and, inside the material, each chain's
-/// metal, wear and twist.
-///
-/// STROKE CONTRACT used here (what any hero material receives): Path = the simulated chain,
-/// WidthHint = link length in px, Depth = 0 near .. 1 far, Agitation = decaying shake energy.
+/// Reseeds everything from the cast start time: chain count (4-5), anchors, slack, near/far,
+/// throw timing, tug schedule, plus each chain's metal and twist inside the material.
 /// </summary>
 public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
 {

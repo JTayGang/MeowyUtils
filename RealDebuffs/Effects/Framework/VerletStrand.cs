@@ -3,24 +3,12 @@ using System.Numerics;
 namespace RealDebuffs.Effects.Framework;
 
 /// <summary>
-/// A rope / chain / cable, simulated as point masses joined by fixed-length links (position-based
-/// Verlet integration). It knows nothing about chains: it only knows about weight, damping, a
-/// fixed total length and two ends that the caller drags around, which makes it equally good for a
-/// chain, a rope (Bind), a vine, or a tendril that should sag and swing instead of following a
-/// formula.
+/// A rope / chain / cable simulated as point masses joined by fixed-length links (Verlet).
+/// Knows nothing about chains — only weight, damping, a length, and two ends the caller drags.
+/// Equally good for a chain, a vine, or a tendril that should sag and swing.
 ///
-/// WHY SIMULATE: a parametric curve with a sine on top (the old chain) moves in a way the eye
-/// reads as animation. A real hanging strand has inertia: it swings, lags behind its anchors,
-/// whips when an end is yanked, and rings down over about a second. All of that falls out of
-/// "points joined by sticks under gravity" for free, and so does variety: no two casts settle
-/// the same way.
-///
-/// Usage per frame: set the end targets, optionally fill <see cref="Accel"/> with a
-/// per-node push, call <see cref="Step"/>, then <see cref="FillPath"/> to publish the result as a
-/// StrandPath (a smooth Catmull-Rom through the nodes) for any stroke material to draw.
-///
-/// Integration runs on a fixed sub-step independent of frame rate, so a long frame can't make the
-/// strand explode and a 144 Hz display doesn't change how it behaves.
+/// Usage: set ends, optionally fill <see cref="Accel"/> per-node, call <see cref="Step"/>,
+/// then <see cref="FillPath"/> to publish the result as a StrandPath.
 /// </summary>
 public sealed class VerletStrand
 {

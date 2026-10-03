@@ -139,18 +139,14 @@ internal static class FireColor
 }
 
 /// <summary>
-/// Vertex-colored mesh drawing through ImDrawList's PrimReserve / PrimWriteVtx / PrimWriteIdx.
-/// This is what lets a material draw a true gradient (each vertex carries its own RGBA and the GPU
-/// interpolates between them) instead of stacking a handful of flat translucent shapes, which is
-/// what produces the visible rings on soft glows.
+/// Vertex-colored mesh drawing through ImDrawList's PrimReserve / PrimWriteVtx / PrimWriteIdx,
+/// which is how a material draws a true gradient instead of stacking flat translucent shapes.
 ///
-/// Contract (ImGui's, not ours): after PrimReserve(idx, vtx) you MUST write exactly that many
-/// vertices and indices. Overrunning corrupts the draw list; underrunning leaves garbage triangles.
-/// Every helper here reserves and writes in one place for that reason, and reads VtxCurrentIdx AFTER
-/// PrimReserve because reserve may start a fresh draw command (which resets it).
+/// ImGui contract: after PrimReserve(idx, vtx) write exactly that many verts and indices. Every
+/// helper here reserves and writes in one place for that reason, and reads VtxCurrentIdx AFTER
+/// PrimReserve because a reserve can start a fresh command.
 ///
-/// Scratch buffers are static: drawing is single-threaded (ImGui's UI thread), and a material fills
-/// them and immediately flushes, so nothing holds them across calls.
+/// Scratch buffers are static; drawing is single-threaded on ImGui's UI thread.
 /// </summary>
 internal static class MeshDraw
 {
@@ -170,8 +166,8 @@ internal static class MeshDraw
         if (frameTime != _whiteStamp)
         {
             _whiteUv = ImGui.GetFontTexUvWhitePixel();
-            _whiteUv.X += 0.0008f;   // <-- sweep this value
-            _whiteUv.Y += 0.0008f;
+            _whiteUv.X += 0.0008f;   // <-- important to prevent transparency issues
+            _whiteUv.Y += 0.0008f;   // <-- important to prevent transparency issues
             _whiteStamp = frameTime;
         }
         return _whiteUv;

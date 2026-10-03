@@ -4,30 +4,16 @@ using Dalamud.Bindings.ImGui;
 namespace RealDebuffs.Effects.Framework.Materials;
 
 /// <summary>
-/// Fire: one flame tongue, drawn as a small vertex-colored mesh that is "shaded" on the CPU.
+/// Fire: one flame tongue, drawn as a small CPU-shaded vertex-colored mesh. Rows run base→tip,
+/// columns cross. Per vertex: density from a parabolic cross-section times a lengthwise falloff,
+/// eroded by noise that grows toward the tip; density drives BOTH alpha and a black-body
+/// temperature (white-yellow core → orange body → red fringe).
 ///
-/// WHY A MESH: a flame is a luminous volume that fades smoothly to nothing at its edges. Flat
-/// translucent circles can't do that - each one leaves a visible rim, and a field of them reads as
-/// bokeh. Here every vertex carries its own color and alpha, the GPU interpolates between them, and
-/// the edges of the mesh are alpha 0, so overlapping tongues merge into one continuous fire.
+/// The renderer only has straight alpha blending, so "hot" can't add up. The effect instead
+/// draws back (variant 1) → body (0) → front (2) → bed (3), each tuned hotter and denser, so
+/// brighter cores always land on top. The bed is a separate low wide layer for continuity.
 ///
-/// THE SHAPE (per tongue): a tapered, pointed silhouette anchored at Position and growing up. Its
-/// centerline sways on scrolling noise (so the tip wags and licks), leans with a slow shared breeze,
-/// and its width wobbles. Grid rows run base -> tip, columns run across.
-///
-/// THE SHADING (per vertex): a density value from a parabolic cross-section (bright down the middle)
-/// times a lengthwise falloff, then eroded by two octaves of noise that scrolls upward and grows
-/// stronger toward the tip - which is what tears the tip into wisps. Density drives BOTH alpha and a
-/// temperature; temperature indexes a black-body-style ramp (white-yellow core, orange body, red
-/// fringe). Cooler, thinner regions are also more transparent, so the fringe reads as a glow over the
-/// scene rather than an opaque paint stroke.
-///
-/// LAYERS (ParticlePrimitive.Variant): the renderer only has straight alpha blending, no additive, so
-/// "hot" can't simply add up. Instead the effect draws back (1) -> body (0) -> front (2) and each
-/// layer is tuned hotter and denser than the last, so brighter cores always end up on top.
-///
-/// Also used as a stroke emitter by other effects ("made of fire"), where the particles are small:
-/// LOD drops rows and columns with size so a 6px lick costs a handful of vertices.
+/// Used as a stroke emitter by other effects ("made of fire"): LOD drops rows and cols with size.
 /// </summary>
 public sealed class ParticleEmber : IParticleMaterial
 {

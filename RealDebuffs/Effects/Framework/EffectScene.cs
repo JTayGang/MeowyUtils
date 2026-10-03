@@ -143,25 +143,10 @@ public sealed class EffectScene
         CurrentOwner = default;
     }
 
-    public void AddStroke(in StrokePrimitive s)
-    {
-        var copy = s; copy.Owner = CurrentOwner; Strokes.Add(copy);
-    }
-
-    public void AddParticle(in ParticlePrimitive p)
-    {
-        var copy = p; copy.Owner = CurrentOwner; Particles.Add(copy);
-    }
-
-    public void AddRegion(in RegionPrimitive r)
-    {
-        var copy = r; copy.Owner = CurrentOwner; Regions.Add(copy);
-    }
-
-    public void AddImpact(in ImpactPrimitive i)
-    {
-        var copy = i; copy.Owner = CurrentOwner; Impacts.Add(copy);
-    }
+    public void AddStroke(in StrokePrimitive s)  { var c = s; c.Owner = CurrentOwner; Strokes.Add(c); }
+    public void AddParticle(in ParticlePrimitive p) { var c = p; c.Owner = CurrentOwner; Particles.Add(c); }
+    public void AddRegion(in RegionPrimitive r) { var c = r; c.Owner = CurrentOwner; Regions.Add(c); }
+    public void AddImpact(in ImpactPrimitive i) { var c = i; c.Owner = CurrentOwner; Impacts.Add(c); }
 
     /// <summary>For post-effect emission passes where CurrentOwner isn't the right effect anymore.</summary>
     public void AddParticleForOwner(in ParticlePrimitive p, DebuffKind owner)

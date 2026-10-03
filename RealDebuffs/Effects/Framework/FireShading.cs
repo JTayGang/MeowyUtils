@@ -170,6 +170,8 @@ internal static class MeshDraw
         if (frameTime != _whiteStamp)
         {
             _whiteUv = ImGui.GetFontTexUvWhitePixel();
+            _whiteUv.X += 0.0008f;   // <-- sweep this value
+            _whiteUv.Y += 0.0008f;
             _whiteStamp = frameTime;
         }
         return _whiteUv;

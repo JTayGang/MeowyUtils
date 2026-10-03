@@ -61,6 +61,14 @@ public struct StrokePrimitive
     /// Materials use it for transient energy: specular flare, link rattle, shed rate.
     /// </summary>
     public float Agitation;
+
+    /// <summary>
+    /// 0 = the strand sheds along its whole length (default). Above 0, trickle emissions (rust,
+    /// dust, embers...) only spawn where the strand is within this many pixels (at 1080p) of a
+    /// screen edge, so the middle of a chain stays clean and the debris only shows where it meets
+    /// the frame. Needs EffectScene.ScreenSize; ignored while that is unset.
+    /// </summary>
+    public float EmitEdgeReach;
 }
 
 public struct ParticlePrimitive
@@ -129,6 +137,9 @@ public sealed class EffectScene
     public readonly List<ParticlePrimitive> Particles = new(2048);
     public readonly List<RegionPrimitive>   Regions   = new(64);
     public readonly List<ImpactPrimitive>   Impacts   = new(8);
+
+    /// <summary>Display size in pixels, set by the host each frame. Zero means unknown.</summary>
+    public Vector2 ScreenSize;
 
     public VignetteRequest Vignette;
     public DebuffKind CurrentOwner;

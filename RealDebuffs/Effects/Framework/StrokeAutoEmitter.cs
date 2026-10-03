@@ -60,9 +60,12 @@ public static class StrokeAutoEmitter
     private static readonly FlowingParticle[] FlowPool = new FlowingParticle[FlowCapacity];
     private static int _flowCount;
 
+    private static Vector2 _screen;
+
     public static void Emit(EffectScene scene, float time, float dt,
                             IReadOnlyDictionary<string, string>? overrides)
     {
+        _screen = scene.ScreenSize;
         CullFreeFly(time);
         IntegrateFreeFly(dt);
 
@@ -266,6 +269,7 @@ public static class StrokeAutoEmitter
 
         float arc = visibleLen * DrawHelpers.Hash01(seed);
         s.Path.SampleAtArc(arc, out Vector2 pos, out Vector2 tan);
+        if (!WithinEmitReach(in s, pos)) return;
 
         Vector2 baseDir;
         float directionSpread;
@@ -305,6 +309,20 @@ public static class StrokeAutoEmitter
         };
     }
 
+    /// <summary>
+    /// False if the stroke wants its debris only near the screen edge (EmitEdgeReach) and this point
+    /// is further in, or off-screen where nobody would see it. Rejecting rather than redistributing
+    /// keeps the local density near the edge what the material specified.
+    /// </summary>
+    private static bool WithinEmitReach(in StrokePrimitive s, Vector2 p)
+    {
+        if (s.EmitEdgeReach <= 0f || _screen.X <= 0f) return true;
+
+        float px = Math.Clamp(MathF.Min(_screen.X, _screen.Y) / 1080f, 0.75f, 2.4f);
+        float edge = MathF.Min(MathF.Min(p.X, _screen.X - p.X), MathF.Min(p.Y, _screen.Y - p.Y));
+        return edge >= 0f && edge <= s.EmitEdgeReach * px;
+    }
+
     private static Vector2 Rotate(Vector2 v, float radians)
     {
         float c = MathF.Cos(radians), sn = MathF.Sin(radians);
@@ -317,6 +335,11 @@ public static class StrokeAutoEmitter
         if (_flowCount >= FlowCapacity) return;
 
         float arc = visibleLen * DrawHelpers.Hash01(seed);
+        if (s.EmitEdgeReach > 0f)
+        {
+            s.Path.SampleAtArc(arc, out Vector2 at, out _);
+            if (!WithinEmitReach(in s, at)) return;
+        }
 
         FlowPool[_flowCount++] = new FlowingParticle
         {

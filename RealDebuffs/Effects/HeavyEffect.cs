@@ -4,20 +4,19 @@ using RealDebuffs.Effects.Framework;
 namespace RealDebuffs.Effects;
 
 /// <summary>
-/// Heavy: iron chains flung in from the edges, whipped across, snapped taut with a shower of
-/// sparks, then left hanging under their own weight.
+/// Heavy: iron chains are shot across the screen like arrows trailing a cable: a near-straight line
+/// that crosses in a fraction of a second, then goes slack and hangs under its own weight.
 ///
-/// MOTION. The throw is kinematic — each frame the chain is laid on the drape it would hang in
-/// between its anchors, paid out from an off-screen anchor. A chain on a drape cannot fold.
-/// The hang is simulated (VerletStrand); the stop sends a real shock down the chain, it rings
-/// down, sways, and is occasionally yanked.
+/// MOTION. The shot is kinematic (a taut, almost straight cable paid out behind a fast head), so it
+/// cannot fold. At the far anchor the chain is released into VerletStrand physics: the slack drops
+/// out of it, a shock rings down it, and from then on wind sways it.
 ///
-/// CHAINS and IMPACTS are hero slots. This effect owns layout, choreography, and mood; the
-/// material answers what a chain looks like and what flies off it. "heavy made of rope" swaps
-/// stroke.chain for a rope and gets the same physics throwing fibres instead of sparks.
+/// CHAINS and IMPACTS are hero slots: this effect owns layout, choreography and mood; the material
+/// answers what a chain looks like and what flies off it. "heavy made of rope" swaps stroke.chain
+/// for a rope and gets the same physics throwing fibres instead of sparks.
 ///
-/// Reseeds everything from the cast start time: chain count (4-5), anchors, slack, near/far,
-/// throw timing, tug schedule, plus each chain's metal and twist inside the material.
+/// Everything is reseeded from the cast start time: chain count (4-5), anchors, slack, near/far,
+/// shot timing and wind phase, plus each chain's metal and twist inside the material.
 /// </summary>
 public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
 {
@@ -53,22 +52,29 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
     private const int StrandNodes = 16;
     private const int PathSamples = 56;
 
-    // ---- timing ----
-    private const float MaxThrowDelay = 0.28f;
+    // ---- mood (0 removes it) ----
+    private const float VignetteAlpha = 0.12f;
+    private const float GloomAlpha = 0.28f;
+    private const float GloomDepth = 0.12f;       // fraction of screen height
 
-    // ---- the guide drape (see GuideShape) ----
-    // The throw is kinematic: the strand is placed on its drape every frame. After the snap the
-    // drape keeps pulling on it, strongly at first so the chain settles into place, then faintly,
-    // just enough to keep the hanging pose coherent while it sways and rings.
-    private const float SettleStiffness = 480f;
-    private const float SettleSeconds = 0.25f;
-    private const float HangStiffness = 24f;
-    private const float HangDrag = 1.15f;
+    // ---- the shot ----
+    private const float MaxThrowDelay = 0.3f;
+    private const float FlightBow = 0.25f;        // how far the head may curve off the straight line (scales ArcSide)
+    private const float FlightSag = 0.0012f;      // spare length while flying, as a fraction of the chord: a taut cable
+    private const float ReleaseSeconds = 0.18f;   // after landing, the slack comes back over this long
+    private const float HangDrag = 1.85f;
+
+    // ---- debris shows only this close to a screen edge (px at 1080p) ----
+    private const float EmitEdgeReach = 190f;
+
+    // ---- wind: a slow swell per chain plus gusts, so no chain is ever still ----
+    private const float SwayAmp = 15f;             // px at 1080p, mid-span; the swell and gusts scale it
+    private const float SwayGustHz = 0.30f;
 
     private static readonly uint Gloom = DrawHelpers.ToU32(0.012f, 0.016f, 0.024f, 1f);
     private static readonly uint Vignette = DrawHelpers.ToU32(0.010f, 0.014f, 0.022f, 1f);
 
-    /// <summary>One chain: its anchors, its simulated strand, and its throw/tug state.</summary>
+    /// <summary>One chain: its anchors, its strand, and its shot state.</summary>
     private sealed class Rig
     {
         public readonly VerletStrand Strand = new(StrandNodes);
@@ -77,7 +83,7 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
         public Vector2 Start, End;
         public float   Slack;              // spare length as a fraction of the straight-line distance
         public float   Delay, Flight;      // seconds (Flight is set from the distance and a throw speed)
-        public float   ArcSide;            // how far the head bows off the straight line, in chord lengths (signed)
+        public float   ArcSide;            // signed; which way the head bows, and which side a vertical span sags to
         public float   LinkFrac;           // link length as a fraction of the short side
         public float   Depth;              // 0 near .. 1 far
         public int     Seed;
@@ -85,53 +91,32 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
         public bool    Launched, Landed;
         public float   LandTime;
         public float   Agitation;
-        public float   NextTug;
-        public float   TugStart = -10f;
-        public Vector2 TugVector;
         public float   SwayPhase;
+        public float   SwayHz;             // the chain's own swell frequency
     }
 
     private readonly Rig[] _rigs = new Rig[MaxChains];
     private readonly int[] _drawOrder = new int[MaxChains];
     private int _count;
 
-    private readonly ParticleEmitter _motes = new(maxParticles: 44, seedSalt: 0x4EA7);
-    private readonly Func<int, Vector2> _motePos;
-    private readonly Func<int, Vector2> _moteVel;
-    private Vector2 _screen;
-
     private readonly CastTracker _cast = new();
 
     public HeavyEffect()
     {
         for (int i = 0; i < MaxChains; i++) _rigs[i] = new Rig();
-
-        // Built once so the draw loop allocates nothing.
-        _motePos = seed => new Vector2(
-            DrawHelpers.HashRange(seed + 20, 0f, _screen.X),
-            DrawHelpers.HashRange(seed + 21, 0f, _screen.Y));
-        _moteVel = seed => new Vector2(
-            DrawHelpers.HashRange(seed + 22, -9f, 9f),
-            DrawHelpers.HashRange(seed + 23, -6f, 7f));
-        _motes.Wander = 14f;
-        _motes.WanderHz = 0.22f;
     }
 
     public void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride)
     {
         if (screenSize.X < 64f || screenSize.Y < 64f) return;
-        _screen = screenSize;
 
         if (_cast.Begin(time))
-        {
             BuildLayout(unchecked((int)(_cast.Start * 1000f)), screenSize);
-            _motes.Clear();
-        }
         float age = time - _cast.Start;
         float shortSide = MathF.Min(screenSize.X, screenSize.Y);
         float px = shortSide / 1080f;
 
-        EmitAtmosphere(scene, screenSize, shortSide, alpha, time, dt, age, colorOverride);
+        EmitAtmosphere(scene, screenSize, alpha, time, age, colorOverride);
 
         // Far chains first so near ones overlap them.
         for (int n = 0; n < _count; n++)
@@ -139,7 +124,7 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
             var rig = _rigs[_drawOrder[n]];
             if (age < rig.Delay) continue;
 
-            Step(scene, rig, screenSize, shortSide, px, alpha, time, dt, age, colorOverride);
+            Step(scene, rig, screenSize, px, alpha, time, dt, age, colorOverride);
 
             if (rig.Path.Count < 2) continue;
 
@@ -154,6 +139,7 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
                 Phase = DrawHelpers.HashRange(rig.Seed + 999, 0f, MathF.Tau),
                 Depth = rig.Depth,
                 Agitation = rig.Agitation,
+                EmitEdgeReach = EmitEdgeReach,
                 ColorOverride = colorOverride,
             });
         }
@@ -161,41 +147,32 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
 
     // ---- Atmosphere ----
 
-    private void EmitAtmosphere(EffectScene scene, Vector2 size, float shortSide, float alpha,
-                                float time, float dt, float age, Vector4? colorOverride)
+    private static void EmitAtmosphere(EffectScene scene, Vector2 size, float alpha, float time, float age, Vector4? colorOverride)
     {
         float castIn = DrawHelpers.Saturate(age / 0.7f);
 
-        // The whole frame is pressed down: a dark vignette, and a gloom pooled at the bottom edge
-        // that breathes slowly, as if the weight were shifting.
-        scene.RequestVignette(Vignette, 0.15f, alpha * 0.50f * castIn, priority: 20, colorOverride);
+        if (VignetteAlpha > 0f)
+            scene.RequestVignette(Vignette, 0.12f, alpha * VignetteAlpha * castIn, priority: 20, colorOverride);
 
-        float breathe = DrawHelpers.Pulse(time, 4.6f);
-        float depth = size.Y * (0.17f + 0.03f * breathe) * castIn;
-        if (depth > 1f)
+        // A gloom pooled at the bottom edge that breathes slowly, as if the weight were shifting.
+        float depth = size.Y * GloomDepth * (1f + 0.15f * DrawHelpers.Pulse(time, 4.6f)) * castIn;
+        if (GloomAlpha > 0f && depth > 1f)
         {
             scene.AddRegion(new RegionPrimitive
             {
                 Min = new Vector2(0f, size.Y - depth),
                 Max = size,
                 Tint = Gloom,
-                Alpha = 0.66f * alpha,
+                Alpha = GloomAlpha * alpha,
                 Bottom = true,
                 ColorOverride = colorOverride,
             });
         }
-
-        // Dust hanging in the air: tiny motes, so the space between the chains has depth.
-        float moteSize = shortSide * 0.0013f;
-        _motes.Update(time, dt, 0.10f, 0.20f, _motePos, _moteVel,
-                      lifespanMin: 4.5f, lifespanMax: 9f, sizeMin: moteSize, sizeMax: moteSize * 2.2f);
-        _motes.Emit(scene, time, PrimitiveRole.Dust, brightnessMul: alpha * 0.85f * castIn,
-                    colorOverride, swayPerParticle: 0f, variant: 1);
     }
 
     // ---- Per-chain simulation ----
 
-    private void Step(EffectScene scene, Rig rig, Vector2 size, float shortSide, float px,
+    private void Step(EffectScene scene, Rig rig, Vector2 size, float px,
                       float alpha, float time, float dt, float age, Vector4? colorOverride)
     {
         var strand = rig.Strand;
@@ -211,20 +188,17 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
             strand.BendStiffness = 0.75f;
         }
 
-        // ---- the head's position: a ballistic throw, then pinned ----
+        // ---- the head: an arrow. Constant speed after a short launch ramp, stopped dead by the far anchor ----
         float tau = DrawHelpers.Saturate(t / rig.Flight);
         Vector2 chord = rig.End - rig.Start;
         float chordLen = chord.Length();
         Vector2 dir = chordLen > 1e-3f ? chord / chordLen : new Vector2(1f, 0f);
         Vector2 perp = new(-dir.Y, dir.X);
 
-        // Eases out of the throw and into the stop, with a bias toward arriving fast. A pure ease-in
-        // makes the head outrun a 16-node chain and the slack ties itself in a whip loop.
-        float travel = 0.60f * (tau * tau * (3f - 2f * tau)) + 0.40f * MathF.Pow(tau, 1.6f);
-        float bow = rig.ArcSide * chordLen * MathF.Sin(MathF.PI * tau) * (1f - tau * 0.6f);
+        float travel = (tau < 0.1f ? 5f * tau * tau : tau - 0.05f) / 0.95f;
+        float bow = rig.ArcSide * FlightBow * chordLen * MathF.Sin(MathF.PI * tau);
         Vector2 head = rig.Start + chord * travel + perp * bow;
 
-        // ---- landing ----
         bool landedNow = false;
         if (tau >= 1f && !rig.Landed)
         {
@@ -232,55 +206,57 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
             landedNow = true;
             rig.LandTime = time;
             rig.Agitation = 1f;
-            rig.NextTug = time + 2.0f + 3.2f * DrawHelpers.Hash01(rig.Seed + 700);
         }
 
-        // ---- the strand is paid out as the head travels ----
-        if (!rig.Landed)
+        if (rig.Landed)
         {
-            strand.Length = MathF.Max(2f, Vector2.Distance(head, rig.Start) * (1f + rig.Slack));
-        }
-        else
-        {
-            strand.Length = chordLen * (1f + rig.Slack);
             head = rig.End;
-            Strain(scene, rig, size, px, alpha, time, colorOverride);
-            head += TugOffset(rig, time, px);
-            // A slow shift in how hard the far end pulls: the load easing and settling.
+            // The load on the far end eases and settles: slow, and mostly off-screen.
             head.Y += 5.5f * px * MathF.Sin(time * 0.85f + rig.SwayPhase);
         }
 
-        // Faint, slow air current once the chain is hanging: a lateral push that travels down it.
+        // ---- Length and the guide must agree by construction. If Length jumps to the full
+        // value while the guide still has only the flight's tiny extra, the link constraint -
+        // which pins both ends - has to bulge the strand sideways to make up the difference,
+        // and that bulge reads as a sudden fall faster than gravity. Grow both together over
+        // ReleaseSeconds instead. ----
+        float flightExtra = Vector2.Distance(head, rig.Start) * FlightSag;
+        float extra = flightExtra;
         if (rig.Landed)
         {
-            for (int i = 1; i < StrandNodes - 1; i++)
-            {
-                float ph = time * 1.05f + rig.SwayPhase + i * 0.42f;
-                strand.Accel[i] = new Vector2(88f * px * MathF.Sin(ph), 40f * px * MathF.Sin(ph * 0.73f + 1.7f));
-            }
+            float k = DrawHelpers.Saturate((time - rig.LandTime) / ReleaseSeconds);
+            float release = k * k * (3f - 2f * k);
+            float targetExtra = chordLen * rig.Slack;
+            extra = flightExtra + (targetExtra - flightExtra) * release;
         }
 
-        GuideShape(rig, head, strand.Length);
+        strand.Length = MathF.Max(2f, Vector2.Distance(head, rig.Start) + extra);
+        GuideShape(rig, head, extra);
         strand.SetEnds(rig.Start, head);
 
-        if (!rig.Landed || landedNow)
+        if (!rig.Landed)
         {
-            // In the air: placed on the drape, not simulated. The landing frame is placed too; Drive
-            // hands the simulation the velocity the chain had, and the shock below adds to it.
+            // In flight: placed on the guide, not simulated. The guide's frame-to-frame motion
+            // becomes the strand's velocity, so arrival at the far anchor carries the head's
+            // full speed.
             strand.Drive(strand.Target, dt);
         }
         else
         {
-            strand.ShapeStiffness = HangStiffness + SettleStiffness * MathF.Exp(-(time - rig.LandTime) / SettleSeconds);
+            // Post-impact: fully simulated. The strand keeps the flight velocity it acquired on
+            // the last Drive and is then left to gravity and the link constraints, so it carries
+            // forward past the anchor and clumps up against the mount before swinging back into
+            // a hanging pose. Nothing pulls it toward a scripted drape anymore.
             strand.Step(dt);
         }
         strand.FillPath(rig.Path, PathSamples);
+        if (rig.Landed) ApplySway(rig, time, px);
 
-        // The snap goes in AFTER the strand is placed (Drive overwrites every node's velocity), and
-        // after the path is published so the impact point is found on this frame's chain.
+        // After Drive (which overwrites every node's velocity) and after the path is published, so
+        // the impact point is found on this frame's chain.
         if (landedNow)
         {
-            Shock(rig, px, strength: 1f, time);
+            Shock(rig, px, strength: 0.1f, time);
             ReportImpact(scene, rig, size, strength: 1f, alpha, time, colorOverride);
         }
 
@@ -288,14 +264,45 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
     }
 
     /// <summary>
-    /// Fills the strand's guide with the drape a strand of this length would take between its
-    /// anchors: a parabola sagging downhill, whose arc length is exactly the strand's length, with
-    /// the nodes spaced at equal arc length along it. Matching the length and the spacing matters:
-    /// a guide that disagrees with the strand's own constraints makes the spring and the links
-    /// fight, and the slack they can't agree on ends up as loops. A near-vertical span has no
-    /// downhill side, so it bows to whichever side this chain was seeded with.
+    /// Wind: a slow swell plus gusts displace the published path sideways, delayed along its length
+    /// so they travel down it, and zero at the anchors. It is applied to the path after the
+    /// simulation rather than as a force: a simulated chain's resistance to sideways pushes varies
+    /// several-fold with its sag and tension, so a force gives some chains a swing and others none,
+    /// whereas this moves every chain by the same amount and layers on the landing ring-down.
+    /// Fades in as the landing settles.
     /// </summary>
-    private static void GuideShape(Rig rig, Vector2 head, float length)
+    private static void ApplySway(Rig rig, float time, float px)
+    {
+        var path = rig.Path;
+        int n = path.Count;
+        float amp = SwayAmp * px * DrawHelpers.Saturate((time - rig.LandTime) / 1.2f);
+        if (amp <= 0.01f || n < 3) return;
+
+        Span<Vector2> offset = stackalloc Vector2[PathSamples];
+        for (int i = 0; i < n; i++)
+        {
+            Vector2 tan = path.Points[Math.Min(n - 1, i + 1)] - path.Points[Math.Max(0, i - 1)];
+            float len = tan.Length();
+            if (len < 1e-3f) { offset[i] = default; continue; }
+
+            float u = i / (n - 1f);
+            float swell = MathF.Sin(MathF.Tau * rig.SwayHz * time + rig.SwayPhase - u * 1.6f);
+            float gust = FireNoise.Value(time * SwayGustHz + rig.SwayPhase - u * 1.2f, rig.Seed * 0.013f);
+            offset[i] = new Vector2(-tan.Y, tan.X) / len * (amp * (0.6f * swell + 0.7f * gust) * MathF.Sin(MathF.PI * u));
+        }
+
+        for (int i = 0; i < n; i++) path.Points[i] += offset[i];
+        path.BuildArc();
+    }
+
+    /// <summary>
+    /// Fills the strand's guide with the drape a strand with <paramref name="extra"/> px of spare
+    /// length would take between its ends: a parabola sagging downhill, whose arc length is exactly
+    /// chord + extra. Used only in flight (the caller hands <c>extra = distance * FlightSag</c>,
+    /// so it lays the chain out as a very slightly sagging taut cable). A near-vertical span has
+    /// no downhill side, so it bows to whichever side this chain was seeded with.
+    /// </summary>
+    private static void GuideShape(Rig rig, Vector2 head, float extra)
     {
         const int Samples = 48;
 
@@ -308,7 +315,6 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
         if (MathF.Abs(perp.Y) < 0.30f) side = rig.ArcSide >= 0f ? 1f : -1f;
         perp *= side;
 
-        float extra = MathF.Max(0f, length - c);
         float sag = MathF.Sqrt(3f * c * extra / 8f);          // small-sag estimate
 
         Span<Vector2> pts = stackalloc Vector2[Samples + 1];
@@ -336,6 +342,7 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
             float span = cum[seg + 1] - cum[seg];
             float f = span > 1e-4f ? (want - cum[seg]) / span : 0f;
             target[i] = Vector2.Lerp(pts[seg], pts[seg + 1], f);
+
         }
     }
 
@@ -397,34 +404,6 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
             Seed = unchecked(rig.Seed + (int)(time * 1000f)),
             ColorOverride = colorOverride,
         });
-    }
-
-    /// <summary>Schedules and fires the occasional yank on a hanging chain.</summary>
-    private void Strain(EffectScene scene, Rig rig, Vector2 size, float px, float alpha, float time, Vector4? colorOverride)
-    {
-        if (time < rig.NextTug) return;
-
-        int s = unchecked(rig.Seed + (int)(time * 100f));
-        rig.TugStart = time;
-
-        // The yank is toward the far anchor: the end is dragged outward and then released.
-        Vector2 outward = rig.End - rig.Strand.Pos[StrandNodes - 2];
-        outward = outward.LengthSquared() > 1e-4f ? Vector2.Normalize(outward) : new Vector2(0f, 1f);
-        rig.TugVector = outward * (DrawHelpers.HashRange(s + 1, 9f, 24f) * px);
-
-        rig.Agitation = MathF.Max(rig.Agitation, 0.75f);
-        rig.NextTug = time + 3.4f + 4.6f * DrawHelpers.Hash01(s + 2);
-
-        ReportImpact(scene, rig, size, strength: 0.38f, alpha, time, colorOverride);
-    }
-
-    /// <summary>How far the end is currently displaced by a yank: a quick pull out and a slower release.</summary>
-    private static Vector2 TugOffset(Rig rig, float time, float px)
-    {
-        float x = (time - rig.TugStart) / 0.42f;
-        if (x < 0f || x > 1f) return Vector2.Zero;
-        float env = x < 0.30f ? x / 0.30f : MathF.Pow(1f - (x - 0.30f) / 0.70f, 1.6f);
-        return rig.TugVector * env;
     }
 
     // ---- Layout ----
@@ -502,17 +481,16 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
         float horizontal = span.LengthSquared() > 1f ? MathF.Abs(span.X) / span.Length() : 1f;
         r.Slack = slack * (0.30f + 0.70f * horizontal);
         r.Delay = H(6, 0f, MaxThrowDelay);
-        // Throw speed is bounded, not flight time: a head moving faster than the strand can follow
-        // stretches it and leaves the slack in a tangle at the far end.
+        // Speed is what's chosen, not flight time, so a long span isn't faster than a short one.
         float px = MathF.Min(size.X, size.Y) / 1080f;
-        r.Flight = Math.Clamp(Vector2.Distance(a, b) / (H(7, 3000f, 4200f) * px), 0.34f, 0.70f);
+        r.Flight = Math.Clamp(Vector2.Distance(a, b) / (H(7, 4300f, 6200f) * px), 0.20f, 0.50f);
         r.ArcSide = H(8, -0.07f, 0.07f);
         r.SwayPhase = H(9, 0f, MathF.Tau);
+        r.SwayHz = H(10, 0.12f, 0.20f);
 
         r.Launched = false;
         r.Landed = false;
         r.Agitation = 0f;
-        r.TugStart = -10f;
         r.Path.Count = 0;
     }
 }

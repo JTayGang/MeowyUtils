@@ -74,6 +74,21 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
     private static readonly uint Gloom = DrawHelpers.ToU32(0.012f, 0.016f, 0.024f, 1f);
     private static readonly uint Vignette = DrawHelpers.ToU32(0.010f, 0.014f, 0.022f, 1f);
 
+    // ---- layout composition. Each row is (origin edge + range, destination edge + range), with
+    // ranges as 0..1 along their edge. The origin range is held away from the destination's
+    // corner, so no chain becomes a stub in the corner it was aiming for: the top anchor of a
+    // top→right chain never sits in the right third of the top edge, the side anchor of a
+    // right→bottom chain never sits in the bottom third of the right edge, and so on.
+    private static readonly (ScreenEdge From, float FromLo, float FromHi,
+                             ScreenEdge To,   float ToLo,   float ToHi)[] Archetypes =
+    {
+        (ScreenEdge.Top,    0.08f, 0.62f, ScreenEdge.Right,  0.20f, 0.85f),   // top → right
+        (ScreenEdge.Top,    0.38f, 0.92f, ScreenEdge.Left,   0.20f, 0.85f),   // top → left
+        (ScreenEdge.Right,  0.10f, 0.62f, ScreenEdge.Bottom, 0.15f, 0.80f),   // right → bottom
+        (ScreenEdge.Left,   0.10f, 0.62f, ScreenEdge.Bottom, 0.20f, 0.85f),   // left → bottom
+        // Index 4 is the wildcard, handled separately in BuildRig.
+    };
+
     /// <summary>One chain: its anchors, its strand, and its shot state.</summary>
     private sealed class Rig
     {
@@ -409,65 +424,50 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
     // ---- Layout ----
 
     /// <summary>
-    /// Lays out this application's chains. Anchors are chosen from a handful of archetypes (dropped
-    /// from the top, hauled from the bottom, spanning side to side, or any two points on the border)
-    /// in a shuffled order, so every cast has a different composition but never a lopsided one.
-    /// Roughly a quarter are far away: smaller links, hazier, behind the rest.
+    /// Lays out this application's chains. Composition is fixed by <see cref="Archetypes"/> — one
+    /// top-to-side chain per side, one side-to-bottom chain per side, and (on 5-chain casts) one
+    /// wildcard anywhere — so the screen is always covered evenly. What varies per cast is where
+    /// each anchor sits within its edge, which chain is the far one, and every rig's slack, depth
+    /// and flight.
     /// </summary>
     private void BuildLayout(int castSeed, Vector2 size)
     {
         float shortSide = MathF.Min(size.X, size.Y);
         float overhang = shortSide * 0.07f;
 
-        _count = Math.Min(MaxChains, 4 + (int)(DrawHelpers.Hash01(castSeed + 1) * 2f));    // 4 or 5
+        _count = 4 + (int)(DrawHelpers.Hash01(castSeed + 1) * 2f);   // 4 or 5
 
-        Span<int> archetype = stackalloc int[MaxChains] { 0, 1, 2, 3, 0 };
-        for (int i = MaxChains - 1; i > 0; i--)
-        {
-            int j = Math.Min(i, (int)(DrawHelpers.Hash01(castSeed + 100 + i) * (i + 1)));
-            (archetype[i], archetype[j]) = (archetype[j], archetype[i]);
-        }
+        // One random chain per cast is the far one: smaller links, hazier, painted first.
+        int farIdx = (int)(DrawHelpers.Hash01(castSeed + 200) * _count);
+        if (farIdx >= _count) farIdx = _count - 1;
 
         for (int i = 0; i < _count; i++)
-            BuildRig(_rigs[i], i, archetype[i], castSeed, size, overhang);
+            BuildRig(_rigs[i], i, castSeed, size, overhang, farIdx == i);
 
         // Paint order: far (large Depth) first.
         for (int i = 0; i < _count; i++) _drawOrder[i] = i;
         Array.Sort(_drawOrder, 0, _count, Comparer<int>.Create((a, b) => _rigs[b].Depth.CompareTo(_rigs[a].Depth)));
     }
 
-    private static void BuildRig(Rig r, int index, int archetype, int castSeed, Vector2 size, float overhang)
+    private static void BuildRig(Rig r, int index, int castSeed, Vector2 size, float overhang, bool far)
     {
         int s = unchecked(castSeed + index * 977 + 17);
-        bool mirror = DrawHelpers.Hash01(s) < 0.5f;
         float H(int salt, float lo, float hi) => DrawHelpers.HashRange(s + salt, lo, hi);
 
         Vector2 a, b;
-        switch (archetype)
+        if (index >= Archetypes.Length)
         {
-            case 0:   // dropped from the top, ends low on a side
-                a = ScreenEdges.Anchor(size, ScreenEdge.Top, H(1, 0.12f, 0.88f), overhang);
-                b = ScreenEdges.Anchor(size, mirror ? ScreenEdge.Left : ScreenEdge.Right, H(2, 0.42f, 0.95f), overhang);
-                break;
-            case 1:   // hauled up from the bottom, ends high on a side
-                a = ScreenEdges.Anchor(size, ScreenEdge.Bottom, H(1, 0.10f, 0.90f), overhang);
-                b = ScreenEdges.Anchor(size, mirror ? ScreenEdge.Left : ScreenEdge.Right, H(2, 0.05f, 0.58f), overhang);
-                break;
-            case 2:   // side to side
-                a = ScreenEdges.Anchor(size, ScreenEdge.Left, H(1, 0.08f, 0.50f), overhang);
-                b = ScreenEdges.Anchor(size, ScreenEdge.Right, H(2, 0.50f, 0.94f), overhang);
-                if (mirror) (a, b) = (b, a);
-                break;
-            default:  // any two points on the border, at least a full edge apart
-            {
-                float p = H(1, 0f, 4f);
-                a = ScreenEdges.FromPerimeter(size, p, overhang, out _);
-                b = ScreenEdges.FromPerimeter(size, p + H(2, 1.0f, 3.0f), overhang, out _);
-                break;
-            }
+            // Wildcard: any two perimeter points at least one full edge apart — no corner stubs.
+            float p = H(1, 0f, 4f);
+            a = ScreenEdges.FromPerimeter(size, p, overhang, out _);
+            b = ScreenEdges.FromPerimeter(size, p + H(2, 1.0f, 3.0f), overhang, out _);
         }
-
-        bool far = index == 2;   // one far chain per cast, in the middle of the paint order
+        else
+        {
+            var (from, fromLo, fromHi, to, toLo, toHi) = Archetypes[index];
+            a = ScreenEdges.Anchor(size, from, H(1, fromLo, fromHi), overhang);
+            b = ScreenEdges.Anchor(size, to,   H(2, toLo,   toHi),   overhang);
+        }
 
         r.Start = a;
         r.End = b;

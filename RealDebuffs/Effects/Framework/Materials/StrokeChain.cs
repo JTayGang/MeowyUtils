@@ -264,6 +264,12 @@ public sealed class StrokeChain : IStrokeMaterial
         float depthFog = 0.55f * depth;
 
         Vector3 prevN = Vector3.UnitZ, prevT = Vector3.UnitX;
+        Vector2[] outP = MeshDraw.P;
+        uint[] outC = MeshDraw.C;
+
+        // Same bytes WithAlpha would produce (Pack gives alpha 255), without a clamp and conversion per vertex.
+        bool overridden = DrawHelpers.ColorOverrideActive;
+        uint alphaBits = (uint)(int)(255f * (linkAlpha > 0f ? (linkAlpha < 1f ? linkAlpha : 1f) : 0f)) << 24;
         int v = 0;
 
         for (int j = 0; j < M; j++)
@@ -291,25 +297,36 @@ public sealed class StrokeChain : IStrokeMaterial
 
             float cap = ring.Cap[j];
 
-            for (int c = 0; c < nc; c++)
+            // Below this a link's rust never rises above a faint tint, so skip the noise entirely.
+            float rustA = 0f, rustB = 0f;
+            bool rusty = lk.Rust > 0.10f;
+            if (rusty)
+            {
+                float nxr = lk.Index * 1.713f + x / L * 3.4f;
+                float nyr = h * 4.1f + y / L * 3.4f + seed * 0.0007f;
+                rustA = FireNoise.Value(nxr - 0.9f, nyr) * 0.5f + 0.5f;
+                rustB = FireNoise.Value(nxr + 0.9f, nyr) * 0.5f + 0.5f;
+            }
+
+            // Shade the real columns only. The two fringe columns (first/last) sit at the same u as their
+            // neighbour, so same normal, same colour; they only differ in position and alpha (0).
+            int vb = v;
+            for (int c = 1; c < nc - 1; c++)
             {
                 float u = cols[c];
                 float sq = colsSq[c];
-                bool fringe = (c == 0 || c == nc - 1);
 
                 Vector3 n = tStar * u + nStar * sq;
                 Vector2 pos = pos2 + new Vector2(n.X, n.Y) * half;
-                if (fringe) pos += new Vector2(tStar.X, tStar.Y) * (u * feather);
 
                 Vector3 col = body.Sample(n.X, n.Y);
 
-                // Rust patches anchored in link space so they travel with the link.
+                // Rust patches, anchored in link space so they travel with the link. The noise is sampled at the
+                // two bar edges per row and blended across, not per vertex: the patches are low-frequency.
                 float rustMask = 0f;
-                if (lk.Rust > 0.02f)
+                if (rusty)
                 {
-                    float nz = FireNoise.Value(lk.Index * 1.713f + x / L * 3.4f + u * 0.9f,
-                                               h * 4.1f + y / L * 3.4f + seed * 0.0007f);
-                    float rm = (nz * 0.5f + 0.5f) + (lk.Rust - 0.5f) * 0.95f;
+                    float rm = rustA + (rustB - rustA) * (u * 0.5f + 0.5f) + (lk.Rust - 0.5f) * 0.95f;
                     float t = Math.Clamp((rm - 0.56f) / 0.24f, 0f, 1f);
                     rustMask = t * t * (3f - 2f * t) * (1f - 0.85f * cap) * 0.85f;
                 }
@@ -324,11 +341,17 @@ public sealed class StrokeChain : IStrokeMaterial
                 if (agit > 0.01f) col += col * (col * (0.55f * agit));
                 if (depthFog > 0f) col = Vector3.Lerp(col, Fog, depthFog);
 
-                float va = fringe ? 0f : 1f;
-                MeshDraw.P[v] = pos;
-                MeshDraw.C[v] = DrawHelpers.WithAlpha(FireColor.Pack(col.X, col.Y, col.Z), va * linkAlpha);
-                v++;
+                outP[vb + c] = pos;
+                uint rgb = FireColor.Pack(col.X, col.Y, col.Z);
+                outC[vb + c] = overridden ? DrawHelpers.WithAlpha(rgb, linkAlpha) : (rgb & 0x00FFFFFFu) | alphaBits;
             }
+
+            // Fringe: the neighbour's colour at alpha 0, pushed outward by the feather.
+            outP[vb] = outP[vb + 1] + new Vector2(tStar.X, tStar.Y) * (cols[0] * feather);
+            outC[vb] = outC[vb + 1] & 0x00FFFFFFu;
+            outP[vb + nc - 1] = outP[vb + nc - 2] + new Vector2(tStar.X, tStar.Y) * (cols[nc - 1] * feather);
+            outC[vb + nc - 1] = outC[vb + nc - 2] & 0x00FFFFFFu;
+            v += nc;
         }
 
         MeshDraw.Grid(dl, nc - 1, M - 1, MeshDraw.WhiteUv(ctx.Time));

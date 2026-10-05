@@ -73,7 +73,7 @@ public static class SurfacePresets
 public sealed class Matcap
 {
     private const int N = 48;
-    private readonly float[] _rgb = new float[N * N * 3];
+    private readonly Vector4[] _rgb = new Vector4[N * N];   // w unused: one 16-byte load per texel
 
     public Matcap(in SurfaceSpec spec)
     {
@@ -87,8 +87,7 @@ public sealed class Matcap
             var n = new Vector3(nx, ny, MathF.Sqrt(MathF.Max(0f, 1f - r2)));
 
             Vector3 c = Shade(n, in spec);
-            int i = (y * N + x) * 3;
-            _rgb[i] = c.X; _rgb[i + 1] = c.Y; _rgb[i + 2] = c.Z;
+            _rgb[y * N + x] = new Vector4(c, 0f);
         }
     }
 
@@ -102,13 +101,11 @@ public sealed class Matcap
 
         int x0 = (int)fx, y0 = (int)fy;
         float tx = fx - x0, ty = fy - y0;
-        int i00 = (y0 * N + x0) * 3, i10 = i00 + 3, i01 = i00 + N * 3, i11 = i01 + 3;
+        int i00 = y0 * N + x0;
 
         float w00 = (1f - tx) * (1f - ty), w10 = tx * (1f - ty), w01 = (1f - tx) * ty, w11 = tx * ty;
-        return new Vector3(
-            _rgb[i00]     * w00 + _rgb[i10]     * w10 + _rgb[i01]     * w01 + _rgb[i11]     * w11,
-            _rgb[i00 + 1] * w00 + _rgb[i10 + 1] * w10 + _rgb[i01 + 1] * w01 + _rgb[i11 + 1] * w11,
-            _rgb[i00 + 2] * w00 + _rgb[i10 + 2] * w10 + _rgb[i01 + 2] * w01 + _rgb[i11 + 2] * w11);
+        Vector4 c = _rgb[i00] * w00 + _rgb[i00 + 1] * w10 + _rgb[i00 + N] * w01 + _rgb[i00 + N + 1] * w11;
+        return new Vector3(c.X, c.Y, c.Z);
     }
 
     private static Vector3 Shade(Vector3 n, in SurfaceSpec s)

@@ -195,12 +195,15 @@ internal static class DrawHelpers
         return (r1 + m, g1 + m, b1 + m);
     }
 
+    /// <summary>True while a colour override is pushed; lets a mesh material skip WithAlpha's per-vertex remap.</summary>
+    public static bool ColorOverrideActive => _colorOverride.HasValue;
+
     public static uint WithAlpha(uint color, float mul)
     {
         color = ApplyColorOverride(color);
-        mul = Math.Clamp(mul, 0f, 1f);
+        mul = mul > 0f ? (mul < 1f ? mul : 1f) : 0f;
         uint a = (color >> 24) & 0xFF;
-        a = (uint)(a * mul);
+        a = (uint)(int)(a * mul);     // signed conversion: see FireColor.Q
         return (color & 0x00FFFFFF) | (a << 24);
     }
 

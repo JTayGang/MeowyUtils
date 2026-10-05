@@ -73,6 +73,9 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
     // ---- debris shows only this close to a screen edge (px at 1080p) ----
     private const float EmitEdgeReach = 190f;
 
+    // ...and within this arc distance of a chain's origin or landing point (chains start ~75px off-screen).
+    private const float EmitEndReach = 300f;
+
     // ---- wind: a slow swell per chain plus gusts, so no chain is ever still ----
     private const float SwayAmp = 15f;             // px at 1080p, mid-span; the swell and gusts scale it
     private const float SwayGustHz = 0.30f;
@@ -166,6 +169,7 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
                 Depth = rig.Depth,
                 Agitation = rig.Agitation,
                 EmitEdgeReach = EmitEdgeReach,
+                EmitEndReach = EmitEndReach,
                 ColorOverride = colorOverride,
             });
         }

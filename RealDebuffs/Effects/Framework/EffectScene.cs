@@ -69,6 +69,12 @@ public struct StrokePrimitive
     /// the frame. Needs EffectScene.ScreenSize; ignored while that is unset.
     /// </summary>
     public float EmitEdgeReach;
+
+    /// <summary>
+    /// 0 = unrestricted. Above 0, trickle emissions only spawn within this arc distance (px at 1080p)
+    /// of either end of the strand (origin or landing point). Combines with EmitEdgeReach: both must hold.
+    /// </summary>
+    public float EmitEndReach;
 }
 
 public struct ParticlePrimitive

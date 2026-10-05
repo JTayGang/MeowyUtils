@@ -134,6 +134,8 @@ public static class StrokeAutoEmitter
         if (visibleLen < 8f) return;
 
         float expected = e.DensityPer100px * visibleLen / 100f * dt;
+        float reach = EndReachArc(in s, visibleLen);
+        if (reach > 0f) expected *= 2f * reach / visibleLen;
         int toSpawn = (int)expected;
         if (DrawHelpers.Hash01(unchecked(s.Seed + (int)(time * 90f) + (int)e.Role * 7919)) < expected - toSpawn)
             toSpawn++;
@@ -267,7 +269,7 @@ public static class StrokeAutoEmitter
     {
         if (_freeFlyCount >= FreeFlyCapacity) return;
 
-        float arc = visibleLen * DrawHelpers.Hash01(seed);
+        float arc = PickArc(in s, visibleLen, seed);
         s.Path.SampleAtArc(arc, out Vector2 pos, out Vector2 tan);
         if (!WithinEmitReach(in s, pos)) return;
 
@@ -309,6 +311,9 @@ public static class StrokeAutoEmitter
         };
     }
 
+    private static float PxScale() =>
+        _screen.X > 0f ? Math.Clamp(MathF.Min(_screen.X, _screen.Y) / 1080f, 0.75f, 2.4f) : 1f;
+
     /// <summary>
     /// False if the stroke wants its debris only near the screen edge (EmitEdgeReach) and this point
     /// is further in, or off-screen where nobody would see it. Rejecting rather than redistributing
@@ -318,9 +323,27 @@ public static class StrokeAutoEmitter
     {
         if (s.EmitEdgeReach <= 0f || _screen.X <= 0f) return true;
 
-        float px = Math.Clamp(MathF.Min(_screen.X, _screen.Y) / 1080f, 0.75f, 2.4f);
         float edge = MathF.Min(MathF.Min(p.X, _screen.X - p.X), MathF.Min(p.Y, _screen.Y - p.Y));
-        return edge >= 0f && edge <= s.EmitEdgeReach * px;
+        return edge >= 0f && edge <= s.EmitEdgeReach * PxScale();
+    }
+
+    /// <summary>The EmitEndReach window in arc px, or 0 if unrestricted (unset, or the windows cover the whole strand).</summary>
+    private static float EndReachArc(in StrokePrimitive s, float visibleLen)
+    {
+        if (s.EmitEndReach <= 0f) return 0f;
+        float reach = s.EmitEndReach * PxScale();
+        return 2f * reach >= visibleLen ? 0f : reach;
+    }
+
+    /// <summary>Where along the strand to spawn: anywhere, or only in the stretches by its two ends (EmitEndReach).</summary>
+    private static float PickArc(in StrokePrimitive s, float visibleLen, int seed)
+    {
+        float u = DrawHelpers.Hash01(seed);
+        float reach = EndReachArc(in s, visibleLen);
+        if (reach <= 0f) return visibleLen * u;
+
+        float t = u * 2f * reach;
+        return t < reach ? t : visibleLen - reach + (t - reach);
     }
 
     private static Vector2 Rotate(Vector2 v, float radians)
@@ -334,7 +357,7 @@ public static class StrokeAutoEmitter
     {
         if (_flowCount >= FlowCapacity) return;
 
-        float arc = visibleLen * DrawHelpers.Hash01(seed);
+        float arc = PickArc(in s, visibleLen, seed);
         if (s.EmitEdgeReach > 0f)
         {
             s.Path.SampleAtArc(arc, out Vector2 at, out _);

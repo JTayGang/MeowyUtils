@@ -76,6 +76,14 @@ public struct StrokePrimitive
     /// of either end of the strand (origin or landing point). Combines with EmitEdgeReach: both must hold.
     /// </summary>
     public float EmitEndReach;
+
+    /// <summary>
+    /// How far the strand is rotated about its own axis right now, in radians, at its middle (zero at
+    /// the anchored ends; the whole loop turns together on a closed path). Animate it back and forth
+    /// and a hanging strand twists. Materials with a lay to show (rope strands, a braid) slide it
+    /// along the strand; the rest ignore it.
+    /// </summary>
+    public float Twist;
 }
 
 public struct ParticlePrimitive

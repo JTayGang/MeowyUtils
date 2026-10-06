@@ -198,6 +198,29 @@ internal static class DrawHelpers
     /// <summary>True while a colour override is pushed; lets a mesh material skip WithAlpha's per-vertex remap.</summary>
     public static bool ColorOverrideActive => _colorOverride.HasValue;
 
+    /// <summary>
+    /// The saturation (0..1) of the active override colour, when that colour is chromatic; 0 when there
+    /// is no override, or it is white, black or grey. A chromatic override keeps each source pixel's own
+    /// saturation, so a material whose source palette is muted (hemp, say) comes out muted whatever
+    /// colour it is asked to be. A material that wants "red" to be as red as red actually is can read
+    /// this and <see cref="WithSaturation"/> its colours before they pass through WithAlpha.
+    /// </summary>
+    public static float ColorOverrideChroma =>
+        _colorOverride is { } ov && ov.Saturation >= 0.05f ? ov.Saturation : 0f;
+
+    /// <summary>The colour with its HSV saturation set to <paramref name="s"/>, hue and value unchanged.</summary>
+    public static Vector3 WithSaturation(Vector3 c, float s)
+    {
+        float mx = MathF.Max(c.X, MathF.Max(c.Y, c.Z));
+        float mn = MathF.Min(c.X, MathF.Min(c.Y, c.Z));
+        float have = mx > 1e-4f ? (mx - mn) / mx : 0f;
+        if (have < 1e-3f) return c;                       // grey has no hue to saturate
+
+        // Scale each channel's distance below the maximum: the maximum (value) and the order of the channels (hue) stay put.
+        float k = Math.Clamp(s, 0f, 1f) / have;
+        return new Vector3(mx - (mx - c.X) * k, mx - (mx - c.Y) * k, mx - (mx - c.Z) * k);
+    }
+
     public static uint WithAlpha(uint color, float mul)
     {
         color = ApplyColorOverride(color);

@@ -42,6 +42,10 @@ public sealed class ParticleFibre : IParticleMaterial
         float glint = MathF.Pow(MathF.Max(0f, MathF.Cos(flip - 0.9f)), 8f);
         uint col = DrawHelpers.LerpColor(DrawHelpers.Hash01(seed + 5) < 0.6f ? Lit : Dull, Glint, glint * 0.7f);
 
+        // Under a colour override, match the rope: its dye is as saturated as the colour asked for, not as muted as the hemp.
+        float dye = DrawHelpers.ColorOverrideChroma;
+        if (dye > 0f) col = Dyed(col, dye);
+
         float len = p.Size * (1f - 0.20f * p.AgeRatio);
         float step = len / Segments;
         float bend = DrawHelpers.HashRange(seed + 6, -1.1f, 1.1f);
@@ -61,6 +65,13 @@ public sealed class ParticleFibre : IParticleMaterial
             dl.AddLine(prev, next, DrawHelpers.WithAlpha(col, k * 0.80f * taper), width);
             prev = next;
         }
+    }
+
+    private static uint Dyed(uint packed, float saturation)
+    {
+        var c = new Vector3((packed & 255) / 255f, ((packed >> 8) & 255) / 255f, ((packed >> 16) & 255) / 255f);
+        c = DrawHelpers.WithSaturation(c, saturation);
+        return FireColor.Pack(c.X, c.Y, c.Z);
     }
 
     public ReadOnlySpan<StrokeEmission> Emissions => EmissionSpecs;

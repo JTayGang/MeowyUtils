@@ -24,9 +24,17 @@ namespace RealDebuffs.Effects.Framework.Materials;
 /// range, and slimmed a little by Depth); Closed wraps the seam and rounds the lay to a whole number
 /// of turns so the strands join up; Reveal grows the rope from its start, ending in a rounded tip;
 /// FlushStart gives the start a flat cut (it sits against a screen edge) instead of a rounded end;
-/// Depth fogs, softens and slims; Agitation brightens the rope and shivers its strands; TipFlare
+/// Twist rotates the rope about its own axis (zero at the anchored ends, so a rope fixed at both ends
+/// twists most in the middle; the whole loop turns together when closed), which slides the lay along
+/// it; Depth fogs, softens and slims; Agitation brightens the rope and shivers its strands; TipFlare
 /// weights a live tip with a monkey's fist (the ball of wound rope on a heaving line), so a rope that
 /// is flying or growing has a head.
+///
+/// RECOLOURING. A colour override replaces hue but keeps each pixel's own saturation, and hemp is a
+/// muted tan, so left alone every dye would come out muted. When a chromatic override is active the
+/// rope sets its own saturation to the override colour's, before the override is applied: "red rope"
+/// is as red as the red it was asked for, "pink rope" stays paler than "red rope", and white, black
+/// and grey overrides are untouched.
 ///
 /// Performance follows StrokeChain: tier tables are built once, scratch buffers are preallocated,
 /// the path is walked with a cursor rather than searched, off-screen runs of the mesh are skipped,
@@ -140,6 +148,7 @@ public sealed class StrokeRope : IStrokeMaterial
         public uint  AlphaBits;
         public float Alpha;
         public bool  Overridden;
+        public float Dye;                       // saturation to dye to under a chromatic colour override; 0 = leave the palette's own
     }
 
     public void Draw(ImDrawListPtr dl, in StrokePrimitive s, in MaterialContext ctx)
@@ -196,6 +205,7 @@ public sealed class StrokeRope : IStrokeMaterial
             Agit = agit,
             Alpha = alpha,
             Overridden = DrawHelpers.ColorOverrideActive,
+            Dye = DrawHelpers.ColorOverrideChroma,
             AlphaBits = (uint)(int)(255f * (alpha > 0f ? (alpha < 1f ? alpha : 1f) : 0f)) << 24,
         };
 
@@ -204,7 +214,7 @@ public sealed class StrokeRope : IStrokeMaterial
 
         // ---- cut the rope into cross-sections ----
         int n = BuildRows(path, total, visibleLen, closed, s.FlushStart, diameter, radius, tier, layLen,
-                          psi0, ph1, ph2, ph3, agit, ctx.Time, px, depth, in look);
+                          psi0, ph1, ph2, ph3, agit, ctx.Time, px, depth, s.Twist / MathF.Tau, in look);
         if (n < 2) return;
 
         StrandShading.DrawShadow(dl, path, diameter * 3f, depth, alpha, ctx, closed, visibleLen);
@@ -265,6 +275,7 @@ public sealed class StrokeRope : IStrokeMaterial
                 // Coil height: each axis wraps four bands round the ball; where coils cross, the higher one is on top.
                 float h = MathF.Max(Coil(n, a1), MathF.Max(Coil(n, a2), Coil(n, a3)));
                 Vector3 col = look.Body.Sample(n.X, n.Y) * (0.42f + 0.72f * h * h);
+                if (look.Dye > 0f) col = DrawHelpers.WithSaturation(col, look.Dye);
                 if (look.Agit > 0.01f) col += col * (col * (0.50f * look.Agit));
                 if (look.Fog > 0f) col = Vector3.Lerp(col, StrandShading.DepthFog, look.Fog);
 
@@ -298,7 +309,7 @@ public sealed class StrokeRope : IStrokeMaterial
 
     private int BuildRows(StrandPath path, float total, float visibleLen, bool closed, bool flushStart,
                           float diameter, float radius, Tier tier, float layLen,
-                          float psi0, float ph1, float ph2, float ph3, float agit, float time, float px, float depth, in Look look)
+                          float psi0, float ph1, float ph2, float ph3, float agit, float time, float px, float depth, float twistTurns, in Look look)
     {
         int pn = Math.Min(path.Count, MaxPathPoints);
         PreparePointTangents(path, pn, closed);
@@ -360,6 +371,8 @@ public sealed class StrokeRope : IStrokeMaterial
             float psi = psi0 + sArc * layRate;
             if (!closed) psi += 0.035f * MathF.Sin(MathF.Tau * sArc / (diameter * 7.3f) + ph1);   // a lay that isn't machine-perfect
             if (agit > 0.01f) psi += agit * 0.025f * MathF.Sin(time * 19f + sArc / diameter * 2.1f);
+            // Twist: the whole rope turning about its axis. Fixed at both ends, it turns most in the middle.
+            if (twistTurns != 0f) psi += twistTurns * (closed ? 1f : MathF.Sin(MathF.PI * sArc / total));
             r.Psi = psi;
 
             float wobble = 1f + 0.035f * MathF.Sin(MathF.Tau * sArc * wobbleRate + ph2);
@@ -532,6 +545,7 @@ public sealed class StrokeRope : IStrokeMaterial
             float strandTone = strand == 0 ? row.Tone0 : (strand == 1 ? row.Tone1 : row.Tone2);
 
             col *= (1f - look.Groove * vg * vg) * strandTone;
+            if (look.Dye > 0f) col = DrawHelpers.WithSaturation(col, look.Dye);
 
             if (look.Agit > 0.01f) col += col * (col * (0.50f * look.Agit));
             if (look.Fog > 0f) col = Vector3.Lerp(col, StrandShading.DepthFog, look.Fog);

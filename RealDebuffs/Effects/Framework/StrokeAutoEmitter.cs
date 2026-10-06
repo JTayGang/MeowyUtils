@@ -81,6 +81,24 @@ public static class StrokeAutoEmitter
             string? emitOverride = overrides?.GetValueOrDefault(
                 MaterialOverrideKey.ForStrokeEmit(s.Owner, s.Role));
 
+            string materialName = MaterialOverrideKey.ResolveStroke(in s, overrides);
+
+            // A stroke whose stroke material OR emit-axis has been swapped away from what the effect
+            // declared is user-customized. Drop the effect's emission windows so the swapped-in material
+            // sheds along the ENTIRE strand, not just the stretches the effect's native material wanted
+            // (Heavy confines its rust/sparks/dust to edges and chain ends). Native materials are
+            // unaffected - they still resolve to their declared default and keep their windows.
+            string? declaredStroke = EffectRegistry.DefaultFor(
+                s.Owner, "Stroke", MaterialOverrideKey.RoleName(s.Role));
+            bool swapped = emitOverride is not null
+                || (declaredStroke is not null
+                    && !string.Equals(materialName, declaredStroke, StringComparison.OrdinalIgnoreCase));
+            if (swapped)
+            {
+                s.EmitEdgeReach = 0f;
+                s.EmitEndReach = 0f;
+            }
+
             if (emitOverride is not null)
             {
                 var emitter = MaterialRegistry.TryGetParticle(emitOverride);
@@ -92,7 +110,6 @@ public static class StrokeAutoEmitter
                 continue;
             }
 
-            string materialName = MaterialOverrideKey.ResolveStroke(in s, overrides);
             var material = MaterialRegistry.TryGetStroke(materialName);
             if (material is null) continue;
 

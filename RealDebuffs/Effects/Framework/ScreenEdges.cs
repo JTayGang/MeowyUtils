@@ -101,5 +101,35 @@ public static class ScreenEdges
         return false;
     }
 
+    /// <summary>
+    /// The mirror of <see cref="TryFindExit"/>: finds where a strand first comes ON screen, scanning
+    /// from its start, the point where it appears from behind the edge it is anchored to.
+    /// <paramref name="inward"/> is the unit direction of travel at the crossing, pointing into the screen.
+    /// </summary>
+    public static bool TryFindEntry(StrandPath path, Vector2 size, out Vector2 point, out Vector2 inward)
+    {
+        point = default;
+        inward = default;
+
+        for (int i = 0; i < path.Count - 1; i++)
+        {
+            Vector2 outside = path.Points[i], inside = path.Points[i + 1];
+            if (Inside(outside, size) || !Inside(inside, size)) continue;
+
+            Vector2 d = inside - outside;
+            float t = 0f;
+            if (outside.X < 0f && d.X > 0f)       t = MathF.Max(t, (0f - outside.X) / d.X);
+            if (outside.X > size.X && d.X < 0f)   t = MathF.Max(t, (size.X - outside.X) / d.X);
+            if (outside.Y < 0f && d.Y > 0f)       t = MathF.Max(t, (0f - outside.Y) / d.Y);
+            if (outside.Y > size.Y && d.Y < 0f)   t = MathF.Max(t, (size.Y - outside.Y) / d.Y);
+
+            point = outside + d * Math.Clamp(t, 0f, 1f);
+            float len = d.Length();
+            inward = len > 1e-4f ? d / len : Inward(Nearest(size, point));
+            return true;
+        }
+        return false;
+    }
+
     private static bool Inside(Vector2 p, Vector2 size) => p.X >= 0f && p.X <= size.X && p.Y >= 0f && p.Y <= size.Y;
 }

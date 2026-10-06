@@ -22,6 +22,7 @@ public enum PrimitiveRole
     Cinder = 19,
     Dust = 20,
     Flake = 21,
+    Fibre = 22,
 }
 
 public struct StrokePrimitive

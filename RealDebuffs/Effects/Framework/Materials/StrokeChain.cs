@@ -36,10 +36,6 @@ public sealed class StrokeChain : IStrokeMaterial
     private static readonly Matcap Aged  = new(SurfacePresets.AgedIron);
     private static readonly Matcap Rust  = new(SurfacePresets.Rust);
 
-    private static readonly Vector3 Fog        = new(0.105f, 0.125f, 0.165f);
-    private static readonly uint    ShadowTint = FireColor.Pack(0.015f, 0.016f, 0.022f);
-    private static readonly uint    FlareWarm  = FireColor.Pack(1.00f, 0.80f, 0.52f);
-
     private sealed class RingTable
     {
         public int M;
@@ -159,7 +155,7 @@ public sealed class StrokeChain : IStrokeMaterial
         float visibleLen = total * reveal;
         bool fullyRevealed = reveal >= 1f;
 
-        DrawShadow(dl, path, L, depth, alpha, ctx, closed, visibleLen);
+        StrandShading.DrawShadow(dl, path, L, depth, alpha, ctx, closed, visibleLen);
 
         int linkCount = 0;
         float margin = L * 1.2f;
@@ -237,7 +233,7 @@ public sealed class StrokeChain : IStrokeMaterial
         {
             float tipS = fullyRevealed ? total : visibleLen;
             path.SampleAtArc(tipS, out Vector2 tip, out _);
-            DrawFlare(dl, tip, bar, Math.Clamp(s.TipFlare, 0f, 1f) * alpha, ctx);
+            StrandShading.DrawFlare(dl, tip, bar, Math.Clamp(s.TipFlare, 0f, 1f) * alpha, ctx);
         }
     }
 
@@ -339,7 +335,7 @@ public sealed class StrokeChain : IStrokeMaterial
                 col *= ao * wear * lk.Tone;
 
                 if (agit > 0.01f) col += col * (col * (0.55f * agit));
-                if (depthFog > 0f) col = Vector3.Lerp(col, Fog, depthFog);
+                if (depthFog > 0f) col = Vector3.Lerp(col, StrandShading.DepthFog, depthFog);
 
                 outP[vb + c] = pos;
                 uint rgb = FireColor.Pack(col.X, col.Y, col.Z);
@@ -355,58 +351,6 @@ public sealed class StrokeChain : IStrokeMaterial
         }
 
         MeshDraw.Grid(dl, nc - 1, M - 1, MeshDraw.WhiteUv(ctx.Time));
-    }
-
-    /// <summary>Soft cast band under the strand, displaced away from the key light.</summary>
-    private void DrawShadow(ImDrawListPtr dl, StrandPath path, float L, float depth, float alpha,
-                            in MaterialContext ctx, bool closed, float visibleLen)
-    {
-        float a = alpha * 0.40f * (1f - 0.45f * depth);
-        if (a <= 0.004f) return;
-
-        float total = path.Length;
-        bool full = closed || visibleLen >= total;
-        float s0 = closed ? 0f : (full ? -L * 0.5f : 0f);
-        float s1 = closed ? total : (full ? total + L * 0.5f : visibleLen);
-        int rows = Math.Clamp((int)((s1 - s0) / (L * 0.5f)), 3, 40);
-        float reach = L * 0.60f * (1f - 0.55f * depth);
-        Vector2 offset = StudioLighting.ShadowDirection * reach;
-        float hw = L * 0.34f;
-        float soft = hw * (0.9f + 1.1f * depth);
-
-        ReadOnlySpan<float> across = stackalloc float[5] { -1f, -0.55f, 0f, 0.55f, 1f };
-        ReadOnlySpan<float> prof = stackalloc float[5] { 0f, 0.62f, 1f, 0.62f, 0f };
-
-        int v = 0;
-        for (int r = 0; r <= rows; r++)
-        {
-            float sArc = s0 + (s1 - s0) * r / rows;
-            path.SampleAtArc(sArc, out Vector2 p, out Vector2 t);
-            Vector2 nrm = new(-t.Y, t.X);
-            float edgeFade = closed ? 1f : MathF.Min(1f, MathF.Min(r, rows - r) / 1.5f);
-
-            for (int c = 0; c < 5; c++)
-            {
-                float w = across[c];
-                MeshDraw.P[v] = p + offset + nrm * (w * (hw + soft * 0.5f * MathF.Abs(w)));
-                MeshDraw.C[v] = DrawHelpers.WithAlpha(ShadowTint, a * prof[c] * edgeFade);
-                v++;
-            }
-        }
-        MeshDraw.Grid(dl, 4, rows, MeshDraw.WhiteUv(ctx.Time));
-    }
-
-    private static void DrawFlare(ImDrawListPtr dl, Vector2 tip, float bar, float k, in MaterialContext ctx)
-    {
-        if (k <= 0.004f) return;
-        Span<float> rr = stackalloc float[2] { bar * 1.1f, bar * 3.0f };
-        Span<uint> cc = stackalloc uint[2]
-        {
-            DrawHelpers.WithAlpha(FlareWarm, 0.30f * k),
-            DrawHelpers.WithAlpha(FlareWarm, 0f),
-        };
-        MeshDraw.Radial(dl, tip, MeshDraw.WhiteUv(ctx.Time), DrawHelpers.WithAlpha(0xFFFFFFFFu, 0.85f * k),
-                        10, rr, cc, 0f, 1f, 0, 0f);
     }
 
     private static Vector2 SampleWrapped(StrandPath path, float s, float total, bool closed)

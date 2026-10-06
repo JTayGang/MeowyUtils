@@ -51,6 +51,21 @@ public static class SurfacePresets
         Albedo: new(0.060f, 0.042f, 0.030f), F0: new(0.30f, 0.255f, 0.215f),
         Metalness: 0.82f, Roughness: 0.56f, EnvStrength: 0.62f, Ambient: 0.010f);
 
+    /// <summary>Hemp: warm tan plant fibre. Fully diffuse, rough as felt, with only a faint broad sheen where it grazes the light.</summary>
+    public static readonly SurfaceSpec Hemp = new(
+        Albedo: new(0.40f, 0.27f, 0.13f), F0: new(0.05f, 0.045f, 0.04f),
+        Metalness: 0.0f, Roughness: 0.93f, EnvStrength: 0.05f, Ambient: 0.014f);
+
+    /// <summary>Manila: paler and yellower than hemp, a little silkier.</summary>
+    public static readonly SurfaceSpec Manila = new(
+        Albedo: new(0.52f, 0.40f, 0.21f), F0: new(0.06f, 0.055f, 0.045f),
+        Metalness: 0.0f, Roughness: 0.88f, EnvStrength: 0.06f, Ambient: 0.016f);
+
+    /// <summary>Tarred rope: near-black brown with a dull wet sheen. Reads as a dark rope against a dark scene.</summary>
+    public static readonly SurfaceSpec Tarred = new(
+        Albedo: new(0.085f, 0.060f, 0.040f), F0: new(0.07f, 0.065f, 0.060f),
+        Metalness: 0.0f, Roughness: 0.62f, EnvStrength: 0.20f, Ambient: 0.008f);
+
     /// <summary>Rust scale: pure diffuse, orange-brown, nearly matte. Blended over any of the above as patina.</summary>
     public static readonly SurfaceSpec Rust = new(
         Albedo: new(0.110f, 0.044f, 0.020f), F0: new(0.05f, 0.03f, 0.02f),

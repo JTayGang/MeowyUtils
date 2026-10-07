@@ -23,6 +23,8 @@ public enum PrimitiveRole
     Dust = 20,
     Flake = 21,
     Fibre = 22,
+    Glint = 23,
+    Mist = 24,
 }
 
 public struct StrokePrimitive
@@ -116,6 +118,12 @@ public struct RegionPrimitive
     public float Alpha;
     public PrimitiveRole Role;
     public bool Top, Bottom, Left, Right;
+
+    /// <summary>
+    /// Optional payload for materials whose geometry comes from effect-built data too large to fit in
+    /// a primitive (a growth field, a branch forest). Materials must ignore state they don't recognize.
+    /// </summary>
+    public object? State;
 
     public readonly bool HasEdge => Top || Bottom || Left || Right;
 }

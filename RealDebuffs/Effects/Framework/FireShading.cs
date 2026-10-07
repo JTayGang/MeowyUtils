@@ -150,7 +150,7 @@ internal static class FireColor
 ///
 /// Scratch buffers are static; drawing is single-threaded on ImGui's UI thread.
 /// </summary>
-internal static unsafe class MeshDraw
+internal static unsafe partial class MeshDraw
 {
     public const int MaxVerts = 512;
     public static readonly Vector2[] P = new Vector2[MaxVerts];
@@ -168,8 +168,12 @@ internal static unsafe class MeshDraw
         if (frameTime != _whiteStamp)
         {
             _whiteUv = ImGui.GetFontTexUvWhitePixel();
-            _whiteUv.X += 0.0008f;   // <-- important to prevent transparency issues
-            _whiteUv.Y += 0.0008f;   // <-- important to prevent transparency issues
+            // Nudge half a texel, whatever the atlas size, to prevent transparency issues: the white
+            // pixel's UV sits on the centre of the first texel of a 2x2 white block, so half a texel in
+            // is the middle of the block, where bilinear sampling can only ever see white. (A fixed UV
+            // offset only worked while the atlas was no wider than 1024 texels: at 2048 it samples
+            // outside the block, at 4096 it samples nothing.)
+            _whiteUv += ImGui.GetIO().Fonts.TexUvScale * 0.5f;
             _whiteStamp = frameTime;
         }
         return _whiteUv;

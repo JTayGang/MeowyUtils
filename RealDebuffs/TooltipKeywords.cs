@@ -146,6 +146,26 @@ public static class TooltipKeywordParser
                 materialPhrases.Add((m.Index, m.Index + m.Length, matName));
         }
 
+        // Resolves one keyword hit into a candidate (color from a [color=] tag or its clause) and keeps the
+        // best candidate per kind.
+        void Consider(DebuffKind kind, int index, string? material)
+        {
+            Vector4? tagColor = FindTagColor(colorRuns, index);
+            Vector4? clauseColor = tagColor == null ? FindClauseColor(clauses, colorWords, index) : null;
+            Vector4? resolved = tagColor ?? clauseColor;
+
+            var source = tagColor != null ? TooltipColorSource.Tag
+                : clauseColor != null ? TooltipColorSource.Clause
+                : TooltipColorSource.None;
+
+            var candidate = new TooltipEffectMatch(kind, resolved, source, material);
+            if (!best.TryGetValue(kind, out var existing) || (candidate.Color != null && existing.Color == null))
+                best[kind] = candidate;
+        }
+
+        var accepted = new List<(DebuffKind Kind, int Index)>();
+        var shadowed = new List<(DebuffKind Kind, int Index)>();
+
         foreach (var rule in rules)
         {
             if (!rule.Enabled) continue;
@@ -163,22 +183,26 @@ public static class TooltipKeywordParser
                         break;
                     }
                 }
-                if (insideMaterial) continue;
+                if (insideMaterial) { shadowed.Add((rule.Kind, m.Index)); continue; }
 
-                Vector4? tagColor = FindTagColor(colorRuns, m.Index);
-                Vector4? clauseColor = tagColor == null ? FindClauseColor(clauses, colorWords, m.Index) : null;
-                Vector4? resolved = tagColor ?? clauseColor;
-
-                var source = tagColor != null ? TooltipColorSource.Tag
-                    : clauseColor != null ? TooltipColorSource.Clause
-                    : TooltipColorSource.None;
-
-                string? matchMaterial = MaterialInSameClause(clauses, materialPhrases, m.Index);
-
-                var candidate = new TooltipEffectMatch(rule.Kind, resolved, source, matchMaterial);
-                if (!best.TryGetValue(rule.Kind, out var existing) || (candidate.Color != null && existing.Color == null))
-                    best[rule.Kind] = candidate;
+                accepted.Add((rule.Kind, m.Index));
+                Consider(rule.Kind, m.Index, MaterialInSameClause(clauses, materialPhrases, m.Index));
             }
+        }
+
+        // A keyword inside a "made of X" phrase modifies another effect instead of activating its own
+        // ("flames" in "chains made of flames"). But when no other effect in its clause is there to be
+        // modified ("a layer of frost"), the phrase is only describing the status, so the keyword
+        // activates its effect after all - without taking the phrase as a material substitute, since
+        // the phrase names the thing itself rather than something to make it out of.
+        foreach (var (kind, index) in shadowed)
+        {
+            if (best.ContainsKey(kind)) continue;
+            int clause = ClauseOf(clauses, index);
+            bool hasHost = false;
+            for (int i = 0; i < accepted.Count && !hasHost; i++)
+                hasHost = accepted[i].Kind != kind && ClauseOf(clauses, accepted[i].Index) == clause;
+            if (!hasHost) Consider(kind, index, null);
         }
 
         if (best.Count == 0) return Array.Empty<TooltipEffectMatch>();
@@ -186,6 +210,14 @@ public static class TooltipKeywordParser
         var result = new List<TooltipEffectMatch>(best.Count);
         foreach (var kv in best) result.Add(kv.Value);
         return result;
+    }
+
+    /// <summary>Index of the clause containing idx (-1 if none).</summary>
+    private static int ClauseOf(List<(int Start, int End)> clauses, int idx)
+    {
+        for (int c = 0; c < clauses.Count; c++)
+            if (idx >= clauses[c].Start && idx < clauses[c].End) return c;
+        return -1;
     }
 
     /// <summary>The material phrase belonging to the clause containing idx, if any. First wins.</summary>

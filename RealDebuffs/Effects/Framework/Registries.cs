@@ -90,6 +90,8 @@ public static class EffectRegistry
         PrimitiveRole.Dust       => "particle.dust",
         PrimitiveRole.Flake      => "particle.flake",
         PrimitiveRole.Fibre      => "particle.fibre",
+        PrimitiveRole.Glint      => "particle.glint",
+        PrimitiveRole.Mist       => "particle.mist",
         _                        => "particle.spark",
     };
 
@@ -122,6 +124,7 @@ public static class MaterialRegistry
         Add(Regions, new RegionFlatFill());
         Add(Regions, new RegionEdgeGlow());
         Add(Regions, new RegionFirelight());
+        Add(Regions, new RegionFrost());
 
         Add(Strokes, new StrokeSimple());
         Add(Strokes, new StrokeChain());
@@ -140,6 +143,8 @@ public static class MaterialRegistry
         Add(Particles, new ParticleDust());
         Add(Particles, new ParticleFlake());
         Add(Particles, new ParticleFibre());
+        Add(Particles, new ParticleGlint());
+        Add(Particles, new ParticleMist());
 
         var vocabulary = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var material in All)

@@ -4,23 +4,16 @@ using RealDebuffs.Effects.Framework;
 namespace RealDebuffs.Effects;
 
 /// <summary>
-/// Frost: the cold closing in. Four particle fields (crystalline snowflakes, fine white specks,
-/// tumbling ice shards, and creeping fog) drift across the screen, backed by a cold blue vignette.
+/// Frost: the screen freezing over. Condensation fogs the glass, then ice nucleates at a few points on
+/// the border and creeps inward as a fractal front, thick and milky behind it, with fern crystals
+/// growing along it. Everything that sits on the ice (crystals, glints, mist) is placed from
+/// the same growth field, so it appears exactly where and when the front reaches it.
 ///
-/// INTRO (0.0 - ~1.1s): a pale blue-white flash the moment the debuff lands, plus a burst of
-/// particles from every edge - the "cold snap". Emission rates run at 4x and ease back to steady
-/// over the intro window; ice shards use a longer, flatter intro so the crystalline layer arrives
-/// just after the initial flurry rather than competing with it.
+/// A wind blows the whole time: snow streaks across the screen in gusts and drifts in lulls, and the mist
+/// is carried along with it, so the freeze reads as cold and windy as well as frosted.
 ///
-/// STEADY STATE: snowflakes fall slowly from the top with wide lateral drift; snow specks fall
-/// faster and are denser; ice crystals tumble slowly across the field with a slight upward bias;
-/// fog drifts in from all four edges and hangs.
-///
-/// HERO ITEMS: four roles, each independently swappable.
-///  - Role.Snowflake  (particle.snowflake):   the crystalline flakes.
-///  - Role.Snow       (particle.snow):        the fine white specks.
-///  - Role.Fog        (particle.fog):         the creeping cold mist.
-///  - Role.IceCrystal (particle.ice-crystal): the angular tumbling shards.
+/// Layers, bottom to top: frost cover (haze + ferns, one region material), intro flash, crystals,
+/// mist, glints, blowing snow.
 /// </summary>
 public sealed class FrostEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
 {
@@ -47,168 +40,160 @@ public sealed class FrostEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
 
     public IReadOnlyList<SwappableSlot> Slots { get; } = new SwappableSlot[]
     {
-        new("Particle", PrimitiveRole.Snowflake,  "Snowflakes",   "particle.snowflake"),
-        new("Particle", PrimitiveRole.Snow,       "Snow specks",  "particle.snow"),
-        new("Particle", PrimitiveRole.Fog,        "Fog",          "particle.fog"),
-        new("Particle", PrimitiveRole.IceCrystal, "Ice crystals", "particle.ice-crystal"),
+        new("Particle", PrimitiveRole.Snowflake, "Frost flowers", "particle.snowflake"),
+        new("Particle", PrimitiveRole.Glint,     "Glints",        "particle.glint"),
+        new("Particle", PrimitiveRole.Mist,      "Mist",          "particle.mist"),
+        new("Particle", PrimitiveRole.Snow,      "Blowing snow",  "particle.snow"),
+        new("Region",   PrimitiveRole.MainStroke, "Frost cover",  "region.frost-cover", "EdgeGlow"),
         new("Region",   PrimitiveRole.MainStroke, "Intro flash",  "region.flat-fill", "FlatFill"),
     };
 
     // ---- palette ----
-    private static readonly uint DeepCold = DrawHelpers.ToU32(0.06f, 0.16f, 0.32f, 1f); // vignette
-    private static readonly uint Flash    = DrawHelpers.ToU32(0.88f, 0.96f, 1.00f, 1f); // intro flash
-
-    // ---- timing ----
-    private const float IntroDuration     = 1.10f;
-
-    // ---- emitters ----
-    private readonly ParticleEmitter _snowflakes  = new(maxParticles: 45, seedSalt: 0xF00500);
-    private readonly ParticleEmitter _snow        = new(maxParticles: 220, seedSalt: 0xF00501);
-    private readonly ParticleEmitter _fog = new(maxParticles: 240, seedSalt: 0xF00502);
-    private readonly ParticleEmitter _iceCrystals = new(maxParticles: 24, seedSalt: 0xF00503);
+    private static readonly uint Flash = DrawHelpers.ToU32(0.70f, 0.86f, 1.00f, 1f);
 
     // ---- state ----
     private readonly CastTracker _cast = new();
+    private readonly FrostField _field = new();
+    private Vector2 _builtFor;
+
+    // The mist is the only emitter-driven particle. Spawn callbacks are built once (they read
+    // _field/_screen/_px/_windDir), so nothing is allocated per frame.
+    private readonly ParticleEmitter _mist = new(maxParticles: 18, seedSalt: 0xF05701);
+    private readonly Func<int, Vector2> _mistPos, _mistVel;
+
+    // The wind: a fixed direction per cast (it can blow either way), a strength that gusts, and the snow it carries.
+    private readonly WindField _snow = new();
+    private Vector2 _windDir = new(1f, 0.18f);
+    private float _gustSeed;
+    private const float WindSpeed = 560f;      // px/s at 1080p in a full gust (near flakes go ~1.4x, far ~0.4x)
+
+    private Vector2 _screen;
+    private float _px = 1f;
+
+    public FrostEffect()
+    {
+        _mistPos = seed =>
+        {
+            var spots = _field.MistSpots;
+            if (spots.Length == 0) return _screen * 0.5f;
+            var jitter = new Vector2(DrawHelpers.HashRange(seed + 7, -40f, 40f), DrawHelpers.HashRange(seed + 8, -40f, 40f));
+            return spots[(int)((uint)seed % (uint)spots.Length)] + jitter * _px;
+        };
+        // Rises a little and is carried downwind.
+        _mistVel = seed => (new Vector2(DrawHelpers.HashRange(seed + 3, -7f, 7f), DrawHelpers.HashRange(seed + 4, -16f, -4f))
+                            + _windDir * DrawHelpers.HashRange(seed + 9, 22f, 52f)) * _px;
+    }
 
     public void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride)
     {
-        // Fresh application: reset the intro and drop any particles from the previous cast.
-        if (_cast.Begin(time))
+        if (screenSize.X < 64f || screenSize.Y < 64f) return;
+
+        // Fresh application (or a resized screen): lay out a new freeze.
+        if (_cast.Begin(time) || screenSize != _builtFor)
         {
-            _snowflakes.Clear();
-            _snow.Clear();
-            _fog.Clear();
-            _iceCrystals.Clear();
+            _builtFor = screenSize;
+            _field.Build(unchecked((int)(_cast.Start * 1000f)), screenSize);
+            _mist.Clear();
+
+            int seed = unchecked((int)(_cast.Start * 1000f));
+            _windDir = Vector2.Normalize(new Vector2(DrawHelpers.Hash01(seed + 21) < 0.5f ? -1f : 1f, 0.18f));
+            _gustSeed = DrawHelpers.Hash01(seed + 22) * MathF.Tau;
+            int flakes = Math.Clamp((int)(380f * MathF.Sqrt(screenSize.X * screenSize.Y / (1920f * 1080f))), 200, 560);
+            _snow.Build(flakes, seed + 23, screenSize);
         }
 
+        _screen = screenSize;
+        _px = MathF.Min(screenSize.X, screenSize.Y) / 1080f;
+
         float age = time - _cast.Start;
-        float shortSide = MathF.Min(screenSize.X, screenSize.Y);
+        float thaw = MathF.Min(1f, alpha);                       // the front retreats as the effect fades out
+        float prog = FrostField.ProgressAt(age) * MathF.Pow(thaw, 0.6f);
 
-        // Intro curve: emission boost of 4x easing to 1x over IntroDuration, plus a brief flash.
-        float introT = Math.Clamp(age / IntroDuration, 0f, 1f);
-        float introBoost = 1f + 3f * (1f - DrawHelpers.EaseOutCubic(introT));
-        float introFlash = age < 0.35f ? MathF.Exp(-age / 0.12f) : 0f;
+        _field.Age = age;
+        _field.Progress = prog;
+        _field.Fog = prog * 1.35f + 0.08f;
+        _field.Alpha = alpha;
 
-        // Ice shards use a flatter intro curve so they don't compete with the initial snow
-        // flurry; they build in slightly after the first wave and settle more slowly.
-        float crystalIntro = age < 0.5f ? 0.5f + 2.0f * (age / 0.5f) : 2.5f - 1.5f * Math.Clamp((age - 0.5f) / 1.5f, 0f, 1f);
+        // ---- the cover and the intro flash ----
+        scene.AddRegion(new RegionPrimitive
+        {
+            Min = Vector2.Zero, Max = screenSize,
+            Bottom = true,                                       // marks it an edge region -> the "Frost cover" slot
+            Alpha = 1f,
+            ColorOverride = colorOverride,
+            State = _field,
+        });
 
-        // ---- 1. cold blue vignette ----
-        float breath = 0.5f + 0.5f * DrawHelpers.Pulse(time, 5.5f);
-        scene.RequestVignette(DeepCold, 0.18f, alpha * (0.55f + 0.15f * breath), priority: 40, colorOverride);
-
-        // ---- 2. intro flash: pale blue full-screen tint that fades out fast ----
+        float introFlash = age < 0.30f ? MathF.Exp(-age / 0.07f) : 0f;
         if (introFlash > 0.01f)
         {
             scene.AddRegion(new RegionPrimitive
             {
-                Min = Vector2.Zero,
-                Max = screenSize,
+                Min = Vector2.Zero, Max = screenSize,
                 Tint = Flash,
-                Alpha = introFlash * 0.42f * alpha,
+                Alpha = introFlash * 0.34f * alpha,
                 ColorOverride = colorOverride,
             });
         }
 
-        // ---- 3. snowflakes: large crystals, slow fall, wide lateral drift ----
-        _snowflakes.Update(
-            time, dt,
-            spawnIntervalMin: 0.16f / introBoost, spawnIntervalMax: 0.40f / introBoost,
-            spawnPos: seed => new Vector2(
-                DrawHelpers.HashRange(seed, -0.02f, 1.02f) * screenSize.X,
-                -20f),
-            spawnVelocity: seed => new Vector2(
-                DrawHelpers.HashRange(seed + 10, -28f, 28f),
-                DrawHelpers.HashRange(seed + 11, 35f, 85f)),
-            lifespanMin: 6.0f, lifespanMax: 11.0f,
-            sizeMin: shortSide * 0.011f, sizeMax: shortSide * 0.024f);
-
-        _snowflakes.Emit(scene, time, PrimitiveRole.Snowflake,
-                         brightnessMul: alpha, colorOverride, swayPerParticle: 8f);
-
-        // ---- 4. snow: small fast specks, mostly from the top ----
-        _snow.Update(
-            time, dt,
-            spawnIntervalMin: 0.015f / introBoost, spawnIntervalMax: 0.045f / introBoost,
-            spawnPos: seed =>
+        // ---- crystals on the glass (the hero slot) ----
+        foreach (var f in _field.Flowers)
+        {
+            float growth = Math.Clamp((age - f.Start) / 0.9f, 0f, 1f);
+            if (growth <= 0f) continue;
+            scene.AddParticle(new ParticlePrimitive
             {
-                if (DrawHelpers.Hash01(seed) < 0.70f)
-                {
-                    return new Vector2(
-                        DrawHelpers.HashRange(seed + 10, -0.02f, 1.02f) * screenSize.X,
-                        -10f);
-                }
-                bool left = DrawHelpers.Hash01(seed + 11) < 0.5f;
-                return new Vector2(
-                    left ? -10f : screenSize.X + 10f,
-                    DrawHelpers.HashRange(seed + 12, 0f, 0.55f) * screenSize.Y);
-            },
-            spawnVelocity: seed => new Vector2(
-                DrawHelpers.HashRange(seed + 20, -45f, 45f),
-                DrawHelpers.HashRange(seed + 21, 120f, 280f)),
-            lifespanMin: 3.0f, lifespanMax: 6.5f,
-            sizeMin: shortSide * 0.0015f, sizeMax: shortSide * 0.0045f);
+                Position = f.Pos, Size = f.Size,
+                AgeRatio = growth < 1f ? 0.20f * growth : 0.45f,   // grows in, then holds (no tumble)
+                Brightness = alpha * (0.55f + 0.40f * growth),
+                Seed = f.Seed, Role = PrimitiveRole.Snowflake, ColorOverride = colorOverride,
+            });
+        }
 
-        _snow.Emit(scene, time, PrimitiveRole.Snow,
-                   brightnessMul: alpha, colorOverride, swayPerParticle: 5f);
+        // ---- mist, hanging just inside the front ----
+        if (age > 0.4f && _field.MistSpots.Length > 0)
+        {
+            _mist.Update(time, dt, spawnIntervalMin: 0.30f, spawnIntervalMax: 0.75f,
+                         spawnPos: _mistPos, spawnVelocity: _mistVel,
+                         lifespanMin: 3.5f, lifespanMax: 5.5f, sizeMin: 70f * _px, sizeMax: 140f * _px);
+        }
+        _mist.Emit(scene, time, PrimitiveRole.Mist, brightnessMul: alpha * Math.Clamp(age * 0.6f, 0f, 1f), colorOverride);
 
-        // ---- 5. fog: a field of independent soft blobs creeping in from the edges ----
-        // Spawn is heavily edge-biased: pick a random perimeter edge, a random position along it, then
-        // offset inward by a distance drawn from pow(hash, 2.4) - which clusters most spawns close to
-        // the edge with a long tail that occasionally reaches further in. That's the "hugging the
-        // screen edges" behavior; uniform spawn had every particle filling the middle of the screen.
-        //
-        // Velocity has a small inward component so particles drift toward the center rather than
-        // sitting statically on the edge; lifespans are short enough (3-6.5s) that they die before
-        // reaching the middle, so the visual density stays concentrated near the borders.
-        _fog.Update(
-            time, dt,
-            spawnIntervalMin: 0.015f, spawnIntervalMax: 0.045f,
-            spawnPos: seed =>
+        // ---- glints: nucleation flashes first, then the steady twinkle ----
+        foreach (var site in _field.Growth.Sites)
+        {
+            float t = age - FrostField.AgeFor(site.Delay * 0.9f);
+            if (t < 0f || t > 0.8f) continue;
+            scene.AddParticle(new ParticlePrimitive
             {
-                int edge = (int)(DrawHelpers.Hash01(seed) * 4f);
-                float along = DrawHelpers.HashRange(seed + 10, -0.05f, 1.05f);
+                Position = site.Pos + site.Inward * (14f * _px), Size = 78f * _px,
+                Brightness = alpha * MathF.Exp(-t / 0.20f),
+                Seed = (int)(site.Pos.X * 7f + site.Pos.Y), Role = PrimitiveRole.Glint, ColorOverride = colorOverride,
+            });
+        }
+        foreach (var g in _field.Glints)
+        {
+            float since = age - g.Start;
+            if (since < 0f) continue;
+            float twinkle = MathF.Pow(MathF.Max(0f, MathF.Sin(age * g.Rate * 6.2832f + g.Phase)), g.Sharp);
+            float born = since < 0.3f ? 0.9f * (1f - since / 0.3f) : 0f;      // a flash as the ice forms under it
+            float inten = MathF.Max(twinkle, born);
+            if (inten < 0.06f) continue;
+            scene.AddParticle(new ParticlePrimitive
+            {
+                Position = g.Pos, Size = g.Size, Brightness = alpha * inten,
+                Seed = g.Seed, Role = PrimitiveRole.Glint, ColorOverride = colorOverride,
+            });
+        }
 
-                // pow(h, 2.4): ~40% of spawns land within ~10% of the edge, ~80% within ~30%.
-                // The remaining tail reaches deeper in, so the field still has some volume - but the
-                // density gradient is strongly toward the borders.
-                float inwardMax = shortSide * 0.30f;
-                float inward = MathF.Pow(DrawHelpers.Hash01(seed + 11), 2.4f) * inwardMax;
-
-                return edge switch
-                {
-                    0 => new Vector2(along * screenSize.X, -6f + inward),                     // top
-                    1 => new Vector2(screenSize.X + 6f - inward, along * screenSize.Y),        // right
-                    2 => new Vector2(along * screenSize.X, screenSize.Y + 6f - inward),        // bottom
-                    _ => new Vector2(-6f + inward, along * screenSize.Y),                     // left
-                };
-            },
-            spawnVelocity: seed => new Vector2(
-                DrawHelpers.HashRange(seed + 20, -10f, 10f),
-                DrawHelpers.HashRange(seed + 21, -6f, 2f)),   // slight upward / inward creep
-            lifespanMin: 3.0f, lifespanMax: 6.5f,
-            sizeMin: shortSide * 0.05f, sizeMax: shortSide * 0.10f);
-
-        _fog.Emit(scene, time, PrimitiveRole.Fog,
-                  brightnessMul: alpha, colorOverride, swayPerParticle: 20f);
-
-        // ---- 6. ice crystals: angular shards tumbling slowly across the field ----
-        // Spawned from just above the top so they cross the whole screen before despawning; a
-        // small upward bias in the velocity slows their descent relative to the snow so the
-        // crystalline layer hangs in the air rather than raining down with everything else.
-        _iceCrystals.Update(
-            time, dt,
-            spawnIntervalMin: 0.35f / crystalIntro, spawnIntervalMax: 0.75f / crystalIntro,
-            spawnPos: seed => new Vector2(
-                DrawHelpers.HashRange(seed, -0.02f, 1.02f) * screenSize.X,
-                -30f),
-            spawnVelocity: seed => new Vector2(
-                DrawHelpers.HashRange(seed + 10, -22f, 22f),
-                DrawHelpers.HashRange(seed + 11, 18f, 48f)),
-            lifespanMin: 4.0f, lifespanMax: 8.0f,
-            sizeMin: shortSide * 0.005f, sizeMax: shortSide * 0.012f);
-
-        _iceCrystals.Emit(scene, time, PrimitiveRole.IceCrystal,
-                          brightnessMul: alpha, colorOverride, swayPerParticle: 6f);
+        // ---- the wind, and the snow it carries ----
+        // The storm builds as the glass freezes, and drops away as it thaws. A gust drives the flakes into
+        // streaks and brings more of them out; a lull leaves them drifting.
+        float gust = WindField.Gust(age, _gustSeed);
+        float build = Math.Clamp((age - 0.4f) / 3.5f, 0f, 1f);
+        float density = build * MathF.Pow(thaw, 0.6f) * (0.70f + 0.30f * gust);
+        _snow.Update(time, dt, screenSize, _px, _windDir * (WindSpeed * _px), gust);
+        // Snow is white by nature, so it takes the override's hue but stays pale (see IceColor.Pastel).
+        _snow.Emit(scene, screenSize, _px, PrimitiveRole.Snow, density, brightness: alpha * (0.80f + 0.20f * gust), IceColor.Pastel(colorOverride));
     }
 }

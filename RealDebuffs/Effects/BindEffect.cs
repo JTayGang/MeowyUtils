@@ -18,8 +18,8 @@ namespace RealDebuffs.Effects;
 ///          it, accelerating, until it is straight.
 ///   SNAP   The instant it comes up straight, a standing wave runs along it and rings down, the dust is
 ///          shaken out of it, and the vignette closes in a little.
-///   HANG   Held taut, each rope is a weight on a line: small disturbances nudge its anchors and set it
-///          twisting, slowly, one way and then back, and it stays taut throughout.
+///   HANG   Held taut, each rope is a weight on a line: its anchors sway slowly to and fro and the rope
+///          twists, slowly, one way and then back, and it stays taut throughout.
 ///
 /// MOTION. Like Heavy, the throw is kinematic and the rest is VerletStrand physics. The head flies a
 /// constant-speed arc and the strand is DRIVEN along a slack guide shape, which cannot fold and, because
@@ -31,9 +31,10 @@ namespace RealDebuffs.Effects;
 /// Three things are layered on the simulated path rather than simulated, as Heavy's wind is, because an
 /// inextensible taut strand cannot move sideways and so cannot ring or sway by physics alone: the snap's
 /// standing wave, the sway of the anchors, and the twist (which the material shows by sliding the rope's
-/// lay). Both of the last two are damped oscillators with slow periods, nudged by small random
-/// disturbances, so a rope's motion is never periodic and never the same as its neighbour's. Once the
-/// ring has died away the simulation is frozen and nothing but the overlay runs.
+/// lay). The last two are each a slow, continuous sine, so a rope turns one way and then back, and
+/// swings to and fro, without pause. Every anchor, and the twist, has its own period, phase and size, so
+/// no two ropes (or two ends of one) move alike. Once the ring has died away the simulation is frozen
+/// and nothing but the overlay runs.
 ///
 /// ROPES and IMPACTS are hero slots: this effect owns layout, choreography and mood; the material
 /// answers what a rope looks like and what flies off it. "bind made of chains" swaps stroke.rope
@@ -119,37 +120,16 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
     private const float FreezeAfterTaut = 0.9f;         // the simulation has settled by now and has nothing left to do
 
     // ---- the hang ----
-    private const float SwayAmp = 20f;                  // px at 1080p: the size of a typical nudge to an anchor
-    private const float SwayPeriodMin = 3.0f, SwayPeriodMax = 5.0f;     // seconds per swing
-    private const float SwayDampMin = 0.10f, SwayDampMax = 0.16f;       // damping ratio: low, so it swings a few times
-    private const float TwistAmp = 2.0f;                // radians: the size of a typical twist, mid-rope
-    private const float TwistPeriodMin = 2.4f, TwistPeriodMax = 3.6f;
-    private const float TwistDampMin = 0.07f, TwistDampMax = 0.12f;
-    private const float BumpGapMin = 1.6f, BumpGapMax = 4.0f;           // seconds between disturbances
+    private const float SwayAmp = 7f;                  // px at 1080p: how far an anchor swings either side of rest
+    private const float SwayPeriodMin = 7f, SwayPeriodMax = 10f;     // seconds per swing, there and back
+    private const float TwistAmp = 1.6f;                // radians: how far the rope turns either way, mid-rope
+    private const float TwistPeriodMin = 7f, TwistPeriodMax = 10f;   // seconds per twist, there and back
+    private const float HangDelay = 0.8f;               // seconds after the snap before it begins: the ring plays out first
+    private const float HangEaseIn = 1.5f;              // seconds to ease up to its full swing, so it starts from rest
 
     private static readonly uint Vignette = DrawHelpers.ToU32(0.022f, 0.015f, 0.010f, 1f);
 
     private enum Corner { TopLeft, TopRight, BottomRight, BottomLeft }
-
-    /// <summary>
-    /// A damped oscillator: a weight on a spring. Two of these per rope make the hang (sway at each
-    /// anchor), one makes the twist. Sub-stepped so a frame hitch can't throw it.
-    /// </summary>
-    private struct Spring
-    {
-        public float X, V;
-
-        public void Step(float dt, float omega, float zeta)
-        {
-            while (dt > 1e-6f)
-            {
-                float h = MathF.Min(dt, 1f / 120f);
-                dt -= h;
-                V += (-omega * omega * X - 2f * zeta * omega * V) * h;
-                X += V * h;
-            }
-        }
-    }
 
     /// <summary>One rope: its anchors, its strand, its timeline, and what it has done so far.</summary>
     private sealed class Rig
@@ -180,11 +160,10 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
         // the ring
         public float RingHz, RingSign;
 
-        // the hang: anchors swaying, and the rope twisting
-        public Spring SwayStart, SwayEnd, Twist;
-        public float SwayOmega, SwayZeta, TwistOmega, TwistZeta;
-        public float NextBump;
-        public int   Bumps;
+        // the hang: each anchor sways and the rope twists, as a slow sine of its own period, phase and size
+        public float SwayOmegaA, SwayOmegaB, SwayPhaseA, SwayPhaseB, SwayScaleA, SwayScaleB;
+        public float TwistOmega, TwistPhase, TwistScale;
+        public float TwistNow;                  // the twist to show this frame, in radians (zero until the hang begins)
 
         // state
         public bool  Launched, Landed, Taut;
@@ -241,7 +220,7 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
                 Depth = rig.Depth,
                 Agitation = rig.Agitation,
                 TipFlare = rig.Landed ? 0f : 1f,   // the head is live while it flies
-                Twist = rig.Taut ? Soft(rig.Twist.X, TwistAmp * 1.4f) : 0f,
+                Twist = rig.TwistNow,
                 ColorOverride = colorOverride,
             });
         }
@@ -306,7 +285,6 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
             snappedNow = true;
             rig.TautAt = tTaut;                                            // the scheduled instant, not the frame that noticed
             rig.Agitation = 1f;
-            rig.NextBump = t + DrawHelpers.HashRange(rig.Seed + 21, 1.0f, 2.2f);   // let it ring before it is disturbed
         }
 
         bool frozen = rig.Taut && (t - tTaut) > FreezeAfterTaut;
@@ -369,7 +347,7 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
             rig.PathFrozen = false;
         }
 
-        if (rig.Taut) Hang(rig, t, dt, px);
+        if (rig.Taut) Hang(rig, t, px);
 
         // ---- impacts ----
         if (landedNow) ReportEnd(scene, rig, size, fromStart: false, 0.55f, alpha, colorOverride);
@@ -383,42 +361,26 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
     /// the sway of both anchors, which carries the whole rope with it (zero extra length, so it stays
     /// taut). The twist is not a displacement; it is handed to the material, which slides the lay.
     ///
-    /// Each of the three motions is a slow damped oscillator and is only ever disturbed by a small
-    /// random nudge now and then, which is what a real hanging weight does: it swings, rings down,
-    /// and is knocked again. The nudges often move the anchors and the twist together, as one
-    /// real disturbance would.
+    /// The sway of each anchor and the twist are each a slow sine on the time since the snap, so the
+    /// rope turns one way and then back, and swings to and fro, without pause. They ease in from rest
+    /// once the ring has died away, so there is no jump when they begin.
     /// </summary>
-    private static void Hang(Rig rig, float t, float dt, float px)
+    private static void Hang(Rig rig, float t, float px)
     {
-        if (t >= rig.NextBump)
-        {
-            int n = ++rig.Bumps;
-            float H(int salt, float lo, float hi) => DrawHelpers.HashRange(rig.Seed + 5000 + n * 31 + salt, lo, hi);
-            float sign(int salt) => H(salt, 0f, 1f) < 0.5f ? -1f : 1f;
-            float amp = SwayAmp * px;
+        float since = t - rig.TautAt;
+        float ease = DrawHelpers.Saturate((since - HangDelay) / HangEaseIn);
+        ease = ease * ease * (3f - 2f * ease);
 
-            float who = H(1, 0f, 1f);                          // which anchor is knocked
-            if (who < 0.35f || who >= 0.70f) rig.SwayStart.V += sign(2) * rig.SwayOmega * amp * H(3, 0.5f, 1f);
-            if (who >= 0.35f)                rig.SwayEnd.V   += sign(4) * rig.SwayOmega * amp * H(5, 0.5f, 1f);
-            if (H(6, 0f, 1f) < 0.85f)        rig.Twist.V     += sign(7) * rig.TwistOmega * TwistAmp * H(8, 0.5f, 1f);
-
-            rig.NextBump = t + H(9, BumpGapMin, BumpGapMax);
-        }
-
-        rig.SwayStart.Step(dt, rig.SwayOmega, rig.SwayZeta);
-        rig.SwayEnd.Step(dt, rig.SwayOmega * 1.19f, rig.SwayZeta);   // the two ends are not quite in step
-        rig.Twist.Step(dt, rig.TwistOmega, rig.TwistZeta);
+        float amp = ease * SwayAmp * px;
+        float swayA = amp * rig.SwayScaleA * MathF.Sin(rig.SwayOmegaA * since + rig.SwayPhaseA);
+        float swayB = amp * rig.SwayScaleB * MathF.Sin(rig.SwayOmegaB * since + rig.SwayPhaseB);
+        rig.TwistNow = ease * TwistAmp * rig.TwistScale * MathF.Sin(rig.TwistOmega * since + rig.TwistPhase);
 
         var path = rig.Path;
         int count = path.Count;
-        float limit = SwayAmp * px * 1.4f;
-        float swayA = Soft(rig.SwayStart.X, limit);
-        float swayB = Soft(rig.SwayEnd.X, limit);
-
-        float ringT = t - rig.TautAt;
-        float ring = RingAmp * px * MathF.Exp(-RingDecay * ringT);
-        float w1 = MathF.Tau * rig.RingHz * ringT;
-        float decay = MathF.Exp(-RingDecay * ringT);
+        float decay = MathF.Exp(-RingDecay * since);
+        float ring = RingAmp * px * decay;
+        float w1 = MathF.Tau * rig.RingHz * since;
 
         for (int i = 0; i < count; i++)
         {
@@ -438,9 +400,6 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
         }
         path.BuildArc();
     }
-
-    /// <summary>Smoothly limits x to ±limit: unchanged near zero, never beyond the limit.</summary>
-    private static float Soft(float x, float limit) => limit * MathF.Tanh(x / limit);
 
     /// <summary>
     /// Fills the strand's guide with the loose line paid out behind the head: a parabola sagging
@@ -690,15 +649,17 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
         // The rope comes up from the side it hung on, so it overshoots to the other.
         r.RingSign = -side;
 
-        r.SwayOmega = MathF.Tau / H(20, SwayPeriodMin, SwayPeriodMax);
-        r.SwayZeta = H(21, SwayDampMin, SwayDampMax);
-        r.TwistOmega = MathF.Tau / H(22, TwistPeriodMin, TwistPeriodMax);
-        r.TwistZeta = H(23, TwistDampMin, TwistDampMax);
-        r.SwayStart = default;
-        r.SwayEnd = default;
-        r.Twist = default;
-        r.NextBump = 0f;
-        r.Bumps = 0;
+        // The hang: every period, phase and size is this rope's own.
+        r.SwayOmegaA = MathF.Tau / H(20, SwayPeriodMin, SwayPeriodMax);
+        r.SwayOmegaB = MathF.Tau / H(21, SwayPeriodMin, SwayPeriodMax);
+        r.SwayPhaseA = H(22, 0f, MathF.Tau);
+        r.SwayPhaseB = H(23, 0f, MathF.Tau);
+        r.SwayScaleA = H(24, 0.6f, 1f);
+        r.SwayScaleB = H(25, 0.6f, 1f);
+        r.TwistOmega = MathF.Tau / H(26, TwistPeriodMin, TwistPeriodMax);
+        r.TwistPhase = H(27, 0f, MathF.Tau);
+        r.TwistScale = H(28, 0.7f, 1f);
+        r.TwistNow = 0f;
 
         r.Launched = false;
         r.Landed = false;

@@ -5,47 +5,30 @@ namespace RealDebuffs.Effects;
 
 /// <summary>
 /// Bind: ropes are flung across the screen, made fast on the far side, and hauled taut around you.
-/// The inverse of Heavy. Heavy's chains arrive straight and fast, then drop slack and sway under
-/// their own weight. Bind's ropes arrive slack, carrying all the weight of the loose line, swing
-/// and settle, and only then is the pull the event: they come up out of their sag, straighten, and
-/// stop dead, ringing like a plucked string. After that they hang taut and barely move.
+/// The inverse of Heavy.
 ///
 /// BEATS (per rope, staggered):
-///   THROW  The head flies an arc over the span, paying out a deep, loose sag behind it.
-///   MAKE FAST  The head hits the far anchor, off-screen, with a soft thud of dust and fibres. It stops
-///          dead; the slack does not. It carries on, swings, bunches, and settles under its own weight.
-///   HAUL   Once it has settled the line is taken up: the rope is reeled in, so the sag drains out of
-///          it, accelerating, until it is straight.
-///   SNAP   The instant it comes up straight, a standing wave runs along it and rings down, the dust is
-///          shaken out of it, and the vignette closes in a little.
-///   HANG   Held taut, each rope is a weight on a line: its anchors sway slowly to and fro and the rope
-///          twists, slowly, one way and then back, and it stays taut throughout.
+///   THROW      Head flies an arc, paying out a deep loose sag behind it.
+///   MAKE FAST  Head hits the far anchor; stops dead. The slack does not - it swings, bunches, settles.
+///   HAUL       Line is reeled in, sag drains out, accelerating, until straight.
+///   SNAP       Standing wave runs along it, dust shakes out, vignette closes in.
+///   HANG       Held taut: anchors sway slowly, rope twists one way and back, never slackens.
 ///
-/// MOTION. Like Heavy, the throw is kinematic and the rest is VerletStrand physics. The head flies a
-/// constant-speed arc and the strand is DRIVEN along a slack guide shape, which cannot fold and, because
-/// Drive hands the nodes the velocity that motion implies, means the loose line has real momentum at the
-/// instant the head is stopped. From landing it is released to free physics: the slack swings in under
-/// that momentum and settles on its own. The haul is physical too: the strand's length is reeled in
-/// toward the straight-line distance, so it straightens as a real rope under tension would.
+/// MOTION. The throw is kinematic (strand DRIVEN along a slack guide so it can't fold, and the
+/// nodes pick up the velocity that motion implies). From landing it's free VerletStrand physics.
+/// The haul is physical too: length is reeled in toward the straight-line distance.
 ///
-/// Three things are layered on the simulated path rather than simulated, as Heavy's wind is, because an
-/// inextensible taut strand cannot move sideways and so cannot ring or sway by physics alone: the snap's
-/// standing wave, the sway of the anchors, and the twist (which the material shows by sliding the rope's
-/// lay). The last two are each a slow, continuous sine, so a rope turns one way and then back, and
-/// swings to and fro, without pause. Every anchor, and the twist, has its own period, phase and size, so
-/// no two ropes (or two ends of one) move alike. Once the ring has died away the simulation is frozen
-/// and nothing but the overlay runs.
+/// The snap's standing wave, the anchor sway, and the twist are LAYERED ON the simulated path
+/// rather than simulated, because an inextensible taut strand can't move sideways and so can't
+/// ring or sway by physics alone. Once the ring has died away the sim is frozen and only the
+/// overlay runs.
 ///
-/// ROPES and IMPACTS are hero slots: this effect owns layout, choreography and mood; the material
-/// answers what a rope looks like and what flies off it. "bind made of chains" swaps stroke.rope
-/// for a chain and gets the same throw and haul, with sparks; "white rope made of snow" tints the
-/// rope white and sheds snow along its whole length (this effect sets no emit limits, so particles
-/// come off the full strand, not just near the edges as Heavy's do).
+/// ROPES and IMPACTS are hero slots; "bind made of chains" swaps stroke.rope for chains and gets
+/// the same choreography, with sparks. This effect sets no emit limits, so a swapped-in material
+/// sheds along the full strand.
 ///
-/// COVERAGE. Four ropes cut the four corners, so the screen is always bound evenly and the middle
-/// stays clear. One or two more are partners that cross a corner's rope in an X, thinner and hazier,
-/// seen behind, so there is always a crossing where the ropes lash. Everything else is reseeded per
-/// cast: which end a rope is thrown from, where each anchor sits, depth, slack, timing, ring and hang.
+/// COVERAGE. Four ropes cut the four corners (screen always bound evenly, middle stays clear);
+/// one or two partners cross a corner rope in an X. Everything else is reseeded per cast.
 /// </summary>
 public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
 {
@@ -53,7 +36,7 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
     public string DisplayName => "Bind";
     public string Description => "Ropes are thrown across the screen, then hauled taut around you.";
 
-    // Shares Heavy's layer: both are strand effects, and which of the two is on top is immaterial.
+    // Shares Heavy's layer: both are strand effects.
     public int DrawOrder => 2;
 
     public IReadOnlyDictionary<string, float> TriggerStatuses { get; } = new Dictionary<string, float>
@@ -85,8 +68,8 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
 
     // ---- mood (0 removes it) ----
     private const float VignetteAlpha = 0.12f;
-    private const float VignetteDepth = 0.11f;          // fraction of the short side
-    private const float VignetteTighten = 0.05f;        // extra depth as the ropes come taut
+    private const float VignetteDepth = 0.11f;
+    private const float VignetteTighten = 0.05f;
 
     // ---- rope sizes: diameter as a fraction of the short side ----
     private const float NearDiameterMin = 0.019f, NearDiameterMax = 0.026f;
@@ -94,82 +77,93 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
 
     // ---- the throw ----
     private const float MaxThrowDelay = 0.40f;
-    private const float ThrowSpeedMin = 2300f, ThrowSpeedMax = 3100f;   // px/s at 1080p, averaged over the flight
+    private const float ThrowSpeedMin = 2300f, ThrowSpeedMax = 3100f;
     private const float MinFlight = 0.40f, MaxFlight = 0.85f;
-    private const float ThrowArc = 0.10f;               // how far the head rises over the span, as a fraction of it
-    private const float SlackMin = 0.20f, SlackMax = 0.32f;             // spare length, as a fraction of the span: lots
-    private const float SlackSkew = 0.30f;              // the sag is deepest nearer the end it was thrown from
-    private const float RippleAmp = 0.028f;             // ripple paid out along the line in flight, as a fraction of the span
+    private const float ThrowArc = 0.10f;
+    private const float SlackMin = 0.20f, SlackMax = 0.32f;
+    private const float SlackSkew = 0.30f;
+    private const float RippleAmp = 0.028f;
 
-    // ---- the settle: loose line under its own weight ----
-    private const float Gravity = 2200f;                // px/s^2 at 1080p
-    private const float HangDrag = 1.5f;                // 1/s: the swing rings down over a second or so
-    private const float TautDrag = 24f;                 // 1/s: a taut line stops dead, it doesn't bounce (the ring is laid on after)
+    // ---- the settle ----
+    private const float Gravity = 2200f;
+    private const float HangDrag = 1.5f;
+    private const float TautDrag = 24f;
 
     // ---- the haul ----
-    private const float HoldMin = 0.60f, HoldMax = 1.00f;               // how long the slack is left to settle before the pull
+    private const float HoldMin = 0.60f, HoldMax = 1.00f;
     private const float HaulMin = 0.38f, HaulMax = 0.58f;
-    private const float HaulEase = 2.0f;                // >1: the take-up accelerates into the stop
-    private const float TautExtraMin = -0.0004f, TautExtraMax = -0.0002f;  // a taut rope is a hair SHORTER than its span: the anchors hold it straight
-    private const float TautGravityMin = 0.10f, TautGravityMax = 0.40f;     // how much of its weight still shows once hauled tight (tension swamps gravity)
+    private const float HaulEase = 2.0f;
+    private const float TautExtraMin = -0.0004f, TautExtraMax = -0.0002f;   // a taut rope is a hair SHORTER than its span
+    private const float TautGravityMin = 0.10f, TautGravityMax = 0.40f;      // tension swamps gravity once hauled
 
     // ---- the snap ----
-    private const float RingAmp = 12f;                  // px at 1080p, on top of the simulated overshoot
+    private const float RingAmp = 12f;
     private const float RingHzMin = 3.2f, RingHzMax = 5.0f;
-    private const float RingDecay = 3.2f;               // 1/s
-    private const float FreezeAfterTaut = 0.9f;         // the simulation has settled by now and has nothing left to do
+    private const float RingDecay = 3.2f;
+    private const float FreezeAfterTaut = 0.9f;
 
     // ---- the hang ----
-    private const float SwayAmp = 7f;                  // px at 1080p: how far an anchor swings either side of rest
-    private const float SwayPeriodMin = 7f, SwayPeriodMax = 10f;     // seconds per swing, there and back
-    private const float TwistAmp = 1.6f;                // radians: how far the rope turns either way, mid-rope
-    private const float TwistPeriodMin = 7f, TwistPeriodMax = 10f;   // seconds per twist, there and back
-    private const float HangDelay = 0.8f;               // seconds after the snap before it begins: the ring plays out first
-    private const float HangEaseIn = 1.5f;              // seconds to ease up to its full swing, so it starts from rest
+    private const float SwayAmp = 7f;
+    private const float SwayPeriodMin = 7f, SwayPeriodMax = 10f;
+    private const float TwistAmp = 1.6f;
+    private const float TwistPeriodMin = 7f, TwistPeriodMax = 10f;
+    private const float HangDelay = 0.8f;
+    private const float HangEaseIn = 1.5f;
 
     private static readonly uint Vignette = DrawHelpers.ToU32(0.022f, 0.015f, 0.010f, 1f);
 
+    // Standing-wave shape terms. u = i / (PathSamples - 1), fixed for every path, so precompute
+    // once instead of calling MathF.Sin per sample per rope per frame in Hang.
+    private static readonly float[] RingMode1 = new float[PathSamples];
+    private static readonly float[] RingMode2 = new float[PathSamples];
+    private static readonly float[] RingMode3 = new float[PathSamples];
+
+    static BindEffect()
+    {
+        for (int i = 0; i < PathSamples; i++)
+        {
+            float u = i / (PathSamples - 1f);
+            RingMode1[i] = MathF.Sin(MathF.PI * u);
+            RingMode2[i] = MathF.Sin(2f * MathF.PI * u);
+            RingMode3[i] = MathF.Sin(3f * MathF.PI * u);
+        }
+    }
+
     private enum Corner { TopLeft, TopRight, BottomRight, BottomLeft }
 
-    /// <summary>One rope: its anchors, its strand, its timeline, and what it has done so far.</summary>
     private sealed class Rig
     {
         public readonly VerletStrand Strand = new(StrandNodes);
         public readonly StrandPath Path = new(PathSamples);
-        public readonly StrandPath BasePath = new(PathSamples);   // the frozen taut shape, which the hang is laid over
+        public readonly StrandPath BasePath = new(PathSamples);   // frozen taut shape; hang is laid over this
         public bool PathFrozen;
 
         public Vector2 Start, End;
         public Vector2 ChordDir, ChordPerp;
-        public Vector2 SagDir;                  // the side the line hangs to; the head arcs the other way
-        public float   SagSign;                 // ChordPerp * SagSign = SagDir; kept so it can be re-applied to the moving chord
+        public Vector2 SagDir;
+        public float   SagSign;
         public float   ChordLen;
         public float   DiameterFrac;
         public float   Depth;
         public int     Seed;
+        public float   Phase;                   // cached from Seed; constant for the rig's life
 
-        // timeline (seconds, from the rope's own start)
         public float Delay, Flight, Hold, Haul;
-        public float Slack;                     // spare length as a fraction of the span, while loose
-        public float TautExtra;                 // spare length left once taut
-        public float TautGravity;               // fraction of gravity that still acts once taut
+        public float Slack;
+        public float TautExtra;
+        public float TautGravity;
 
-        // the ripple paid out along the line in flight
         public float RippleCycles, RippleHz, RipplePhase;
-
-        // the ring
         public float RingHz, RingSign;
 
-        // the hang: each anchor sways and the rope twists, as a slow sine of its own period, phase and size
         public float SwayOmegaA, SwayOmegaB, SwayPhaseA, SwayPhaseB, SwayScaleA, SwayScaleB;
         public float TwistOmega, TwistPhase, TwistScale;
-        public float TwistNow;                  // the twist to show this frame, in radians (zero until the hang begins)
+        public float TwistNow;
 
-        // state
         public bool  Launched, Landed, Taut;
-        public float TautAt;                    // age at which the rope came up straight
+        public float TautAt;
         public float Agitation;
-        public float Haulness;                  // 0 slack .. 1 taut, for the vignette
+        public float Haulness;
     }
 
     private readonly Rig[] _rigs = new Rig[MaxRopes];
@@ -195,7 +189,6 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
 
         float haul = 0f;
 
-        // Far ropes first so near ones overlap them.
         for (int n = 0; n < _count; n++)
         {
             var rig = _rigs[_drawOrder[n]];
@@ -216,10 +209,10 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
                 WidthHint = shortSide * rig.DiameterFrac,
                 Brightness = alpha,
                 Seed = rig.Seed,
-                Phase = DrawHelpers.HashRange(rig.Seed + 999, 0f, MathF.Tau),
+                Phase = rig.Phase,
                 Depth = rig.Depth,
                 Agitation = rig.Agitation,
-                TipFlare = rig.Landed ? 0f : 1f,   // the head is live while it flies
+                TipFlare = rig.Landed ? 0f : 1f,
                 Twist = rig.TwistNow,
                 ColorOverride = colorOverride,
             });
@@ -228,9 +221,6 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
         EmitAtmosphere(scene, alpha, age, _count, haul, colorOverride);
     }
 
-    // ---- Atmosphere ----
-
-    /// <summary>A dark vignette that closes in as the ropes come taut: the constriction.</summary>
     private static void EmitAtmosphere(EffectScene scene, float alpha, float age, int count, float haulSum, Vector4? colorOverride)
     {
         float castIn = DrawHelpers.Saturate(age / 0.7f);
@@ -240,8 +230,6 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
             scene.RequestVignette(Vignette, VignetteDepth + VignetteTighten * tension,
                                   alpha * VignetteAlpha * castIn * (0.7f + 0.3f * tension), priority: 20, colorOverride);
     }
-
-    // ---- Per-rope simulation ----
 
     private void Step(EffectScene scene, Rig rig, Vector2 size, float px,
                       float alpha, float dt, float t, Vector4? colorOverride)
@@ -262,8 +250,8 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
         float tHaul = tLand + rig.Hold;
         float tTaut = tHaul + rig.Haul;
 
-        // ---- the head: constant speed after a short launch ramp, stopped dead by the far anchor ----
-        // It is NOT eased to a stop. The line behind it is loose and heavy; it is what keeps going.
+        // Head: constant speed after a short launch ramp, stopped dead by the far anchor. NOT eased
+        // to a stop - the loose line behind it is what keeps going.
         float tau = DrawHelpers.Saturate(t / rig.Flight);
         float travel = (tau < 0.1f ? 5f * tau * tau : tau - 0.05f) / 0.95f;
         float arc = ThrowArc * rig.ChordLen * MathF.Sin(MathF.PI * tau);
@@ -283,18 +271,17 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
         {
             rig.Taut = true;
             snappedNow = true;
-            rig.TautAt = tTaut;                                            // the scheduled instant, not the frame that noticed
+            rig.TautAt = tTaut;   // the scheduled instant, not the frame that noticed
             rig.Agitation = 1f;
         }
 
         bool frozen = rig.Taut && (t - tTaut) > FreezeAfterTaut;
 
-        // ---- the strand ----
         float haulK = 0f;
         if (!frozen)
         {
-            // Length is what makes a rope loose or taut. Loose: the span plus its slack, tracking the head as it
-            // is paid out. Hauled: reeled in toward the span itself, accelerating, so the sag drains out.
+            // Length is what makes a rope loose or taut. Loose: span plus slack, tracking the head
+            // as it's paid out. Hauled: reeled in toward the span, accelerating, so sag drains out.
             float dist = Vector2.Distance(head, rig.Start);
             float slackLength = dist * (1f + rig.Slack);
             float length = slackLength;
@@ -306,9 +293,9 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
             }
             strand.Length = MathF.Max(2f, length);
 
-            // Through the haul the line goes from a loose weight swinging to a taut one that stops dead:
-            // heavier damping, tighter constraints (it is moving fastest, and a fast strand stretches), and
-            // less and less of its weight showing, since sag is weight over tension and the tension is now enormous.
+            // Through the haul the line goes from loose weight to taut stop: heavier damping,
+            // tighter constraints (it's moving fastest and a fast strand stretches), and less and
+            // less of its weight showing (sag is weight over tension, and tension is now enormous).
             float tighten = haulK * haulK * (3f - 2f * haulK);
             strand.Drag = HangDrag + (TautDrag - HangDrag) * tighten;
             strand.Gravity = new Vector2(0f, Gravity * px * (1f - (1f - rig.TautGravity) * tighten));
@@ -318,14 +305,11 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
 
             strand.SetEnds(rig.Start, head);
 
-            // Flight: driven along the guide (no folds, and the nodes pick up the velocity of that motion).
-            // From landing: on its own.
             if (!rig.Landed) strand.Drive(strand.Target, dt);
             else             strand.Step(dt);
         }
         rig.Haulness = rig.Taut ? 1f : haulK * haulK;
 
-        // ---- publish ----
         if (frozen)
         {
             if (!rig.PathFrozen)
@@ -349,7 +333,6 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
 
         if (rig.Taut) Hang(rig, t, px);
 
-        // ---- impacts ----
         if (landedNow) ReportEnd(scene, rig, size, fromStart: false, 0.55f, alpha, colorOverride);
         if (snappedNow) Snap(scene, rig, size, alpha, colorOverride);
 
@@ -357,13 +340,9 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
     }
 
     /// <summary>
-    /// A taut rope is a weight on a line. Laid over the simulated path: the ring left by the snap, and
-    /// the sway of both anchors, which carries the whole rope with it (zero extra length, so it stays
-    /// taut). The twist is not a displacement; it is handed to the material, which slides the lay.
-    ///
-    /// The sway of each anchor and the twist are each a slow sine on the time since the snap, so the
-    /// rope turns one way and then back, and swings to and fro, without pause. They ease in from rest
-    /// once the ring has died away, so there is no jump when they begin.
+    /// A taut rope is a weight on a line. Laid OVER the simulated path: the snap's ring, and the
+    /// sway of both anchors (which carries the whole rope, zero extra length, stays taut). The
+    /// twist is not a displacement - it's handed to the material, which slides the lay.
     /// </summary>
     private static void Hang(Rig rig, float t, float px)
     {
@@ -378,36 +357,66 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
 
         var path = rig.Path;
         int count = path.Count;
+        Vector2 perp = rig.ChordPerp;
+        float swayDelta = swayB - swayA;
+
+        // Ring terms that don't depend on i: hoisted out of the sample loop.
         float decay = MathF.Exp(-RingDecay * since);
         float ring = RingAmp * px * decay;
-        float w1 = MathF.Tau * rig.RingHz * since;
+        bool ringing = ring > 0.05f;
 
-        for (int i = 0; i < count; i++)
+        float mul1 = 0f, mul2 = 0f, mul3 = 0f;
+        if (ringing)
         {
-            float u = i / (count - 1f);
-            float lateral = swayA + (swayB - swayA) * u;
+            float w1 = MathF.Tau * rig.RingHz * since;
+            float d2 = decay * decay;
+            float sign = ring * rig.RingSign;
+            mul1 = sign * MathF.Sin(w1);
+            mul2 = sign * 0.30f * MathF.Sin(2f * w1) * decay;
+            mul3 = sign * 0.12f * MathF.Sin(3f * w1) * d2;
+        }
 
-            if (ring > 0.05f)
+        // Path is always filled to PathSamples (see the two FillPath call sites above), so the
+        // precomputed shape tables index directly.
+        if (ringing && count == PathSamples)
+        {
+            // A plucked string: modes are integer multiples of the fundamental; higher modes die faster.
+            for (int i = 0; i < count; i++)
             {
-                // A plucked string: each mode an integer times the fundamental, the higher ones faster to die.
-                lateral += ring * rig.RingSign *
-                           (MathF.Sin(MathF.PI * u) * MathF.Sin(w1)
-                            + 0.30f * MathF.Sin(2f * MathF.PI * u) * MathF.Sin(2f * w1) * decay
-                            + 0.12f * MathF.Sin(3f * MathF.PI * u) * MathF.Sin(3f * w1) * decay * decay);
+                float u = i / (count - 1f);
+                float lateral = swayA + swayDelta * u
+                              + mul1 * RingMode1[i] + mul2 * RingMode2[i] + mul3 * RingMode3[i];
+                path.Points[i] += perp * lateral;
             }
-
-            path.Points[i] += rig.ChordPerp * lateral;
+        }
+        else
+        {
+            // Defensive fallback (should be unreachable): same math, computed per sample.
+            float w1 = MathF.Tau * rig.RingHz * since;
+            float d2 = decay * decay;
+            for (int i = 0; i < count; i++)
+            {
+                float u = i / (count - 1f);
+                float lateral = swayA + swayDelta * u;
+                if (ring > 0.05f)
+                {
+                    lateral += ring * rig.RingSign *
+                               (MathF.Sin(MathF.PI * u) * MathF.Sin(w1)
+                                + 0.30f * MathF.Sin(2f * MathF.PI * u) * MathF.Sin(2f * w1) * decay
+                                + 0.12f * MathF.Sin(3f * MathF.PI * u) * MathF.Sin(3f * w1) * d2);
+                }
+                path.Points[i] += perp * lateral;
+            }
         }
         path.BuildArc();
     }
 
     /// <summary>
-    /// Fills the strand's guide with the loose line paid out behind the head: a parabola sagging
-    /// downhill, deepest nearer the end it was thrown from, with a ripple running along it, whose arc
-    /// length is exactly <paramref name="extra"/> more than the span. Used only in flight, where the
-    /// strand is driven along it; because the guide's length matches the strand's, nothing has to be
-    /// corrected when the head lands and the guide lets go. A near-vertical span has no downhill side, so it
-    /// bows to whichever side this rope was seeded with.
+    /// Guide shape for the loose line paid out in flight: a downhill-sagging parabola (deepest
+    /// nearer the throw-from end) with a ripple along it, whose arc length is exactly
+    /// <paramref name="extra"/> more than the span. Used only in flight; the guide's length
+    /// matches the strand's, so nothing needs correcting when the head lands and the guide lets go.
+    /// Near-vertical spans have no downhill side, so they bow to whichever side was seeded.
     /// </summary>
     private static void GuideShape(Rig rig, Vector2 head, float extra, float t)
     {
@@ -422,13 +431,14 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
         Span<Vector2> pts = stackalloc Vector2[Samples + 1];
         Span<float> cum = stackalloc float[Samples + 1];
 
-        // The ripple has length of its own; what is left for the sag is the rest.
+        // Ripple has length of its own; what's left for the sag is the rest.
         Trace(rig, rig.Start, chord, perp, 0f, ripple, t, pts, cum);
         float rippleExtra = cum[Samples] - c;
         float want = MathF.Max(extra - rippleExtra, extra * 0.25f);
 
-        float sag = MathF.Sqrt(3f * c * want / 8f);        // small-sag estimate, refined below
+        float sag = MathF.Sqrt(3f * c * want / 8f);   // small-sag estimate, refined below
 
+        // Sag grows with the square root of spare length, so a couple of secant steps converge.
         for (int pass = 0; pass < 3; pass++)
         {
             Trace(rig, rig.Start, chord, perp, sag, ripple, t, pts, cum);
@@ -438,7 +448,7 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
         }
         Trace(rig, rig.Start, chord, perp, sag, ripple, t, pts, cum);
 
-        // Equal arc-length spacing, to match the strand's equal-length links.
+        // Equal arc-length spacing, matching the strand's equal-length links.
         var target = rig.Strand.Target;
         float total = cum[Samples];
         int seg = 0;
@@ -467,7 +477,6 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
         }
     }
 
-    /// <summary>The rope comes up straight: both anchors take the jerk and dust is shaken out along its length.</summary>
     private static void Snap(EffectScene scene, Rig rig, Vector2 size, float alpha, Vector4? colorOverride)
     {
         ReportEnd(scene, rig, size, fromStart: false, 0.40f, alpha, colorOverride);
@@ -493,10 +502,7 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
         }
     }
 
-    /// <summary>
-    /// Tells the framework a rope's anchor just took a hit. The impact point is where the rope crosses
-    /// the screen edge; debris is thrown back along the rope and into the screen.
-    /// </summary>
+    /// <summary>A rope's anchor just took a hit; debris is thrown back along the rope and into the screen.</summary>
     private static void ReportEnd(EffectScene scene, Rig rig, Vector2 size, bool fromStart,
                                   float strength, float alpha, Vector4? colorOverride)
     {
@@ -527,13 +533,10 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
         });
     }
 
-    // ---- Layout ----
-
     /// <summary>
-    /// Lays out this application's ropes. Composition is fixed: one rope cutting each corner, so the
-    /// screen is always bound evenly, then one or two partners that cross a corner rope. What varies per
-    /// cast is each anchor's place along its edge, which end a rope is thrown from, and every rope's
-    /// depth, slack and timing.
+    /// One rope cutting each corner (screen always bound evenly), plus one or two partners that
+    /// cross a corner rope in an X. What varies per cast: each anchor's place along its edge,
+    /// which end a rope is thrown from, and every rope's depth, slack and timing.
     /// </summary>
     private void BuildLayout(int castSeed, Vector2 size)
     {
@@ -547,7 +550,7 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
         int firstPartner = (int)(DrawHelpers.Hash01(castSeed + 2) * 4f) & 3;
         int secondPartner = (firstPartner + 1 + (int)(DrawHelpers.Hash01(castSeed + 3) * 3f)) & 3;
 
-        // The legs of each corner's rope, kept so a partner can be made steeper than it.
+        // The legs of each corner's rope, so a partner can be made steeper than the rope it crosses.
         Span<float> legA = stackalloc float[4];
         Span<float> legB = stackalloc float[4];
 
@@ -559,7 +562,7 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
             bool partner = i >= 4;
             int corner = partner ? (i == 4 ? firstPartner : secondPartner) : i;
 
-            float a, b;                                   // distances from the corner along each edge, as fractions of that edge
+            float a, b;
             if (!partner)
             {
                 a = H(1, 0.22f, 0.50f);
@@ -568,8 +571,8 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
             }
             else
             {
-                // Shorter along the top/bottom and longer down the side than the rope it crosses, so the two
-                // must intersect, and by enough that they cross at a clear angle rather than lie alongside.
+                // Shorter along the horizontal edge, longer down the vertical than the rope it
+                // crosses, so the two must intersect - and by enough to cross at a clear angle.
                 a = MathF.Max(0.08f, legA[corner] * H(1, 0.30f, 0.55f));
                 b = MathF.Min(0.66f, MathF.Max(legB[corner] * H(2, 1.50f, 1.90f), legB[corner] + 0.10f));
             }
@@ -582,12 +585,11 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
             BuildRig(_rigs[i], s, p, q, size, partner);
         }
 
-        // Paint order: far (large Depth) first.
         for (int i = 0; i < _count; i++) _drawOrder[i] = i;
         Array.Sort(_drawOrder, 0, _count, Comparer<int>.Create((x, y) => _rigs[y].Depth.CompareTo(_rigs[x].Depth)));
     }
 
-    /// <summary>The two anchors of a rope that cuts <paramref name="corner"/>: one on the horizontal edge, one on the vertical.</summary>
+    /// <summary>The two anchors of a rope cutting <paramref name="corner"/>: one on the horizontal edge, one on the vertical.</summary>
     private static Vector2 Anchor(Vector2 size, Corner corner, float a, float b, float overhang, out Vector2 vertical)
     {
         switch (corner)
@@ -612,7 +614,6 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
         float H(int salt, float lo, float hi) => DrawHelpers.HashRange(s + salt, lo, hi);
         float px = MathF.Min(size.X, size.Y) / 1080f;
 
-        // Which end it is thrown from.
         if (DrawHelpers.Hash01(s + 3) < 0.5f) (a, b) = (b, a);
 
         r.Start = a;
@@ -623,13 +624,14 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
         r.ChordDir = chord / r.ChordLen;
         r.ChordPerp = new Vector2(-r.ChordDir.Y, r.ChordDir.X);
 
-        // Slack hangs downhill. A near-vertical span has no downhill side, so it takes whichever this rope was seeded with.
+        // Slack hangs downhill. A near-vertical span has no downhill side, so it takes whichever was seeded.
         float side = r.ChordPerp.Y >= 0f ? 1f : -1f;
         if (MathF.Abs(r.ChordPerp.Y) < 0.30f) side = H(4, 0f, 1f) < 0.5f ? 1f : -1f;
         r.SagSign = side;
         r.SagDir = r.ChordPerp * side;
 
         r.Seed = s;
+        r.Phase = DrawHelpers.HashRange(s + 999, 0f, MathF.Tau);   // constant for the rig; no per-frame hash
         r.Depth = far ? H(5, 0.45f, 0.80f) : H(5, 0.00f, 0.12f);
         r.DiameterFrac = far ? H(6, FarDiameterMin, FarDiameterMax) : H(6, NearDiameterMin, NearDiameterMax);
 

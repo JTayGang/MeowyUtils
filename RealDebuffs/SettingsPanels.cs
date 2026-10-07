@@ -6,9 +6,8 @@ using RealDebuffs.Effects.Framework;
 namespace RealDebuffs;
 
 /// <summary>
-/// Settings window. Two tabs:
-///  - "Effects": master switches, intensity, per-debuff toggles, chat lockout, dev test panel.
-///  - "Moodles/Loci Support": custom-status rules, tooltip keyword rules, and effect styles.
+/// Settings window. Two tabs: "Effects" (master toggles, per-debuff, chat lockout, dev test),
+/// "Moodles/Loci Support" (custom-status rules, tooltip keywords, effect styles).
 /// </summary>
 public sealed class ConfigWindow : Window
 {
@@ -82,9 +81,7 @@ public sealed class ConfigWindow : Window
         ImGui.TextDisabled("Per-debuff effects");
         ImGui.Spacing();
 
-        // Sorted alphabetically by DisplayName for scanning; EffectManager._order is a
-        // separate concern (layering). Sorts the same way the old hardcoded list did, so
-        // existing muscle memory still works.
+        // Alphabetical for scanning; EffectManager's own order is a separate (layering) concern.
         foreach (var effect in _sortedEffects)
             changed |= EffectToggle(effect.Kind, effect.DisplayName, effect.Description);
 
@@ -131,9 +128,7 @@ public sealed class ConfigWindow : Window
     }
 }
 
-/// <summary>
-/// "Custom statuses" section: name -> effect rules.
-/// </summary>
+/// <summary>"Custom statuses" section: name -> effect rules.</summary>
 internal sealed class CustomStatusPanel
 {
     private const float NameWidth = 180f;
@@ -141,11 +136,9 @@ internal sealed class CustomStatusPanel
 
     private readonly Configuration _config;
     private readonly CustomStatusWatcher _watcher;
-    private readonly IReadOnlyList<ISceneEffect> _effects;
 
-    // Built from the effect roster: only kinds that have an effect behind them. Sorted
-    // alphabetically for scanning. Same list drives both the display in existing rules and
-    // the picker in the add row.
+    // Built once from the effect roster (only kinds with a real ISceneEffect behind them), sorted
+    // alphabetically; drives both the existing-rule display and the add-row picker.
     private readonly DebuffKind[] _kinds;
     private readonly string[] _kindNames;
 
@@ -160,11 +153,8 @@ internal sealed class CustomStatusPanel
     {
         _config = config;
         _watcher = watcher;
-        _effects = effects;
 
-        var sorted = effects
-            .OrderBy(e => e.DisplayName, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        var sorted = effects.OrderBy(e => e.DisplayName, StringComparer.OrdinalIgnoreCase).ToArray();
         _kinds = sorted.Select(e => e.Kind).ToArray();
         _kindNames = sorted.Select(e => e.DisplayName).ToArray();
 
@@ -274,6 +264,7 @@ internal sealed class CustomStatusPanel
         return changed;
     }
 
+    // Snapshot reference is stable between heartbeats, so this only rebuilds when it actually changes.
     private void RebuildLabels(CustomStatusSnapshot snapshot)
     {
         if (ReferenceEquals(_labelsFor, snapshot)) return;
@@ -288,17 +279,13 @@ internal sealed class CustomStatusPanel
     }
 }
 
-/// <summary>
-/// "Tooltip keywords" section: master toggle and the keyword rule list (with an in-header add row).
-/// </summary>
+/// <summary>"Tooltip keywords" section: master toggle plus the keyword rule list and add row.</summary>
 internal sealed class TooltipKeywordPanel
 {
     private const float KeywordWidth = 240f;
     private const float KindWidth = 130f;
 
     private readonly Configuration _config;
-    private readonly CustomStatusWatcher _watcher;
-
     private readonly DebuffKind[] _kinds;
     private readonly string[] _kindNames;
     private readonly IReadOnlyList<ISceneEffect> _effects;
@@ -312,12 +299,9 @@ internal sealed class TooltipKeywordPanel
     public TooltipKeywordPanel(Configuration config, CustomStatusWatcher watcher, IReadOnlyList<ISceneEffect> effects)
     {
         _config = config;
-        _watcher = watcher;
         _effects = effects;
 
-        var sorted = effects
-            .OrderBy(e => e.DisplayName, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        var sorted = effects.OrderBy(e => e.DisplayName, StringComparer.OrdinalIgnoreCase).ToArray();
         _kinds = sorted.Select(e => e.Kind).ToArray();
         _kindNames = sorted.Select(e => e.DisplayName).ToArray();
 
@@ -384,7 +368,6 @@ internal sealed class TooltipKeywordPanel
                 }
                 if (removeAt >= 0) { rules.RemoveAt(removeAt); changed = true; }
 
-                // ---- add row (inside the header, below the rules list) ----
                 ImGui.Spacing();
                 ImGui.Separator();
                 ImGui.Spacing();
@@ -438,42 +421,63 @@ internal sealed class TooltipKeywordPanel
 }
 
 /// <summary>
-/// "Effect generator" section: a paste-in description tester at the top, then a compact effect
-/// editor below - one combo picks which effect to customize, and only that effect's slots are
-/// shown. Copy exports the selected effect's style to the clipboard; Reset returns it to its
-/// built-in defaults. Both buttons act on the currently-selected effect only.
-///
-/// The roster of effects shown in the combo, the slots each effect exposes, and every slot's
-/// default material all come from EffectRegistry, which is populated once by Plugin from the
-/// effects' own declarations. Nothing here is hardcoded: adding a new effect's slots means
-/// adding them to that effect's Slots property, and this panel picks them up on the next draw.
+/// "Effect generator" section: a paste-in description tester plus a per-effect material editor.
+/// Copy exports the selected effect's style as a Moodle phrase; Reset restores its defaults.
+/// Everything shown here comes from EffectRegistry, which is populated once at plugin load.
 /// </summary>
 internal sealed class EffectStylePanel
 {
     private readonly Configuration _config;
-
     private string _testText = "";
-
-    /// <summary>Which effect the editor below the tester is currently showing. Defaults to the
-    /// first effect in the registry; changed via the "Effect" combo. Persists for the session
-    /// so switching back and forth doesn't lose what was on screen.</summary>
     private DebuffKind _selectedKind = DebuffKind.Blind;
 
-    // Stored values, one per dropdown entry after the implicit "(default)". "rainbow" is the
-    // canonical animated-hue value; the parser still accepts "rgb" (TooltipKeywordParser.RainbowWords).
+    // Cached once: MaterialRegistry and EffectRegistry are both fully populated by the time the
+    // first EffectStylePanel is constructed, and neither changes afterwards. Building these in
+    // the static ctor keeps the per-frame draw free of LINQ/ToArray allocations.
+    private static readonly DebuffKind[] KindValues;
+    private static readonly string[] KindNames;
+    private static readonly string[] StrokeNames, StrokeLabels;
+    private static readonly string[] ParticleNames, ParticleLabels;
+    private static readonly string[] RegionNames, RegionLabels;
+    private static readonly string[] EmitOptions, EmitOptionIds;
+
+    // Stored value for "rainbow" is the canonical spelling; the parser also accepts "rgb".
     private static readonly string[] _colorNames = TooltipKeywordParser.NamedColors.Keys
         .Concat(new[] { "rainbow" })
         .OrderBy(k => k, StringComparer.OrdinalIgnoreCase)
         .ToArray();
 
-    // Parallel to _colorNames. Display names differ from stored names only for rainbow, which
-    // is labelled "Rainbow/RGB" so users can see both spellings are accepted in tooltip text.
     private static readonly string[] _colorOptions = new[] { "(default)" }
         .Concat(_colorNames.Select(DisplayNameForColor))
         .ToArray();
 
     private static string DisplayNameForColor(string name) =>
         string.Equals(name, "rainbow", StringComparison.OrdinalIgnoreCase) ? "Rainbow/RGB" : name;
+
+    static EffectStylePanel()
+    {
+        KindValues = EffectRegistry.KindsWithSlots;
+        KindNames = KindValues.Select(k => k.ToString()).ToArray();
+
+        StrokeNames = MaterialRegistry.StrokeNames.ToArray();
+        StrokeLabels = StrokeNames.Select(FriendlyMaterialName).ToArray();
+        ParticleNames = MaterialRegistry.ParticleNames.ToArray();
+        ParticleLabels = ParticleNames.Select(FriendlyMaterialName).ToArray();
+        RegionNames = MaterialRegistry.RegionNames.ToArray();
+        RegionLabels = RegionNames.Select(FriendlyMaterialName).ToArray();
+
+        var emitNames = new List<string>();
+        var emitLabels = new List<string>();
+        foreach (var name in ParticleNames)
+        {
+            var mat = MaterialRegistry.TryGetParticle(name);
+            if (mat is null || mat.Emissions.Length == 0) continue;
+            emitNames.Add(name);
+            emitLabels.Add(FriendlyMaterialName(name));
+        }
+        EmitOptions = new[] { "(from material)", "(none)" }.Concat(emitLabels).ToArray();
+        EmitOptionIds = new[] { "", "__none__" }.Concat(emitNames).ToArray();
+    }
 
     public EffectStylePanel(Configuration config) { _config = config; }
 
@@ -504,33 +508,27 @@ internal sealed class EffectStylePanel
     }
 
     /// <summary>
-    /// The effect editor: a combo picks which kind to show, Copy exports that kind's style,
-    /// Reset returns it to its defaults, and the slots for that kind follow below.
-    ///
-    /// Changing the combo does NOT reset the effect being left; Reset is an explicit button so a
-    /// user exploring options doesn't lose edits to a previous effect.
+    /// Changing the effect combo does NOT reset the previous effect; Reset is an explicit button
+    /// so a user exploring options doesn't lose edits to what they were just working on.
     /// </summary>
     private bool DrawEffectEditor()
     {
         bool changed = false;
 
-        var kinds = EffectRegistry.KindsWithSlots;
-        if (kinds.Length == 0)
+        if (KindValues.Length == 0)
         {
             ImGui.TextDisabled("  (no effects with customizable materials yet)");
             return false;
         }
 
-        var names = kinds.Select(k => k.ToString()).ToArray();
-
-        int idx = Array.IndexOf(kinds, _selectedKind);
+        int idx = Array.IndexOf(KindValues, _selectedKind);
         if (idx < 0) idx = 0;
 
         ImGui.TextDisabled("Effect");
         ImGui.SetNextItemWidth(180f);
-        if (ImGui.Combo("##effectselect", ref idx, names, names.Length))
+        if (ImGui.Combo("##effectselect", ref idx, KindNames, KindNames.Length))
         {
-            _selectedKind = kinds[idx];
+            _selectedKind = KindValues[idx];
             _testText = BuildExportPhrase(_selectedKind);
         };
 
@@ -544,9 +542,7 @@ internal sealed class EffectStylePanel
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip($"Copies to clipboard and fills the tester above:\n\n\"{BuildExportPhrase(_selectedKind)}\"");
 
-        // Extra spacing before Reset so a misclick on Copy doesn't land on the destructive
-        // button. 32px is well beyond the default item spacing (~8px), which is what makes the
-        // gap read as intentional.
+        // Wide gap before Reset so a misclick on Copy can't land on the destructive button.
         ImGui.SameLine(0f, 32f);
 
         ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.95f, 0.55f, 0.35f, 1f));
@@ -575,8 +571,7 @@ internal sealed class EffectStylePanel
 
         foreach (var slot in EffectRegistry.SlotsFor(_selectedKind))
         {
-            // Evaluate both in order - can't use || because we still want to draw the emit row
-            // even when the slot row reports a change.
+            // Both are drawn every frame even if only one reports a change, so evaluate in order.
             bool slotChanged = DrawSlotRow(_selectedKind, slot);
             bool emitChanged = slot.PrimitiveType == "Stroke" && DrawEmitRow(_selectedKind, slot);
 
@@ -590,11 +585,7 @@ internal sealed class EffectStylePanel
         return changed;
     }
 
-    /// <summary>
-    /// Removes every material override belonging to <paramref name="kind"/> - both the material
-    /// axis (stroke/particle/region) and the emit axis for any stroke slot. Returns true if
-    /// anything was actually removed, so the caller can decide whether to save.
-    /// </summary>
+    /// <summary>Removes every override belonging to <paramref name="kind"/> on both the material and emit axes.</summary>
     private bool ResetToDefaults(DebuffKind kind)
     {
         bool removedAny = false;
@@ -616,14 +607,9 @@ internal sealed class EffectStylePanel
     }
 
     /// <summary>
-    /// The paste-in tester. Type or paste a status description; the parser runs it against the
-    /// current keyword rules and shows what each match resolved to. The Preview button forces
-    /// every matched kind on screen for 15s (with its resolved color), so the visual result can
-    /// be checked without applying a Moodle.
-    ///
-    /// NOTE: material substitutions ("made of snow") are shown in the match list, but the
-    /// Preview button only forces the KIND with its color. The material swap that a substitution
-    /// requests is applied per-frame via the effect's own config, not through DebugTester.
+    /// The paste-in tester. Preview forces every matched kind on screen for 15s with its resolved
+    /// color, so the result can be checked without applying a Moodle. Material substitutions are
+    /// listed but not previewed - they only apply live via the per-frame snapshot.
     /// </summary>
     private void DrawTester()
     {
@@ -684,18 +670,13 @@ internal sealed class EffectStylePanel
     }
 
     /// <summary>
-    /// The description phrase a user would paste into a Moodle/Loci status to reproduce this
-    /// effect's style. Trigger word comes from the user's own rules; material word comes from
-    /// the "made of X" vocabulary. Material axis wins over emit axis when both are customized.
+    /// The Moodle phrase that reproduces this effect's current style. Material axis wins over
+    /// emit axis when both are customized; only words that round-trip cleanly are exported.
     /// </summary>
     private string BuildExportPhrase(DebuffKind kind)
     {
         string trigger = CanonicalTrigger(kind);
 
-        // Preset names and rainbow words are the only two families that round-trip cleanly as
-        // adjectives. Hex codes and 0x-prefixed values are still accepted by the parser but
-        // have no natural-language spelling, so they're skipped here. "rgb" is normalized to
-        // "rainbow" so the exported phrase uses the canonical spelling.
         if (_config.ColorOverrides.TryGetValue(kind, out var colorName)
             && TooltipKeywordParser.IsColorWord(colorName))
         {
@@ -737,16 +718,9 @@ internal sealed class EffectStylePanel
 
     private bool DrawSlotRow(DebuffKind kind, in SwappableSlot slot)
     {
-        string[] names = slot.PrimitiveType switch
-        {
-            "Stroke"   => MaterialRegistry.StrokeNames.ToArray(),
-            "Particle" => MaterialRegistry.ParticleNames.ToArray(),
-            "Region"   => MaterialRegistry.RegionNames.ToArray(),
-            _ => Array.Empty<string>(),
-        };
+        var (names, labels) = MaterialTables(slot.PrimitiveType);
         if (names.Length == 0) return false;
 
-        string[] labels = names.Select(FriendlyMaterialName).ToArray();
         string key = KeyFor(kind, slot);
         string defaultName = slot.DefaultMaterial;
 
@@ -765,15 +739,17 @@ internal sealed class EffectStylePanel
         return changed;
     }
 
+    private static (string[] Names, string[] Labels) MaterialTables(string primitiveType) => primitiveType switch
+    {
+        "Stroke"   => (StrokeNames, StrokeLabels),
+        "Particle" => (ParticleNames, ParticleLabels),
+        "Region"   => (RegionNames, RegionLabels),
+        _          => (Array.Empty<string>(), Array.Empty<string>()),
+    };
+
     /// <summary>
-    /// Re-parses the current tester text and refreshes the forced color on any kind that's
-    /// currently being previewed. Called after the color dropdown changes so a running preview
-    /// recolors to match without needing Preview clicked again.
-    ///
-    /// Deliberately the same parse path Preview uses (tooltip text -> matches -> per-match color), so
-    /// the forced color matches what a Moodle with that description would produce, including the
-    /// same-clause color resolution ("black flame" takes its color from the word, not the dropdown).
-    /// No-op when nothing is being previewed or the rebuilt phrase matches nothing.
+    /// After a color change, refresh the forced color on any kind currently being previewed, so a
+    /// running preview recolors without needing Preview clicked again. Same parse path Preview uses.
     /// </summary>
     private void RefreshActivePreview()
     {
@@ -781,19 +757,13 @@ internal sealed class EffectStylePanel
             DebugTester.UpdateForcedColor(m.Kind, m.Color);
     }
 
-    /// <summary>
-    /// Per-effect color dropdown. Sits above the material slots in the editor and shares their
-    /// layout conventions: fixed-width control, label to the right, swatch to the right of that.
-    /// "(default)" removes any override; picking a color stores its name in
-    /// <see cref="Configuration.ColorOverrides"/>. Returns true if the config changed.
-    /// </summary>
     private bool DrawColorRow(DebuffKind kind)
     {
         bool changed = false;
 
         string current = _config.ColorOverrides.TryGetValue(kind, out var name) ? name : "";
 
-        // Older configs stored "rgb" for rainbow; map it so the dropdown shows the right selection.
+        // Older configs stored "rgb"; map it so the dropdown shows the right selection.
         if (string.Equals(current, "rgb", StringComparison.OrdinalIgnoreCase))
             current = "rainbow";
 
@@ -818,9 +788,7 @@ internal sealed class EffectStylePanel
             }
         }
 
-        // Swatch, drawn with the window's draw list rather than ColorButton so it stays a pure
-        // read-only indicator (ColorButton would open a picker, and a picked custom color has no
-        // name to store back in ColorOverrides).
+        // Read-only swatch (not ColorButton): a custom picked color has no name to store back.
         if (current.Length > 0 && TooltipKeywordParser.TryResolveColorToken(current, out var swatchRgb))
         {
             ImGui.SameLine();
@@ -835,54 +803,32 @@ internal sealed class EffectStylePanel
         return changed;
     }
 
-    /// <summary>
-    /// Emit dropdown for stroke slots. Options: "(from material)", "(none)", and every particle
-    /// material that declares at least one stroke emission.
-    /// </summary>
+    /// <summary>Emit dropdown for stroke slots: "(from material)", "(none)", or a particle material.</summary>
     private bool DrawEmitRow(DebuffKind kind, in SwappableSlot slot)
     {
-        var particleNames = new List<string>();
-        var particleLabels = new List<string>();
-        foreach (var name in MaterialRegistry.ParticleNames)
-        {
-            var mat = MaterialRegistry.TryGetParticle(name);
-            if (mat is null || mat.Emissions.Length == 0) continue;
-            particleNames.Add(name);
-            particleLabels.Add(FriendlyMaterialName(name));
-        }
-        if (particleNames.Count == 0) return false;
-
-        string[] options = new[] { "(from material)", "(none)" }
-            .Concat(particleLabels)
-            .ToArray();
-        string[] optionIds = new[] { "", "__none__" }
-            .Concat(particleNames)
-            .ToArray();
+        if (EmitOptions.Length == 2) return false;   // no particle material declares emissions
 
         string key = MaterialOverrideKey.ForStrokeEmit(kind, slot.Role);
 
         string current = _config.MaterialOverrides.TryGetValue(key, out var o) ? o : "";
-        int idx = Array.IndexOf(optionIds, current);
+        int idx = Array.IndexOf(EmitOptionIds, current);
         if (idx < 0) idx = 0;
 
         ImGui.Indent();
         ImGui.SetNextItemWidth(200f);
-        bool changed = ImGui.Combo($"Emits##{kind}{slot.Role}", ref idx, options, options.Length);
+        bool changed = ImGui.Combo($"Emits##{kind}{slot.Role}", ref idx, EmitOptions, EmitOptions.Length);
         ImGui.Unindent();
 
         if (changed)
         {
-            string picked = optionIds[idx];
+            string picked = EmitOptionIds[idx];
             if (picked.Length == 0) _config.MaterialOverrides.Remove(key);
             else                    _config.MaterialOverrides[key] = picked;
         }
         return changed;
     }
 
-    /// <summary>
-    /// The override-dictionary key for a slot. Region slots use the edge-mask-based key the
-    /// renderer actually reads; strokes and particles use the (kind, type, role) key.
-    /// </summary>
+    /// <summary>Region slots key by edge-mask tag; strokes and particles by (kind, type, role).</summary>
     private static string KeyFor(DebuffKind kind, in SwappableSlot slot) =>
         slot.RegionKind is { } rk
             ? MaterialOverrideKey.ForRegion(kind, rk)
@@ -903,42 +849,26 @@ internal sealed class EffectStylePanel
 }
 
 /// <summary>
-/// Preview an effect without needing a matching debuff to actually be active. Callers: the
-/// dev-only test panel at the bottom of the settings window, and the tooltip-keyword tester's
-/// "preview on screen" button.
-///
-/// Visual only - hooked in after EffectManager tells ChatBlocker whether you're silenced, so a
-/// test never blocks real chat. Always temporary (some effects, like Blind at high intensity,
-/// could hide the checkbox you'd need to switch them off). Respects the master Enabled, per-effect
-/// toggles, cutscene/GPose hiding, and the intensity slider. Nothing is saved; reload clears it.
-///
-/// The panel iterates the effect roster passed by ConfigWindow, so only implemented effects get
-/// a checkbox. A DebuffKind without an ISceneEffect has nothing to preview and doesn't appear.
+/// Preview an effect without needing a matching debuff. Visual only - it never triggers the chat
+/// lockout. Respects the master switch, per-effect toggles, cutscene/GPose hiding and intensity.
+/// Always temporary; nothing is saved. The panel iterates the effect roster, so only implemented
+/// effects get a checkbox.
 /// </summary>
 internal static class DebugTester
 {
     private const float Seconds = 15f;
 
-    // kind -> TickCount64 ms when its test ends. Missing or past = not being tested.
     private static readonly Dictionary<DebuffKind, long> EndsAt = new();
-
-    // kind -> color to force, set alongside EndsAt. Only meaningful while IsForced is also true.
     private static readonly Dictionary<DebuffKind, Vector4?> ForcedColor = new();
 
     public static bool IsForced(DebuffKind kind) =>
         EndsAt.TryGetValue(kind, out long end) && end > Environment.TickCount64;
 
-    /// <summary>What color a forced test wants, or null for "use the effect's own".</summary>
     public static Vector4? GetForcedColor(DebuffKind kind) =>
         ForcedColor.TryGetValue(kind, out var c) ? c : null;
 
     public static void Force(DebuffKind kind, bool on) => Force(kind, on, null);
 
-    /// <summary>
-    /// Starts or stops a test, optionally recolored (see DrawHelpers.PushColorOverride for what a
-    /// non-null color does). Used by the dev checkboxes (always null) and the tooltip-tester's
-    /// preview button (whatever it just parsed).
-    /// </summary>
     public static void Force(DebuffKind kind, bool on, Vector4? color)
     {
         EndsAt[kind] = on ? Environment.TickCount64 + (long)(Seconds * 1000f) : 0L;
@@ -946,10 +876,8 @@ internal static class DebugTester
     }
 
     /// <summary>
-    /// Updates the color on an already-forced test without touching its end time. Used by the
-    /// effect generator so changing the color dropdown mid-preview recolors the running preview
-    /// instead of requiring the user to re-click Preview (which would restart the 15s timer).
-    /// No-op when the kind isn't currently being tested.
+    /// Recolors a running preview without restarting its timer. Used by the effect generator so
+    /// changing the color dropdown updates the on-screen preview live.
     /// </summary>
     public static void UpdateForcedColor(DebuffKind kind, Vector4? color)
     {
@@ -957,19 +885,12 @@ internal static class DebugTester
             ForcedColor[kind] = color;
     }
 
-    /// <summary>
-    /// Draws the panel. <paramref name="isShowing"/> says whether an effect is allowed to appear
-    /// at all right now; it's only used to add an "(off in settings)" hint so a test that shows
-    /// nothing explains itself. <paramref name="effects"/> is the roster to iterate; only
-    /// implemented effects get a checkbox.
-    /// </summary>
     public static void DrawUi(Func<DebuffKind, bool> isShowing, IReadOnlyList<ISceneEffect> effects)
     {
         ImGui.Separator();
         if (!ImGui.CollapsingHeader("Test effects (dev only)")) return;
 
-        // Own ID scope: labels repeat the settings-window checkboxes, and ImGui would otherwise
-        // treat them as the same widgets (ticking one would tick both).
+        // Own ID scope: labels repeat the settings checkboxes and ImGui would otherwise sync them.
         ImGui.PushID("TestTools");
         try
         {

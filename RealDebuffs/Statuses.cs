@@ -14,8 +14,7 @@ namespace RealDebuffs;
 
 /// <summary>
 /// Visual debuff families. Several vanilla statuses can map to one kind when they're mechanically
-/// the same. To add a kind: add it at the END (numeric values are serialized), then write an
-/// ISceneEffect that declares it; EffectDiscovery picks it up automatically.
+/// the same. Numeric values are serialized - add new kinds at the END.
 /// </summary>
 public enum DebuffKind
 {
@@ -50,14 +49,14 @@ public enum DebuffKind
 }
 
 /// <summary>
-/// Resolves vanilla status IDs to DebuffKinds by loading the English Status sheet at startup and
-/// matching on name. The name map is built from each effect's TriggerStatuses, so adding a new
-/// effect requires no changes here.
+/// Resolves vanilla status IDs to DebuffKinds by matching the English Status sheet against each
+/// effect's declared TriggerStatuses.
 /// </summary>
 public sealed class StatusCatalog
 {
-    private readonly Dictionary<uint, DebuffKind> _idToKind = new();
-    private readonly Dictionary<uint, float> _idToStrength = new();
+    // Kind and strength together: this is looked up per status per frame, and the old two-dictionary
+    // form paid a second hash lookup for the strength on every hit.
+    private readonly Dictionary<uint, (DebuffKind Kind, float Strength)> _idToInfo = new();
     private readonly IDataManager _dataManager;
 
     public StatusCatalog(IDataManager dataManager, IReadOnlyList<ISceneEffect> effects, IPluginLog log)
@@ -89,15 +88,14 @@ public sealed class StatusCatalog
             if (string.IsNullOrEmpty(name)) continue;
             if (nameMap.TryGetValue(name, out var kind))
             {
-                _idToKind[row.RowId] = kind;
-                if (strengths.TryGetValue(name, out var strength))
-                    _idToStrength[row.RowId] = strength;
+                float strength = strengths.TryGetValue(name, out var s) ? s : 1f;
+                _idToInfo[row.RowId] = (kind, strength);
             }
         }
 
-        int found = _idToKind.Values.Distinct().Count();
+        int found = _idToInfo.Values.Select(v => v.Kind).Distinct().Count();
         int expected = nameMap.Values.Distinct().Count();
-        log.Debug($"RealDebuffs: resolved {_idToKind.Count} row(s) covering {found}/{expected} kinds.");
+        log.Debug($"RealDebuffs: resolved {_idToInfo.Count} row(s) covering {found}/{expected} kinds.");
 
         if (found < expected)
             log.Warning("RealDebuffs: not every name in the effect roster's TriggerStatuses was found " +
@@ -107,10 +105,15 @@ public sealed class StatusCatalog
 
     public bool TryGetEffect(uint statusId, out DebuffKind kind, out float strength)
     {
+        if (_idToInfo.TryGetValue(statusId, out var info))
+        {
+            kind = info.Kind;
+            strength = info.Strength;
+            return true;
+        }
+        kind = default;
         strength = 1f;
-        if (!_idToKind.TryGetValue(statusId, out kind)) return false;
-        if (_idToStrength.TryGetValue(statusId, out var s)) strength = s;
-        return true;
+        return false;
     }
 
     /// <summary>Human-readable name for any status ID, for /realdebuffs statuses.</summary>
@@ -129,11 +132,6 @@ public sealed record ActiveCustomStatus(
     string Key, string Name, string Description, StatusSource Sources,
     IReadOnlyList<TooltipEffectMatch> TooltipMatches);
 
-/// <summary>
-/// Immutable snapshot of "which Moodles/Loci statuses are on the player right now", merged across
-/// both plugins by name. Tooltip keyword matching is done once per Build; name-based rules are
-/// matched fresh every frame.
-/// </summary>
 public sealed class CustomStatusSnapshot
 {
     public static readonly CustomStatusSnapshot Empty = new(
@@ -148,10 +146,7 @@ public sealed class CustomStatusSnapshot
     public IReadOnlyCollection<DebuffKind> TooltipKinds { get; }
     public IReadOnlyDictionary<DebuffKind, Vector4> TooltipColors { get; }
 
-    /// <summary>
-    /// Per-kind material substitutions from description text, keyed by the "{Kind}.{Type}.{Role}"
-    /// format the renderer uses. Only populated for phrases that type-match the effect's hero slots.
-    /// </summary>
+    /// <summary>Material substitutions from description text, keyed as the renderer expects.</summary>
     public IReadOnlyDictionary<string, string> TooltipMaterialOverrides { get; }
 
     private CustomStatusSnapshot(
@@ -170,10 +165,7 @@ public sealed class CustomStatusSnapshot
     /// <summary>True if a status with this key is active.</summary>
     public bool Contains(string key) => key.Length > 0 && _keys.Contains(key);
 
-    /// <summary>
-    /// Merges the two plugins' status lists by name (a non-empty description already on record
-    /// wins), then resolves tooltip keywords once over the merged descriptions.
-    /// </summary>
+    /// <summary>Merges both plugins' statuses by name, then resolves tooltip keywords over the merged descriptions.</summary>
     internal static CustomStatusSnapshot Build(
         IEnumerable<StatusHead> moodlesStatuses,
         IEnumerable<StatusHead> lociStatuses,
@@ -187,6 +179,7 @@ public sealed class CustomStatusSnapshot
             if (name.Length == 0) return;
             var key = StatusNames.Key(name);
             var desc = description ?? "";
+            // A non-empty description already on record wins (Loci and Moodles may duplicate a name).
             merged[key] = merged.TryGetValue(key, out var seen)
                 ? (seen.Name, seen.Description.Length > 0 ? seen.Description : desc, seen.Sources | source)
                 : (name, desc, source);
@@ -258,9 +251,9 @@ public sealed class CustomStatusSnapshot
 }
 
 /// <summary>
-/// Reads Moodles and Loci over IPC and publishes a CustomStatusSnapshot. This is the plugin's one
-/// periodic heartbeat: once a second (or sooner when settings change) it rebuilds the snapshot and
-/// advances Tick. A missing plugin just reports nothing and is re-probed on a slow timer.
+/// Reads Moodles and Loci over IPC and publishes a CustomStatusSnapshot. The plugin's one periodic
+/// heartbeat: rebuilds the snapshot and advances Tick about once a second (sooner when the settings
+/// change). A missing plugin just reports nothing and is re-probed on a slow timer.
 /// </summary>
 public sealed class CustomStatusWatcher : IDisposable
 {
@@ -362,7 +355,7 @@ public sealed class CustomStatusWatcher : IDisposable
         _snapshot = CustomStatusSnapshot.Build(ReadSource(_moodles, now), ReadSource(_loci, now), tooltipRules);
     }
 
-    /// <summary>Reads one plugin's statuses. Never throws; logs one warning per failure streak.</summary>
+    /// <summary>Never throws; logs one warning per failure streak.</summary>
     private IReadOnlyList<StatusHead> ReadSource(Source s, long now)
     {
         if (!s.Available)
@@ -402,7 +395,9 @@ public sealed class CustomStatusWatcher : IDisposable
 }
 
 /// <summary>
-/// How status titles are compared. Strips Moodles/Loci markup, collapses whitespace, lowercases.
+/// How status titles are compared: strips Moodles/Loci markup, collapses whitespace, lowercases
+/// (for Key). Both are called per frame by the settings add row, so Clean has a fast path for the
+/// common case of a plain name with no markup.
 /// </summary>
 public static class StatusNames
 {
@@ -416,6 +411,17 @@ public static class StatusNames
     public static string Clean(string? title)
     {
         if (string.IsNullOrWhiteSpace(title)) return "";
+
+        // Fast path: no markup char and no whitespace means both regexes would be no-ops and Trim
+        // would return the same string. Saves two regex scans per call on the common case.
+        bool maybe = false;
+        for (int i = 0; i < title.Length; i++)
+        {
+            char c = title[i];
+            if (c == '[' || char.IsWhiteSpace(c)) { maybe = true; break; }
+        }
+        if (!maybe) return title;
+
         return Spaces.Replace(Markup.Replace(title, ""), " ").Trim();
     }
 

@@ -1,89 +1,182 @@
-# Bind/Heavy reskinning system
+# Real Debuffs
 
-## What this is
+## What is this?
 
-A new path/skin split for screen effects, applied to two effects so far: **Bind** (tentacles)
-and **Heavy** (chains). Each one now has a **Visual style** dropdown in Settings → Effects, and
-they can swap materials with each other - Bind can render as chains, Heavy can render as
-tentacles - because both are now built the same way underneath: an effect owns *where its
-strands go* (the "shape"), and a separate, pluggable **skin** owns *what a strand looks like
-when drawn* (the "material"). A future third effect just implements the same tiny interface to
-join the pool.
+Real Debuffs is a plugin for Final Fantasy XIV (via Dalamud) that turns your debuffs into
+actual things on your screen.
 
-## How to apply
+When you get Blinded, your screen goes dark. When you're Burning, fire licks up from the
+bottom of the screen and smoke drifts across it. When you're Bound, ropes fly in and pull
+taut around you. Every debuff has its own look, they layer on top of each other, and they
+fade in and out smoothly instead of popping on.
 
-Copy this `RealDebuffs/` folder over your existing one (paths match exactly):
+You can also make your own versions. If you use Moodles or Loci, you can write a status
+description like *"white chains made of snow"* and the game will show you white chains that
+shed snowflakes. No settings menu required — just text in the status.
 
-- `RealDebuffs/Effects/StrandPath.cs` - **new**
-- `RealDebuffs/Effects/IStrandSkin.cs` - **new**
-- `RealDebuffs/Effects/StrandSkinKind.cs` - **new**
-- `RealDebuffs/Effects/IReskinnableEffect.cs` - **new**
-- `RealDebuffs/Effects/TentacleSkin.cs` - **new** (Bind's original look, extracted)
-- `RealDebuffs/Effects/ChainSkin.cs` - **new** (Heavy's original look, extracted)
-- `RealDebuffs/Effects/BindEffect.cs` - modified (shape/latch logic unchanged, now delegates drawing to a skin)
-- `RealDebuffs/Effects/HeavyEffect.cs` - modified (shape/sway logic unchanged, now delegates drawing to a skin)
-- `RealDebuffs/Effects/DrawHelpers.cs` - modified (one doc-comment updated, no logic change)
-- `RealDebuffs/Configuration.cs` - modified (added `BindSkin`/`HeavySkin` + the two "Visual style" dropdowns)
-- `RealDebuffs/EffectManager.cs` - modified (one `is IReskinnableEffect` check before `Draw`)
+Commands:
+- `/realdebuffs` — open the settings window.
+- `/realdebuffs toggle` — turn every effect on or off.
+- `/realdebuffs statuses` — log your current statuses (including custom Moodles/Loci ones)
+  to the Dalamud log, for troubleshooting.
 
-Everything else in your project is untouched. No constructors changed, so `Plugin.cs` needs no
-edits, and nothing else references `BindEffect`/`HeavyEffect` directly.
+---
 
-## The architecture, briefly
+## Features
 
-- **`StrandPath`** - a reusable polyline + arc-length table. Whatever an effect's own shape logic
-  already computed each frame (Bind's curl-and-wave tendril curve, Heavy's sagging bezier chain)
-  gets written into one of these instead of a raw array, so any skin can walk it generically.
-- **`IStrandSkin`** - one material. `DrawStrand(path, visual, reveal, tipFlare, ...)` draws one
-  strand from its base up to `reveal` (0..1) of its length, with `tipFlare` (0..1) as a generic
-  "how strongly should my growing/settling tip flourish show" knob. `TentacleSkin` and
-  `ChainSkin` are the two materials today - stateless singletons, so the same instance safely
-  renders strands for either effect, or several strands in one frame.
-- **`StrandVisual`** - the small, skin-agnostic per-strand knobs (`Thickness`, `Seed`, `Phase`,
-  `FlushStart`) an effect fills in fresh every frame.
-- **`IReskinnableEffect`** - the opt-in `{ StrandSkinKind SkinKind { set; } }` that lets
-  `EffectManager` push the user's chosen skin in right before `Draw`, via a plain `is` check.
-  Nothing about `IScreenEffect` itself changed, so the ~20 other effects are untouched.
+- **Per-debuff effects** covering ~28 debuff families, from a red edge outline for
+  Vulnerability Up to layered fire for Burns and drifting fog for Frostbite.
+- **Master intensity slider** and per-effect toggles, so you can dial things back or shut
+  off individual effects you don't care about.
+- **Hide during cutscenes** and automatic suppression while the game UI is hidden or you're
+  in GPose.
+- **Silence can actually block chat** (optional, off by default) via a game hook, rather
+  than only showing the visual effect.
+- **Moodles and Loci support** — show an effect while a custom status of yours is active,
+  by matching its title.
+- **Tooltip keyword scanning** — read a status's description and show effects based on the
+  words in it. `"burning"` triggers Burns; `"frost"` triggers Frostbite; and so on.
+- **"Made of X" material swaps** — a description like *"bound with chains"* renders Bind's
+  ropes as chains. A description like *"red flame"* tints the Burns effect red.
+- **Effect generator panel** in settings — paste a description to see what it triggers, and
+  swap any effect's materials or color by hand.
 
-`BindEffect` and `HeavyEffect` kept **all** of their original behavior - layout, timing, latch
-state machine, sway, sag, the works - they just hand a strand off to
-`StrandSkins.Get(_skinKind).DrawStrand(...)` at the point where they used to draw it themselves.
+---
 
-## A note on scale
+## Technical overview
 
-Bind's tendrils and Heavy's chains were each hand-tuned for their *own* material at their
-*own* size (many thin tendrils vs. a few thick chains). Swapping the skin does **not** rescale
-that - Bind-as-chains gets several fairly delicate chains, Heavy-as-tentacles gets a few very
-thick tentacles. That's deliberate (shape and skin stay fully independent, which is the point
-of the whole system), but it means the two swapped combinations will read as quite different
-in weight from their native ones. If either one looks off once you see it in-game, it's a
-one-line tuning knob:
+### How effects are organized
 
-- Bind's per-tendril thickness: the `BaseWidth` ranges in `BindEffect.BuildTendrils` (e.g.
-  `0.010f, 0.019f` for the bottom edge).
-- Heavy's per-chain thickness: `linkBase` in `HeavyEffect.Draw` (`minDim * 0.044f`).
+Every visual effect is an `ISceneEffect`. Effects do not draw directly — they push
+primitives into an `EffectScene`, and the framework renders the whole frame at once after
+every effect has had its turn. That's what makes layering, opacity and vignette priority
+work across effects without any of them knowing about the others.
 
-Happy to tune these together once you've seen it running, or add a per-skin scale multiplier
-if you'd rather the same strand read as a consistent size regardless of material.
+`EffectDiscovery` finds every `ISceneEffect` in the assembly at plugin load (public,
+non-abstract, parameterless constructor), sorted by `DrawOrder`. Adding a new effect means
+writing one class; nothing else in the project needs to change.
 
-## Verification
+Every frame, `EffectManager`:
 
-I don't have a way to run Dalamud/render the game here, so I couldn't watch this in-game
-before handing it back. Instead I built an offline harness: a stand-in for the ImGui drawing
-calls that validates every coordinate/radius/thickness is finite as it's drawn, then:
+1. Reads the local player's status list and maps each status ID to a `DebuffKind` via
+   `StatusCatalog` (which is built at startup by matching the English Status sheet against
+   each effect's declared `TriggerStatuses`).
+2. Adds any kinds that a Moodles/Loci rule or tooltip keyword match has asked for.
+3. Steps every effect's fade toward its target, skipping effects that have thrown.
+4. Calls `Emit` on each active effect.
+5. Hands the filled scene to `EffectSceneRenderer`, which draws vignette → regions →
+   strokes → particles in that order.
 
-- Ran both native combinations (Bind+Tentacle, Heavy+Chain) and both swapped combinations
-  (Bind+Chain, Heavy+Tentacle) across ~24 simulated seconds, 6 screen sizes/aspect ratios,
-  and several fade-in/fade-out/re-cast cycles - over 15 million draw calls, zero crashes,
-  zero non-finite values.
-- Ran Bind and Heavy for 120 seconds flipping the skin choice every 17 frames, to make sure
-  switching the dropdown mid-effect (which you can do live in Settings) never breaks anything.
-- The important one: ran my refactored Bind/Heavy **against an untouched copy of your original
-  code**, feeding both the identical time sequence (so they roll the identical random layout),
-  and compared every single draw call between them. Both native combinations came back
-  **byte-for-byte identical** - so the default, as-shipped look for both effects is provably
-  unchanged; only the new swapped combinations are new code paths.
+### Primitives
 
-That's a strong signal the logic is sound, but it's still not the same as seeing pixels on
-screen - please give both swapped combinations a look in-game before you call this done, and
-let me know if anything reads wrong.
+Effects emit four kinds of primitive into the scene:
+
+- **`StrokePrimitive`** — a strand along a `StrandPath` (a polyline + arc-length table).
+  Ropes, chains, tendrils, any effect that owns a "shape" and hands it to a material to
+  draw.
+- **`ParticlePrimitive`** — a single free particle with position, velocity, age, size and
+  a `PrimitiveRole` that decides which material draws it.
+- **`RegionPrimitive`** — a screen-space rectangle with an optional edge mask. Flat fills,
+  edge glows, firelight, screen tints.
+- **`ImpactPrimitive`** — a one-frame event (not drawn). "Something just hit something":
+  the framework asks the owner's stroke material what it throws, so a chain shows sparks
+  and rust, a rope shows dust and fibres, without either effect knowing which it is.
+
+### Materials
+
+Materials are the "what does this look like" half of the system. Three families live in
+`MaterialRegistry`:
+
+- **`IStrokeMaterial`** — draws a stroke. May also declare `Emissions` (things it sheds
+  along its length, like rust flakes) and `ImpactEmissions` (things it throws on impact).
+- **`IParticleMaterial`** — draws one particle. May also declare `Emissions` for when it's
+  used as a stroke emitter.
+- **`IRegionMaterial`** — draws one region.
+
+Materials are looked up by name, not by enum. Config stores them as strings, so nothing
+breaks when a new material is added.
+
+### The "made of X" and color override system
+
+Status descriptions go through `TooltipKeywordParser`, which:
+
+- Matches each enabled `TooltipKeywordRule`'s keywords as whole words inside the tooltip.
+- Resolves colors from `[color=...]` tags or from a color word in the same clause.
+- Resolves `"made of X"` phrases per clause, so a description naming several effects
+  attaches each clause's own material to the match(es) in that clause.
+- Skips keywords inside a material phrase, so `"flames"` in `"made of flames"` modifies
+  rather than activates.
+
+The result is a `TooltipEffectMatch` per kind, which `EffectManager` turns into a color
+override and (via `CustomStatusSnapshot.TooltipMaterialOverrides`) a material override for
+the frame.
+
+The same parser drives the Effect generator panel's tester, so what you see in the panel is
+what a real Moodle with that description will do.
+
+### Override resolution
+
+For each primitive, `EffectSceneRenderer` resolves its material in this order:
+
+1. User override (settings panel, or a tooltip "made of X" phrase).
+2. The effect's declared default (`EffectRegistry`, populated from each effect's
+   `SwappableSlot` list at load).
+3. A universal fallback (a plain stroke, a spark, a flat fill), so an unregistered material
+   name can never crash the renderer.
+
+The resolution cache keys on the override dictionary's instance. `EffectManager` publishes
+a fresh dictionary whenever overrides change, which clears the cache.
+
+### Emission
+
+`StrokeAutoEmitter` walks every stroke in the scene each frame and spawns whatever the
+stroke's material (or its emit-axis override) declares. Two kinds of emission:
+
+- **Free-flying** — a particle with a spawn position, a velocity, gravity, a lifespan and
+  a size range. Position is sampled along the stroke's arc length.
+- **Flow** — a particle that walks along the strand, wobbling laterally and slowing down
+  at material-declared "obstacles", like a drip catching on each sucker of a tendril.
+
+The stroke carries two optional windows, `EmitEdgeReach` and `EmitEndReach`, that confine
+emission to near the screen edges or the strand's ends. Heavy uses these to keep its
+rust and sparks around the anchor points. When a stroke's material has been swapped away
+from the effect's declared default, `StrokeAutoEmitter` drops both windows so the
+swapped-in material sheds along the entire strand — a "made of snow" chain covers its
+whole length, not just the ends.
+
+### Chat blocking
+
+Optional. `ChatBlocker` hooks the game's post-Enter chat-input processor and swallows
+outgoing messages while you're silenced. The signature can stop resolving after a game
+patch; it fails safe by logging once and doing nothing, so the visual effect is unaffected
+either way.
+
+---
+
+## Building
+
+`RealDebuffs.csproj` uses `Dalamud.NET.Sdk`, which resolves Dalamud, ImGui,
+FFXIVClientStructs and Lumina references automatically from your local Dalamud dev install
+(`DALAMUD_HOME`, normally `%APPDATA%\XIVLauncher\addon\Hooks\dev`).
+
+dotnet build -c Release
+
+
+No explicit `<TargetFramework>` is set on purpose: the SDK injects whatever TFM the
+currently-installed Dalamud build targets, so the project keeps building when Dalamud
+moves to a newer .NET.
+
+---
+
+## Adding things
+
+- **A new effect**: write a class implementing `ISceneEffect`. Declare `Kind`,
+  `DisplayName`, `Description`, `DrawOrder` and `TriggerStatuses`; optionally implement
+  `IHasHeroSlots` and `IHasSwappableSlots` to expose swappable materials and participate
+  in "made of X" phrases. `EffectDiscovery` picks it up on next load.
+- **A new material**: write a class implementing `IStrokeMaterial`, `IParticleMaterial` or
+  `IRegionMaterial`, and add it to the appropriate list in `MaterialRegistry`'s static
+  constructor. Give it a `NaturalLanguageWords` array if it should be selectable via a
+  `"made of X"` phrase.
+- **A new `DebuffKind`**: add it at the END of the enum (numeric values are serialized),
+  then write an effect that declares it.

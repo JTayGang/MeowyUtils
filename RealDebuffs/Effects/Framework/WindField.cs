@@ -27,8 +27,6 @@ internal sealed class WindField
 
     private Flake[] _flakes = Array.Empty<Flake>();
 
-    public int Count => _flakes.Length;
-
     /// <summary>Lays out <paramref name="count"/> flakes across the screen. Reuses the array when the count is unchanged.</summary>
     public void Build(int count, int seed, Vector2 size)
     {

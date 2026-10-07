@@ -27,8 +27,6 @@ internal sealed class FrostField
     /// <summary>Overall opacity and clock time the haze was last built at (see RegionFrost).</summary>
     public float HazeAlpha, HazeTime = float.NegativeInfinity;
 
-    public Vector2 Size;
-
     // ---- per-cast layout of the things that sit on the frost, all placed from the arrival field ----
 
     /// <summary>A static six-fold crystal on the glass.</summary>
@@ -66,7 +64,6 @@ internal sealed class FrostField
 
     public void Build(int seed, Vector2 size)
     {
-        Size = size;
         Growth.Build(seed, size, new ScreenGrowth.Settings(Depth: 0.30f, SpreadRate: 0.55f, DepthWeight: 0.75f, Warp: 0.85f, Sites: 8));
 
         int nv = (Growth.Cols + 1) * (Growth.Rows + 1);

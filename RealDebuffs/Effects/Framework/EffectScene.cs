@@ -17,7 +17,6 @@ public enum PrimitiveRole
     Snowflake = 10,
     Snow = 11,
     Fog = 12,
-    IceCrystal = 13,
     Smoke = 18,
     Cinder = 19,
     Dust = 20,

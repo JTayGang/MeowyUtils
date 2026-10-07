@@ -84,7 +84,6 @@ public static class EffectRegistry
         PrimitiveRole.Snowflake  => "particle.snowflake",
         PrimitiveRole.Snow       => "particle.snow",
         PrimitiveRole.Fog        => "particle.fog",
-        PrimitiveRole.IceCrystal => "particle.ice-crystal",
         PrimitiveRole.Drip       => "particle.drip",
         PrimitiveRole.Flow       => "particle.drip",
         PrimitiveRole.Dust       => "particle.dust",
@@ -137,7 +136,6 @@ public static class MaterialRegistry
         Add(Particles, new ParticleSnowflake());
         Add(Particles, new ParticleSnow());
         Add(Particles, new ParticleFog());
-        Add(Particles, new ParticleIceCrystal());
         Add(Particles, new ParticleSpark());
         Add(Particles, new ParticleDrip());
         Add(Particles, new ParticleDust());

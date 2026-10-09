@@ -58,6 +58,14 @@ public interface IStrokeMaterial : IMaterial
     /// different things at once (sparks AND flakes AND dust).
     /// </summary>
     ReadOnlySpan<ImpactEmission> ImpactEmissions => ReadOnlySpan<ImpactEmission>.Empty;
+
+    /// <summary>
+    /// How thick the strand is at arc length <paramref name="arc"/>, as a radius in pixels. Anything that
+    /// has to hang off a strand's surface (a drip, a bead of liquid) asks this to find the surface rather
+    /// than the centreline. The default is a plain tube of the stroke's WidthHint; a material that tapers
+    /// or swells overrides it with the same profile it draws.
+    /// </summary>
+    float RadiusAt(in StrokePrimitive s, float arc, float shortSide) => MathF.Max(1f, s.WidthHint * 0.5f);
 }
 
 public interface IParticleMaterial : IMaterial
@@ -97,7 +105,8 @@ public readonly record struct StrokeEmission(
     StrokeFlowOptions? Flow = null,
     string? RenderMaterial = null,
     float ClusterWindowSeconds = 0f,
-    float ClusterConeRadians = 0f);
+    float ClusterConeRadians = 0f,
+    StrokeDripOptions? Drip = null);
 
 /// <summary>
 /// One thing a stroke material throws in a single burst when it is hit. Counts are scaled by the
@@ -127,3 +136,26 @@ public readonly record struct StrokeFlowOptions(
     float WobbleFrequencyHz,
     float ObstacleSpacingPx,
     float LateralOffsetFrac);
+
+/// <summary>
+/// The viscous half of a stroke emission. An emission with this block does not scatter free particles:
+/// it grows drops. A drop forms on the underside of the strand, swells, stretches into a neck, pinches off
+/// and falls, trailing a string that snaps back to the surface; then the next one begins. The emission's
+/// Size range is the drop's radius (px at 1080p), Gravity is how hard it falls (px/s^2), and
+/// <see cref="StrokeEmission.DensityPer100px"/> is ignored in favour of <see cref="SiteSpacingPx"/>.
+/// </summary>
+/// <param name="SiteSpacingPx">Typical gap between drip sites along the strand (px at 1080p). Each site grows one drop at a time.</param>
+/// <param name="CycleSecondsMin">Shortest time for a drop to form and fall. Longer cycles read as thicker liquid.</param>
+/// <param name="CycleSecondsMax">Longest such time. Each cycle draws its own.</param>
+/// <param name="MinSlope">How far the surface must face downhill for a drop to hang there, 0..1 (0 = anywhere, 1 = only the very underside). Near-vertical stretches have no underside, so they stay dry.</param>
+/// <param name="Stringiness">0..1: how far the neck stretches before it lets go. 0 is water (a drop just falls), 1 is honey (a long, thinning string).</param>
+/// <param name="SatelliteChance">0..1: how often the string leaves a small satellite droplet trailing the main drop.</param>
+/// <param name="TipSite">Also hang a drop from the strand's free end when it points down (the most natural place for one).</param>
+public readonly record struct StrokeDripOptions(
+    float SiteSpacingPx,
+    float CycleSecondsMin,
+    float CycleSecondsMax,
+    float MinSlope,
+    float Stringiness,
+    float SatelliteChance,
+    bool  TipSite = true);

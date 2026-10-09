@@ -59,8 +59,8 @@ public sealed class ParticleDrip : IParticleMaterial
     /// <summary>
     /// The canonical drip emission when this material is used as a stroke emitter ("chains with
     /// drips", or any future "... with drips" phrase). Half the spawns fall under gravity, half
-    /// run along the strand catching on generic obstacles. Matches StrokeParasite.Combined so a
-    /// drip behaves the same regardless of which strand is shedding it.
+    /// run along the strand catching on generic obstacles. A light, thin drip: for a thick one that
+    /// hangs, stretches and lets go, see <see cref="ParticleSlime"/> and <see cref="GoopEmitter"/>.
     /// </summary>
     private static readonly StrokeEmission[] EmissionSpecs =
     {
@@ -79,7 +79,7 @@ public sealed class ParticleDrip : IParticleMaterial
                 SpeedMin: 55f, SpeedMax: 110f,
                 WobbleAmplitude: 1.8f,
                 WobbleFrequencyHz: 0.7f,
-                ObstacleSpacingPx: 45f,   // matches StrokeParasite.SuckerSpacing
+                ObstacleSpacingPx: 45f,
                 LateralOffsetFrac: 0.45f)),
     };
 }

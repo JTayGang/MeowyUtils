@@ -24,6 +24,7 @@ public enum PrimitiveRole
     Fibre = 22,
     Glint = 23,
     Mist = 24,
+    Goop = 25,
 }
 
 public struct StrokePrimitive
@@ -106,6 +107,25 @@ public struct ParticlePrimitive
 
     /// <summary>Material-defined sub-kind. particle.ember uses it for flame layers (0 body, 1 back, 2 front, 3 bed).</summary>
     public int Variant;
+
+    // ---- Optional thread. Zero is neutral, so a particle that never sets these draws as it always did. ----
+
+    /// <summary>
+    /// Thickness of a filament joining the particle to a point it is still attached to, as a fraction of
+    /// <see cref="Size"/>: the neck of a hanging drop, or the string left behind by one that has just let
+    /// go. 0 = no thread. Materials that have no use for threads ignore the three fields.
+    /// </summary>
+    public float Tether;
+
+    /// <summary>The thread's fixed end, in screen pixels: where it clings to the surface. Only read when <see cref="Tether"/> is above zero.</summary>
+    public Vector2 Anchor;
+
+    /// <summary>
+    /// The thread's free end. Equal to <see cref="Position"/> while the particle is still attached; once
+    /// the thread has snapped it slides from there back toward <see cref="Anchor"/>, so what is drawn is a
+    /// string recoiling up to the surface while the drop falls away from it.
+    /// </summary>
+    public Vector2 ThreadEnd;
 }
 
 public struct RegionPrimitive

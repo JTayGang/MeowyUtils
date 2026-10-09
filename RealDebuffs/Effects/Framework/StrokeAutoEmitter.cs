@@ -66,11 +66,12 @@ public static class StrokeAutoEmitter
                             IReadOnlyDictionary<string, string>? overrides)
     {
         _screen = scene.ScreenSize;
+        GoopEmitter.Advance(time, dt, _screen);
         CullFreeFly(time);
         IntegrateFreeFly(dt);
 
         CullFlows(time);
-        AdvanceFlows(scene, time, dt);
+        AdvanceFlows(scene, time, dt, overrides);
 
         for (int i = 0; i < scene.Strokes.Count; i++)
         {
@@ -106,7 +107,7 @@ public static class StrokeAutoEmitter
 
                 var specs = emitter.Emissions;
                 for (int e = 0; e < specs.Length; e++)
-                    SpawnFromStroke(in s, in specs[e], emitOverride, time, dt);
+                    SpawnFromStroke(in s, in specs[e], emitOverride, time, dt, strokeMaterial: null);
                 continue;
             }
 
@@ -115,7 +116,7 @@ public static class StrokeAutoEmitter
 
             var emissions = material.Emissions;
             for (int e = 0; e < emissions.Length; e++)
-                SpawnFromStroke(in s, in emissions[e], forcedMaterial: null, time, dt);
+                SpawnFromStroke(in s, in emissions[e], forcedMaterial: null, time, dt, material);
         }
 
         // Impacts are spawned after the strokes so a burst born this frame is drawn this frame.
@@ -142,11 +143,21 @@ public static class StrokeAutoEmitter
                 ColorOverride = p.ColorOverride,
             }, p.Owner);
         }
+
+        GoopEmitter.Emit(scene, time);
     }
 
     private static void SpawnFromStroke(in StrokePrimitive s, in StrokeEmission e,
-                                        string? forcedMaterial, float time, float dt)
+                                        string? forcedMaterial, float time, float dt,
+                                        IStrokeMaterial? strokeMaterial)
     {
+        // A drip emission grows drops rather than scattering particles: it has its own simulation.
+        if (e.Drip is { } drip)
+        {
+            GoopEmitter.Tend(in s, in e, in drip, strokeMaterial, e.RenderMaterial ?? forcedMaterial, time, dt, _screen);
+            return;
+        }
+
         float visibleLen = s.Path.Length * s.Reveal;
         if (visibleLen < 8f) return;
 
@@ -438,8 +449,10 @@ public static class StrokeAutoEmitter
         _flowCount = w;
     }
 
-    private static void AdvanceFlows(EffectScene scene, float time, float dt)
+    private static void AdvanceFlows(EffectScene scene, float time, float dt,
+                                     IReadOnlyDictionary<string, string>? overrides)
     {
+        float shortSide = _screen.X > 0f ? MathF.Min(_screen.X, _screen.Y) : 1080f;
         for (int i = 0; i < _flowCount; i++)
         {
             ref var d = ref FlowPool[i];
@@ -463,7 +476,10 @@ public static class StrokeAutoEmitter
             path.SampleAtArc(d.Arc, out Vector2 pos, out Vector2 tan);
             Vector2 perp = new(-tan.Y, tan.X);
 
-            float halfWidth = MathF.Max(1f, s.WidthHint * 0.5f);
+            // Ride the strand's actual surface: a tapered material knows how thick it is here, a plain one falls back to its WidthHint.
+            float halfWidth = MaterialRegistry.TryGetStroke(MaterialOverrideKey.ResolveStroke(in s, overrides)) is { } strokeMaterial
+                ? strokeMaterial.RadiusAt(in s, d.Arc, shortSide)
+                : MathF.Max(1f, s.WidthHint * 0.5f);
             float wobble = MathF.Sin(time * d.WobbleFreq * MathF.Tau + d.WobblePhase) * d.WobbleAmp;
             float lateral = (d.LateralOffsetFrac * halfWidth + wobble) * d.SideSign;
             Vector2 finalPos = pos + perp * lateral;

@@ -32,7 +32,9 @@ public readonly record struct SurfaceSpec(
     float   Metalness,     // 0 = pure diffuse (rust, stone), 1 = pure metal
     float   Roughness,     // 0 = mirror, 1 = chalk
     float   EnvStrength,   // how much of the surrounding scene shows in the reflection
-    float   Ambient);      // flat fill so no normal is ever pure black
+    float   Ambient,       // flat fill so no normal is ever pure black
+    float   Wrap = 0f,     // diffuse wrap: 0 = Lambert; ~0.4 lets light bleed past the terminator, which is what skin, wax and flesh do
+    Vector3 Scatter = default);   // colour of that bleed, added where light fades out (a cheap subsurface glow); zero = none
 
 public static class SurfacePresets
 {
@@ -65,6 +67,25 @@ public static class SurfacePresets
     public static readonly SurfaceSpec Tarred = new(
         Albedo: new(0.085f, 0.060f, 0.040f), F0: new(0.07f, 0.065f, 0.060f),
         Metalness: 0.0f, Roughness: 0.62f, EnvStrength: 0.20f, Ambient: 0.008f);
+
+    /// <summary>
+    /// Parasite flesh: a sickly olive-green, satin rather than glossy (the glossy part is a separate
+    /// <see cref="WetCoat"/> layered on top, because slime comes and goes), with wrapped diffuse and a
+    /// yellow-green glow at the terminator so the tube looks like thick living tissue, not rubber.
+    /// </summary>
+    public static readonly SurfaceSpec ParasiteFlesh = new(
+        Albedo: new(0.215f, 0.245f, 0.125f), F0: new(0.04f, 0.04f, 0.035f),
+        Metalness: 0.0f, Roughness: 0.50f, EnvStrength: 0.22f, Ambient: 0.020f,
+        Wrap: 0.42f, Scatter: new(0.060f, 0.082f, 0.020f));
+
+    /// <summary>
+    /// A clear film of liquid over something else: no colour of its own, only the glossy half of a
+    /// surface (a hard highlight and a reflection of the surround). Added over a body's matcap it makes
+    /// that body look wet. F0 is deliberately high: it is the highlight's strength, not a real IOR.
+    /// </summary>
+    public static readonly SurfaceSpec WetCoat = new(
+        Albedo: new(0f, 0f, 0f), F0: new(0.34f, 0.34f, 0.34f),
+        Metalness: 0.0f, Roughness: 0.16f, EnvStrength: 0.95f, Ambient: 0f);
 
     /// <summary>Rust scale: pure diffuse, orange-brown, nearly matte. Blended over any of the above as patina.</summary>
     public static readonly SurfaceSpec Rust = new(
@@ -132,10 +153,26 @@ public sealed class Matcap
         float ndlRim  = MathF.Max(0f, Vector3.Dot(n, StudioLighting.Rim));
 
         // ---- diffuse ----
-        Vector3 irradiance = StudioLighting.KeyColor * (1.30f * ndlKey)
-                           + StudioLighting.FillColor * (0.22f * ndlFill)
+        // Wrapped lighting lets the lit side spill past the terminator; the specular terms below keep
+        // the unwrapped dot products, so a wrapped surface does not also get a wider highlight.
+        float dKey = ndlKey, dFill = ndlFill;
+        if (s.Wrap > 0f)
+        {
+            float inv = 1f / (1f + s.Wrap);
+            dKey  = MathF.Max(0f, (Vector3.Dot(n, StudioLighting.Key)  + s.Wrap) * inv);
+            dFill = MathF.Max(0f, (Vector3.Dot(n, StudioLighting.Fill) + s.Wrap) * inv);
+        }
+        Vector3 irradiance = StudioLighting.KeyColor * (1.30f * dKey)
+                           + StudioLighting.FillColor * (0.22f * dFill)
                            + new Vector3(s.Ambient);
         Vector3 diffuse = s.Albedo * irradiance * (1f - s.Metalness);
+
+        // Subsurface bleed: a glow that peaks where the key light just stops reaching, strongest toward the silhouette.
+        if (s.Scatter != Vector3.Zero)
+        {
+            float terminator = MathF.Exp(-MathF.Pow(Vector3.Dot(n, StudioLighting.Key) / 0.42f, 2f));
+            diffuse += s.Scatter * (terminator * (0.35f + 0.65f * (1f - n.Z)) * (1f - s.Metalness));
+        }
 
         // ---- key highlight: tight lobe plus a broad sheen, Fresnel-weighted ----
         Vector3 h = Vector3.Normalize(StudioLighting.Key + v);
@@ -165,14 +202,14 @@ public sealed class Matcap
         return ToDisplay(lin);
     }
 
-    private static readonly Vector3 EnvAverage = new(0.050f, 0.055f, 0.068f);
+    internal static readonly Vector3 EnvAverage = new(0.050f, 0.055f, 0.068f);
 
     /// <summary>
     /// A moody, mostly dark surround: black ground, a cool sky overhead, a faint warm horizon
     /// band, and a cold backlight. Dark on purpose: chain links reflect their surroundings, and
     /// in a dark scene mirror-like iron is mostly dark with a few bright accents.
     /// </summary>
-    private static Vector3 Environment(Vector3 r)
+    internal static Vector3 Environment(Vector3 r)
     {
         float up = -r.Y;                                    // screen up is -Y
         float sky = Smooth(-0.35f, 0.85f, up);
@@ -199,7 +236,7 @@ public sealed class Matcap
     }
 
     /// <summary>Soft-shoulder tone map, then linear to display (sRGB-ish).</summary>
-    private static Vector3 ToDisplay(Vector3 lin)
+    internal static Vector3 ToDisplay(Vector3 lin)
     {
         static float F(float x)
         {

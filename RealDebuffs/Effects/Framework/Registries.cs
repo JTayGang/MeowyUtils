@@ -91,6 +91,7 @@ public static class EffectRegistry
         PrimitiveRole.Fibre      => "particle.fibre",
         PrimitiveRole.Glint      => "particle.glint",
         PrimitiveRole.Mist       => "particle.mist",
+        PrimitiveRole.Goop       => "particle.slime",
         _                        => "particle.spark",
     };
 
@@ -143,6 +144,7 @@ public static class MaterialRegistry
         Add(Particles, new ParticleFibre());
         Add(Particles, new ParticleGlint());
         Add(Particles, new ParticleMist());
+        Add(Particles, new ParticleSlime());
 
         var vocabulary = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var material in All)

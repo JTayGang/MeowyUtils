@@ -4,18 +4,34 @@ using RealDebuffs.Effects.Framework;
 namespace RealDebuffs.Effects;
 
 /// <summary>
-/// Disease: parasitic tendrils creep in from the edges and curl inward, searching for something to
-/// grip. A tendril that touches a screen edge may LATCH there and hang, pulling taut and rotating
-/// slowly at its grip while the rest of the tendril coils.
+/// Disease: wet, many-suckered tentacles unfurl out of the screen's edges and feel their way across
+/// the frame, dripping slime. Now and then one finds a point on the border, hooks it, and hauls on it
+/// before letting go and searching again.
 ///
-/// Shape pipeline: coarse heading integrated at ControlPoints samples (base angle + curl + sway),
-/// resampled through Catmull-Rom to FinalSamples, latch pin correction applied, then arc rebuilt.
+/// SHAPE. Each tentacle is drawn from a smooth target curve, rebuilt every frame: a Bezier that leaves
+/// its edge square on and arrives at a moving goal, with a slow bulge that turns through arc, S and
+/// mirrored arc (never passing through straight, so it cannot pop), a body wave running toward the tip, and a
+/// curl at the tip. The curve's length is the tentacle's length, so extra reach becomes curvature.
+///
+/// MOTION. A VerletStrand follows that curve through a spring. It lags, swings and settles like a heavy
+/// muscle, which is where the "alive" comes from, and the spring is what stops free physics from tying it
+/// in a knot. The goal, the tip's heading and its curl are each critically damped, so no change of
+/// behaviour can produce a sharp change of direction.
+///
+/// BEHAVIOUR. Wander (search around a home point), Reach (the goal glides to a point on the border),
+/// Grip (the tip is pinned there; the arm tenses and relaxes), Release (back to wandering).
+///
+/// INTRO. A tentacle unfurls like a fiddlehead: it grows out from behind its edge with its tip tightly
+/// curled, and the curl relaxes as it grows, flinging slime from where it enters.
+///
+/// The stroke and the slime are swappable: any hero stroke can be a tentacle, and "disease made of rope"
+/// gets the same behaviour.
 /// </summary>
 public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
 {
     public DebuffKind Kind => DebuffKind.Disease;
     public string DisplayName => "Disease";
-    public string Description => "Parasite tendrils creep in from the edges and reach for something to grip.";
+    public string Description => "Slimy parasite tentacles unfurl from the edges and reach for something to grip.";
     public int DrawOrder => 4;
 
     public IReadOnlyDictionary<string, float> TriggerStatuses { get; } = new Dictionary<string, float>
@@ -35,352 +51,692 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
 
     public IReadOnlyList<SwappableSlot> Slots { get; } = new SwappableSlot[]
     {
-        new("Stroke", PrimitiveRole.MainStroke, "Tendrils", "stroke.parasite"),
+        new("Stroke",   PrimitiveRole.MainStroke, "Tentacles", "stroke.parasite"),
+        new("Particle", PrimitiveRole.Goop,       "Slime",     "particle.slime"),
     };
 
-    private const float GrowSeconds       = 0.70f;
+    // ---- layout ----
+    private const int MaxTentacles = 8;
+    private const int StrandNodes = 18;
+    private const int PathSamples = 64;
+    private const int GuideSamples = 64;           // density of the target curve before it is cut into nodes
 
-    private const int BottomCount = 10;
-    private const int SideCount   = 5;
-    private const int TopCount    = 3;
-    private const int TotalCount  = BottomCount + SideCount * 2 + TopCount;
+    // ---- mood (0 removes it) ----
+    private const float VignetteAlpha = 0.16f;
+    private const float GloomAlpha = 0.34f;
+    private const float GloomDepth = 0.15f;
 
-    private const int ControlPoints = 10;
-    private const int FinalSamples  = 40;
+    // ---- how the strand follows its target ----
+    private const float ShapeSpring = 70f;         // 1/s^2: stiffness toward the target curve
+    private const float StrandDrag = 8.5f;         // 1/s: underdamped enough to swing, damped enough to settle
+    private const float StrandGravity = 700f;      // px/s^2 at 1080p: the slime-laden weight, a droop and no more
 
-    // Latch tuning.
-    private const float LatchBlendSeconds  = 5.0f;
-    private const float ContactEpsilonFrac = 0.001f;
-    private const float LatchInsetFrac     = 0.006f;
-    private const float LatchedSwayScale   = 0.5f;
-    private const float LatchedCurlBoost   = 0.65f;
-    private const float LatchRotationCap   = 1.8f;
-    private const float RotationStartU     = 0.05f;
+    // ---- wandering ----
+    private const float HomeReach = 0.80f;         // home point, as a fraction of the tentacle's length from its root
+    private const float WanderLateral = 0.20f;     // sweep either side of home, as a fraction of length
+    private const float WanderAxial = 0.07f;
 
-    private struct Tendril
+    // ---- gripping ----
+    private const float GripMinReach = 0.52f;      // the border point must be at least this far from the root, as a fraction of length...
+    private const float GripMaxReach = 0.84f;      // ...and no further than this
+    private const float GripInsetFrac = 0.005f;    // how far inside the border the tip lands, as a fraction of the short side
+    private const float GripSpacing = 240f;        // two tentacles never grip closer than this (px at 1080p)
+    private const float PinSeconds = 0.45f;        // how long the tip takes to settle onto the point it has reached
+    private const int   MaxGrippers = 3;
+
+    // ---- intro ----
+    private const float UnfurlCurl = 1.9f;         // radians of curl in the tip as it emerges
+    private const float UnfurlRate = 2.1f;         // 1/s: how quickly it uncurls
+
+    private static readonly uint Gloom = DrawHelpers.ToU32(0.010f, 0.020f, 0.012f, 1f);
+    private static readonly uint Vignette = DrawHelpers.ToU32(0.012f, 0.022f, 0.012f, 1f);
+
+    private enum Mode : byte { Wander, Reach, Grip, Release }
+
+    /// <summary>Where each tentacle comes from and how big it is. The set is fixed so the frame is always covered evenly.</summary>
+    private readonly record struct Archetype(ScreenEdge Edge, float AlongLo, float AlongHi,
+                                             float LengthLo, float LengthHi, float DiameterLo, float DiameterHi, bool Far);
+
+    private static readonly Archetype[] Archetypes =
     {
-        public byte  Edge;
-        public float Along;
-        public float Length;
-        public float Curl;
-        public float WaveAmp;
-        public float WaveFreq;
-        public float BaseWidth;
+        new(ScreenEdge.Bottom, 0.08f, 0.30f, 0.64f, 0.78f, 0.047f, 0.057f, false),   // three big near ones rising from below
+        new(ScreenEdge.Bottom, 0.40f, 0.62f, 0.60f, 0.74f, 0.047f, 0.057f, false),
+        new(ScreenEdge.Bottom, 0.70f, 0.92f, 0.64f, 0.78f, 0.047f, 0.057f, false),
+        new(ScreenEdge.Left,   0.28f, 0.66f, 0.52f, 0.66f, 0.036f, 0.045f, false),    // one from each side
+        new(ScreenEdge.Right,  0.28f, 0.66f, 0.52f, 0.66f, 0.036f, 0.045f, false),
+        new(ScreenEdge.Top,    0.08f, 0.38f, 0.42f, 0.54f, 0.034f, 0.042f, false),    // two hanging from the top: the tip is the lowest point, so it drips
+        new(ScreenEdge.Top,    0.62f, 0.92f, 0.42f, 0.54f, 0.034f, 0.042f, false),
+        new(ScreenEdge.Bottom, 0.00f, 1.00f, 0.50f, 0.62f, 0.022f, 0.028f, true),     // a hazy one behind the rest, for depth
+    };
+
+    private sealed class Rig
+    {
+        public readonly VerletStrand Strand = new(StrandNodes);
+        public readonly StrandPath Path = new(PathSamples);
+
+        // ---- layout: fixed for a cast ----
+        public Vector2 Root, Inward, Home;
+        public float Length, DiameterFrac, Depth, Delay, Grow;
+        public int Seed;
         public float Phase;
-        public float Speed;
-        public float Alpha;
-        public float Delay;
-        public int   Seed;
+        public float LatAmp, AxAmp, W1, W2, P1, P2;
+        public float ShapeAngle0, ShapeRate;
+        public float CurlAmp, CurlPhase, UnfurlSign, TwistAmp, TwistPhase, BreathPhase, WavePhase;
+        public float FirstGripDelay;
 
-        public float StretchAmount;
-        public float StretchPeriod;
-        public float StretchOffset;
-
-        public int     LatchKind;
-        public Vector2 LatchPoint;
-        public float   LatchBlend;
-        public float   CooldownUntil;
-        public float   HoldUntil;
-        public float   LatchRotation;
-        public float   LatchRotSpeed;
+        // ---- state ----
+        public bool Started, Entered;
+        public Mode Mode;
+        public float ModeTime, NextGripAt, GripHold, GripStart;
+        public Vector2 Goal, GoalVel, GripPoint, PinFrom, PinVel, LastTip, TipVelocity;
+        public float HeadAngle, HeadVel, Curl, CurlVel, Tension, TensionVel;
+        public float Agitation, Reveal;
+        public float Age;                      // seconds since this tentacle started
+        public float GripSide;                 // which way the tip hooks round the border
     }
 
-    private readonly Tendril[]    _tendrils = new Tendril[TotalCount];
-    private readonly StrandPath[] _paths    = new StrandPath[TotalCount];
-    private readonly Vector2[]    _coarse   = new Vector2[ControlPoints];
+    private readonly Rig[] _rigs = new Rig[MaxTentacles];
+    private readonly int[] _drawOrder = new int[MaxTentacles];
+    private int _count;
 
     private readonly CastTracker _cast = new();
 
     public DiseaseEffect()
     {
-        for (int i = 0; i < TotalCount; i++)
-            _paths[i] = new StrandPath(FinalSamples);
+        for (int i = 0; i < MaxTentacles; i++) _rigs[i] = new Rig();
     }
 
     public void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride)
     {
         if (screenSize.X < 64f || screenSize.Y < 64f) return;
+        dt = MathF.Min(dt, 0.05f);                      // a hitch must not become a leap
 
         if (_cast.Begin(time))
-            BuildTendrils(unchecked((int)(_cast.Start * 1000f)));
+            BuildLayout(unchecked((int)(_cast.Start * 1000f)), screenSize);
         float age = time - _cast.Start;
-
         float shortSide = MathF.Min(screenSize.X, screenSize.Y);
+        float px = shortSide / 1080f;
 
-        float castIn = DrawHelpers.Saturate(age / 0.6f);
-        float pulse = DrawHelpers.Pulse(time, 3.2f);
-        float depth = screenSize.Y * (0.10f + 0.03f * pulse) * castIn;
-        if (depth > 1f)
+        EmitAtmosphere(scene, screenSize, alpha, time, age, colorOverride);
+
+        for (int n = 0; n < _count; n++)
+        {
+            var rig = _rigs[_drawOrder[n]];
+            if (age < rig.Delay) continue;
+
+            Step(scene, rig, screenSize, px, alpha, time, dt, age, colorOverride);
+            if (rig.Path.Count < 2 || rig.Reveal <= 0.002f) continue;
+
+            float growing = DrawHelpers.Saturate(1f - rig.Reveal);
+            scene.AddStroke(new StrokePrimitive
+            {
+                Path = rig.Path,
+                Role = PrimitiveRole.MainStroke,
+                Reveal = rig.Reveal,
+                FlushStart = true,                       // its root is behind the edge; no cap to show
+                WidthHint = shortSide * rig.DiameterFrac,
+                Brightness = alpha,
+                TipFlare = growing > 0.02f ? MathF.Min(1f, growing * 1.6f) : 0f,
+                Seed = rig.Seed,
+                Phase = rig.Phase,
+                Depth = rig.Depth,
+                Agitation = rig.Agitation,
+                Twist = rig.TwistAmp * MathF.Sin(0.27f * time + rig.TwistPhase) + (rig.Mode == Mode.Grip ? 0.5f * rig.Tension : 0f),
+                ColorOverride = colorOverride,
+            });
+        }
+    }
+
+    // =========================================================================
+    // Atmosphere
+    // =========================================================================
+
+    private static void EmitAtmosphere(EffectScene scene, Vector2 size, float alpha, float time, float age, Vector4? colorOverride)
+    {
+        float castIn = DrawHelpers.Saturate(age / 0.9f);
+
+        if (VignetteAlpha > 0f)
+            scene.RequestVignette(Vignette, 0.12f, alpha * VignetteAlpha * castIn, priority: 20, colorOverride);
+
+        // Murk pooled at the bottom edge, swelling slowly, as if something were breathing under it.
+        float depth = size.Y * GloomDepth * (1f + 0.18f * DrawHelpers.Pulse(time, 5.3f)) * castIn;
+        if (GloomAlpha > 0f && depth > 1f)
         {
             scene.AddRegion(new RegionPrimitive
             {
-                Min = new Vector2(0f, screenSize.Y - depth),
-                Max = screenSize,
-                Tint = DrawHelpers.ToU32(0.02f, 0.05f, 0.01f, 1f),
-                Alpha = 0.55f * alpha,
+                Min = new Vector2(0f, size.Y - depth),
+                Max = size,
+                Tint = Gloom,
+                Alpha = GloomAlpha * alpha,
                 Bottom = true,
                 ColorOverride = colorOverride,
             });
         }
-
-        for (int i = 0; i < TotalCount; i++)
-        {
-            float revealT = DrawHelpers.EaseOutCubic(DrawHelpers.Saturate((age - _tendrils[i].Delay) / GrowSeconds));
-            if (revealT <= 0.001f) continue;
-
-            BuildTendrilPath(i, screenSize, shortSide, time);
-            UpdateLatch(i, screenSize, shortSide, time, dt, revealT);
-
-            if (_tendrils[i].LatchBlend > 0.001f)
-                ApplyLatchPin(i);
-
-            _paths[i].BuildArc();
-
-            var stroke = new StrokePrimitive
-            {
-                Path = _paths[i],
-                Role = PrimitiveRole.MainStroke,
-                Reveal = revealT,
-                WidthHint = shortSide * _tendrils[i].BaseWidth,
-                Brightness = alpha * _tendrils[i].Alpha,
-                TipFlare = revealT < 0.999f ? 1f : 0f,
-                Seed = _tendrils[i].Seed,
-                Phase = _tendrils[i].Phase,
-                FlushStart = true,
-                ColorOverride = colorOverride,
-            };
-            scene.AddStroke(stroke);
-        }
     }
 
-    private void BuildTendrils(int castSeed)
-    {
-        int idx = 0;
+    // =========================================================================
+    // One tentacle, one frame
+    // =========================================================================
 
-        for (int i = 0; i < BottomCount; i++)
+    private void Step(EffectScene scene, Rig r, Vector2 size, float px, float alpha, float time, float dt, float age,
+                      Vector4? colorOverride)
+    {
+        r.Age = age - r.Delay;
+        float t = r.Age;
+        var strand = r.Strand;
+
+        if (!r.Started) Start(r, size, px, time);
+
+        // ---- what it wants this frame ----
+        Vector2 goalWant;
+        float headWant, curlWant, tensionWant, goalOmega;
+        Decide(r, size, px, time, t, out goalWant, out headWant, out curlWant, out tensionWant, out goalOmega);
+
+        // ---- critically damped springs: every state change is a glide, never a jump ----
+        Spring(ref r.Goal, ref r.GoalVel, goalWant, goalOmega, dt);
+        SpringAngle(ref r.HeadAngle, ref r.HeadVel, headWant, 3.2f, dt);
+        Spring(ref r.Curl, ref r.CurlVel, curlWant, r.Mode == Mode.Wander && t < 3f ? UnfurlRate : 2.6f, dt);
+        Spring(ref r.Tension, ref r.TensionVel, tensionWant, 3f, dt);
+
+        // ---- the target curve, and a strand that chases it ----
+        float length = BuildTarget(r, px, time, t, out float chord);
+        strand.Length = MathF.Max(8f, length);
+        strand.Gravity = new Vector2(0f, StrandGravity * px);
+        strand.Drag = StrandDrag;
+        strand.Iterations = 8;
+        strand.BendStiffness = 0.6f;
+        strand.ShapeStiffness = ShapeSpring;
+
+        bool pinned = r.Mode == Mode.Grip;
+        strand.PinStart = true;
+        strand.PinEnd = pinned;
+        Vector2 tip = strand.Pos[StrandNodes - 1];
+        Vector2 end = tip;
+        if (pinned)
         {
-            int s = unchecked(castSeed + 0x71D10000 + i * 7919);
-            _tendrils[idx++] = new Tendril
-            {
-                Edge          = 2,
-                Along         = DrawHelpers.HashRange(s,      0.02f, 0.98f),
-                Length        = DrawHelpers.HashRange(s + 1,  0.36f, 0.68f),
-                Curl          = DrawHelpers.HashRange(s + 2, -2.0f,  2.0f),
-                WaveAmp       = DrawHelpers.HashRange(s + 3,  0.40f, 0.90f),
-                WaveFreq      = DrawHelpers.HashRange(s + 4,  1.6f,  3.4f),
-                BaseWidth     = DrawHelpers.HashRange(s + 5,  0.014f, 0.024f),
-                Phase         = DrawHelpers.HashRange(s + 6,  0f, MathF.PI * 2f),
-                Speed         = DrawHelpers.HashRange(s + 7,  0.15f, 0.45f),
-                Alpha         = DrawHelpers.HashRange(s + 8,  0.80f, 1.00f),
-                Delay         = DrawHelpers.HashRange(s + 11, 0f, 0.40f),
-                StretchAmount = DrawHelpers.HashRange(s + 12, 0.01f, 0.20f),
-                StretchPeriod = DrawHelpers.HashRange(s + 13, 4.5f, 8.5f),
-                StretchOffset = DrawHelpers.Hash01(s + 14),
-                LatchRotSpeed = MakeRotSpeed(s + 15, s + 16),
-                Seed          = s,
-                LatchKind     = -1,
-            };
+            // Settle onto the point along a curve that starts with the tip's own velocity and ends at rest, so the
+            // pin takes over from the motion it interrupts instead of stopping it dead.
+            float k = DrawHelpers.Saturate((time - r.GripStart) / PinSeconds);
+            end = Hermite(r.PinFrom, r.PinVel * PinSeconds, r.GripPoint, k);
+        }
+        strand.SetEnds(r.Root, end);                    // unpinned, the end argument tracks the tip so a later pin starts from it
+        r.TipVelocity = dt > 1e-4f ? (tip - r.LastTip) / dt : default;
+        r.LastTip = tip;
+
+        strand.Step(dt);
+        strand.FillPath(r.Path, PathSamples);
+
+        // ---- reveal: it surges out of the edge, fast at first and settling ----
+        float grow = DrawHelpers.Saturate(t / r.Grow);
+        r.Reveal = 1f - MathF.Pow(1f - grow, 2.6f);
+
+        // ---- events ----
+        if (!r.Entered && r.Reveal * r.Length > px * 1080f * 0.075f + 14f)
+        {
+            r.Entered = true;
+            r.Agitation = 1f;
+            if (ScreenEdges.TryFindEntry(r.Path, size, out Vector2 at, out Vector2 inward))
+                Splat(scene, at, inward, 1f - 0.4f * r.Depth, alpha, time, r.Seed, colorOverride);
         }
 
-        for (int side = 0; side < 2; side++)
+        float floor = r.Mode switch { Mode.Reach => 0.30f, Mode.Grip => 0.22f + 0.14f * MathF.Sin(time * 2.6f + r.Phase), _ => 0.04f };
+        r.Agitation = MathF.Max(r.Agitation * MathF.Exp(-dt / 0.9f), floor);
+    }
+
+    /// <summary>Places a tentacle that has just begun: its strand lies exactly on its first target, so nothing has to settle.</summary>
+    private void Start(Rig r, Vector2 size, float px, float time)
+    {
+        r.Started = true;
+        r.Entered = false;
+        r.Mode = Mode.Wander;
+        r.ModeTime = time;
+        r.NextGripAt = time + r.Grow + r.FirstGripDelay;
+        r.Goal = r.Home;
+        r.GoalVel = default;
+        r.HeadAngle = MathF.Atan2(r.Inward.Y, r.Inward.X);
+        r.HeadVel = 0f;
+        r.Curl = UnfurlCurl * r.UnfurlSign;
+        r.CurlVel = 0f;
+        r.Tension = 0f;
+        r.TensionVel = 0f;
+        r.Agitation = 1f;
+        r.Reveal = 0f;
+
+        var s = r.Strand;
+        s.Reset(r.Root);
+        float length = BuildTarget(r, px, time, 0f, out _);
+        s.Length = MathF.Max(8f, length);
+        s.Drive(s.Target, 1f / 60f);
+    }
+
+    // =========================================================================
+    // Behaviour
+    // =========================================================================
+
+    private void Decide(Rig r, Vector2 size, float px, float time, float t,
+                        out Vector2 goal, out float head, out float curl, out float tension, out float goalOmega)
+    {
+        Vector2 perp = new(-r.Inward.Y, r.Inward.X);
+
+        // Where it searches when it is not holding on: a slow Lissajous round its home point.
+        float lat = r.LatAmp * (0.80f * MathF.Sin(r.W1 * t + r.P1) + 0.35f * MathF.Sin(r.W1 * 2.3f * t + r.P2));
+        float ax = r.AxAmp * MathF.Sin(r.W2 * t + r.P2);
+        Vector2 wander = r.Home + perp * lat + r.Inward * ax;
+        float wanderHead = MathF.Atan2(r.Inward.Y, r.Inward.X) + 0.8f * MathF.Sin(r.W1 * 0.7f * t + r.P2);
+        float wanderCurl = r.CurlAmp * (0.75f * MathF.Sin(r.W1 * 0.55f * t + r.CurlPhase) + 0.30f * MathF.Sin(r.W2 * 1.4f * t));
+
+        goal = wander; head = wanderHead; curl = wanderCurl; tension = 0f; goalOmega = 3.0f;
+
+        switch (r.Mode)
         {
-            byte edge = (byte)(side == 0 ? 3 : 1);
-            for (int i = 0; i < SideCount; i++)
-            {
-                int s = unchecked(castSeed + 0x51DE0000 + side * 100000 + i * 7919);
-                _tendrils[idx++] = new Tendril
+            case Mode.Wander:
+                if (time >= r.NextGripAt && t > r.Grow + 0.4f && CountGrippers() < MaxGrippers)
                 {
-                    Edge          = edge,
-                    Along         = DrawHelpers.HashRange(s,      0.15f, 1.00f),
-                    Length        = DrawHelpers.HashRange(s + 1,  0.30f, 0.55f),
-                    Curl          = DrawHelpers.HashRange(s + 2, -1.8f,  1.8f),
-                    WaveAmp       = DrawHelpers.HashRange(s + 3,  0.35f, 0.80f),
-                    WaveFreq      = DrawHelpers.HashRange(s + 4,  1.6f,  3.2f),
-                    BaseWidth     = DrawHelpers.HashRange(s + 5,  0.010f, 0.018f),
-                    Phase         = DrawHelpers.HashRange(s + 6,  0f, MathF.PI * 2f),
-                    Speed         = DrawHelpers.HashRange(s + 7,  0.15f, 0.45f),
-                    Alpha         = DrawHelpers.HashRange(s + 8,  0.65f, 0.90f),
-                    Delay         = DrawHelpers.HashRange(s + 11, 0f, 0.45f),
-                    StretchAmount = DrawHelpers.HashRange(s + 12, 0.15f, 0.30f),
-                    StretchPeriod = DrawHelpers.HashRange(s + 13, 4.5f, 8.0f),
-                    StretchOffset = DrawHelpers.Hash01(s + 14),
-                    LatchRotSpeed = MakeRotSpeed(s + 15, s + 16),
-                    Seed          = s,
-                    LatchKind     = -1,
-                };
+                    if (PickGrip(r, size, px, time)) { r.Mode = Mode.Reach; r.ModeTime = time; }
+                    else r.NextGripAt = time + 1.5f;
+                }
+                break;
+
+            case Mode.Reach:
+            {
+                goal = r.GripPoint; head = GripHeading(r, size); curl = 0f; tension = 0.55f; goalOmega = 2.9f;
+                float arrived = Vector2.Distance(r.Goal, r.GripPoint);
+                Vector2 tipNow = r.Strand.Pos[StrandNodes - 1];
+                bool near = Vector2.Distance(tipNow, r.GripPoint) < 22f * px;
+                if ((arrived < 12f * px && near && time - r.ModeTime > 0.6f))
+                {
+                    r.Mode = Mode.Grip; r.GripStart = time; r.PinFrom = tipNow; r.ModeTime = time;
+                    // Carry the tip's velocity into the pin, but never so much that the blend overshoots the point.
+                    float reachDist = Vector2.Distance(tipNow, r.GripPoint);
+                    float cap = 3f * reachDist / PinSeconds;
+                    r.PinVel = r.TipVelocity.LengthSquared() > cap * cap ? Vector2.Normalize(r.TipVelocity) * cap : r.TipVelocity;
+                    r.Agitation = 0.9f;
+                }
+                else if (time - r.ModeTime > 3.2f) { r.Mode = Mode.Release; r.ModeTime = time; }   // it could not get there; let go
+                break;
+            }
+
+            case Mode.Grip:
+                goal = r.GripPoint; head = GripHeading(r, size); curl = 0f; tension = 1f; goalOmega = 4.0f;
+                if (time - r.GripStart > r.GripHold) { r.Mode = Mode.Release; r.ModeTime = time; }
+                break;
+
+            case Mode.Release:
+                if (time - r.ModeTime > 1.3f)
+                {
+                    r.Mode = Mode.Wander; r.ModeTime = time;
+                    r.NextGripAt = time + DrawHelpers.HashRange(r.Seed + (int)(time * 10f), 4.0f, 9.5f);
+                }
+                break;
+        }
+    }
+
+    private int CountGrippers()
+    {
+        int n = 0;
+        for (int i = 0; i < _count; i++) if (_rigs[i].Mode == Mode.Reach || _rigs[i].Mode == Mode.Grip) n++;
+        return n;
+    }
+
+    /// <summary>The tip arrives heading out through the border it is about to hold, hooked a little to one side.</summary>
+    private static float GripHeading(Rig r, Vector2 size)
+    {
+        Vector2 outward = -ScreenEdges.Inward(ScreenEdges.Nearest(size, r.GripPoint));
+        return MathF.Atan2(outward.Y, outward.X) + 0.55f * r.GripSide;
+    }
+
+    /// <summary>
+    /// Chooses a point on the border for this tentacle to take hold of: within reach but a real stretch away,
+    /// clear of the corners, not near another grip, and not across the middle of the screen.
+    /// </summary>
+    private bool PickGrip(Rig r, Vector2 size, float px, float time)
+    {
+        float shortSide = MathF.Min(size.X, size.Y);
+        float inset = shortSide * GripInsetFrac;
+        Vector2 centre = size * 0.5f;
+        int salt = unchecked(r.Seed + (int)(time * 100f));
+
+        Vector2 best = default; float bestScore = -1f;
+        const int N = 48;
+        for (int i = 0; i < N; i++)
+        {
+            float p = (i + DrawHelpers.Hash01(salt + i * 13)) * (4f / N);
+            Vector2 pt = ScreenEdges.FromPerimeter(size, p, -inset, out ScreenEdge edge);
+            float along = (edge == ScreenEdge.Top || edge == ScreenEdge.Bottom) ? pt.X / size.X : pt.Y / size.Y;
+            if (along < 0.07f || along > 0.93f) continue;                       // not in a corner
+
+            float d = Vector2.Distance(pt, r.Root);
+            if (d < GripMinReach * r.Length || d > GripMaxReach * r.Length) continue;
+
+            if (DistanceToSegment(centre, r.Root, pt) < 0.20f * shortSide) continue;   // keep the middle clear
+
+            bool crowded = false;
+            for (int k = 0; k < _count; k++)
+            {
+                var o = _rigs[k];
+                if (o == r || (o.Mode != Mode.Reach && o.Mode != Mode.Grip)) continue;
+                if (Vector2.Distance(o.GripPoint, pt) < GripSpacing * px) { crowded = true; break; }
+            }
+            if (crowded) continue;
+
+            float score = DrawHelpers.Hash01(salt + i * 31 + 7);
+            if (score > bestScore) { bestScore = score; best = pt; }
+        }
+        if (bestScore < 0f) return false;
+
+        r.GripPoint = best;
+        r.GripHold = DrawHelpers.HashRange(salt + 5, 2.4f, 5.2f);
+        r.GripSide = DrawHelpers.Hash01(salt + 6) < 0.5f ? -1f : 1f;
+        return true;
+    }
+
+    private static float DistanceToSegment(Vector2 p, Vector2 a, Vector2 b)
+    {
+        Vector2 ab = b - a;
+        float t = Vector2.Dot(p - a, ab) / MathF.Max(1e-4f, ab.LengthSquared());
+        return Vector2.Distance(p, a + ab * Math.Clamp(t, 0f, 1f));
+    }
+
+    // =========================================================================
+    // The target curve
+    // =========================================================================
+
+    /// <summary>
+    /// Fills the strand's target with the shape the tentacle should take this frame, as equal-length links,
+    /// and returns the curve's length. The root leaves the edge square on, the tip arrives at the goal with the
+    /// current heading, and the length the tentacle has beyond the straight distance is spent on a bulge whose
+    /// shape slowly turns (arc, S, mirrored arc), on a wave travelling to the tip, and on the tip's curl.
+    /// </summary>
+    private float BuildTarget(Rig r, float px, float time, float t, out float chord)
+    {
+        // The arm contracts and relaxes a little; gripping tugs it harder.
+        float breath = 1f + 0.035f * MathF.Sin(0.7f * time + r.BreathPhase);
+        // Weighted smoothly by how firmly it holds on: a threshold here would step the arm's length every time tension crossed it.
+        float holding = Smooth((r.Tension - 0.6f) / 0.4f);
+        float tug = holding * (0.5f + 0.5f * MathF.Sin(MathF.Tau * (time - r.GripStart) / 2.5f));
+        float lenWant = r.Length * breath * (1f - 0.09f * tug);
+
+        // Holding on, the arm may not contract below the distance to the point it is holding: that would stretch it.
+        Vector2 root = r.Root;
+        if (r.Mode == Mode.Reach || r.Mode == Mode.Grip)
+            lenWant = MathF.Max(lenWant, Vector2.Distance(root, r.GripPoint) * 1.04f);
+
+        // The goal may not be further than the arm can reach.
+        Vector2 toGoal = r.Goal - root;
+        float c = toGoal.Length();
+        float maxReach = lenWant * 0.985f;
+        if (c > maxReach) { toGoal *= maxReach / c; c = maxReach; }
+        if (c < 1f) { toGoal = r.Inward; c = 1f; }
+        Vector2 goal = root + toGoal;
+        chord = c;
+        lenWant = MathF.Max(lenWant, c * 1.012f);
+
+        Vector2 dirChord = toGoal / c;
+        Vector2 perp = new(-dirChord.Y, dirChord.X);
+        Vector2 d1 = new(MathF.Cos(r.HeadAngle), MathF.Sin(r.HeadAngle));
+
+        Vector2 p0 = root, p1 = root + r.Inward * (0.34f * c), p2 = goal - d1 * (0.30f * c), p3 = goal;
+
+        // The bulge's profile: a blend of one arch and one S, rotating slowly through every combination.
+        float ang = r.ShapeAngle0 + r.ShapeRate * time;
+        float fa = MathF.Cos(ang), fb = MathF.Sin(ang);
+        // Gripping calms the S out of the bulge so the hook reads as an arch. Only the S term is scaled: pulling
+        // the arch term toward a fixed side (e.g. by its sign) would flip the whole bulge the instant it crossed zero.
+        fb *= 1f - 0.65f * r.Tension;
+
+        Span<Vector2> bez = stackalloc Vector2[GuideSamples + 1];
+        Span<float> prof = stackalloc float[GuideSamples + 1];
+        Span<Vector2> pts = stackalloc Vector2[GuideSamples + 1];
+        for (int k = 0; k <= GuideSamples; k++)
+        {
+            float u = k / (float)GuideSamples;
+            float v = 1f - u;
+            bez[k] = v * v * v * p0 + 3f * v * v * u * p1 + 3f * v * u * u * p2 + u * u * u * p3;
+            prof[k] = fa * MathF.Sin(MathF.PI * u) + fb * MathF.Sin(MathF.Tau * u);
+        }
+
+        // Spend the spare length: choose the bulge amplitude that makes the curve as long as the tentacle.
+        // The curve's length is a CONVEX function of that amplitude (each segment's length is the norm of
+        // something affine in it), which matters: a bulge on the wrong side of an already curved approach
+        // first straightens it, so length can fall before it rises. Walking up from zero would then stall.
+        // Instead find the amplitude where the length is least, and take the one root beyond it. That root is
+        // unique, so it moves continuously with the goal, and the arm cannot pop between solutions.
+        float scale = SolveBulge(bez, prof, perp, lenWant, c);
+        Arc(bez, prof, perp, scale, pts);
+
+        // The tip's curl: re-integrate the last quarter with its heading turned progressively, which keeps its length.
+        float curl = r.Curl;
+        if (MathF.Abs(curl) > 0.002f)
+        {
+            int hinge = (int)(GuideSamples * 0.74f);
+            Vector2 prev = pts[hinge];
+            for (int k = hinge + 1; k <= GuideSamples; k++)
+            {
+                Vector2 seg = pts[k] - pts[k - 1];
+                float segLen = seg.Length();
+                float a = MathF.Atan2(seg.Y, seg.X) + curl * Smooth((k - hinge) / (float)(GuideSamples - hinge));
+                Vector2 next = prev + new Vector2(MathF.Cos(a), MathF.Sin(a)) * segLen;
+                pts[k] = next;
+                prev = next;
             }
         }
 
-        for (int i = 0; i < TopCount; i++)
+        // A wave running down to the tip, growing toward it and calming when it is holding on.
+        float arcTotal = 0f;
+        Span<float> cum = stackalloc float[GuideSamples + 1];
+        for (int k = 1; k <= GuideSamples; k++) { arcTotal += Vector2.Distance(pts[k], pts[k - 1]); cum[k] = arcTotal; }
+        float waveAmp = 0.026f * r.Length * (1f - 0.75f * r.Tension);
+        if (waveAmp > 0.5f)
         {
-            int s = unchecked(castSeed + 0x70B00000 + i * 7919);
-            _tendrils[idx++] = new Tendril
+            Span<Vector2> shifted = stackalloc Vector2[GuideSamples + 1];
+            for (int k = 0; k <= GuideSamples; k++)
             {
-                Edge          = 0,
-                Along         = DrawHelpers.HashRange(s,      0.10f, 0.90f),
-                Length        = DrawHelpers.HashRange(s + 1,  0.22f, 0.42f),
-                Curl          = DrawHelpers.HashRange(s + 2, -1.6f,  1.6f),
-                WaveAmp       = DrawHelpers.HashRange(s + 3,  0.30f, 0.65f),
-                WaveFreq      = DrawHelpers.HashRange(s + 4,  1.4f,  2.8f),
-                BaseWidth     = DrawHelpers.HashRange(s + 5,  0.008f, 0.014f),
-                Phase         = DrawHelpers.HashRange(s + 6,  0f, MathF.PI * 2f),
-                Speed         = DrawHelpers.HashRange(s + 7,  0.20f, 0.65f),
-                Alpha         = DrawHelpers.HashRange(s + 8,  0.55f, 0.80f),
-                Delay         = DrawHelpers.HashRange(s + 11, 0f, 0.50f),
-                StretchAmount = DrawHelpers.HashRange(s + 12, 0.12f, 0.25f),
-                StretchPeriod = DrawHelpers.HashRange(s + 13, 5.0f, 9.0f),
-                StretchOffset = DrawHelpers.Hash01(s + 14),
-                LatchRotSpeed = MakeRotSpeed(s + 15, s + 16),
-                Seed          = s,
-                LatchKind     = -1,
-            };
-        }
-    }
-
-    private static float MakeRotSpeed(int magSeed, int signSeed)
-    {
-        float mag  = DrawHelpers.HashRange(magSeed, 0.80f, 2.0f);
-        float sign = DrawHelpers.Hash01(signSeed) < 0.5f ? -1f : 1f;
-        return mag * sign;
-    }
-
-    private void BuildTendrilPath(int idx, Vector2 screenSize, float shortSide, float time)
-    {
-        ref readonly var t = ref _tendrils[idx];
-        var path = _paths[idx];
-
-        Vector2 start = EdgeAnchor(screenSize, shortSide, t.Edge, t.Along);
-        Vector2 inward = InwardDir(t.Edge);
-        float baseAngle = MathF.Atan2(inward.Y, inward.X);
-
-        float swayScale = 1f - (1f - LatchedSwayScale) * t.LatchBlend;
-        float curlBoost = 1f + LatchedCurlBoost * t.LatchBlend;
-
-        float stretchPhase = ((time / t.StretchPeriod) + t.StretchOffset) % 1f;
-        float stretchPulse = stretchPhase < 0.45f
-            ? MathF.Sin((stretchPhase / 0.45f) * MathF.PI)
-            : 0f;
-        float stretch = 1f + t.StretchAmount * stretchPulse * (1f - t.LatchBlend);
-
-        float totalLen = shortSide * t.Length * stretch;
-        float step = totalLen / (ControlPoints - 1);
-        float swayTime = time * t.Speed;
-
-        Vector2 cursor = start;
-        _coarse[0] = cursor;
-
-        for (int i = 1; i < ControlPoints; i++)
-        {
-            float u = (float)i / (ControlPoints - 1);
-            float heading = baseAngle
-                + t.Curl * curlBoost * u
-                + t.WaveAmp * swayScale * MathF.Sin(u * t.WaveFreq + t.Phase + swayTime);
-
-            cursor += new Vector2(MathF.Cos(heading), MathF.Sin(heading)) * step;
-            _coarse[i] = cursor;
-        }
-
-        StrandPath.CatmullRomResample(_coarse, ControlPoints, path.Points, FinalSamples);
-        path.Count = FinalSamples;
-    }
-
-    private void ApplyLatchPin(int idx)
-    {
-        ref readonly var t = ref _tendrils[idx];
-        var path = _paths[idx].Points;
-
-        Vector2 freeTip = path[FinalSamples - 1];
-        Vector2 correction = t.LatchPoint - freeTip;
-
-        for (int i = 0; i < FinalSamples; i++)
-        {
-            float u = (float)i / (FinalSamples - 1);
-            path[i] += correction * (u * u) * t.LatchBlend;
-        }
-
-        if (t.LatchBlend > 0.02f && MathF.Abs(t.LatchRotation) > 0.001f)
-        {
-            for (int i = 0; i < FinalSamples; i++)
-            {
-                float u = (float)i / (FinalSamples - 1);
-                if (u <= RotationStartU) continue;
-
-                float k = (u - RotationStartU) / (1f - RotationStartU);
-                float angle = t.LatchRotation * k * k * t.LatchBlend;
-
-                float ca = MathF.Cos(angle);
-                float sa = MathF.Sin(angle);
-
-                Vector2 rel = path[i] - t.LatchPoint;
-                path[i] = t.LatchPoint + new Vector2(rel.X * ca - rel.Y * sa, rel.X * sa + rel.Y * ca);
+                Vector2 tan = pts[Math.Min(GuideSamples, k + 1)] - pts[Math.Max(0, k - 1)];
+                float tl = tan.Length();
+                Vector2 n = tl > 1e-4f ? new Vector2(-tan.Y, tan.X) / tl : perp;
+                float u = arcTotal > 1f ? cum[k] / arcTotal : 0f;
+                float amp = waveAmp * MathF.Pow(u, 1.3f);
+                shifted[k] = pts[k] + n * (amp * MathF.Sin(MathF.Tau * 1.15f * u - 1.7f * time + r.WavePhase));
             }
+            for (int k = 0; k <= GuideSamples; k++) pts[k] = shifted[k];
+            arcTotal = 0f;
+            for (int k = 1; k <= GuideSamples; k++) { arcTotal += Vector2.Distance(pts[k], pts[k - 1]); cum[k] = arcTotal; }
         }
+
+        // Cut into equal-length links, matching the strand's.
+        var target = r.Strand.Target;
+        int seg2 = 0;
+        for (int i = 0; i < StrandNodes; i++)
+        {
+            float want = arcTotal * i / (StrandNodes - 1f);
+            while (seg2 < GuideSamples - 1 && cum[seg2 + 1] < want) seg2++;
+            float span = cum[seg2 + 1] - cum[seg2];
+            float f = span > 1e-4f ? (want - cum[seg2]) / span : 0f;
+            target[i] = Vector2.Lerp(pts[seg2], pts[seg2 + 1], f);
+        }
+        return arcTotal;
     }
 
-    private void UpdateLatch(int idx, Vector2 screenSize, float shortSide, float time, float dt, float revealT)
+    private static float SolveBulge(ReadOnlySpan<Vector2> bez, ReadOnlySpan<float> prof, Vector2 perp, float want, float chord)
     {
-        ref var t = ref _tendrils[idx];
+        // Bracket: an amplitude long enough that the curve is at least as long as wanted.
+        float hi = MathF.Max(4f, chord * 0.03f);
+        for (int i = 0; i < 12 && ArcLength(bez, prof, perp, hi) < want; i++) hi *= 2f;
 
-        float targetBlend = t.LatchKind >= 0 ? 1f : 0f;
-        float blendDelta = dt / LatchBlendSeconds;
-        if (MathF.Abs(targetBlend - t.LatchBlend) <= blendDelta)
-            t.LatchBlend = targetBlend;
-        else
-            t.LatchBlend += MathF.Sign(targetBlend - t.LatchBlend) * blendDelta;
-
-        if (t.LatchKind >= 0)
+        // Least length, by ternary search (valid because the length is convex in the amplitude).
+        float a = 0f, b = hi;
+        for (int i = 0; i < 14; i++)
         {
-            t.LatchRotation += t.LatchRotSpeed * dt;
-            t.LatchRotation = Math.Clamp(t.LatchRotation, -LatchRotationCap, LatchRotationCap);
+            float m1 = a + (b - a) / 3f, m2 = b - (b - a) / 3f;
+            if (ArcLength(bez, prof, perp, m1) < ArcLength(bez, prof, perp, m2)) b = m2; else a = m1;
         }
+        float lo = 0.5f * (a + b);
+        if (ArcLength(bez, prof, perp, lo) >= want) return lo;           // it cannot be this short: take the shortest it can be
+        if (ArcLength(bez, prof, perp, hi) < want) return hi;            // or this long (cannot happen within the bracket, but never loop on it)
 
-        if (t.LatchKind >= 0 && time >= t.HoldUntil)
+        for (int i = 0; i < 24; i++)
         {
-            t.LatchKind = -1;
-            t.CooldownUntil = time + 0.8f + 1.2f * DrawHelpers.Hash01(t.Seed + 501);
-            return;
+            float mid = 0.5f * (lo + hi);
+            if (ArcLength(bez, prof, perp, mid) < want) lo = mid; else hi = mid;
         }
-
-        if (t.LatchKind >= 0) return;
-        if (time < t.CooldownUntil) return;
-        if (t.LatchBlend > 0.05f) return;
-        if (revealT < 0.98f) return;
-
-        Vector2 freeTip = _paths[idx].Points[FinalSamples - 1];
-        float inset = shortSide * LatchInsetFrac;
-        float contact = shortSide * ContactEpsilonFrac;
-
-        int bestEdge = -1;
-        Vector2 bestPoint = default;
-        float bestDist = contact;
-
-        float dTop = freeTip.Y - inset;
-        if (dTop >= 0f && dTop < bestDist) { bestDist = dTop; bestEdge = 0; bestPoint = new Vector2(freeTip.X, inset); }
-
-        float dRight = (screenSize.X - inset) - freeTip.X;
-        if (dRight >= 0f && dRight < bestDist) { bestDist = dRight; bestEdge = 1; bestPoint = new Vector2(screenSize.X - inset, freeTip.Y); }
-
-        float dBottom = (screenSize.Y - inset) - freeTip.Y;
-        if (dBottom >= 0f && dBottom < bestDist) { bestDist = dBottom; bestEdge = 2; bestPoint = new Vector2(freeTip.X, screenSize.Y - inset); }
-
-        float dLeft = freeTip.X - inset;
-        if (dLeft >= 0f && dLeft < bestDist) { bestDist = dLeft; bestEdge = 3; bestPoint = new Vector2(inset, freeTip.Y); }
-
-        if (bestEdge < 0) return;
-
-        int bucket = (int)(time * 6f);
-        bool doLatch = DrawHelpers.Hash01(t.Seed + bucket * 131 + bestEdge * 7919) < 0.45f;
-        if (!doLatch) return;
-
-        t.LatchKind = bestEdge;
-        t.LatchPoint = bestPoint;
-        t.LatchRotation = 0f;
-        t.HoldUntil = time + 1.8f + 1.6f * DrawHelpers.Hash01(t.Seed + 500);
+        return 0.5f * (lo + hi);
     }
 
-    // Edge numbering here (0 top, 1 right, 2 bottom, 3 left) is ScreenEdge's, so these just delegate.
-    private static Vector2 EdgeAnchor(Vector2 size, float shortSide, byte edge, float along) =>
-        ScreenEdges.Anchor(size, (ScreenEdge)edge, along, overhang: shortSide * 0.02f);
+    private static float ArcLength(ReadOnlySpan<Vector2> bez, ReadOnlySpan<float> prof, Vector2 perp, float scale)
+    {
+        float len = 0f;
+        Vector2 prev = bez[0] + perp * (scale * prof[0]);
+        for (int k = 1; k < bez.Length; k++)
+        {
+            Vector2 cur = bez[k] + perp * (scale * prof[k]);
+            len += Vector2.Distance(cur, prev);
+            prev = cur;
+        }
+        return len;
+    }
 
-    private static Vector2 InwardDir(byte edge) => ScreenEdges.Inward((ScreenEdge)edge);
+    /// <summary>Builds the Bezier offset by <paramref name="scale"/> times the bulge profile into <paramref name="outPts"/>, and returns its length.</summary>
+    private static float Arc(ReadOnlySpan<Vector2> bez, ReadOnlySpan<float> prof, Vector2 perp, float scale, Span<Vector2> outPts)
+    {
+        float len = 0f;
+        for (int k = 0; k < bez.Length; k++)
+        {
+            outPts[k] = bez[k] + perp * (scale * prof[k]);
+            if (k > 0) len += Vector2.Distance(outPts[k], outPts[k - 1]);
+        }
+        return len;
+    }
+
+    // =========================================================================
+    // Springs
+    // =========================================================================
+
+    /// <summary>Critically damped spring: reaches the target with no overshoot, at a rate set by omega.</summary>
+    private static void Spring(ref Vector2 x, ref Vector2 v, Vector2 target, float omega, float dt)
+    {
+        Vector2 a = (target - x) * (omega * omega) - v * (2f * omega);
+        v += a * dt;
+        x += v * dt;
+    }
+
+    private static void Spring(ref float x, ref float v, float target, float omega, float dt)
+    {
+        float a = (target - x) * (omega * omega) - v * (2f * omega);
+        v += a * dt;
+        x += v * dt;
+    }
+
+    /// <summary>The same for an angle, taking the short way round.</summary>
+    private static void SpringAngle(ref float x, ref float v, float target, float omega, float dt)
+    {
+        float diff = target - x;
+        diff -= MathF.Tau * MathF.Round(diff / MathF.Tau);
+        float a = diff * (omega * omega) - v * (2f * omega);
+        v += a * dt;
+        x += v * dt;
+    }
+
+    /// <summary>Cubic Hermite from <paramref name="p0"/> (leaving with tangent <paramref name="m0"/>) to <paramref name="p1"/> (arriving at rest).</summary>
+    private static Vector2 Hermite(Vector2 p0, Vector2 m0, Vector2 p1, float t)
+    {
+        float t2 = t * t, t3 = t2 * t;
+        return (2f * t3 - 3f * t2 + 1f) * p0 + (t3 - 2f * t2 + t) * m0 + (-2f * t3 + 3f * t2) * p1;
+    }
+
+    private static float Lerp(float a, float b, float t) => a + (b - a) * t;
+
+    private static float Smooth(float t)
+    {
+        t = Math.Clamp(t, 0f, 1f);
+        return t * t * (3f - 2f * t);
+    }
+
+    // =========================================================================
+    // Impacts
+    // =========================================================================
+
+    /// <summary>Slime thrown off where a tentacle breaks through an edge or lands on one.</summary>
+    private static void Splat(EffectScene scene, Vector2 at, Vector2 direction, float strength,
+                              float alpha, float time, int seed, Vector4? colorOverride)
+    {
+        scene.AddImpact(new ImpactPrimitive
+        {
+            StrokeRole = PrimitiveRole.MainStroke,
+            Position = at,
+            Direction = direction,
+            Strength = Math.Clamp(strength, 0f, 1f),
+            Brightness = alpha,
+            Seed = unchecked(seed + (int)(time * 1000f)),
+            ColorOverride = colorOverride,
+        });
+    }
+
+    // =========================================================================
+    // Layout
+    // =========================================================================
+
+    private void BuildLayout(int castSeed, Vector2 size)
+    {
+        float shortSide = MathF.Min(size.X, size.Y);
+        float overhang = shortSide * 0.075f;
+        _count = Math.Min(MaxTentacles, Archetypes.Length);
+
+        for (int i = 0; i < _count; i++)
+            BuildRig(_rigs[i], i, castSeed, size, overhang, shortSide);
+
+        // Far ones are painted first.
+        for (int i = 0; i < _count; i++) _drawOrder[i] = i;
+        Array.Sort(_drawOrder, 0, _count, Comparer<int>.Create((a, b) => _rigs[b].Depth.CompareTo(_rigs[a].Depth)));
+    }
+
+    private static void BuildRig(Rig r, int index, int castSeed, Vector2 size, float overhang, float shortSide)
+    {
+        var a = Archetypes[index];
+        int s = unchecked(castSeed + index * 977 + 29);
+        float H(int salt, float lo, float hi) => DrawHelpers.HashRange(s + salt, lo, hi);
+
+        ScreenEdge edge = a.Far ? (ScreenEdge)(H(40, 0f, 1f) < 0.34f ? 3 : (H(41, 0f, 1f) < 0.5f ? 1 : 2)) : a.Edge;   // far one: left, right or bottom
+        float along = a.Far ? H(1, 0.15f, 0.85f) : H(1, a.AlongLo, a.AlongHi);
+
+        r.Root = ScreenEdges.Anchor(size, edge, along, overhang);
+        r.Inward = ScreenEdges.Inward(edge);
+        r.Length = shortSide * H(2, a.LengthLo, a.LengthHi);
+        r.DiameterFrac = H(3, a.DiameterLo, a.DiameterHi);
+        r.Depth = a.Far ? H(4, 0.55f, 0.85f) : H(4, 0f, 0.14f);
+        r.Seed = s;
+        r.Phase = H(5, 0f, MathF.Tau);
+
+        // Home: a point out along its inward direction, off to one side a little, kept clear of the border.
+        Vector2 perp = new(-r.Inward.Y, r.Inward.X);
+        Vector2 home = r.Root + r.Inward * (r.Length * HomeReach) + perp * (r.Length * H(6, -0.07f, 0.07f));
+        float m = shortSide * 0.04f;
+        r.Home = new Vector2(Math.Clamp(home.X, m, size.X - m), Math.Clamp(home.Y, m, size.Y - m));
+
+        r.Delay = H(7, 0f, 0.55f);
+        r.Grow = H(8, 1.1f, 1.6f);
+        r.FirstGripDelay = H(9, 2.0f, 8.0f);
+
+        r.LatAmp = r.Length * WanderLateral * H(10, 0.75f, 1.1f);
+        r.AxAmp = r.Length * WanderAxial * H(11, 0.7f, 1.1f);
+        r.W1 = H(12, 0.45f, 0.72f);
+        r.W2 = H(13, 0.55f, 0.95f);
+        r.P1 = H(14, 0f, MathF.Tau);
+        r.P2 = H(15, 0f, MathF.Tau);
+        r.ShapeAngle0 = H(16, 0f, MathF.Tau);
+        r.ShapeRate = H(17, 0.14f, 0.28f) * (H(18, 0f, 1f) < 0.5f ? -1f : 1f);
+        r.CurlAmp = H(19, 0.6f, 1.3f);
+        r.CurlPhase = H(20, 0f, MathF.Tau);
+        r.UnfurlSign = H(21, 0f, 1f) < 0.5f ? -1f : 1f;
+        r.TwistAmp = H(22, 0.5f, 1.2f);
+        r.TwistPhase = H(23, 0f, MathF.Tau);
+        r.BreathPhase = H(24, 0f, MathF.Tau);
+        r.WavePhase = H(25, 0f, MathF.Tau);
+
+        r.Started = false;
+        r.Entered = false;
+        r.Mode = Mode.Wander;
+        r.Reveal = 0f;
+        r.Agitation = 0f;
+        r.Path.Count = 0;
+    }
 }

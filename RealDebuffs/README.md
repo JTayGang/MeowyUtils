@@ -96,6 +96,16 @@ Materials are the "what does this look like" half of the system. Three families 
 Materials are looked up by name, not by enum. Config stores them as strings, so nothing
 breaks when a new material is added.
 
+**Viscous liquids** (slime now; blood, sludge, venom later) share one system instead of
+each reinventing drips. A stroke material opts in by declaring an emission with a `Drip`
+block (`StrokeDripOptions`). `GoopEmitter` then grows drops on the strand's underside: a
+drop swells, stretches into a neck, pinches off and falls, and the string snaps back to the
+surface, sometimes leaving a satellite droplet. It hands the scene ordinary particles whose
+optional thread (`Tether` / `Anchor` / `ThreadEnd` on `ParticlePrimitive`) the particle
+material draws. `ParticleGoop` draws them as lit geometry, shaded by a `LiquidSpec`, so a
+liquid is a colour/gloss/translucency preset plus a few lines naming it. Sites hang off the
+strand's real surface, because a material can override `IStrokeMaterial.RadiusAt`.
+
 ### The "made of X" and color override system
 
 Status descriptions go through `TooltipKeywordParser`, which:
@@ -178,5 +188,9 @@ moves to a newer .NET.
   `IRegionMaterial`, and add it to the appropriate list in `MaterialRegistry`'s static
   constructor. Give it a `NaturalLanguageWords` array if it should be selectable via a
   `"made of X"` phrase.
+- **A new viscous liquid** (blood, sludge, venom): add a `LiquidSpec` to `LiquidPresets`,
+  then subclass `ParticleGoop` with a name, `NaturalLanguageWords` and a drip emission (see
+  `ParticleSlime`, about ten lines) and register it. Any stroke can then shed it by
+  declaring an emission with a `Drip` block; a colour override re-hues it for free.
 - **A new `DebuffKind`**: add it at the END of the enum (numeric values are serialized),
   then write an effect that declares it.

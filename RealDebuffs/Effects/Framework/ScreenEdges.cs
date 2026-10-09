@@ -2,7 +2,7 @@ using System.Numerics;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Screen edges, numbered clockwise from the top. Pinned: Disease serializes nothing from this, but its tendril layout hashes it.</summary>
+/// <summary>Screen edges, numbered clockwise from the top. Pinned: effects pick edges by number (FromPerimeter maps onto it; Disease's far tentacle chooses by value), so do not reorder.</summary>
 public enum ScreenEdge : byte
 {
     Top = 0,

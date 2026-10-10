@@ -42,10 +42,13 @@ public sealed class Plugin : IDalamudPlugin
 
         _config = _pi.GetPluginConfig() as Configuration ?? new Configuration();
 
-        // Generator overrides present at load are leftovers from a previous preview (see ClearGeneratorOverrides).
+        // Anything sitting in the generator override dicts at load time is a leftover from a previous
+        // session's preview session - see ClearGeneratorOverrides for why we don't want to keep it.
         ClearGeneratorOverrides();
 
-        // One discovery pass builds the roster; cached so every consumer shares the same stateful effect instances.
+        // One discovery pass produces the effect roster everything else reads from. Cached for
+        // the session, so all consumers see the same instances (important: effects carry
+        // per-effect state like cast-in timers).
         IReadOnlyList<ISceneEffect> effects = EffectDiscovery.Discover();
 
         foreach (var effect in effects)
@@ -70,7 +73,10 @@ public sealed class Plugin : IDalamudPlugin
         _pi.UiBuilder.Draw += OnDraw;
         _pi.UiBuilder.OpenConfigUi += OnOpenConfig;
 
-        // Materials with no NaturalLanguageWords can't be used in "made of X" phrases: fine for regions and stroke.simple, a warning otherwise.
+        // A material that has no NaturalLanguageWords isn't unreachable - the user can still
+        // select it by hand in the Effect generator - but it can't be exported or referenced in a
+        // "made of X" phrase. That's correct for region materials and stroke.simple; it's worth
+        // a warning for anything else, so a new material author who forgets gets a signal.
         foreach (var material in MaterialRegistry.AllMaterials)
         {
             if (material.NaturalLanguageWords.Length == 0
@@ -116,7 +122,10 @@ public sealed class Plugin : IDalamudPlugin
 
     private void SaveConfig() => _pi.SavePluginConfig(_config);
 
-    /// <summary>Settings-window save callback: persist, then re-read statuses and settings next frame rather than at the heartbeat.</summary>
+    /// <summary>
+    /// The settings window's save callback: persist, then have the next frame pick the edit up
+    /// (a fresh status read and re-resolved settings) instead of waiting out the heartbeat.
+    /// </summary>
     private void OnConfigEdited()
     {
         SaveConfig();
@@ -124,7 +133,14 @@ public sealed class Plugin : IDalamudPlugin
         _effects.Invalidate();
     }
 
-    /// <summary>Wipes the live-preview generator overrides (they'd silently re-skin a vanilla debuff); runs on window close and at load.</summary>
+    /// <summary>
+    /// Wipes the ephemeral generator overrides (material substitutions and color tints chosen in
+    /// the Effect generator panel). They are live-preview settings, not customizations: left in
+    /// config they would silently re-skin a vanilla debuff long after the menu was forgotten.
+    /// Runs when the settings window closes, and once at load to clear leftovers from older
+    /// versions. Lasting "make Burns look like X" customization goes through a Moodle/Loci status
+    /// description; those overrides live in the per-frame snapshot and apply only while active.
+    /// </summary>
     private bool ClearGeneratorOverrides()
     {
         if (_config.MaterialOverrides.Count == 0 && _config.ColorOverrides.Count == 0)
@@ -142,7 +158,11 @@ public sealed class Plugin : IDalamudPlugin
         {
             _windowSystem.Draw();
 
-            // On the settings window's open -> closed edge, clear the preview overrides (before effects draw, so a failure there can't skip it).
+            // Detect the settings window closing: the generator's live overrides are meant to be
+            // preview settings, and any that survive past the menu closing would tint or re-material
+            // the vanilla effect in normal gameplay without the user realizing. Watch the
+            // open -> closed transition rather than just "is closed" so this runs exactly once, and
+            // do it before the effects draw so a failure there can't skip it.
             bool isOpen = _configWindow.IsOpen;
             if (_configWasOpen && !isOpen && ClearGeneratorOverrides())
                 _effects.Invalidate();

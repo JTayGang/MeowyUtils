@@ -8,7 +8,13 @@ using RealDebuffs.Effects.Framework;
 
 namespace RealDebuffs;
 
-/// <summary>Maps the player's statuses to DebuffKinds every frame and dispatches enabled effects in DrawOrder with fades; heavier resolution is per heartbeat.</summary>
+/// <summary>
+/// Reads the local player's statuses every frame, maps them to DebuffKinds, and dispatches every
+/// enabled effect's Emit call in DrawOrder. Effects fade in/out smoothly rather than popping.
+///
+/// The in-game status list is scanned every frame; everything derived from the Moodles/Loci
+/// snapshot and the settings is resolved once per heartbeat or after a settings edit, not per frame.
+/// </summary>
 public sealed class EffectManager
 {
     private readonly ISceneEffect[] _order;
@@ -25,7 +31,8 @@ public sealed class EffectManager
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private float _lastTime;
 
-    // Inputs resolved per heartbeat; dictionaries are replaced, never mutated (the renderer keys its cache on the instance).
+    // Inputs resolved per heartbeat. The dictionaries are replaced, never mutated, once published:
+    // EffectSceneRenderer keys its material cache on the instance.
     private static readonly IReadOnlyDictionary<string, string> NoOverrides = new Dictionary<string, string>();
     private int _resolvedTick = -1;
     private volatile bool _inputsStale = true;
@@ -110,7 +117,9 @@ public sealed class EffectManager
                 }
             }
 
-            // Custom rules join the same set as real debuffs and run before the chat-block line, so a custom Silence also locks chat.
+            // Custom status rules feed the same set real debuffs do, so an effect already on from
+            // either source is never doubled. Runs before the chat-block line so a custom Silence
+            // rule also drives the hard chat lockout.
             foreach (var kind in _ruleKinds)
             {
                 _activeScratch.Add(kind);
@@ -195,7 +204,10 @@ public sealed class EffectManager
         _configColors = colors;
     }
 
-    /// <summary>Colour priority: tooltip-derived (live only), dev-tester forced, then config override; null = the effect's own palette.</summary>
+    /// <summary>
+    /// Color priority: tooltip-derived (live only), then dev-tester forced, then config override.
+    /// Null means the effect shows in its own authored palette.
+    /// </summary>
     private Vector4? ResolveColorOverride(DebuffKind kind, bool live)
     {
         if (live && _snapshot.TooltipColors.TryGetValue(kind, out var tooltipColor))

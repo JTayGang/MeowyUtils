@@ -3,7 +3,17 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>Iron chain: oval links rolled about the strand, matcap-shaded, far halves first so edge-on links interlock. WidthHint is link length; Closed wraps in an even link count.</summary>
+/// <summary>
+/// Iron chain: a string of oval links rolled about the strand's axis, shaded by the shared
+/// matcap and sorted so interlocks occlude like a photograph. The far half of each link is
+/// drawn first so an edge-on link passes in front of one neighbour's near side and behind
+/// the other's far side — the single detail that makes a chain read as interlocked rather
+/// than as a row of overlapping ovals.
+///
+/// Stroke contract: any polyline; link length comes from WidthHint; Closed wraps the seam
+/// (rounded to an even link count so the alternating quarter-turns close); Depth fogs and
+/// softens; Agitation lights up the metal and rattles links.
+/// </summary>
 public sealed class StrokeChain : IStrokeMaterial
 {
     public string Name => "stroke.chain";
@@ -13,7 +23,8 @@ public sealed class StrokeChain : IStrokeMaterial
     private const float MaxLinkFrac = 0.085f;
     private const int MaxLinks = 200;
 
-    // Link proportions as fractions of outer length L: 5 bar-diameters long, 3.4 wide, pitched 3 apart (= inside length, the overlap that interlocks).
+    // Link proportions, as fractions of the outer length L: 5 bar-diameters long, 3.4 wide,
+    // pitched 3 diameters apart (which equals the inside length — the overlap that interlocks).
     private const float BarDiameter = 0.200f;
     private const float Pitch       = 0.600f;
     private const float HalfAxis    = 0.400f;
@@ -58,12 +69,15 @@ public sealed class StrokeChain : IStrokeMaterial
         for (int i = 0; i < m; i++)
         {
             float q = MathF.Abs(t.X[i]) / HalfAxis;
-            t.Cap[i] = DrawHelpers.Smooth((q - 0.55f) / 0.45f);
+            float c = Math.Clamp((q - 0.55f) / 0.45f, 0f, 1f);
+            t.Cap[i] = c * c * (3f - 2f * c);
         }
         return t;
     }
 
-    // Column offsets across the bar (-1..1; first/last are the AA fringe), with sqrt(1-u^2) precomputed so DrawHalf needn't sqrt per vertex.
+    // Column offsets across the bar (-1..1). First/last are the AA fringe. The sqrt(1-u²) values
+    // are precomputed so DrawHalf doesn't sqrt every vertex — a 10–14k sqrt/frame saving across a
+    // full cast at the current mesh sizes.
     private static readonly float[] Cols7   = { -1f, -1f, -0.62f, 0f, 0.62f, 1f, 1f };
     private static readonly float[] Cols5   = { -1f, -1f, 0f, 1f, 1f };
     private static readonly float[] Cols7Sq = BuildSq(Cols7);
@@ -106,7 +120,8 @@ public sealed class StrokeChain : IStrokeMaterial
         float time = ctx.Time;
         int seed = s.Seed;
 
-        // Bar width is fixed per chain; the LOD tier and far-half cull both key off it.
+        // Bar width is fixed for the whole chain; the LOD tier and the far-half cull both key
+        // off it. Computed once so both sites agree and the multiply isn't done twice.
         float bar = L * BarDiameter;
         bool smallBar = bar < 9.5f * px;
 
@@ -169,7 +184,7 @@ public sealed class StrokeChain : IStrokeMaterial
 
             // Twist along the strand + sway + agitation + the quarter-turn interlocking forces.
             float twist = twistBase
-                        + twistAmp * Noise.Value(sc / (L * 5.5f) * twistFreq + seed * 0.00137f, 7.3f + time * 0.045f)
+                        + twistAmp * FireNoise.Value(sc / (L * 5.5f) * twistFreq + seed * 0.00137f, 7.3f + time * 0.045f)
                         + 0.16f * MathF.Sin(time * 0.55f + s.Phase + sc * 0.0031f)
                         + agit * 0.30f * MathF.Sin(time * 21f + idx * 1.9f);
             float roll = twist + ((idx & 1) == 0 ? 0f : MathF.PI * 0.5f);
@@ -250,7 +265,7 @@ public sealed class StrokeChain : IStrokeMaterial
 
         // Same bytes WithAlpha would produce (Pack gives alpha 255), without a clamp and conversion per vertex.
         bool overridden = DrawHelpers.ColorOverrideActive;
-        uint alphaBits = DrawHelpers.AlphaBits(linkAlpha);
+        uint alphaBits = (uint)(int)(255f * (linkAlpha > 0f ? (linkAlpha < 1f ? linkAlpha : 1f) : 0f)) << 24;
         int v = 0;
 
         for (int j = 0; j < M; j++)
@@ -285,11 +300,12 @@ public sealed class StrokeChain : IStrokeMaterial
             {
                 float nxr = lk.Index * 1.713f + x / L * 3.4f;
                 float nyr = h * 4.1f + y / L * 3.4f + seed * 0.0007f;
-                rustA = Noise.Value(nxr - 0.9f, nyr) * 0.5f + 0.5f;
-                rustB = Noise.Value(nxr + 0.9f, nyr) * 0.5f + 0.5f;
+                rustA = FireNoise.Value(nxr - 0.9f, nyr) * 0.5f + 0.5f;
+                rustB = FireNoise.Value(nxr + 0.9f, nyr) * 0.5f + 0.5f;
             }
 
-            // Shade real columns only: the fringe columns share their neighbour's normal and colour, differing only in position and alpha (0).
+            // Shade the real columns only. The two fringe columns (first/last) sit at the same u as their
+            // neighbour, so same normal, same colour; they only differ in position and alpha (0).
             int vb = v;
             for (int c = 1; c < nc - 1; c++)
             {
@@ -301,12 +317,14 @@ public sealed class StrokeChain : IStrokeMaterial
 
                 Vector3 col = body.Sample(n.X, n.Y);
 
-                // Rust patches live in link space so they travel with the link; noise is sampled at the two bar edges per row and blended (it is low-frequency).
+                // Rust patches, anchored in link space so they travel with the link. The noise is sampled at the
+                // two bar edges per row and blended across, not per vertex: the patches are low-frequency.
                 float rustMask = 0f;
                 if (rusty)
                 {
                     float rm = rustA + (rustB - rustA) * (u * 0.5f + 0.5f) + (lk.Rust - 0.5f) * 0.95f;
-                    rustMask = DrawHelpers.Smooth((rm - 0.56f) / 0.24f) * (1f - 0.85f * cap) * 0.85f;
+                    float t = Math.Clamp((rm - 0.56f) / 0.24f, 0f, 1f);
+                    rustMask = t * t * (3f - 2f * t) * (1f - 0.85f * cap) * 0.85f;
                 }
                 if (rustMask > 0.01f) col = Vector3.Lerp(col, Rust.Sample(n.X, n.Y), rustMask);
 
@@ -320,7 +338,8 @@ public sealed class StrokeChain : IStrokeMaterial
                 if (depthFog > 0f) col = Vector3.Lerp(col, StrandShading.DepthFog, depthFog);
 
                 outP[vb + c] = pos;
-                outC[vb + c] = DrawHelpers.VertexColor(col, linkAlpha, alphaBits, overridden);
+                uint rgb = FireColor.Pack(col.X, col.Y, col.Z);
+                outC[vb + c] = overridden ? DrawHelpers.WithAlpha(rgb, linkAlpha) : (rgb & 0x00FFFFFFu) | alphaBits;
             }
 
             // Fringe: the neighbour's colour at alpha 0, pushed outward by the feather.

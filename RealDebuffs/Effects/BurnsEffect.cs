@@ -3,7 +3,15 @@ using RealDebuffs.Effects.Framework;
 
 namespace RealDebuffs.Effects;
 
-/// <summary>Burns: layered fire (soot vignette, firelight, smoke, four flame layers, cinders) from oscillating grid emitters; ~2s ignition intro. Hero slot is the flames.</summary>
+/// <summary>
+/// Burns: layered fire built from soot vignette, firelight, smoke, four flame layers (back/bed/
+/// body/front), and rising cinders. Spawn positions are clustered off a grid with per-emitter
+/// oscillation so the fire is tall at bottom-center and lazier toward the corners.
+///
+/// Intro (~2s): emitters ignite in order of distance from bottom-center; each then eases from
+/// ~30% to full size over ~1.3s, with a rate flare on ignition. Hero slot is the flames
+/// (Role.Ember); smoke, cinders, and firelight stay put when a "made of X" phrase replaces them.
+/// </summary>
 public sealed class BurnsEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
 {
     public DebuffKind Kind => DebuffKind.Burns;
@@ -31,10 +39,11 @@ public sealed class BurnsEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
         new("Region",   PrimitiveRole.MainStroke, "Firelight", "region.firelight", "EdgeGlow"),
     };
 
-    private static readonly uint Soot = DrawHelpers.Pack(0.045f, 0.012f, 0.006f);
-    private static readonly uint Glow = DrawHelpers.Pack(1.00f, 0.42f, 0.07f);
+    private static readonly uint Soot = DrawHelpers.ToU32(0.045f, 0.012f, 0.006f, 1f);
+    private static readonly uint Glow = DrawHelpers.ToU32(1.00f, 0.42f, 0.07f, 1f);
 
-    // Intro build: after ignition flames start at BuildFloor of full size and ease up over BuildSeconds; layers join in sequence (LayerDelayFor).
+    // Intro build: after ignition, flames start at BuildFloor of full size and ease up over
+    // BuildSeconds so the fire visibly climbs. Layers join in sequence (see LayerDelayFor).
     private const float BuildSeconds = 1.30f;
     private const float BuildFloor   = 0.30f;
 
@@ -77,6 +86,7 @@ public sealed class BurnsEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
         public float MinSpeed, MaxSpeed;
         public float LiftMin, LiftMax;
         public float Sway;
+        public float Brightness = 1f;
         public bool  Burned;
         public Func<int, Vector2> PosFn = null!;
         public Func<int, Vector2> VelFn = null!;
@@ -139,7 +149,12 @@ public sealed class BurnsEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
         return s;
     }
 
-    /// <summary>Lays out this cast's fire (reseeded per cast); sites jitter within their own cell so no gaps open.</summary>
+    /// <summary>
+    /// Lays out this cast's fire. Called at the start of every cast with a seed from the cast
+    /// start time, so every cast gets its own arrangement. Sites jitter only within their own
+    /// cell so they can't open a gap between them; liveliness comes from a couple of randomly
+    /// chosen hot sites per cast.
+    /// </summary>
     private void BuildLayout(int castSeed)
     {
         int n = BottomSites;
@@ -301,7 +316,8 @@ public sealed class BurnsEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
         _screenSize = screenSize;
         _shortSide = MathF.Min(screenSize.X, screenSize.Y);
 
-        // A gap since the last Emit is a fresh application: restart ignition, drop leftovers, relay the fire from the cast start time.
+        // A gap since the last Emit means a fresh application: restart ignition, drop leftovers,
+        // and lay out a new fire reseeded from the cast start time.
         if (_cast.Begin(time))
         {
             foreach (var e in _all) { e.Pool.Clear(); e.Burned = false; }
@@ -363,7 +379,8 @@ public sealed class BurnsEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
                              shortSide * e.SizeMaxFrac * e.SizeBoost * site.SizeBoost);
             }
 
-            // Flames oscillate shallowly (0.72x-1.28x) so no stretch goes quiet; cinders and smoke keep the wide swing.
+            // Flames use a shallow oscillation (0.72x-1.28x) so no stretch goes quiet. Cinders and
+            // smoke keep the wide swing.
             float osc = (e.OscBase + e.OscSpan * DrawHelpers.Pulse(time, site.OscPeriod * e.OscPeriodMul, site.OscPhase + e.OscPhaseAdd)) * rampK;
 
             float rate = site.Rate * e.RateMul * ignBoost * osc;
@@ -395,13 +412,17 @@ public sealed class BurnsEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
                     _                    => flameLevel,
                 };
                 e.Pool.Emit(scene, time, e.Role,
-                            brightnessMul: level, colorOverride,
+                            brightnessMul: level * e.Brightness, colorOverride,
                             swayPerParticle: e.Sway, variant: e.Variant);
             }
         }
     }
 
-    /// <summary>Bottom emitters sit just below the edge (bases hidden), side emitters just outside it; smoke LIFTs so it starts where flames end.</summary>
+    /// <summary>
+    /// Bottom emitters sit just below the bottom edge (so flame bases are hidden); side emitters
+    /// sit just outside the left/right edge, with Along = 0 the bottom corner. Smoke spawns LIFT
+    /// above the edge so it starts where the flames end.
+    /// </summary>
     private Vector2 SpawnPos(FireEmitter e, int seed)
     {
         var site = e.Site;

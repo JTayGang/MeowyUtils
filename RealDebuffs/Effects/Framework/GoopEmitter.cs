@@ -3,7 +3,26 @@ using System.Runtime.InteropServices;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Viscous-drip simulation (a StrokeDripOptions emission opts in). A site cycles rest, swell (bead grows, neck stretches), pinch (neck lets go), fall (teardrop; the neck recoils, sometimes leaving a satellite); Stringiness sets how far the neck stretches (water ~0, honey a lot). Sites and drops reach the scene as ordinary ParticlePrimitives, so the material decides slime vs blood.</summary>
+/// <summary>
+/// The viscous-drip simulation. A stroke material opts in by declaring an emission with a
+/// <see cref="StrokeDripOptions"/> block; StrokeAutoEmitter hands such emissions here instead of
+/// scattering free particles.
+///
+/// The model is the life of a drop on an underside, in four beats:
+///   rest     a small bead clings to the surface.
+///   swell    liquid feeds it; it grows and hangs lower, stretching a neck behind it.
+///   pinch    the neck gets too thin and lets go.
+///   fall     the drop drops, pulled out into a teardrop by its speed; the neck snaps back to the
+///            surface as a recoiling string, sometimes leaving a small satellite droplet in the gap.
+/// then the site starts over. Stringiness decides how long the neck is allowed to stretch: water barely
+/// has one, honey has a lot.
+///
+/// State lives in two small pools, like StrokeAutoEmitter's: sites (places on a strand that grow drops,
+/// keyed so they stay put on the strand as it moves) and drops (what has fallen). Everything is handed to
+/// the scene at the end of the frame as ordinary <see cref="ParticlePrimitive"/>s: the thread rides on the
+/// particle's Anchor/ThreadEnd/Tether fields and the particle material draws it, so nothing here knows
+/// whether it is slime, blood or sludge. That is the material's job (see ParticleGoop).
+/// </summary>
 public static class GoopEmitter
 {
     private const int MaxDrops = 192;
@@ -78,13 +97,17 @@ public static class GoopEmitter
         }
     }
 
-    /// <summary>Grows this frame's drops along one stroke for one drip emission; strokeMaterial supplies the radius so drops hang from the skin (null = plain tube).</summary>
+    /// <summary>
+    /// Grows this frame's drops along one stroke for one drip emission. <paramref name="strokeMaterial"/>
+    /// supplies the strand's radius so drops hang from its surface, not its centreline; null (a particle
+    /// material acting as emitter) assumes a plain tube.
+    /// </summary>
     public static void Tend(in StrokePrimitive s, in StrokeEmission e, in StrokeDripOptions o,
                             IStrokeMaterial? strokeMaterial, string? particleMaterial,
                             float time, float dt, Vector2 screen)
     {
         dt = MathF.Min(dt, MaxStep);
-        float px = DrawHelpers.PixelScale(screen);
+        float px = screen.X > 0f ? Math.Clamp(MathF.Min(screen.X, screen.Y) / 1080f, 0.75f, 2.4f) : 1f;
         float shortSide = screen.X > 0f ? MathF.Min(screen.X, screen.Y) : 1080f;
 
         float visibleLen = s.Path.Length * s.Reveal;
@@ -150,7 +173,7 @@ public static class GoopEmitter
             anchor = pos + perp * (radius * 0.78f);
             downhill = perp.Y;
         }
-        float awake = DrawHelpers.Smooth((downhill - o.MinSlope) / 0.18f);
+        float awake = Smooth((downhill - o.MinSlope) / 0.18f);
 
         // ---- the size of this cycle's drop ----
         int cycleSeed = unchecked(siteSeed + site.Cycles * 7331);
@@ -161,7 +184,7 @@ public static class GoopEmitter
         float q = Math.Clamp((site.Phase - RestEnd) / (PinchAt - RestEnd), 0f, 1f);
         float rb = rMax * (0.40f + 0.60f * MathF.Sqrt(q));
         float len = rb * 0.45f + lMax * MathF.Pow(q, 2.4f);
-        float neck = DrawHelpers.Lerp(0.66f, 0.10f + 0.10f * (1f - o.Stringiness), MathF.Pow(q, 1.4f));
+        float neck = Lerp(0.66f, 0.10f + 0.10f * (1f - o.Stringiness), MathF.Pow(q, 1.4f));
         float swing = 0.12f * MathF.Sin(time * 1.9f + siteSeed * 0.37f) * q;
         Vector2 bead = anchor + new Vector2(MathF.Sin(swing), MathF.Cos(swing)) * len;
 
@@ -286,5 +309,11 @@ public static class GoopEmitter
         }
     }
 
+    private static float Lerp(float a, float b, float t) => a + (b - a) * t;
 
+    private static float Smooth(float t)
+    {
+        t = Math.Clamp(t, 0f, 1f);
+        return t * t * (3f - 2f * t);
+    }
 }

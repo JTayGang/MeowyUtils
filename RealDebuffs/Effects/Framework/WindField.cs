@@ -2,7 +2,19 @@ using System.Numerics;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>A fixed pool of wrapping flakes blown by gusting wind: steady density, constant cost, no allocation after Build. Near flakes are big and fast.</summary>
+/// <summary>
+/// A fixed pool of flakes blown across the screen by a gusting wind. Where ParticleEmitter spawns
+/// particles that live, fade and die, these wrap around the screen, so the density is steady
+/// across the whole width (nothing dims at the edges), the cost is the same every frame, the count
+/// doesn't depend on the frame rate, and nothing is allocated after <see cref="Build"/>.
+///
+/// Each flake has a depth. Near ones are big, bright and fast; far ones small, dim and slow, which is
+/// most of what makes a flat sheet of dots read as a blizzard. The wind is one vector plus a gust
+/// strength (see <see cref="Gust"/>): in a lull the flakes drift and fall, in a gust they streak
+/// across (the snow material stretches fast flakes along their velocity).
+///
+/// Not thread-safe; the owning effect updates and emits it from the draw thread.
+/// </summary>
 internal sealed class WindField
 {
     private struct Flake
@@ -34,17 +46,26 @@ internal sealed class WindField
         }
     }
 
-    /// <summary>Gust strength 0..1 (three incommensurate waves, squashed into lulls and gales). Pass seconds since the effect began: large clocks lose Sin precision.</summary>
+    /// <summary>
+    /// A slowly gusting strength in 0..1: three incommensurate waves, squashed so lulls and gales each
+    /// last a while rather than the wind hovering at a middling breeze (about 15% of the time it is calm, nearly half of it blowing hard). <paramref name="time"/> should be
+    /// seconds since the effect began (large absolute clock values lose float precision in Sin).
+    /// </summary>
     public static float Gust(float time, float seed)
     {
         float g = 0.62f
                 + 0.26f * MathF.Sin(time * 0.29f + seed)
                 + 0.17f * MathF.Sin(time * 0.71f + seed * 1.9f)
                 + 0.09f * MathF.Sin(time * 1.70f + seed * 3.7f);
-        return DrawHelpers.Smooth(g);
+        g = Math.Clamp(g, 0f, 1f);
+        return g * g * (3f - 2f * g);
     }
 
-    /// <summary>Advances every flake; wind is px/s at full gust (screen-scaled), gust 0..1, px scales settling and eddy motion.</summary>
+    /// <summary>
+    /// Advances every flake. <paramref name="wind"/> is the wind's velocity in px/s at full gust (already
+    /// scaled for the screen); <paramref name="gust"/> is 0..1; <paramref name="px"/> scales the settling
+    /// and eddy motion with the screen.
+    /// </summary>
     public void Update(float time, float dt, Vector2 size, float px, Vector2 wind, float gust)
     {
         if (_flakes.Length == 0 || dt <= 0f) return;
@@ -70,7 +91,11 @@ internal sealed class WindField
         }
     }
 
-    /// <summary>Pushes flakes into the scene; density (0..1) is the fraction out, the last fading in. Off-screen flakes are skipped.</summary>
+    /// <summary>
+    /// Pushes the flakes into the scene. <paramref name="density"/> (0..1) is the fraction of the pool
+    /// that is out; the last one fades in rather than popping, so density can ramp smoothly. Flakes
+    /// off screen are skipped.
+    /// </summary>
     public void Emit(EffectScene scene, Vector2 size, float px, PrimitiveRole role, float density,
                      float brightness, Vector4? colorOverride)
     {

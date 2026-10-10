@@ -2,7 +2,12 @@ using System.Numerics;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>A small pool of short-lived particles: Update spawns on an interval each frame, Burst adds one-shot spawns; use either or both.</summary>
+/// <summary>
+/// A small pool of short-lived particles. Three usage modes:
+///  - Interval emission: call Update(...) each frame.
+///  - Burst-only: call Burst(...) on an event, plus UpdateBurstOnly(...) each frame.
+///  - Mixed: Update for ambient, Burst for one-shot moments.
+/// </summary>
 public sealed class ParticleEmitter
 {
     private struct Particle
@@ -58,6 +63,9 @@ public sealed class ParticleEmitter
             _nextSpawnAt = time + DrawHelpers.HashRange(seed + 4, spawnIntervalMin, spawnIntervalMax);
         }
     }
+
+    /// <summary>Burst-only: integrates existing particles without spawning anything.</summary>
+    public void UpdateBurstOnly(float time, float dt) => Integrate(time, dt);
 
     /// <summary>One-shot spawn. Each particle gets a hashed seed so two bursts at the same time differ.</summary>
     public void Burst(int count, float time,

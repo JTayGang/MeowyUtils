@@ -3,13 +3,18 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>The fallback stroke: a soft glow under a solid pale core with a small growing-tip flare. If it ever shows on screen, a stroke is unconfigured.</summary>
+/// <summary>
+/// A plain baseline stroke: a soft outer glow under a solid core. Neutral pale line, no
+/// decoration, no flourish beyond a small tip flare while growing. Exists so the framework
+/// always has *something* to render a stroke with even if no material is registered for the
+/// slot; if this ever appears on screen, it means a stroke is unconfigured.
+/// </summary>
 public sealed class StrokeSimple : IStrokeMaterial
 {
     public string Name => "stroke.simple";
 
-    private static readonly uint Glow = DrawHelpers.Pack(0.80f, 0.82f, 0.88f);
-    private static readonly uint Core = DrawHelpers.Pack(0.94f, 0.96f, 1.00f);
+    private static readonly uint Glow = DrawHelpers.ToU32(0.80f, 0.82f, 0.88f, 1f);
+    private static readonly uint Core = DrawHelpers.ToU32(0.94f, 0.96f, 1.00f, 1f);
 
     public void Draw(ImDrawListPtr dl, in StrokePrimitive s, in MaterialContext ctx)
     {

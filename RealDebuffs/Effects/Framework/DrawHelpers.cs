@@ -3,21 +3,25 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Colour packing, the per-primitive colour override, easing, hashing and the shared vignette.</summary>
 internal static class DrawHelpers
 {
-    /// <summary>Opaque packed colour. Ignores the colour override; WithAlpha is where that applies.</summary>
-    public static uint Pack(float r, float g, float b)
-        => 0xFF000000u | (Q(b) << 16) | (Q(g) << 8) | Q(r);
+    public static Vector2 V(float x, float y) => new(x, y);
 
-    // Signed conversion: float -> uint is several times slower on x64. NaN lands on 0.
-    private static uint Q(float v) => (uint)(int)((v > 0f ? (v < 1f ? v : 1f) : 0f) * 255f + 0.5f);
+    // ToU32 bakes authored palettes once and deliberately does NOT apply PushColorOverride -
+    // WithAlpha is the choke point instead, since every material calls it fresh each frame.
+    public static uint ToU32(float r, float g, float b, float a) =>
+        ImGui.ColorConvertFloat4ToU32(new Vector4(r, g, b, a));
 
-    // ---- colour override ----
-
+    /// <summary>
+    /// Hue/saturation override plus an optional value curve. Hue and Saturation come from the
+    /// override color; ValuePower/ValueScale shape the source tone's brightness (defaults are 1).
+    /// </summary>
     private readonly struct HueOverride
     {
-        public readonly float Hue, Saturation, ValuePower, ValueScale;
+        public readonly float Hue;
+        public readonly float Saturation;
+        public readonly float ValuePower;
+        public readonly float ValueScale;
 
         public HueOverride(float hue, float saturation, float valuePower = 1f, float valueScale = 1f)
         {
@@ -31,7 +35,9 @@ internal static class DrawHelpers
     private static readonly Stack<HueOverride?> ColorOverrideStack = new();
     private static HueOverride? _colorOverride;
 
-    // Memo for ApplyColorOverride (HSV round trip + Pow per vertex): direct-mapped, keyed on the override's id, not "the current push".
+    // ApplyColorOverride costs an RGB->HSV round trip plus a Pow, and materials call it per vertex.
+    // Memoized in a direct-mapped cache keyed on the override's id (not "the current push", which
+    // flips constantly as the renderer pushes/pops per primitive).
     private const int OverrideCacheBits = 11;
     private static readonly uint[] OverrideIn  = new uint[1 << OverrideCacheBits];
     private static readonly uint[] OverrideOut = new uint[1 << OverrideCacheBits];
@@ -59,7 +65,11 @@ internal static class DrawHelpers
         _overrideId = ++_knownCount;
     }
 
-    /// <summary>Until the matching Pop, WithAlpha re-hues colours toward rgb (chromatic: hue replaced, saturation kept; achromatic: hue stripped).</summary>
+    /// <summary>
+    /// From now until the matching Pop, every color passing through WithAlpha is re-hued toward
+    /// rgb. Chromatic overrides replace hue, preserve saturation. Achromatic overrides strip hue
+    /// and shape the value curve by bucket (white lifts mid-tones, black crushes them).
+    /// </summary>
     public static void PushColorOverride(Vector4? rgb)
     {
         ColorOverrideStack.Push(_colorOverride);
@@ -73,8 +83,12 @@ internal static class DrawHelpers
         var (h, s, v) = RgbToHsv(c.X, c.Y, c.Z);
 
         if (s >= 0.05f)
+        {
             SetOverride(new HueOverride(h, s));
-        else if (v >= 0.72f)
+            return;
+        }
+
+        if (v >= 0.72f)
             SetOverride(new HueOverride(h, s, valuePower: 0.35f));                    // white / silver
         else if (v <= 0.20f)
             SetOverride(new HueOverride(h, s, valuePower: 4.0f, valueScale: 0.55f));  // black
@@ -85,6 +99,10 @@ internal static class DrawHelpers
     public static void PopColorOverride() =>
         SetOverride(ColorOverrideStack.Count > 0 ? ColorOverrideStack.Pop() : null);
 
+    /// <summary>
+    /// Re-hues the active override. Hue is replaced; saturation and value come from the source
+    /// tone so a palette's vivid/pale/dark structure survives.
+    /// </summary>
     private static uint ApplyColorOverride(uint color)
     {
         if (_colorOverride is not { } ov) return color;
@@ -109,10 +127,24 @@ internal static class DrawHelpers
 
         var (_, origS, origV) = RgbToHsv(r, g, b);
 
-        float s, hue;
-        if (ov.Saturation < 0.05f)      { hue = 0f;     s = 0f; }
-        else if (origS < 0.05f)         { hue = ov.Hue; s = ov.Saturation; }
-        else                            { hue = ov.Hue; s = origS; }
+        float s;
+        float hue;
+
+        if (ov.Saturation < 0.05f)
+        {
+            hue = 0f;
+            s = 0f;
+        }
+        else if (origS < 0.05f)
+        {
+            hue = ov.Hue;
+            s = ov.Saturation;
+        }
+        else
+        {
+            hue = ov.Hue;
+            s = origS;
+        }
 
         float v = MathF.Pow(origV, ov.ValuePower) * ov.ValueScale;
 
@@ -163,14 +195,20 @@ internal static class DrawHelpers
         return (r1 + m, g1 + m, b1 + m);
     }
 
-    /// <summary>True while an override is pushed; lets a mesh material skip WithAlpha's per-vertex remap.</summary>
+    /// <summary>True while a colour override is pushed; lets a mesh material skip WithAlpha's per-vertex remap.</summary>
     public static bool ColorOverrideActive => _colorOverride.HasValue;
 
-    /// <summary>Saturation of the active override if chromatic, else 0; muted palettes use it so "red" comes out as red as asked.</summary>
+    /// <summary>
+    /// The saturation (0..1) of the active override colour, when that colour is chromatic; 0 when there
+    /// is no override, or it is white, black or grey. A chromatic override keeps each source pixel's own
+    /// saturation, so a material whose source palette is muted (hemp, say) comes out muted whatever
+    /// colour it is asked to be. A material that wants "red" to be as red as red actually is can read
+    /// this and <see cref="WithSaturation"/> its colours before they pass through WithAlpha.
+    /// </summary>
     public static float ColorOverrideChroma =>
         _colorOverride is { } ov && ov.Saturation >= 0.05f ? ov.Saturation : 0f;
 
-    /// <summary>The colour with HSV saturation set to <paramref name="s"/>; hue and value unchanged.</summary>
+    /// <summary>The colour with its HSV saturation set to <paramref name="s"/>, hue and value unchanged.</summary>
     public static Vector3 WithSaturation(Vector3 c, float s)
     {
         float mx = MathF.Max(c.X, MathF.Max(c.Y, c.Z));
@@ -178,36 +216,19 @@ internal static class DrawHelpers
         float have = mx > 1e-4f ? (mx - mn) / mx : 0f;
         if (have < 1e-3f) return c;                       // grey has no hue to saturate
 
+        // Scale each channel's distance below the maximum: the maximum (value) and the order of the channels (hue) stay put.
         float k = Math.Clamp(s, 0f, 1f) / have;
         return new Vector3(mx - (mx - c.X) * k, mx - (mx - c.Y) * k, mx - (mx - c.Z) * k);
     }
 
-    /// <summary>Applies the colour override, then scales alpha by <paramref name="mul"/> (0..1).</summary>
     public static uint WithAlpha(uint color, float mul)
     {
         color = ApplyColorOverride(color);
         mul = mul > 0f ? (mul < 1f ? mul : 1f) : 0f;
         uint a = (color >> 24) & 0xFF;
-        a = (uint)(int)(a * mul);
+        a = (uint)(int)(a * mul);     // signed conversion: see FireColor.Q
         return (color & 0x00FFFFFF) | (a << 24);
     }
-
-    /// <summary>Opaque-RGB vertex colour from a lit colour: the override-aware WithAlpha, or a plain pack when no override is active.</summary>
-    public static uint VertexColor(Vector3 c, float alpha, uint alphaBits, bool overridden)
-    {
-        uint rgb = Pack(c.X, c.Y, c.Z);
-        return overridden ? WithAlpha(rgb, alpha) : (rgb & 0x00FFFFFFu) | alphaBits;
-    }
-
-    /// <summary>Packed RGB with alpha: override-aware when overridden, else a plain alpha byte.</summary>
-    public static uint Tint(uint rgb, float alpha, bool overridden) =>
-        overridden ? WithAlpha(rgb, alpha) : (rgb & 0x00FFFFFFu) | AlphaBits(alpha);
-
-    /// <summary>The alpha byte of <paramref name="alpha"/> (0..1), shifted into place for VertexColor.</summary>
-    public static uint AlphaBits(float alpha) =>
-        (uint)(int)(255f * (alpha > 0f ? (alpha < 1f ? alpha : 1f) : 0f)) << 24;
-
-    // ---- maths ----
 
     public static uint LerpColor(uint a, uint b, float t)
     {
@@ -218,29 +239,12 @@ internal static class DrawHelpers
 
     public static float Saturate(float x) => Math.Clamp(x, 0f, 1f);
 
-    public static float Lerp(float a, float b, float t) => a + (b - a) * t;
-
-    /// <summary>Clamped smoothstep of t.</summary>
-    public static float Smooth(float t)
-    {
-        t = t < 0f ? 0f : (t > 1f ? 1f : t);
-        return t * t * (3f - 2f * t);
-    }
-
-    /// <summary>Smoothstep of x between two edges (edges may be reversed).</summary>
-    public static float Smooth(float edge0, float edge1, float x) => Smooth((x - edge0) / (edge1 - edge0));
-
     public static float EaseOutCubic(float t)
     {
-        float inv = 1f - Math.Clamp(t, 0f, 1f);
+        t = Math.Clamp(t, 0f, 1f);
+        float inv = 1f - t;
         return 1f - inv * inv * inv;
     }
-
-    /// <summary>Particle size over its life: riseFrom to 1 by riseEnd, hold until fallStart, then shrink to at least floor.</summary>
-    public static float LifeSize(float age, float riseEnd, float riseFrom, float fallStart, float floor) =>
-        age < riseEnd ? riseFrom + (1f - riseFrom) * (age / riseEnd)
-        : age < fallStart ? 1f
-        : MathF.Max(floor, 1f - (age - fallStart) / (1f - fallStart));
 
     public static float Hash01(int seed)
     {
@@ -259,11 +263,11 @@ internal static class DrawHelpers
     public static float Pulse(float time, float periodSeconds, float phase = 0f) =>
         (MathF.Sin((time / periodSeconds + phase) * MathF.PI * 2f) + 1f) * 0.5f;
 
-    /// <summary>Pixel scale for a screen: short side over 1080, clamped to a sane range.</summary>
-    public static float PixelScale(Vector2 size) =>
-        size.X > 0f ? Math.Clamp(MathF.Min(size.X, size.Y) / 1080f, 0.75f, 2.4f) : 1f;
-
-    /// <summary>Soft edge vignette. Fades to the same colour at zero alpha: ImGui blends non-premultiplied, so fading to transparent black would grey it.</summary>
+    /// <summary>
+    /// Draws a soft vignette. Fades to the same color at zero alpha - ImGui blends without
+    /// premultiplying, so fading to transparent black would grey it. The top/bottom bands span
+    /// the full width and the left/right bands the full height, so corners double-cover.
+    /// </summary>
     public static void DrawVignette(ImDrawListPtr dl, Vector2 size, uint color, float thicknessFrac, float alpha)
     {
         if (alpha <= 0f) return;
@@ -272,9 +276,9 @@ internal static class DrawHelpers
         uint edge = WithAlpha(color, alpha);
         const uint clear = 0u;
 
-        dl.AddRectFilledMultiColor(new(0, 0), new(size.X, t), edge, edge, clear, clear);
-        dl.AddRectFilledMultiColor(new(0, size.Y - t), new(size.X, size.Y), clear, clear, edge, edge);
-        dl.AddRectFilledMultiColor(new(0, 0), new(t, size.Y), edge, clear, clear, edge);
-        dl.AddRectFilledMultiColor(new(size.X - t, 0), new(size.X, size.Y), clear, edge, edge, clear);
+        dl.AddRectFilledMultiColor(V(0, 0), V(size.X, t), edge, edge, clear, clear);
+        dl.AddRectFilledMultiColor(V(0, size.Y - t), V(size.X, size.Y), clear, clear, edge, edge);
+        dl.AddRectFilledMultiColor(V(0, 0), V(t, size.Y), edge, clear, clear, edge);
+        dl.AddRectFilledMultiColor(V(size.X - t, 0), V(size.X, size.Y), clear, edge, edge, clear);
     }
 }

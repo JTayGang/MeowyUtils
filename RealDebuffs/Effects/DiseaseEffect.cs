@@ -3,30 +3,7 @@ using RealDebuffs.Effects.Framework;
 
 namespace RealDebuffs.Effects;
 
-/// <summary>
-/// Disease: wet, many-suckered tentacles unfurl out of the screen's edges and feel their way across
-/// the frame, dripping slime. Now and then one finds a point on the border, hooks it, and hauls on it
-/// before letting go and searching again.
-///
-/// SHAPE. Each tentacle is drawn from a smooth target curve, rebuilt every frame: a Bezier that leaves
-/// its edge square on and arrives at a moving goal, with a slow bulge that turns through arc, S and
-/// mirrored arc (never passing through straight, so it cannot pop), a body wave running toward the tip, and a
-/// curl at the tip. The curve's length is the tentacle's length, so extra reach becomes curvature.
-///
-/// MOTION. A VerletStrand follows that curve through a spring. It lags, swings and settles like a heavy
-/// muscle, which is where the "alive" comes from, and the spring is what stops free physics from tying it
-/// in a knot. The goal, the tip's heading and its curl are each critically damped, so no change of
-/// behaviour can produce a sharp change of direction.
-///
-/// BEHAVIOUR. Wander (search around a home point), Reach (the goal glides to a point on the border),
-/// Grip (the tip is pinned there; the arm tenses and relaxes), Release (back to wandering).
-///
-/// INTRO. A tentacle unfurls like a fiddlehead: it grows out from behind its edge with its tip tightly
-/// curled, and the curl relaxes as it grows, flinging slime from where it enters.
-///
-/// The stroke and the slime are swappable: any hero stroke can be a tentacle, and "disease made of rope"
-/// gets the same behaviour.
-/// </summary>
+/// <summary>Disease: parasitic tentacles unfurl from the edges, feel across the frame and drip slime; one may grip a border point, haul, release and search again. A sprung Verlet strand follows a target curve; goal, heading and curl are critically damped, so direction never jumps.</summary>
 public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
 {
     public DebuffKind Kind => DebuffKind.Disease;
@@ -88,8 +65,8 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
     private const float UnfurlCurl = 1.9f;         // radians of curl in the tip as it emerges
     private const float UnfurlRate = 2.1f;         // 1/s: how quickly it uncurls
 
-    private static readonly uint Gloom = DrawHelpers.ToU32(0.010f, 0.020f, 0.012f, 1f);
-    private static readonly uint Vignette = DrawHelpers.ToU32(0.012f, 0.022f, 0.012f, 1f);
+    private static readonly uint Gloom = DrawHelpers.Pack(0.010f, 0.020f, 0.012f);
+    private static readonly uint Vignette = DrawHelpers.Pack(0.012f, 0.022f, 0.012f);
 
     private enum Mode : byte { Wander, Reach, Grip, Release }
 
@@ -187,9 +164,7 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         }
     }
 
-    // =========================================================================
-    // Atmosphere
-    // =========================================================================
+    // ---- Atmosphere ----
 
     private static void EmitAtmosphere(EffectScene scene, Vector2 size, float alpha, float time, float age, Vector4? colorOverride)
     {
@@ -214,9 +189,7 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         }
     }
 
-    // =========================================================================
-    // One tentacle, one frame
-    // =========================================================================
+    // ---- One tentacle, one frame ----
 
     private void Step(EffectScene scene, Rig r, Vector2 size, float px, float alpha, float time, float dt, float age,
                       Vector4? colorOverride)
@@ -254,8 +227,7 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         Vector2 end = tip;
         if (pinned)
         {
-            // Settle onto the point along a curve that starts with the tip's own velocity and ends at rest, so the
-            // pin takes over from the motion it interrupts instead of stopping it dead.
+            // Settle onto the point along a curve from the tip's own velocity to rest, so the pin takes over without a dead stop.
             float k = DrawHelpers.Saturate((time - r.GripStart) / PinSeconds);
             end = Hermite(r.PinFrom, r.PinVel * PinSeconds, r.GripPoint, k);
         }
@@ -309,9 +281,7 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         s.Drive(s.Target, 1f / 60f);
     }
 
-    // =========================================================================
-    // Behaviour
-    // =========================================================================
+    // ---- Behaviour ----
 
     private void Decide(Rig r, Vector2 size, float px, float time, float t,
                         out Vector2 goal, out float head, out float curl, out float tension, out float goalOmega)
@@ -385,10 +355,7 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         return MathF.Atan2(outward.Y, outward.X) + 0.55f * r.GripSide;
     }
 
-    /// <summary>
-    /// Chooses a point on the border for this tentacle to take hold of: within reach but a real stretch away,
-    /// clear of the corners, not near another grip, and not across the middle of the screen.
-    /// </summary>
+    /// <summary>Picks a border point to grip: within reach but a real stretch away, clear of corners and other grips, not across the middle.</summary>
     private bool PickGrip(Rig r, Vector2 size, float px, float time)
     {
         float shortSide = MathF.Min(size.X, size.Y);
@@ -437,22 +404,15 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         return Vector2.Distance(p, a + ab * Math.Clamp(t, 0f, 1f));
     }
 
-    // =========================================================================
-    // The target curve
-    // =========================================================================
+    // ---- The target curve ----
 
-    /// <summary>
-    /// Fills the strand's target with the shape the tentacle should take this frame, as equal-length links,
-    /// and returns the curve's length. The root leaves the edge square on, the tip arrives at the goal with the
-    /// current heading, and the length the tentacle has beyond the straight distance is spent on a bulge whose
-    /// shape slowly turns (arc, S, mirrored arc), on a wave travelling to the tip, and on the tip's curl.
-    /// </summary>
+    /// <summary>Fills the strand's target with this frame's shape (equal-length links) and returns its length; spare length becomes bulge, travelling wave and tip curl.</summary>
     private float BuildTarget(Rig r, float px, float time, float t, out float chord)
     {
         // The arm contracts and relaxes a little; gripping tugs it harder.
         float breath = 1f + 0.035f * MathF.Sin(0.7f * time + r.BreathPhase);
         // Weighted smoothly by how firmly it holds on: a threshold here would step the arm's length every time tension crossed it.
-        float holding = Smooth((r.Tension - 0.6f) / 0.4f);
+        float holding = DrawHelpers.Smooth((r.Tension - 0.6f) / 0.4f);
         float tug = holding * (0.5f + 0.5f * MathF.Sin(MathF.Tau * (time - r.GripStart) / 2.5f));
         float lenWant = r.Length * breath * (1f - 0.09f * tug);
 
@@ -480,8 +440,7 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         // The bulge's profile: a blend of one arch and one S, rotating slowly through every combination.
         float ang = r.ShapeAngle0 + r.ShapeRate * time;
         float fa = MathF.Cos(ang), fb = MathF.Sin(ang);
-        // Gripping calms the S out of the bulge so the hook reads as an arch. Only the S term is scaled: pulling
-        // the arch term toward a fixed side (e.g. by its sign) would flip the whole bulge the instant it crossed zero.
+        // Gripping calms only the S term so the hook reads as an arch (scaling the arch term by its sign would flip the whole bulge at zero).
         fb *= 1f - 0.65f * r.Tension;
 
         Span<Vector2> bez = stackalloc Vector2[GuideSamples + 1];
@@ -495,12 +454,7 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
             prof[k] = fa * MathF.Sin(MathF.PI * u) + fb * MathF.Sin(MathF.Tau * u);
         }
 
-        // Spend the spare length: choose the bulge amplitude that makes the curve as long as the tentacle.
-        // The curve's length is a CONVEX function of that amplitude (each segment's length is the norm of
-        // something affine in it), which matters: a bulge on the wrong side of an already curved approach
-        // first straightens it, so length can fall before it rises. Walking up from zero would then stall.
-        // Instead find the amplitude where the length is least, and take the one root beyond it. That root is
-        // unique, so it moves continuously with the goal, and the arm cannot pop between solutions.
+        // Spend spare length: choose the bulge amplitude that makes the curve as long as the tentacle. Length is CONVEX in amplitude (a wrong-side bulge first straightens a curved approach), so find the minimum and take the one root beyond it: unique, so the arm can't pop between solutions.
         float scale = SolveBulge(bez, prof, perp, lenWant, c);
         Arc(bez, prof, perp, scale, pts);
 
@@ -514,7 +468,7 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
             {
                 Vector2 seg = pts[k] - pts[k - 1];
                 float segLen = seg.Length();
-                float a = MathF.Atan2(seg.Y, seg.X) + curl * Smooth((k - hinge) / (float)(GuideSamples - hinge));
+                float a = MathF.Atan2(seg.Y, seg.X) + curl * DrawHelpers.Smooth((k - hinge) / (float)(GuideSamples - hinge));
                 Vector2 next = prev + new Vector2(MathF.Cos(a), MathF.Sin(a)) * segLen;
                 pts[k] = next;
                 prev = next;
@@ -607,9 +561,7 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         return len;
     }
 
-    // =========================================================================
-    // Springs
-    // =========================================================================
+    // ---- Springs ----
 
     /// <summary>Critically damped spring: reaches the target with no overshoot, at a rate set by omega.</summary>
     private static void Spring(ref Vector2 x, ref Vector2 v, Vector2 target, float omega, float dt)
@@ -643,17 +595,9 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         return (2f * t3 - 3f * t2 + 1f) * p0 + (t3 - 2f * t2 + t) * m0 + (-2f * t3 + 3f * t2) * p1;
     }
 
-    private static float Lerp(float a, float b, float t) => a + (b - a) * t;
 
-    private static float Smooth(float t)
-    {
-        t = Math.Clamp(t, 0f, 1f);
-        return t * t * (3f - 2f * t);
-    }
 
-    // =========================================================================
-    // Impacts
-    // =========================================================================
+    // ---- Impacts ----
 
     /// <summary>Slime thrown off where a tentacle breaks through an edge or lands on one.</summary>
     private static void Splat(EffectScene scene, Vector2 at, Vector2 direction, float strength,
@@ -671,9 +615,7 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         });
     }
 
-    // =========================================================================
-    // Layout
-    // =========================================================================
+    // ---- Layout ----
 
     private void BuildLayout(int castSeed, Vector2 size)
     {

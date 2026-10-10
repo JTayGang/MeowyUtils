@@ -3,19 +3,7 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>
-/// Collects vertices and triangles on the managed side and hands them to ImGui in one go
-/// (MeshDraw.Mesh), so an effect with thousands of little strokes issues a handful of native calls
-/// instead of thousands. Not thread-safe; one instance per effect, reused every frame (no
-/// per-frame allocation once the buffers have grown to the working size).
-///
-/// Usage: Clear, add geometry, and whenever <see cref="Full"/> turns true (checked between
-/// primitives) call <see cref="Flush"/>; Flush once more at the end. Triangles are drawn in the order
-/// they were added, so a layer that must sit under another is simply added first.
-///
-/// The strip builders take precomputed per-point normals (see <see cref="MiterNormals"/>), so a
-/// shape that is built once and drawn every frame pays for its geometry math once, not per frame.
-/// </summary>
+/// <summary>Collects triangles managed-side and hands them to ImGui in one go: Clear, add, Flush when Full and at the end. Not thread-safe.</summary>
 internal sealed class MeshBuilder
 {
     /// <summary>Flush point. Well under MeshDraw.MaxMeshVerts so one primitive can always finish.</summary>
@@ -25,11 +13,8 @@ internal sealed class MeshBuilder
     private uint[]    _col = new uint[4096];
     private ushort[]  _idx = new ushort[16384];
     private int _vn, _in;
-    private Vector2[] _scratch = new Vector2[16];     // normals for the convenience overloads
 
     public bool Full => _vn >= FlushAt;
-    public int VertexCount => _vn;
-    public int IndexCount => _in;
 
     public void Clear() { _vn = 0; _in = 0; }
 
@@ -43,31 +28,13 @@ internal sealed class MeshBuilder
         if (_in + idx > _idx.Length) Array.Resize(ref _idx, Math.Max(_idx.Length * 2, _in + idx));
     }
 
-    public int Vertex(Vector2 p, uint color)
-    {
-        Room(1, 0);
-        _pos[_vn] = p; _col[_vn] = color;
-        return _vn++;
-    }
-
-    public void Tri(int a, int b, int c)
-    {
-        Room(0, 3);
-        _idx[_in++] = (ushort)a; _idx[_in++] = (ushort)b; _idx[_in++] = (ushort)c;
-    }
-
     public void Flush(ImDrawListPtr dl, Vector2 uv)
     {
         MeshDraw.Mesh(dl, _pos, _col, _idx, _vn, _in, uv);
         Clear();
     }
 
-    /// <summary>
-    /// The offset direction for each point of a polyline: the unit normal, scaled up at bends by
-    /// 1/cos(half the turn) so a strip keeps its width through a corner (clamped, so a sharp bend
-    /// can't spike). Compute once per shape; the strip builders below just multiply by a width.
-    /// Degenerate (zero-length) stretches borrow their neighbour's direction.
-    /// </summary>
+    /// <summary>Per-point offset direction of a polyline: normals scaled by 1/cos(half turn) at bends (clamped) so strips keep their width.</summary>
     public static void MiterNormals(ReadOnlySpan<Vector2> pts, Span<Vector2> normals)
     {
         int n = pts.Length;
@@ -104,13 +71,7 @@ internal sealed class MeshBuilder
         }
     }
 
-    /// <summary>
-    /// A soft-edged strip along a polyline: a solid core of the given half-width that fades to
-    /// transparent over <paramref name="feather"/> pixels on each side (the same fringe trick the
-    /// stroke chains use, so thin lines stay smooth without ImGui's per-line anti-aliasing).
-    /// <paramref name="color"/> is the core color including alpha; half-widths are per point so a
-    /// crystal arm can taper to a point.
-    /// </summary>
+    /// <summary>Soft-edged strip: a solid core (per-point half-width) fading to transparent over feather px; color is the core colour with alpha.</summary>
     public void Ribbon(ReadOnlySpan<Vector2> pts, ReadOnlySpan<Vector2> normals, ReadOnlySpan<float> halfWidth, uint color, float feather)
     {
         int n = pts.Length;
@@ -144,20 +105,7 @@ internal sealed class MeshBuilder
         _in = w;
     }
 
-    /// <summary>Convenience overload that works the normals out itself; prefer the one above for anything drawn every frame.</summary>
-    public void Ribbon(ReadOnlySpan<Vector2> pts, ReadOnlySpan<float> halfWidth, uint color, float feather)
-    {
-        Span<Vector2> nrm = Scratch(pts.Length);
-        MiterNormals(pts, nrm);
-        Ribbon(pts, nrm, halfWidth, color, feather);
-    }
-
-    /// <summary>
-    /// A cheaper soft strip: three vertices per point (transparent edge, solid centre, transparent
-    /// edge), so the alpha falls off linearly from the centre line to <paramref name="reach"/> pixels
-    /// either side. Right for thin lines and soft underlays, where a flat-topped core can't be seen
-    /// anyway; costs 3/4 of the vertices and 2/3 of the indices of <see cref="Ribbon"/>.
-    /// </summary>
+    /// <summary>Cheaper strip: three vertices per point, alpha falling linearly to px either side; for thin lines and soft underlays.</summary>
     public void Tent(ReadOnlySpan<Vector2> pts, ReadOnlySpan<Vector2> normals, ReadOnlySpan<float> reach, uint color)
     {
         int n = pts.Length;
@@ -189,18 +137,7 @@ internal sealed class MeshBuilder
         _in = w;
     }
 
-    public void Tent(ReadOnlySpan<Vector2> pts, ReadOnlySpan<float> reach, uint color)
-    {
-        Span<Vector2> nrm = Scratch(pts.Length);
-        MiterNormals(pts, nrm);
-        Tent(pts, nrm, reach, color);
-    }
-
-    /// <summary>
-    /// A single tapering spike from <paramref name="root"/> to <paramref name="tip"/>: four vertices,
-    /// two triangles. The root is a soft-edged cross-section <paramref name="rootReach"/> pixels either
-    /// side; the tip is a point. For twigs, needles and thorns.
-    /// </summary>
+    /// <summary>A single tapering spike from root (soft cross-section rootReach px either side) to a point tip: four vertices. For twigs, needles, thorns.</summary>
     public void Sliver(Vector2 root, Vector2 tip, float rootReach, uint rootColor, uint tipColor)
     {
         Vector2 d = tip - root;
@@ -219,12 +156,6 @@ internal sealed class MeshBuilder
 
         _idx[_in++] = (ushort)a;       _idx[_in++] = (ushort)(a + 1); _idx[_in++] = (ushort)(a + 3);
         _idx[_in++] = (ushort)(a + 1); _idx[_in++] = (ushort)(a + 2); _idx[_in++] = (ushort)(a + 3);
-    }
-
-    private Span<Vector2> Scratch(int n)
-    {
-        if (_scratch.Length < n) _scratch = new Vector2[Math.Max(n, _scratch.Length * 2)];
-        return _scratch.AsSpan(0, n);
     }
 
     private static Vector2 Dir(Vector2 d)

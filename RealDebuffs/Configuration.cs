@@ -29,15 +29,10 @@ public class Configuration : IPluginConfiguration
         else         DisabledKinds.Add(kind);
     }
 
-    /// <summary>
-    /// Per-slot material overrides for ported effects. Key format is
-    /// "{DebuffKind}.{Stroke|Particle}.{PrimitiveRole}" or "{DebuffKind}.Region.{EdgeGlow|FlatFill}";
-    /// value is a material name from MaterialRegistry. Missing entries fall back to BuiltInDefaults.
-    /// </summary>
+    /// <summary>Material overrides. Key "{Kind}.{Stroke|Particle}.{Role}" or "{Kind}.Region.{EdgeGlow|FlatFill}" -> MaterialRegistry name.</summary>
     public Dictionary<string, string> MaterialOverrides { get; set; } = new();
 
-    /// <summary>Per-effect color overrides, keyed by DebuffKind; value is a color word from
-    /// <see cref="TooltipKeywordParser.NamedColors"/>. Set from the Effect generator panel.</summary>
+    /// <summary>Per-effect color overrides, keyed by DebuffKind; value is a color word from NamedColors.</summary>
     public Dictionary<DebuffKind, string> ColorOverrides { get; set; } = new();
 
     /// <summary>"While I have this custom status, show this effect" links.</summary>
@@ -49,19 +44,14 @@ public class Configuration : IPluginConfiguration
     /// <summary>"If a status's tooltip contains this word, show this effect" links.</summary>
     public List<TooltipKeywordRule> TooltipKeywordRules { get; set; } = new();
 
-    /// <summary>
-    /// Kinds whose default tooltip-keyword rule has already been seeded. A kind in here is never
-    /// re-seeded, so a user who deliberately deleted a rule keeps it deleted. Reset clears this.
-    /// </summary>
+    /// <summary>Kinds whose default keyword rule was already seeded (never re-seeded, so a deleted rule stays deleted). Reset clears this.</summary>
     public HashSet<DebuffKind> SeededKinds { get; set; } = new();
 
     /// <summary>OFF by default: actually stop outgoing chat while silenced. See ChatBlocker.cs.</summary>
     public bool SilenceBlocksChat { get; set; }
 }
 
-/// <summary>
-/// One "while I have THIS custom status, show THAT effect" link. Matched by title.
-/// </summary>
+/// <summary>One "while I have THIS custom status, show THAT effect" link.</summary>
 public class CustomStatusRule
 {
     private string _name = "";
@@ -82,20 +72,14 @@ public class CustomStatusRule
     public string GetKey() => _key ??= StatusNames.Key(_name);
 }
 
-/// <summary>
-/// One "if a status's tooltip contains any of these words, show that effect" link. A rule can
-/// carry several comma-separated keywords; they all drive the same Kind.
-/// </summary>
+/// <summary>One "if a status's tooltip contains any of these words, show that effect" link.</summary>
 public sealed class TooltipKeywordRule
 {
     private string _keywords = "";
     private string[]? _parsed;
     private Regex? _pattern;
 
-    /// <summary>
-    /// Comma/newline/semicolon-separated words or short phrases. Each matches as a whole word,
-    /// case-insensitively. Blanks and duplicates are dropped.
-    /// </summary>
+    /// <summary>Comma/newline/semicolon-separated whole-word, case-insensitive matches; blanks and duplicates dropped.</summary>
     public string Keywords
     {
         get => _keywords;
@@ -137,11 +121,7 @@ public sealed class TooltipKeywordRule
         Kind = effect.Kind,
     };
 
-    /// <summary>
-    /// Called once per session after effect discovery. For every effect whose kind isn't already
-    /// seeded: mark it seeded, and - only if the user has no rule for that kind yet - add the
-    /// effect's default rule. A user-deleted rule stays deleted. Returns true if config changed.
-    /// </summary>
+    /// <summary>Once per session: seed each unseeded effect's default rule unless the user already has one for that kind. Returns true if changed.</summary>
     public static bool SeedNewEffects(Configuration config, IReadOnlyList<ISceneEffect> effects)
     {
         bool changed = false;

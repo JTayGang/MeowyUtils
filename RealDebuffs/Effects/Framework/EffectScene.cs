@@ -2,21 +2,16 @@ using System.Numerics;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>
-/// The numeric values are pinned: StrokeAutoEmitter mixes them into per-particle seeds, so
-/// renumbering would reshuffle the random scatter. Add new roles with a new, unused number.
-/// </summary>
+/// <summary>Numeric values are pinned (StrokeAutoEmitter mixes them into particle seeds); give new roles an unused number.</summary>
 public enum PrimitiveRole
 {
     MainStroke = 0,
 
     Spark = 3,
     Drip = 4,
-    Flow = 5,
     Ember = 7,
     Snowflake = 10,
     Snow = 11,
-    Fog = 12,
     Smoke = 18,
     Cinder = 19,
     Dust = 20,
@@ -41,50 +36,24 @@ public struct StrokePrimitive
     public float Phase;
     public bool  FlushStart;
 
-    // ---- Optional, material-agnostic hints. Zero is always "neutral", so an effect that never ----
-    // ---- sets these draws exactly as it did before they existed.                             ----
+    // ---- optional hints; zero is neutral ----
 
-    /// <summary>
-    /// The path is a closed loop (last point coincides with the first). Materials that repeat an
-    /// element along the path (chain links, beads, rune glyphs) close the seam so the pattern wraps
-    /// cleanly instead of ending in a half-element. This is what lets a ring-shaped stroke, such as
-    /// a magic circle, be "made of chains".
-    /// </summary>
+    /// <summary>The path is a closed loop (last point == first), so repeating elements (links, beads) wrap cleanly.</summary>
     public bool  Closed;
 
-    /// <summary>
-    /// 0 = at the focal plane (crisp, full contrast), 1 = far away (hazier, lower contrast, softer
-    /// edges, shorter shadow). Lets an effect layer several strands into a believable depth stack
-    /// by setting one number, and every material that cares can respond in its own way.
-    /// </summary>
+    /// <summary>0 = at the focal plane (crisp, full contrast), 1 = far away (hazier, lower contrast, softer edges, shorter shadow).</summary>
     public float Depth;
 
-    /// <summary>
-    /// 0..1: how hard the strand is being shaken right now (decays after an impact or a tug).
-    /// Materials use it for transient energy: specular flare, link rattle, shed rate.
-    /// </summary>
+    /// <summary>0..1: how hard the strand is being shaken right now (decays after an impact or a tug).</summary>
     public float Agitation;
 
-    /// <summary>
-    /// 0 = the strand sheds along its whole length (default). Above 0, trickle emissions (rust,
-    /// dust, embers...) only spawn where the strand is within this many pixels (at 1080p) of a
-    /// screen edge, so the middle of a chain stays clean and the debris only shows where it meets
-    /// the frame. Needs EffectScene.ScreenSize; ignored while that is unset.
-    /// </summary>
+    /// <summary>0 = shed along the whole strand; above 0, trickle emissions only spawn within this many px (at 1080p) of a screen edge. Needs ScreenSize.</summary>
     public float EmitEdgeReach;
 
-    /// <summary>
-    /// 0 = unrestricted. Above 0, trickle emissions only spawn within this arc distance (px at 1080p)
-    /// of either end of the strand (origin or landing point). Combines with EmitEdgeReach: both must hold.
-    /// </summary>
+    /// <summary>0 = unrestricted; above 0, trickle emissions only spawn within this arc distance (px at 1080p) of either end. Combines with EmitEdgeReach.</summary>
     public float EmitEndReach;
 
-    /// <summary>
-    /// How far the strand is rotated about its own axis right now, in radians, at its middle (zero at
-    /// the anchored ends; the whole loop turns together on a closed path). Animate it back and forth
-    /// and a hanging strand twists. Materials with a lay to show (rope strands, a braid) slide it
-    /// along the strand; the rest ignore it.
-    /// </summary>
+    /// <summary>Rotation about the strand's own axis at its middle, in radians (zero at anchored ends); materials with a lay (rope, braid) slide it.</summary>
     public float Twist;
 }
 
@@ -108,23 +77,18 @@ public struct ParticlePrimitive
     /// <summary>Material-defined sub-kind. particle.ember uses it for flame layers (0 body, 1 back, 2 front, 3 bed).</summary>
     public int Variant;
 
+    /// <summary>Position with the horizontal sway applied: where the particle is actually drawn.</summary>
+    public readonly Vector2 DrawPos => new(Position.X + Sway, Position.Y);
+
     // ---- Optional thread. Zero is neutral, so a particle that never sets these draws as it always did. ----
 
-    /// <summary>
-    /// Thickness of a filament joining the particle to a point it is still attached to, as a fraction of
-    /// <see cref="Size"/>: the neck of a hanging drop, or the string left behind by one that has just let
-    /// go. 0 = no thread. Materials that have no use for threads ignore the three fields.
-    /// </summary>
+    /// <summary>Filament thickness joining the particle to a point it is attached to, as a fraction of Size (a hanging neck, or the string left by a drop that let go); 0 = no thread. Materials without threads ignore the three fields.</summary>
     public float Tether;
 
     /// <summary>The thread's fixed end, in screen pixels: where it clings to the surface. Only read when <see cref="Tether"/> is above zero.</summary>
     public Vector2 Anchor;
 
-    /// <summary>
-    /// The thread's free end. Equal to <see cref="Position"/> while the particle is still attached; once
-    /// the thread has snapped it slides from there back toward <see cref="Anchor"/>, so what is drawn is a
-    /// string recoiling up to the surface while the drop falls away from it.
-    /// </summary>
+    /// <summary>The thread's free end: equals Position while attached; once snapped it slides back toward Anchor (the string recoiling) as the drop falls.</summary>
     public Vector2 ThreadEnd;
 }
 
@@ -138,21 +102,16 @@ public struct RegionPrimitive
     public PrimitiveRole Role;
     public bool Top, Bottom, Left, Right;
 
-    /// <summary>
-    /// Optional payload for materials whose geometry comes from effect-built data too large to fit in
-    /// a primitive (a growth field, a branch forest). Materials must ignore state they don't recognize.
-    /// </summary>
+    /// <summary>Optional payload for effect-built data too large for a primitive; materials ignore state they don't recognise.</summary>
     public object? State;
 
     public readonly bool HasEdge => Top || Bottom || Left || Right;
+
+    /// <summary>Override-key tag: regions have no meaningful role beyond edge or flat.</summary>
+    public readonly string Tag => HasEdge ? "EdgeGlow" : "FlatFill";
 }
 
-/// <summary>
-/// "Something just hit something" - a one-frame event, not something that is drawn. An effect says
-/// WHERE and HOW HARD; the framework asks the owner's stroke material (whatever it currently is,
-/// after any user or tooltip override) what such an impact throws, so a chain shows sparks and
-/// rust, a rope shows dust and fibres, and the effect never has to know which it is.
-/// </summary>
+/// <summary>A one-frame "something hit something" event: the effect says where and how hard; the stroke material decides what it throws.</summary>
 public struct ImpactPrimitive
 {
     public DebuffKind Owner;
@@ -231,10 +190,7 @@ public struct VignetteRequest
     public Vector4? ColorOverride;
 }
 
-/// <summary>
-/// A sampled polyline skeleton for one strand. Point spacing need not be even; materials that
-/// need even spacing sample via SampleAtArc. Sized once at construction.
-/// </summary>
+/// <summary>A sampled polyline for one strand. Spacing is uneven; use SampleAtArc for even steps.</summary>
 public sealed class StrandPath
 {
     public readonly Vector2[] Points;
@@ -253,12 +209,7 @@ public sealed class StrandPath
 
     public float Length => Count > 0 ? Arc[Count - 1] : 0f;
 
-    /// <summary>
-    /// Resamples a coarse control polyline into <paramref name="dstCount"/> evenly parameterised
-    /// points along a Catmull-Rom spline. The end points are duplicated as phantom outer control
-    /// points so the curve terminates exactly on them. Does not touch Count or the arc table; call
-    /// BuildArc afterwards.
-    /// </summary>
+    /// <summary>Resamples a control polyline to dstCount points along a Catmull-Rom spline ending exactly on its ends; call BuildArc after.</summary>
     public static void CatmullRomResample(Vector2[] src, int srcCount, Vector2[] dst, int dstCount)
     {
         float scale = (float)(srcCount - 1) / (dstCount - 1);
@@ -295,10 +246,7 @@ public sealed class StrandPath
             Arc[i] = Arc[i - 1] + Vector2.Distance(Points[i - 1], Points[i]);
     }
 
-    /// <summary>
-    /// Position and unit tangent at arc length s. Values outside [0, Length] are linearly
-    /// extrapolated along the nearest endpoint's tangent.
-    /// </summary>
+    /// <summary>Position and unit tangent at arc length s; outside [0, Length] it extrapolates along the end tangent.</summary>
     public void SampleAtArc(float s, out Vector2 pos, out Vector2 tangent)
     {
         if (Count < 2)

@@ -2,23 +2,7 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>
-/// Draws one viscous-liquid particle as lit geometry. Shared by every liquid particle material
-/// (<see cref="Materials.ParticleGoop"/> and its subclasses); a material only chooses the
-/// <see cref="LiquidMatcap"/>, this decides the shape.
-///
-/// A particle becomes one of three things, from its thread fields:
-///   * Attached  (Tether &gt; 0, ThreadEnd == Position): a pendant drop. One continuous shape from the
-///     anchor on the surface, through a meniscus flare and a thinning neck, into a bead. As the neck
-///     thins the shape stretches; that stretch is the whole signature of a viscous liquid.
-///   * Detached  (Tether &gt; 0, ThreadEnd != Position): a falling teardrop, plus the stub of thread
-///     recoiling up toward the surface.
-///   * Free      (Tether == 0): a bead, stretched along its velocity into a teardrop.
-///
-/// Each is a surface of revolution about a straight axis, so a radius profile r(s) is all the geometry
-/// there is. The normal at a vertex follows from that profile's slope, and the result is shaded through
-/// the liquid matcap with no per-pixel work.
-/// </summary>
+/// <summary>Draws one viscous-liquid particle as lit geometry, for every ParticleGoop. By its thread fields it is Attached (pendant drop: anchor, meniscus, neck, bead), Detached (falling teardrop plus a recoiling stub) or Free (a bead stretched along its velocity); each is a surface of revolution shaded via the liquid matcap.</summary>
 internal static class GoopDraw
 {
     private const int Half = 6;                       // vertices across the visible half of the tube, minus one
@@ -64,9 +48,7 @@ internal static class GoopDraw
         Bead(dl, in p, in look);
     }
 
-    // =========================================================================
-    // Profiles. Each fills s[] (distance along the axis from the start) and r[] (radius there).
-    // =========================================================================
+    // ---- profiles: each fills s[] (distance along the axis) and r[] (radius there) ----
 
     /// <summary>A drop hanging from the surface by a neck: anchor -> flare -> neck -> bead.</summary>
     private static void Pendant(ImDrawListPtr dl, in ParticlePrimitive p, in Look look)
@@ -122,8 +104,7 @@ internal static class GoopDraw
     /// <summary>Radius of the pendant at distance s: the neck and the bead, blended into one fillet.</summary>
     private static float Union(float s, float len, float hb, float rb, float rn, float rTop, float fillet)
     {
-        // Neck: thin, flaring toward the surface, widening into a shoulder just above the bead (a hanging drop is
-        // pear-shaped, not a ball on a stick), and fading out across the lower half of the bead so it cannot blunt the bottom.
+        // Neck: thin, flaring toward the surface into a shoulder above the bead (pear-shaped, not a ball on a stick), fading out over the bead's lower half so it can't blunt the bottom.
         float flare = rn + (rTop - rn) * MathF.Exp(-4.4f * s / MathF.Max(len, rb * 2f));
         float into = Math.Clamp((s - (len - hb * 4.6f)) / (hb * 4.6f), 0f, 1f);
         float shoulder = rb * 0.46f * into * into * into * (1f - rn / rb);
@@ -213,9 +194,7 @@ internal static class GoopDraw
         Tube(dl, p.Anchor, d, s, r, n, attachFade: MathF.Max(1.5f, rTop * 1.3f), in look);
     }
 
-    // =========================================================================
-    // Glint: the hard specular core a per-vertex lookup cannot hold.
-    // =========================================================================
+    // ---- glint: the hard specular core a per-vertex lookup cannot hold ----
 
     private static readonly Vector2 KeyHalfXY = HalfXY(StudioLighting.Key);
     private static readonly Vector2 FillHalfXY = HalfXY(StudioLighting.Fill);
@@ -227,12 +206,7 @@ internal static class GoopDraw
         return new Vector2(h.X, h.Y);
     }
 
-    /// <summary>
-    /// A small bright spot at the point of the bead whose normal faces the half vector, and a dimmer cool
-    /// one where the fill light reflects. Placed analytically on the bead's ellipse (centre, axis, half-length
-    /// along it, radius across it), so it stays crisp however few vertices the bead has. Without it a drop
-    /// reads as a matte balloon; with it, as something wet.
-    /// </summary>
+    /// <summary>A bright spot where the bead's normal faces the half vector, plus a dimmer cool one for the fill light; placed analytically on the bead's ellipse so it stays crisp however few vertices there are.</summary>
     private static void Glint(ImDrawListPtr dl, Vector2 centre, Vector2 axis, float halfLen, float radius, in Look look)
     {
         if (radius < 1.1f) return;
@@ -263,15 +237,10 @@ internal static class GoopDraw
 
     private static uint GlintColour(float r, float g, float b, float a, in Look look)
     {
-        uint rgb = FireColor.Pack(r, g, b);
-        float alpha = a * look.Alpha;
-        if (look.Overridden) return DrawHelpers.WithAlpha(rgb, alpha);
-        return (rgb & 0x00FFFFFFu) | ((uint)(int)(255f * Math.Clamp(alpha, 0f, 1f)) << 24);
+        return DrawHelpers.Tint(DrawHelpers.Pack(r, g, b), a * look.Alpha, look.Overridden);
     }
 
-    // =========================================================================
-    // The mesh: a ribbon of rows, each a cross-section of the surface of revolution.
-    // =========================================================================
+    // ---- the mesh: a ribbon of rows, each a cross-section of the surface of revolution ----
 
     private static void Tube(ImDrawListPtr dl, Vector2 origin, Vector2 d, ReadOnlySpan<float> s, ReadOnlySpan<float> r,
                              int n, float attachFade, in Look look)
@@ -296,7 +265,7 @@ internal static class GoopDraw
             float ds = s[i1] - s[i0];
             float slope = ds > 1e-4f ? Math.Clamp((r[i1] - r[i0]) / ds, -8f, 8f) : 0f;
 
-            float fade = attachFade > 0f ? Smooth01(s[row] / attachFade) : 1f;
+            float fade = attachFade > 0f ? DrawHelpers.Smooth(s[row] / attachFade) : 1f;
             int vb = row * stride;
             float drawR = MathF.Max(rad, MinRadius);
 
@@ -329,10 +298,7 @@ internal static class GoopDraw
     {
         Vector3 col = new(lit.X, lit.Y, lit.Z);
         if (look.Dye > 0f) col = DrawHelpers.WithSaturation(col, look.Dye);
-        uint rgb = FireColor.Pack(col.X, col.Y, col.Z);
-        float a = lit.W * fade * look.Alpha;
-        if (look.Overridden) return DrawHelpers.WithAlpha(rgb, a);
-        return (rgb & 0x00FFFFFFu) | ((uint)(int)(255f * Math.Clamp(a, 0f, 1f)) << 24);
+        return DrawHelpers.Tint(DrawHelpers.Pack(col.X, col.Y, col.Z), lit.W * fade * look.Alpha, look.Overridden);
     }
 
     // ---- small maths ----
@@ -344,9 +310,4 @@ internal static class GoopDraw
         return MathF.Max(a, b) + h * h * k * 0.25f;
     }
 
-    private static float Smooth01(float t)
-    {
-        t = Math.Clamp(t, 0f, 1f);
-        return t * t * (3f - 2f * t);
-    }
 }

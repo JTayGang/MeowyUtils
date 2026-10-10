@@ -3,16 +3,7 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>
-/// The frost itself: a milky coating that creeps in from the screen edges, drawn as one sparse
-/// vertex-colored mesh over a FrostField's growth grid. Condensation (a cool grey fog) leads the ice,
-/// and the ice thickens behind its front, which is thick and white at the borders and thin and
-/// bluish where it is still arriving.
-///
-/// It reads everything from RegionPrimitive.State (a FrostField built by FrostEffect); a region with
-/// any other state is ignored, so swapping this slot onto another effect does nothing rather than
-/// misbehave.
-/// </summary>
+/// <summary>The frost: a milky coating creeping in from the edges as one sparse vertex mesh over a FrostField; ignores any other State.</summary>
 public sealed class RegionFrost : IRegionMaterial
 {
     public string Name => "region.frost-cover";
@@ -33,13 +24,13 @@ public sealed class RegionFrost : IRegionMaterial
         // Everything looks colder as the glass freezes: one very faint blue wash across the screen.
         float wash = a * 0.07f * Math.Clamp(f.Progress, 0f, 1f);
         if (wash > 0.003f)
-            dl.AddRectFilled(Vector2.Zero, new Vector2(ctx.ScreenW, ctx.ScreenH), DrawHelpers.WithAlpha(FireColor.Pack(0.45f, 0.65f, 0.95f), wash));
+            dl.AddRectFilled(Vector2.Zero, new Vector2(ctx.ScreenW, ctx.ScreenH), DrawHelpers.WithAlpha(DrawHelpers.Pack(0.45f, 0.65f, 0.95f), wash));
 
         DrawHaze(dl, f, a, ctx);
 
         var style = new Dendrite.DrawStyle(
             IceColor.Crystal,
-            Shadow: FireColor.Pack(0.07f, 0.17f, 0.36f),
+            Shadow: DrawHelpers.Pack(0.07f, 0.17f, 0.36f),
             ShadowOffset: StudioLighting.ShadowDirection * (1.3f * ctx.ScreenScale),
             ShadowAlpha: 0.22f,
             Body: IceColor.Pack(0.88f, 0.94f, 1.00f), BodyAlpha: 0.20f,
@@ -51,9 +42,7 @@ public sealed class RegionFrost : IRegionMaterial
     {
         var g = f.Growth;
 
-        // Once the front has settled the haze barely moves (the creep is slower than the eye can follow),
-        // so it is rebuilt a few times a second rather than every frame - but at once whenever the
-        // overall opacity changes, as it does through every fade.
+        // Once settled the haze barely moves, so it's rebuilt a few times a second, or at once when overall opacity changes.
         bool fresh = f.Age <= SettleAge || a != f.HazeAlpha || MathF.Abs(ctx.Time - f.HazeTime) >= HazeRefresh;
         if (fresh)
         {
@@ -97,11 +86,9 @@ public sealed class RegionFrost : IRegionMaterial
             if (lead > 0f)
             {
                 // A front soft enough for the grid to show cleanly (a sharper one aliases into steps).
-                float edge = Math.Clamp(lead / 0.26f, 0f, 1f);
-                edge = edge * edge * (3f - 2f * edge);
+                float edge = DrawHelpers.Smooth(lead / 0.26f);
                 float thick = Math.Clamp(lead / 0.75f, 0f, 1f);
-                // Frost is thickest at the border, which is where the cold comes from, and thins toward
-                // the middle of the glass, which stays mostly clear: the ferns reach in, the coat does not.
+                // Frost is thickest at the border and thins toward the middle, which stays mostly clear: the ferns reach in, the coat doesn't.
                 float dens = Math.Clamp(thick * cap[i] * (0.60f + 0.40f * mott) + 0.55f * rim * thick, 0f, 1f);
                 uint c = IceColor.Frost.Sample(0.15f + 0.85f * dens);
                 Over(ref cr, ref cg, ref cb, ref ca,
@@ -114,24 +101,18 @@ public sealed class RegionFrost : IRegionMaterial
                     Over(ref cr, ref cg, ref cb, ref ca, 0.96f, 0.99f, 1f, a * 0.14f * MathF.Exp(-d * d));
             }
 
-            // Vertex colors are not premultiplied, so a transparent vertex must still carry frost-colored
-            // RGB: interpolating toward black would darken the fringe of every cell, not just fade it.
+            // Vertex colours aren't premultiplied: a transparent vertex must still carry frost-coloured RGB, or interpolating toward black darkens each cell's fringe.
             if (ca <= 0.002f) { cr = 0.55f; cg = 0.72f; cb = 0.92f; ca = 0f; }
             haze[i] = Pack(cr, cg, cb, ca, overridden);
         }
     }
 
-    /// <summary>
-    /// Opaque color plus alpha. Without a color override this is exactly what WithAlpha(Pack(rgb), alpha)
-    /// produces, minus its override lookup; with one it lifts the color off grey (IceColor.Tintable) and
-    /// calls it, so near-white frost recolors smoothly instead of snapping to the override's full saturation.
-    /// </summary>
+    /// <summary>Opaque colour plus alpha: WithAlpha(Pack(rgb), alpha) minus the override lookup; under an override it lifts off grey (IceColor.Tintable).</summary>
     private static uint Pack(float r, float g, float b, float alpha, bool overridden)
     {
-        uint rgb = FireColor.Pack(r, g, b);
+        uint rgb = DrawHelpers.Pack(r, g, b);
         if (overridden) return DrawHelpers.WithAlpha(IceColor.Tintable(rgb), alpha);
-        alpha = alpha > 0f ? (alpha < 1f ? alpha : 1f) : 0f;
-        return (rgb & 0x00FFFFFFu) | ((uint)(int)(255f * alpha) << 24);
+        return (rgb & 0x00FFFFFFu) | DrawHelpers.AlphaBits(alpha);
     }
 
     /// <summary>Straight-alpha "over": layer (r, g, b, a) on top of the accumulated color.</summary>

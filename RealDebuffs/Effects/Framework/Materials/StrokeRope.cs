@@ -3,44 +3,7 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>
-/// Laid rope: three strands twisted about one another, drawn as a single ribbon whose every vertex is
-/// shaded as if it were a point on a real, round, ridged surface, through the shared matcap, so a
-/// rope, a chain and a stone statue drawn in one frame appear to sit under the same lights.
-///
-/// THE SURFACE. The rope is a cylinder of radius R. Its three strands show as ridges that spiral
-/// round it, one full turn every <see cref="LayLength"/> diameters. A ridge is a height field over
-/// (angle round the axis, distance along it), so the normal at any vertex is the cylinder's own
-/// normal tilted by that field's slope, both round the rope and along it. Going round: that is what
-/// makes the strands read as round and separate. Going along: that is what makes them read as
-/// diagonal. The same field nudges the silhouette in and out, so the rope's edge scallops
-/// alternately on each side as the strands pass, the one cue that says "twisted" even on a thin rope.
-///
-/// Because it is a height field there is nothing to sort: strands occlude each other by construction
-/// (only the front half of the cylinder is meshed), so unlike a chain the whole rope is one
-/// mesh pass.
-///
-/// Stroke contract: any polyline; WidthHint is the rope's DIAMETER in pixels (clamped to a sensible
-/// range, and slimmed a little by Depth); Closed wraps the seam and rounds the lay to a whole number
-/// of turns so the strands join up; Reveal grows the rope from its start, ending in a rounded tip;
-/// FlushStart gives the start a flat cut (it sits against a screen edge) instead of a rounded end;
-/// Twist rotates the rope about its own axis (zero at the anchored ends, so a rope fixed at both ends
-/// twists most in the middle; the whole loop turns together when closed), which slides the lay along
-/// it; Depth fogs, softens and slims; Agitation brightens the rope and shivers its strands; TipFlare
-/// weights a live tip with a monkey's fist (the ball of wound rope on a heaving line), so a rope that
-/// is flying or growing has a head.
-///
-/// RECOLOURING. A colour override replaces hue but keeps each pixel's own saturation, and hemp is a
-/// muted tan, so left alone every dye would come out muted. When a chromatic override is active the
-/// rope sets its own saturation to the override colour's, before the override is applied: "red rope"
-/// is as red as the red it was asked for, "pink rope" stays paler than "red rope", and white, black
-/// and grey overrides are untouched.
-///
-/// Performance follows StrokeChain: tier tables are built once, scratch buffers are preallocated,
-/// the path is walked with a cursor rather than searched, off-screen runs of the mesh are skipped,
-/// vertices are written straight into the draw list, and the colour pack bypasses WithAlpha unless a
-/// colour override is active.
-/// </summary>
+/// <summary>Laid rope: three twisted strands, one ribbon shaded via the shared matcap. WidthHint is the DIAMETER; chromatic overrides set the rope's saturation.</summary>
 public sealed class StrokeRope : IStrokeMaterial
 {
     public string Name => "stroke.rope";
@@ -64,10 +27,7 @@ public sealed class StrokeRope : IStrokeMaterial
     private static readonly Matcap Manila = new(SurfacePresets.Manila);
     private static readonly Matcap Tarred = new(SurfacePresets.Tarred);
 
-    // ---- strand profile, baked ----
-    // G(phi) is the height of the surface above the rope's core as a function of the angle round it,
-    // in strand-periods: 1 at the crown of a strand, 0 in the valley between two. Rounded crowns,
-    // narrow valleys. D(phi) is its slope, so a vertex costs one lookup rather than a trig call.
+    // ---- strand profile (baked): G = height by angle (1 crown, 0 valley), D = its slope ----
     private const int RidgeN = 512;
     private static readonly float[] RidgeH = new float[RidgeN];
     private static readonly float[] RidgeD = new float[RidgeN];
@@ -84,12 +44,7 @@ public sealed class StrokeRope : IStrokeMaterial
         }
     }
 
-    /// <summary>
-    /// A level of detail: how many columns span the visible half of the cylinder, how finely the rope
-    /// is cut along its length, and how much of the lay is worth showing at that size. Columns are
-    /// evenly spaced in ANGLE round the rope (not across its width), which puts vertices where the
-    /// surface turns fastest, at the silhouette.
-    /// </summary>
+    /// <summary>Level of detail: columns over the visible half (even in angle), rows along the length, and how much lay to show.</summary>
     private sealed class Tier
     {
         public readonly int Cols;
@@ -111,8 +66,7 @@ public sealed class StrokeRope : IStrokeMaterial
         }
     }
 
-    // Chosen by the rope's width on screen (see Draw): the lay needs about four columns per strand to read,
-    // so a rope has to be wide enough to show them.  >= 21 px: Full.  >= 15: Fine.  >= 8: Medium.  Below: Coarse.
+    // Tier by on-screen width (the lay needs ~4 columns per strand): >= 21 px Full, >= 15 Fine, >= 8 Medium, else Coarse.
     private static readonly Tier Full   = new(9, 0.21f, 1.00f);
     private static readonly Tier Fine   = new(7, 0.21f, 1.00f);
     private static readonly Tier Medium = new(5, 0.27f, 0.85f);
@@ -206,7 +160,7 @@ public sealed class StrokeRope : IStrokeMaterial
             Alpha = alpha,
             Overridden = DrawHelpers.ColorOverrideActive,
             Dye = DrawHelpers.ColorOverrideChroma,
-            AlphaBits = (uint)(int)(255f * (alpha > 0f ? (alpha < 1f ? alpha : 1f) : 0f)) << 24,
+            AlphaBits = DrawHelpers.AlphaBits(alpha),
         };
 
         _screenW = ctx.ScreenW;
@@ -234,11 +188,7 @@ public sealed class StrokeRope : IStrokeMaterial
     private const int KnotSegs = 28;
     private static readonly float[] KnotRings = { 0f, 0.26f, 0.50f, 0.71f, 0.87f, 1.0f };
 
-    /// <summary>
-    /// A monkey's fist: a sphere of rope wound in three crossing coils. Shaded as a true sphere through
-    /// the same matcap as the rope (so it takes the same light) with the coils as raised bands about
-    /// three skew axes, which is what makes it read as wound rather than as a plain bead.
-    /// </summary>
+    /// <summary>Monkey's fist: a sphere of rope in three crossing coils, shaded through the same matcap.</summary>
     private static void DrawKnot(ImDrawListPtr dl, Vector2 centre, float radius, float k, int seed,
                                  in Look look, in MaterialContext ctx)
     {
@@ -253,7 +203,7 @@ public sealed class StrokeRope : IStrokeMaterial
         Vector2[] outP = MeshDraw.P;
         uint[] outC = MeshDraw.C;
         float alpha = look.Alpha * k;
-        uint alphaBits = (uint)(int)(255f * Math.Clamp(alpha, 0f, 1f)) << 24;
+        uint alphaBits = DrawHelpers.AlphaBits(alpha);
 
         int stride = KnotSegs + 1;
         int rings = KnotRings.Length;
@@ -279,8 +229,7 @@ public sealed class StrokeRope : IStrokeMaterial
                 if (look.Agit > 0.01f) col += col * (col * (0.50f * look.Agit));
                 if (look.Fog > 0f) col = Vector3.Lerp(col, StrandShading.DepthFog, look.Fog);
 
-                uint rgb = FireColor.Pack(col.X, col.Y, col.Z);
-                outC[v] = look.Overridden ? DrawHelpers.WithAlpha(rgb, alpha) : (rgb & 0x00FFFFFFu) | alphaBits;
+                outC[v] = DrawHelpers.VertexColor(col, alpha, alphaBits, look.Overridden);
             }
         }
 
@@ -317,16 +266,14 @@ public sealed class StrokeRope : IStrokeMaterial
         float step = MathF.Max(diameter * tier.StepFrac, 1.5f * px);
         float margin = diameter * 1.6f;
 
-        // Closed ropes lay a whole number of turns round the loop, and keep every periodic term to a
-        // whole number of cycles, so the seam can't be told from anywhere else.
+        // Closed ropes lay a whole number of turns and keep every periodic term to whole cycles, so the seam is invisible.
         float turns = closed ? MathF.Max(2f, MathF.Round(total / layLen)) : 0f;
         float layRate = closed ? turns / total : 1f / layLen;
         float wobbleRate = closed ? MathF.Max(1f, MathF.Round(total / (diameter * 6.1f))) / total : 1f / (diameter * 6.1f);
         float toneRateA  = closed ? MathF.Max(1f, MathF.Round(total / (diameter * 3.1f))) / total : 1f / (diameter * 3.1f);
         float toneRateB  = closed ? MathF.Max(1f, MathF.Round(total / (diameter * 1.7f))) / total : 1f / (diameter * 1.7f);
 
-        // How the rope's two ends finish. Closed: they don't. Open: the far end is always a dome (a
-        // growing or flying tip is meant to be seen); the near end is a dome unless it is FlushStart.
+        // End finishes: closed has none; open always domes the far end, and the near end unless FlushStart.
         float cap = closed ? 0f : radius;
         bool domeStart = !closed && !flushStart;
         bool domeEnd = !closed;
@@ -346,8 +293,7 @@ public sealed class StrokeRope : IStrokeMaterial
                 AddRow(path, pn, ref seg, ref count, cap * (1f - DomeT[i]), -1f, DomeT[i]);
         }
 
-        // The body. For a closed loop this is everything, and its last row lands on its first (same
-        // position, same lay), so the seam closes.
+        // The body; a closed loop's last row lands on its first (same position and lay) so the seam closes.
         int bodyRows = Math.Max(1, (int)MathF.Ceiling((bodyEnd - bodyStart) / step));
         for (int i = 0; i <= bodyRows; i++)
             AddRow(path, pn, ref seg, ref count, bodyStart + (bodyEnd - bodyStart) * i / bodyRows, 0f, 0f);
@@ -381,8 +327,7 @@ public sealed class StrokeRope : IStrokeMaterial
             float tone = 1f + 0.075f * MathF.Sin(MathF.Tau * sArc * toneRateA + ph3)
                             + 0.055f * MathF.Sin(MathF.Tau * sArc * toneRateB + ph1 * 1.7f);
 
-            // Fibre grain streaks along a strand: it varies slowly down the strand's length, so one sample per
-            // strand per cross-section is all it takes (rather than one per vertex).
+            // Fibre grain streaks vary slowly along a strand, so one sample per strand per cross-section suffices.
             float along = sArc * look.GrainRate;
             r.Tone0 = tone * look.TonePrimary   * Grain(in look, 0, along);
             r.Tone1 = tone * look.ToneSecondary * Grain(in look, 1, along);
@@ -396,7 +341,7 @@ public sealed class StrokeRope : IStrokeMaterial
 
     /// <summary>Brightness multiplier from the fibre grain of one strand, <paramref name="along"/> its length.</summary>
     private static float Grain(in Look look, int strand, float along)
-        => 1f + look.Grain * 2f * (FireNoise.Value(strand * 11.7f + look.GrainOffset, along) - 0.5f);
+        => 1f + look.Grain * 2f * (Noise.Value(strand * 11.7f + look.GrainOffset, along) - 0.5f);
 
     // Fraction up the dome for each end-cap row, tip last. 0 is where the cap meets the body.
     private static readonly float[] DomeT = { 1.0f, 0.95f, 0.80f, 0.50f, 0.0f };
@@ -423,11 +368,7 @@ public sealed class StrokeRope : IStrokeMaterial
         count++;
     }
 
-    /// <summary>
-    /// Smooth tangents at every path point. Rows are placed by linear interpolation along the path
-    /// and take their direction by interpolating these, so a coarse path (56 points over 1700 px)
-    /// shades without facets at its vertices.
-    /// </summary>
+    /// <summary>Smooth tangents at every path point; rows interpolate them so a coarse path (56 points over 1700 px) shades without facets.</summary>
     private void PreparePointTangents(StrandPath path, int pn, bool closed)
     {
         var pts = path.Points;
@@ -506,8 +447,7 @@ public sealed class StrokeRope : IStrokeMaterial
         float tilt = look.Tilt, shape = look.Shape;
         Matcap body = look.Body;
 
-        // Tilting the normal along the rope is what turns round ridges into diagonal ones. Relative to
-        // the tilt round the rope it is the strands' pitch: (2 pi R / lay length) / 3 strands = pi / LayLength.
+        // Tilting the normal along the rope turns round ridges diagonal; relative to the tilt round it, the strands' pitch is pi / LayLength.
         float tiltAround = tilt;
         float tiltAlong = tilt * (MathF.PI / LayLength);
 
@@ -551,8 +491,7 @@ public sealed class StrokeRope : IStrokeMaterial
             if (look.Fog > 0f) col = Vector3.Lerp(col, StrandShading.DepthFog, look.Fog);
 
             outP[vb + 1 + c] = pos;
-            uint rgb = FireColor.Pack(col.X, col.Y, col.Z);
-            outC[vb + 1 + c] = look.Overridden ? DrawHelpers.WithAlpha(rgb, look.Alpha) : (rgb & 0x00FFFFFFu) | look.AlphaBits;
+            outC[vb + 1 + c] = DrawHelpers.VertexColor(col, look.Alpha, look.AlphaBits, look.Overridden);
         }
 
         // Soft edge: the neighbouring column's colour at alpha 0, pushed outward by the feather.

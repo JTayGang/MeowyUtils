@@ -3,15 +3,7 @@ using RealDebuffs.Effects.Framework;
 
 namespace RealDebuffs.Effects;
 
-/// <summary>
-/// Your eyes just stopped working. A flat near-total black wash over the whole screen plus a
-/// heavy black vignette at the edges, both breathing slightly so it doesn't read as a static
-/// overlay. Vignette priority 100 (highest): if Blind is up, it owns the vignette, and anything
-/// else that wanted one this frame yields.
-///
-/// Note: the black tint has no hue (Value = 0 in HSV terms), so a tooltip color override has no
-/// visible effect on Blind.
-/// </summary>
+/// <summary>Blind: near-total black wash plus heavy vignette (priority 100, so it owns the vignette). No hue, so colour overrides do nothing.</summary>
 public sealed class BlindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
 {
     public DebuffKind Kind => DebuffKind.Blind;
@@ -41,9 +33,7 @@ public sealed class BlindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
         float breathe = 0.92f + 0.08f * DrawHelpers.Pulse(time, 2.6f);
         float a = alpha * breathe;
 
-        // Flat wash: full-screen rectangle, no edge flags → the renderer picks region.flat-fill.
-        // The region's alpha is this frame's effect alpha (fade × strength) baked in; the renderer
-        // multiplies global intensity on top, matching how every effect was scaled before.
+        // Flat wash: full-screen rectangle with no edge flags, so the renderer picks region.flat-fill.
         scene.AddRegion(new RegionPrimitive
         {
             Min = Vector2.Zero,
@@ -53,9 +43,7 @@ public sealed class BlindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
             ColorOverride = colorOverride,
         });
 
-        // Heavy vignette layered on top of the flat wash by the renderer (vignette draws first,
-        // then regions, then strokes, then particles - so Blind's region and its vignette both
-        // land in the right order without any explicit coordination here).
+        // Heavy vignette (the renderer draws vignette, regions, strokes, particles in that order).
         scene.RequestVignette(Black, 0.22f, a, priority: 100, colorOverride);
     }
 }

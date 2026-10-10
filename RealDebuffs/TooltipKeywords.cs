@@ -7,21 +7,14 @@ namespace RealDebuffs;
 
 public enum TooltipColorSource { None, Tag, Clause }
 
-/// <summary>
-/// One resolved "this kind should be active, looking like this" result. MaterialSubstitution is
-/// set when a "made of X" phrase resolved to a material name; type-checked at application time.
-/// </summary>
+/// <summary>One resolved "this kind should be active, looking like this"; MaterialSubstitution is set by a "made of X" phrase.</summary>
 public readonly record struct TooltipEffectMatch(
     DebuffKind Kind,
     Vector4? Color,
     TooltipColorSource ColorSource,
     string? MaterialSubstitution = null);
 
-/// <summary>
-/// Scans a tooltip for every enabled rule's keywords and resolves each match's color from the
-/// text. Color priority: [color=] tag wrapping the match, then a plain color word in the same
-/// clause. Same-kind ties: prefer a match with a color, else first match in rule order.
-/// </summary>
+/// <summary>Scans a tooltip for enabled rules' keywords; colour comes from a wrapping [color=] tag, else a colour word in the clause.</summary>
 public static class TooltipKeywordParser
 {
     /// <summary>The first enabled keyword for a kind, for building export phrases.</summary>
@@ -92,8 +85,7 @@ public static class TooltipKeywordParser
         "rgb", "rainbow",
     };
 
-    /// <summary>Words a user can write after "made of" / "of" / "as" / "from" / "with" to substitute
-    /// an effect's hero visuals. Comes from MaterialRegistry.Vocabulary.</summary>
+    /// <summary>Words a user can write after "made of" / "of" / "as" / "from" / "with" (from MaterialRegistry.Vocabulary).</summary>
     private static readonly IReadOnlyDictionary<string, string> MaterialWords = MaterialRegistry.Vocabulary;
 
     private static readonly Regex ColorWordPattern = BuildColorWordPattern();
@@ -121,12 +113,7 @@ public static class TooltipKeywordParser
 
     private static Vector4 Rgb(float r, float g, float b) => new(r, g, b, 1f);
 
-    /// <summary>
-    /// Parses one tooltip against every enabled rule. At most one match per distinct Kind. Material
-    /// phrases are matched per CLAUSE, so a description naming several effects attaches each
-    /// clause's own material to the match(es) in that clause. Any keyword inside a material phrase
-    /// is skipped, so "flames" in "made of flames" modifies rather than activating.
-    /// </summary>
+    /// <summary>Parses one tooltip: one match per kind, material phrases matched per clause, keywords inside a phrase only modify.</summary>
     public static IReadOnlyList<TooltipEffectMatch> Parse(string? tooltipText, IReadOnlyList<TooltipKeywordRule> rules)
     {
         if (string.IsNullOrWhiteSpace(tooltipText) || rules.Count == 0)
@@ -146,8 +133,7 @@ public static class TooltipKeywordParser
                 materialPhrases.Add((m.Index, m.Index + m.Length, matName));
         }
 
-        // Resolves one keyword hit into a candidate (color from a [color=] tag or its clause) and keeps the
-        // best candidate per kind.
+        // Resolves one keyword hit into a candidate (color from a [color=] tag or its clause) and keeps the best candidate per kind.
         void Consider(DebuffKind kind, int index, string? material)
         {
             Vector4? tagColor = FindTagColor(colorRuns, index);
@@ -190,11 +176,7 @@ public static class TooltipKeywordParser
             }
         }
 
-        // A keyword inside a "made of X" phrase modifies another effect instead of activating its own
-        // ("flames" in "chains made of flames"). But when no other effect in its clause is there to be
-        // modified ("a layer of frost"), the phrase is only describing the status, so the keyword
-        // activates its effect after all - without taking the phrase as a material substitute, since
-        // the phrase names the thing itself rather than something to make it out of.
+        // A keyword inside "made of X" modifies another effect ("chains made of flames"); with nothing to modify ("a layer of frost") it activates.
         foreach (var (kind, index) in shadowed)
         {
             if (best.ContainsKey(kind)) continue;
@@ -241,10 +223,7 @@ public static class TooltipKeywordParser
         return null;
     }
 
-    /// <summary>
-    /// Resolves one color token: hex triplet/quad (with or without # / 0x, or CSS shorthand),
-    /// a NamedColors name, or a rainbow word.
-    /// </summary>
+    /// <summary>Resolves one colour token: hex (with or without # / 0x, or CSS shorthand), a NamedColors name, or a rainbow word.</summary>
     public static bool TryResolveColorToken(string? token, out Vector4 rgb)
     {
         rgb = default;
@@ -310,10 +289,7 @@ public static class TooltipKeywordParser
         return true;
     }
 
-    /// <summary>
-    /// Strips markup and records which stretch of the stripped result each [color=] run covers,
-    /// so a later keyword match's plain-text index can be checked directly.
-    /// </summary>
+    /// <summary>Strips markup and records which stretch of the result each [color=] run covers, for plain-text index checks.</summary>
     private static (string Plain, List<(int Start, int End, Vector4 Color)> ColorRuns) StripAndMapColors(string raw)
     {
         var plain = new StringBuilder(raw.Length);

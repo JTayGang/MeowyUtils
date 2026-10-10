@@ -2,24 +2,10 @@ using System.Numerics;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>
-/// A precomputed "when does this effect reach this part of the screen" field: for every vertex of a
-/// coarse screen grid, the moment (in abstract progress units) a front spreading from a few
-/// nucleation points and creeping in from the edges arrives there. Built once per cast, then each
-/// frame the question "is this spot covered yet, and for how long?" is just <c>progress - Arrival</c>:
-/// no simulation, no per-frame allocation, and the front keeps its irregular shape however fast
-/// or slow the caller moves the progress value.
-///
-/// Frost uses it for ice creeping in from the edges; the same field would drive poison seeping in,
-/// darkness closing in, or burn-in spreading from the corners (anything that covers the screen).
-/// </summary>
+/// <summary>Precomputed arrival times of a spreading front over a coarse screen grid; coverage at progress p is p - Arrival (no simulation).</summary>
 internal sealed class ScreenGrowth
 {
-    /// <param name="Depth">Fraction of the short side the front reaches inward from an edge, roughly.</param>
-    /// <param name="SpreadRate">How slowly it travels ALONG the edges away from a nucleation site (higher = slower).</param>
-    /// <param name="DepthWeight">How much of the arrival time is spent creeping inward.</param>
-    /// <param name="Warp">Irregularity of the front (0 = smooth, ~0.5 = strongly lobed).</param>
-    /// <param name="Sites">Number of nucleation points placed around the screen border.</param>
+    /// <summary>Depth (front reach, fraction of short side), SpreadRate (higher = slower), DepthWeight (inward share), Warp (0 smooth), Sites.</summary>
     public readonly record struct Settings(float Depth, float SpreadRate, float DepthWeight, float Warp, int Sites);
 
     /// <summary>A nucleation point on the screen border.</summary>

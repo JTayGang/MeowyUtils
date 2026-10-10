@@ -2,11 +2,7 @@ using System.Numerics;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>
-/// Spawns and advances everything a stroke material sheds along its length: free-flying particles
-/// and path-following particles. Both come from a single StrokeEmission list; both resolve through
-/// the same material lookup, so an emit-axis override reaches both.
-/// </summary>
+/// <summary>Spawns and advances everything a stroke material sheds (free-flying and path-following) from one emission list.</summary>
 public static class StrokeAutoEmitter
 {
     private const int FreeFlyCapacity = 2000;
@@ -84,11 +80,7 @@ public static class StrokeAutoEmitter
 
             string materialName = MaterialOverrideKey.ResolveStroke(in s, overrides);
 
-            // A stroke whose stroke material OR emit-axis has been swapped away from what the effect
-            // declared is user-customized. Drop the effect's emission windows so the swapped-in material
-            // sheds along the ENTIRE strand, not just the stretches the effect's native material wanted
-            // (Heavy confines its rust/sparks/dust to edges and chain ends). Native materials are
-            // unaffected - they still resolve to their declared default and keep their windows.
+            // A stroke whose material or emit axis was swapped is user-customised: drop the effect's emission windows so it sheds along the whole strand.
             string? declaredStroke = EffectRegistry.DefaultFor(
                 s.Owner, "Stroke", MaterialOverrideKey.RoleName(s.Role));
             bool swapped = emitOverride is not null
@@ -204,12 +196,7 @@ public static class StrokeAutoEmitter
         }
     }
 
-    /// <summary>
-    /// Resolves what the impacted owner's stroke material throws and spawns it. Resolution mirrors
-    /// the trickle emitters exactly, so a user override or a "made of X" phrase changes impacts
-    /// along with everything else: a swapped-in material throws ITS debris, and a particle
-    /// override on the emit axis ("chains made of flames") bursts that particle instead.
-    /// </summary>
+    /// <summary>Resolves and spawns what the impacted owner's stroke material throws (overrides and "made of X" apply here too).</summary>
     private static void SpawnImpact(in ImpactPrimitive hit, IReadOnlyDictionary<string, string>? overrides, float time)
     {
         if (hit.Strength <= 0.001f) return;
@@ -226,8 +213,7 @@ public static class StrokeAutoEmitter
             var emitter = MaterialRegistry.TryGetParticle(emitOverride);
             if (emitter is null) return;
 
-            // A particle material only declares a trickle, so derive a burst from it: a handful of
-            // particles on the trickle's own speeds, lifespans and sizes, fanned at least ~40 deg.
+            // A particle material only declares a trickle, so derive a burst: a handful on its own speeds, lifespans and sizes, fanned at least ~40 deg.
             var specs = emitter.Emissions;
             for (int e = 0; e < specs.Length; e++)
             {
@@ -339,27 +325,20 @@ public static class StrokeAutoEmitter
         };
     }
 
-    private static float PxScale() =>
-        _screen.X > 0f ? Math.Clamp(MathF.Min(_screen.X, _screen.Y) / 1080f, 0.75f, 2.4f) : 1f;
-
-    /// <summary>
-    /// False if the stroke wants its debris only near the screen edge (EmitEdgeReach) and this point
-    /// is further in, or off-screen where nobody would see it. Rejecting rather than redistributing
-    /// keeps the local density near the edge what the material specified.
-    /// </summary>
+    /// <summary>False if debris is wanted only near a screen edge (EmitEdgeReach) and this point is further in or off-screen; rejecting keeps local density.</summary>
     private static bool WithinEmitReach(in StrokePrimitive s, Vector2 p)
     {
         if (s.EmitEdgeReach <= 0f || _screen.X <= 0f) return true;
 
         float edge = MathF.Min(MathF.Min(p.X, _screen.X - p.X), MathF.Min(p.Y, _screen.Y - p.Y));
-        return edge >= 0f && edge <= s.EmitEdgeReach * PxScale();
+        return edge >= 0f && edge <= s.EmitEdgeReach * DrawHelpers.PixelScale(_screen);
     }
 
     /// <summary>The EmitEndReach window in arc px, or 0 if unrestricted (unset, or the windows cover the whole strand).</summary>
     private static float EndReachArc(in StrokePrimitive s, float visibleLen)
     {
         if (s.EmitEndReach <= 0f) return 0f;
-        float reach = s.EmitEndReach * PxScale();
+        float reach = s.EmitEndReach * DrawHelpers.PixelScale(_screen);
         return 2f * reach >= visibleLen ? 0f : reach;
     }
 

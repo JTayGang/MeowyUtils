@@ -5,10 +5,7 @@ using RealDebuffs.Effects;
 using RealDebuffs.Effects.Framework;
 namespace RealDebuffs;
 
-/// <summary>
-/// Settings window. Two tabs: "Effects" (master toggles, per-debuff, chat lockout, dev test),
-/// "Moodles/Loci Support" (custom-status rules, tooltip keywords, effect styles).
-/// </summary>
+/// <summary>Settings window: Effects tab, and Moodles/Loci Support tab (custom statuses, tooltip keywords, effect styles).</summary>
 public sealed class ConfigWindow : Window
 {
     private readonly Configuration _config;
@@ -25,9 +22,10 @@ public sealed class ConfigWindow : Window
         _config = config;
         _save = save;
         _effects = effects;
-        _sortedEffects = effects.OrderBy(e => e.DisplayName, StringComparer.OrdinalIgnoreCase).ToArray();
-        _customStatuses = new CustomStatusPanel(config, customStatuses, effects);
-        _tooltipKeywords = new TooltipKeywordPanel(config, customStatuses, effects);
+        var roster = new EffectRoster(effects);
+        _sortedEffects = roster.Sorted;
+        _customStatuses = new CustomStatusPanel(config, customStatuses, roster);
+        _tooltipKeywords = new TooltipKeywordPanel(config, roster, effects);
         _effectStyles = new EffectStylePanel(config);
         Size = new Vector2(470, 660);
         SizeCondition = ImGuiCond.FirstUseEver;
@@ -128,6 +126,39 @@ public sealed class ConfigWindow : Window
     }
 }
 
+/// <summary>The effect roster sorted by display name, plus the kind pickers the rule panels share.</summary>
+internal sealed class EffectRoster
+{
+    public readonly ISceneEffect[] Sorted;
+    private readonly DebuffKind[] _kinds;
+    private readonly string[] _names;
+
+    /// <summary>Index of Bind (the add-row's starting pick), or 0.</summary>
+    public readonly int DefaultIndex;
+
+    public EffectRoster(IReadOnlyList<ISceneEffect> effects)
+    {
+        Sorted = effects.OrderBy(e => e.DisplayName, StringComparer.OrdinalIgnoreCase).ToArray();
+        _kinds = Sorted.Select(e => e.Kind).ToArray();
+        _names = Sorted.Select(e => e.DisplayName).ToArray();
+        DefaultIndex = Math.Max(0, Array.IndexOf(_kinds, DebuffKind.Bind));
+    }
+
+    /// <summary>Kind picker for an existing rule; returns the new kind when the user changed it.</summary>
+    public DebuffKind? RuleCombo(DebuffKind current)
+    {
+        int i = Math.Max(0, Array.IndexOf(_kinds, current));
+        return ImGui.Combo("##kind", ref i, _names, _names.Length) ? _kinds[i] : null;
+    }
+
+    /// <summary>Kind picker for an add-row; <paramref name="index"/> is the caller's selection state.</summary>
+    public DebuffKind NewKindCombo(ref int index)
+    {
+        ImGui.Combo("##newkind", ref index, _names, _names.Length);
+        return _kinds[Math.Clamp(index, 0, _kinds.Length - 1)];
+    }
+}
+
 /// <summary>"Custom statuses" section: name -> effect rules.</summary>
 internal sealed class CustomStatusPanel
 {
@@ -137,29 +168,21 @@ internal sealed class CustomStatusPanel
     private readonly Configuration _config;
     private readonly CustomStatusWatcher _watcher;
 
-    // Built once from the effect roster (only kinds with a real ISceneEffect behind them), sorted
-    // alphabetically; drives both the existing-rule display and the add-row picker.
-    private readonly DebuffKind[] _kinds;
-    private readonly string[] _kindNames;
+    private readonly EffectRoster _roster;
 
     private string _newName = "";
-    private int _newKind = 0;
+    private int _newKind;
     private int _pick = -1;
 
     private CustomStatusSnapshot? _labelsFor;
     private string[] _labels = Array.Empty<string>();
 
-    public CustomStatusPanel(Configuration config, CustomStatusWatcher watcher, IReadOnlyList<ISceneEffect> effects)
+    public CustomStatusPanel(Configuration config, CustomStatusWatcher watcher, EffectRoster roster)
     {
         _config = config;
         _watcher = watcher;
-
-        var sorted = effects.OrderBy(e => e.DisplayName, StringComparer.OrdinalIgnoreCase).ToArray();
-        _kinds = sorted.Select(e => e.Kind).ToArray();
-        _kindNames = sorted.Select(e => e.DisplayName).ToArray();
-
-        _newKind = Array.IndexOf(_kinds, DebuffKind.Bind);
-        if (_newKind < 0) _newKind = 0;
+        _roster = roster;
+        _newKind = roster.DefaultIndex;
     }
 
     public bool Draw()
@@ -200,9 +223,8 @@ internal sealed class CustomStatusPanel
                 if (ImGui.InputTextWithHint("##name", "Status name", ref name, 128)) { rule.Name = name; changed = true; }
 
                 ImGui.SameLine();
-                int kind = Math.Max(0, Array.IndexOf(_kinds, rule.Kind));
                 ImGui.SetNextItemWidth(KindWidth);
-                if (ImGui.Combo("##kind", ref kind, _kindNames, _kindNames.Length)) { rule.Kind = _kinds[kind]; changed = true; }
+                if (_roster.RuleCombo(rule.Kind) is { } picked) { rule.Kind = picked; changed = true; }
 
                 ImGui.SameLine();
                 if (ImGui.Button("X##rm")) removeAt = i;
@@ -239,11 +261,10 @@ internal sealed class CustomStatusPanel
 
             ImGui.SameLine();
             ImGui.SetNextItemWidth(KindWidth);
-            ImGui.Combo("##newkind", ref _newKind, _kindNames, _kindNames.Length);
+            var newKind = _roster.NewKindCombo(ref _newKind);
 
             string cleaned = StatusNames.Clean(_newName);
             string key = StatusNames.Key(cleaned);
-            var newKind = _kinds[Math.Clamp(_newKind, 0, _kinds.Length - 1)];
             bool duplicate = rules.Any(r => r.Kind == newKind && r.GetKey() == key);
 
             ImGui.SameLine();
@@ -286,27 +307,21 @@ internal sealed class TooltipKeywordPanel
     private const float KindWidth = 130f;
 
     private readonly Configuration _config;
-    private readonly DebuffKind[] _kinds;
-    private readonly string[] _kindNames;
+    private readonly EffectRoster _roster;
     private readonly IReadOnlyList<ISceneEffect> _effects;
 
     private string _newKeywords = "";
-    private int _newKind = 0;
+    private int _newKind;
 
     private bool _clearAllRequested;
     private bool _resetDefaultsRequested;
 
-    public TooltipKeywordPanel(Configuration config, CustomStatusWatcher watcher, IReadOnlyList<ISceneEffect> effects)
+    public TooltipKeywordPanel(Configuration config, EffectRoster roster, IReadOnlyList<ISceneEffect> effects)
     {
         _config = config;
+        _roster = roster;
         _effects = effects;
-
-        var sorted = effects.OrderBy(e => e.DisplayName, StringComparer.OrdinalIgnoreCase).ToArray();
-        _kinds = sorted.Select(e => e.Kind).ToArray();
-        _kindNames = sorted.Select(e => e.DisplayName).ToArray();
-
-        _newKind = Array.IndexOf(_kinds, DebuffKind.Bind);
-        if (_newKind < 0) _newKind = 0;
+        _newKind = roster.DefaultIndex;
     }
 
     public bool Draw()
@@ -357,9 +372,8 @@ internal sealed class TooltipKeywordPanel
                     if (ImGui.InputTextWithHint("##keywords", "flame, burning, scorch...", ref keywords, 512)) { rule.Keywords = keywords; changed = true; }
 
                     ImGui.SameLine();
-                    int kind = Math.Max(0, Array.IndexOf(_kinds, rule.Kind));
                     ImGui.SetNextItemWidth(KindWidth);
-                    if (ImGui.Combo("##kind", ref kind, _kindNames, _kindNames.Length)) { rule.Kind = _kinds[kind]; changed = true; }
+                    if (_roster.RuleCombo(rule.Kind) is { } picked) { rule.Kind = picked; changed = true; }
 
                     ImGui.SameLine();
                     if (ImGui.Button("X##rm")) removeAt = i;
@@ -378,10 +392,9 @@ internal sealed class TooltipKeywordPanel
 
                 ImGui.SameLine();
                 ImGui.SetNextItemWidth(KindWidth);
-                ImGui.Combo("##newkind", ref _newKind, _kindNames, _kindNames.Length);
+                var newKind = _roster.NewKindCombo(ref _newKind);
 
                 var parsedNew = TooltipKeywordRule.ParseKeywords(_newKeywords);
-                var newKind = _kinds[Math.Clamp(_newKind, 0, _kinds.Length - 1)];
 
                 bool duplicate = parsedNew.Length > 0 && rules.Any(r =>
                     r.Kind == newKind &&
@@ -420,20 +433,14 @@ internal sealed class TooltipKeywordPanel
     }
 }
 
-/// <summary>
-/// "Effect generator" section: a paste-in description tester plus a per-effect material editor.
-/// Copy exports the selected effect's style as a Moodle phrase; Reset restores its defaults.
-/// Everything shown here comes from EffectRegistry, which is populated once at plugin load.
-/// </summary>
+/// <summary>"Effect generator": paste-in description tester plus a per-effect material editor.</summary>
 internal sealed class EffectStylePanel
 {
     private readonly Configuration _config;
     private string _testText = "";
     private DebuffKind _selectedKind = DebuffKind.Blind;
 
-    // Cached once: MaterialRegistry and EffectRegistry are both fully populated by the time the
-    // first EffectStylePanel is constructed, and neither changes afterwards. Building these in
-    // the static ctor keeps the per-frame draw free of LINQ/ToArray allocations.
+    // Cached once: both registries are fully populated before the first panel is built.
     private static readonly DebuffKind[] KindValues;
     private static readonly string[] KindNames;
     private static readonly string[] StrokeNames, StrokeLabels;
@@ -507,10 +514,7 @@ internal sealed class EffectStylePanel
         return changed;
     }
 
-    /// <summary>
-    /// Changing the effect combo does NOT reset the previous effect; Reset is an explicit button
-    /// so a user exploring options doesn't lose edits to what they were just working on.
-    /// </summary>
+    /// <summary>Changing the effect combo doesn't reset the previous effect; Reset is an explicit button.</summary>
     private bool DrawEffectEditor()
     {
         bool changed = false;
@@ -606,11 +610,7 @@ internal sealed class EffectStylePanel
         return removedAny;
     }
 
-    /// <summary>
-    /// The paste-in tester. Preview forces every matched kind on screen for 15s with its resolved
-    /// color, so the result can be checked without applying a Moodle. Material substitutions are
-    /// listed but not previewed - they only apply live via the per-frame snapshot.
-    /// </summary>
+    /// <summary>Paste-in tester; Preview forces each matched kind on screen for 15s (material substitutions apply live, not in preview).</summary>
     private void DrawTester()
     {
         ImGui.PushID("GeneratorTester");
@@ -669,10 +669,7 @@ internal sealed class EffectStylePanel
         finally { ImGui.PopID(); }
     }
 
-    /// <summary>
-    /// The Moodle phrase that reproduces this effect's current style. Material axis wins over
-    /// emit axis when both are customized; only words that round-trip cleanly are exported.
-    /// </summary>
+    /// <summary>The Moodle phrase for this effect's style; the material axis wins over the emit axis.</summary>
     private string BuildExportPhrase(DebuffKind kind)
     {
         string trigger = CanonicalTrigger(kind);
@@ -747,10 +744,7 @@ internal sealed class EffectStylePanel
         _          => (Array.Empty<string>(), Array.Empty<string>()),
     };
 
-    /// <summary>
-    /// After a color change, refresh the forced color on any kind currently being previewed, so a
-    /// running preview recolors without needing Preview clicked again. Same parse path Preview uses.
-    /// </summary>
+    /// <summary>After a colour change, refresh the forced colour on any previewed kind.</summary>
     private void RefreshActivePreview()
     {
         foreach (var m in TooltipKeywordParser.Parse(_testText, _config.TooltipKeywordRules))
@@ -848,12 +842,7 @@ internal sealed class EffectStylePanel
     }
 }
 
-/// <summary>
-/// Preview an effect without needing a matching debuff. Visual only - it never triggers the chat
-/// lockout. Respects the master switch, per-effect toggles, cutscene/GPose hiding and intensity.
-/// Always temporary; nothing is saved. The panel iterates the effect roster, so only implemented
-/// effects get a checkbox.
-/// </summary>
+/// <summary>Preview an effect without a debuff: visual only (never triggers the chat lockout), temporary, nothing saved.</summary>
 internal static class DebugTester
 {
     private const float Seconds = 15f;
@@ -875,10 +864,7 @@ internal static class DebugTester
         ForcedColor[kind] = color;
     }
 
-    /// <summary>
-    /// Recolors a running preview without restarting its timer. Used by the effect generator so
-    /// changing the color dropdown updates the on-screen preview live.
-    /// </summary>
+    /// <summary>Recolours a running preview without restarting its timer.</summary>
     public static void UpdateForcedColor(DebuffKind kind, Vector4? color)
     {
         if (IsForced(kind))

@@ -7,15 +7,11 @@ using Dalamud.Plugin.Services;
 using RealDebuffs.Effects;
 using RealDebuffs.Effects.Framework;
 
-// Moodles and Loci hand a status back over IPC as a tuple whose first five fields are
-// (Version, GUID, IconID, Title, Description). Description is kept raw for the keyword parser.
+// Moodles/Loci return a status over IPC as (Version, GUID, IconID, Title, Description, ...); Description stays raw for the keyword parser.
 using StatusHead = (int Version, System.Guid GUID, long IconID, string Title, string Description);
 namespace RealDebuffs;
 
-/// <summary>
-/// Visual debuff families. Several vanilla statuses can map to one kind when they're mechanically
-/// the same. Numeric values are serialized - add new kinds at the END.
-/// </summary>
+/// <summary>Visual debuff families; several vanilla statuses can share a kind. Numeric values are serialized: add new kinds at the END.</summary>
 public enum DebuffKind
 {
     Blind,
@@ -48,14 +44,10 @@ public enum DebuffKind
     Windburn,
 }
 
-/// <summary>
-/// Resolves vanilla status IDs to DebuffKinds by matching the English Status sheet against each
-/// effect's declared TriggerStatuses.
-/// </summary>
+/// <summary>Resolves vanilla status IDs to DebuffKinds via each effect's TriggerStatuses and the English Status sheet.</summary>
 public sealed class StatusCatalog
 {
-    // Kind and strength together: this is looked up per status per frame, and the old two-dictionary
-    // form paid a second hash lookup for the strength on every hit.
+    // Kind and strength together: looked up per status per frame, so one hash lookup instead of two.
     private readonly Dictionary<uint, (DebuffKind Kind, float Strength)> _idToInfo = new();
     private readonly IDataManager _dataManager;
 
@@ -212,9 +204,7 @@ public sealed class CustomStatusSnapshot
 
                 if (m.MaterialSubstitution is not { } matName) continue;
 
-                // Type-check the substitution against the effect's hero slots. A stroke material
-                // can't fill a particle slot; a particle material on a stroke hero routes to the
-                // emit axis ("chains made of flames" - chains keep their material, shed fire).
+                // Type-check against the hero slots: a stroke can't fill a particle slot; a particle on a stroke hero goes to the emit axis.
                 string matType = PrefixOf(matName);
                 foreach (var hero in EffectRegistry.HeroSlotsFor(m.Kind))
                 {
@@ -250,11 +240,7 @@ public sealed class CustomStatusSnapshot
     }
 }
 
-/// <summary>
-/// Reads Moodles and Loci over IPC and publishes a CustomStatusSnapshot. The plugin's one periodic
-/// heartbeat: rebuilds the snapshot and advances Tick about once a second (sooner when the settings
-/// change). A missing plugin just reports nothing and is re-probed on a slow timer.
-/// </summary>
+/// <summary>Reads Moodles/Loci over IPC into a CustomStatusSnapshot about once a second (sooner on settings change); a missing plugin is re-probed slowly.</summary>
 public sealed class CustomStatusWatcher : IDisposable
 {
     private const int HeartbeatMs = 1000;
@@ -286,10 +272,7 @@ public sealed class CustomStatusWatcher : IDisposable
 
     public CustomStatusSnapshot Snapshot => _snapshot;
 
-    /// <summary>
-    /// Advances once per heartbeat. Read BEFORE Snapshot: if a beat lands in between, the caller
-    /// re-syncs next frame instead of missing an update.
-    /// </summary>
+    /// <summary>Advances once per heartbeat; read BEFORE Snapshot so a beat in between re-syncs next frame.</summary>
     public int Tick => _tick;
 
     public void RequestRefresh() => _refreshRequested = true;
@@ -394,11 +377,7 @@ public sealed class CustomStatusWatcher : IDisposable
     public void Dispose() => _framework.Update -= OnUpdate;
 }
 
-/// <summary>
-/// How status titles are compared: strips Moodles/Loci markup, collapses whitespace, lowercases
-/// (for Key). Both are called per frame by the settings add row, so Clean has a fast path for the
-/// common case of a plain name with no markup.
-/// </summary>
+/// <summary>Status title comparison: strip markup, collapse whitespace, lowercase (Key). Clean has a fast path (called per frame).</summary>
 public static class StatusNames
 {
     private static readonly Regex Markup = new(
@@ -412,8 +391,7 @@ public static class StatusNames
     {
         if (string.IsNullOrWhiteSpace(title)) return "";
 
-        // Fast path: no markup char and no whitespace means both regexes would be no-ops and Trim
-        // would return the same string. Saves two regex scans per call on the common case.
+        // Fast path: no markup char or whitespace means both regexes and Trim would be no-ops.
         bool maybe = false;
         for (int i = 0; i < title.Length; i++)
         {

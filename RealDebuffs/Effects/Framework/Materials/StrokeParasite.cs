@@ -3,35 +3,13 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>
-/// A living tentacle, drawn as lit 3D geometry: a tapered tube with a pale belly and a dark back,
-/// mottled skin, two rows of suckers, and a coat of thick slime that flows down it, gathers into lumps,
-/// and drips.
-///
-/// It is a hero material in the same sense as <see cref="StrokeRope"/> and <see cref="StrokeChain"/>:
-/// it honours the whole stroke contract (Reveal, FlushStart, Closed, Depth, Agitation, TipFlare, Twist),
-/// so anything that can be a rope or a chain can be a tentacle. Closed, it is a ring of living flesh with
-/// no end to find (a magic circle); on a strand pinned at both ends it is a tentacle hauled taut between
-/// two edges.
-///
-/// How it gets its volume. Each cross-section is a ribbon of vertices evenly spaced in angle across the
-/// visible half of a cylinder. Each vertex has an analytic normal (the cylinder's, tilted along the tube
-/// by a slow pitch toward or away from the viewer, and by the slime lumps) and is coloured by looking
-/// that normal up in two shared <see cref="Matcap"/>s: satin flesh, and a clear wet coat laid over it.
-/// A hard highlight is narrower than the vertex spacing, so it is drawn analytically as a glint strip
-/// instead. The suckers are small foreshortened cups that are only visible while the belly faces the
-/// viewer, so as the strand twists they sweep into and out of sight.
-///
-/// Drips are not drawn here. The material only declares them (see <see cref="Emissions"/>); the shared
-/// <see cref="GoopEmitter"/> grows them on the underside, using <see cref="RadiusAt"/> to find the skin.
-/// </summary>
+/// <summary>A living tentacle as lit 3D geometry: tapered tube, pale belly, dark back, mottled skin, two rows of suckers, flowing slime. Honours the full stroke contract, so anything that can be a rope or chain can be a tentacle. Vertices sit evenly in angle across the visible half-cylinder with analytic normals, looked up in satin-flesh and wet-coat matcaps; the hard highlight is a separate analytic glint strip. Drips come from GoopEmitter via RadiusAt.</summary>
 public sealed class StrokeParasite : IStrokeMaterial
 {
     public string Name => "stroke.parasite";
     public string[] NaturalLanguageWords { get; } = { "tentacle", "tentacles", "tendril", "tendrils", "parasite", "parasites" };
 
-    // ---- size ----
-    // Thick enough to read as flesh with suckers on it, thin enough that it is still a limb and not a trunk.
+    // ---- size ---- thick enough to read as flesh with suckers, thin enough to stay a limb
     private const float MinDiameterFrac = 0.012f;
     private const float MaxDiameterFrac = 0.060f;
     private const float TipFrac = 0.075f;               // diameter at the very tip, as a fraction of the base's
@@ -49,11 +27,7 @@ public sealed class StrokeParasite : IStrokeMaterial
     private static readonly Vector3 KeyHalf = Vector3.Normalize(StudioLighting.Key + Vector3.UnitZ);
     private static readonly Vector3 FillHalf = Vector3.Normalize(StudioLighting.Fill + Vector3.UnitZ);
 
-    /// <summary>
-    /// A level of detail: columns across the visible half of the tube, how finely it is cut along its
-    /// length, and whether suckers are worth drawing at that size. Columns are spaced evenly in ANGLE, which
-    /// puts vertices where the surface turns fastest, at the silhouette.
-    /// </summary>
+    /// <summary>Level of detail: columns across the visible half (evenly spaced in ANGLE, putting vertices at the silhouette), rows along the length, and whether suckers are worth drawing.</summary>
     private sealed class Tier
     {
         public readonly int Cols;
@@ -116,9 +90,7 @@ public sealed class StrokeParasite : IStrokeMaterial
     private readonly Vector2[] _pointTan = new Vector2[MaxPathPoints];
     private float _screenW, _screenH;
 
-    // =========================================================================
-    // The strand's profile: shared by the drawing and by RadiusAt.
-    // =========================================================================
+    // ---- the strand's profile: shared by the drawing and RadiusAt ----
 
     private static float BaseDiameter(float widthHint, float depth, float shortSide) =>
         Math.Clamp(widthHint, shortSide * MinDiameterFrac, shortSide * MaxDiameterFrac) * (1f - 0.18f * depth);
@@ -135,9 +107,7 @@ public sealed class StrokeParasite : IStrokeMaterial
         return MathF.Max(0.5f, 0.5f * diameter * Taper(arc / total, s.Closed));
     }
 
-    // =========================================================================
-    // Draw
-    // =========================================================================
+    // ---- Draw ----
 
     public void Draw(ImDrawListPtr dl, in StrokePrimitive s, in MaterialContext ctx)
     {
@@ -196,9 +166,7 @@ public sealed class StrokeParasite : IStrokeMaterial
         }
     }
 
-    // =========================================================================
-    // Cross-sections
-    // =========================================================================
+    // ---- Cross-sections ----
 
     private int BuildRows(StrandPath path, float total, float visibleLen, bool closed, bool flushStart, float reveal,
                           Tier tier, int seed, float phase, float twist, float time, float px, float depth, in Look look)
@@ -256,7 +224,7 @@ public sealed class StrokeParasite : IStrokeMaterial
                 AddRow(path, pn, ref seg, ref count, visibleLen - capEnd * (1f - DomeT[i]), +1f, DomeT[i]);
 
         // How far through its growth the tip still is: the front of a growing tentacle is drawn out to a point.
-        float growing = 1f - Smooth((reveal - 0.90f) / 0.10f);
+        float growing = 1f - DrawHelpers.Smooth((reveal - 0.90f) / 0.10f);
 
         for (int i = 0; i < count; i++)
         {
@@ -272,8 +240,8 @@ public sealed class StrokeParasite : IStrokeMaterial
             // ---- width: taper, a slow muscular swell, slime lumps, and perspective ----
             float swell = 1f + (0.045f + 0.03f * look.Agit) * MathF.Sin(MathF.Tau * sArc * wobbleRate - time * (1.7f + 3f * look.Agit) + ph1);
 
-            float lumpField = Smooth((Field(sArc, total, closed, diameter * 2.4f, offA, scroll * 0.8f) - 0.46f) / 0.28f);
-            float wetField  = 0.55f + 0.45f * Smooth((Field(sArc, total, closed, diameter * 3.3f, offB, scroll) - 0.34f) / 0.34f);
+            float lumpField = DrawHelpers.Smooth((Field(sArc, total, closed, diameter * 2.4f, offA, scroll * 0.8f) - 0.46f) / 0.28f);
+            float wetField  = 0.55f + 0.45f * DrawHelpers.Smooth((Field(sArc, total, closed, diameter * 3.3f, offB, scroll) - 0.34f) / 0.34f);
             float lump = lumpField * wetField;
 
             float pitch = (0.40f + 0.22f * look.Agit) * MathF.Sin(MathF.Tau * sArc * pitchRate + ph2 + 0.55f * time);
@@ -284,7 +252,7 @@ public sealed class StrokeParasite : IStrokeMaterial
             if (growing > 0.001f && !closed)
             {
                 float fromTip = (visibleLen - sArc) / MathF.Max(1f, radius * 4.5f);
-                tipThin = 1f - 0.5f * growing * (1f - Smooth(fromTip));
+                tipThin = 1f - 0.5f * growing * (1f - DrawHelpers.Smooth(fromTip));
             }
 
             r.Radius = radius * Taper(u, closed) * swell * (1f + 0.16f * lump) * perspective * tipThin * r.CapW;
@@ -292,8 +260,8 @@ public sealed class StrokeParasite : IStrokeMaterial
 
             // Lump gradient tilts the normal along the tube so a lump shades as a bulge, not a stripe.
             float h = diameter * 0.6f;
-            float lumpAhead = Smooth((Field(sArc + h, total, closed, diameter * 2.4f, offA, scroll * 0.8f) - 0.46f) / 0.28f);
-            float lumpBehind = Smooth((Field(sArc - h, total, closed, diameter * 2.4f, offA, scroll * 0.8f) - 0.46f) / 0.28f);
+            float lumpAhead = DrawHelpers.Smooth((Field(sArc + h, total, closed, diameter * 2.4f, offA, scroll * 0.8f) - 0.46f) / 0.28f);
+            float lumpBehind = DrawHelpers.Smooth((Field(sArc - h, total, closed, diameter * 2.4f, offA, scroll * 0.8f) - 0.46f) / 0.28f);
             r.LumpTilt = -(lumpAhead - lumpBehind) * 0.85f * wetField;
 
             // ---- the belly line: turns slowly down the strand, drifts with time, and follows Twist ----
@@ -306,9 +274,9 @@ public sealed class StrokeParasite : IStrokeMaterial
             r.Feather = (1.0f + 2.2f * depth) * px * (1f + 0.4f * MathF.Sin(MathF.Tau * sArc * toneRateB + ph2));
 
             // ---- highlight strips: where each light's reflection falls on this stretch of tube ----
-            float breakup = Smooth((Field(sArc, total, closed, diameter * 1.7f, offC, scroll * 1.2f) - 0.30f) / 0.30f);
+            float breakup = DrawHelpers.Smooth((Field(sArc, total, closed, diameter * 1.7f, offC, scroll * 1.2f) - 0.30f) / 0.30f);
             Glint(KeyHalf, r.T, r.SinA, r.CosA, r.Radius, breakup, wetField, 9f, out r.Glint, out r.GlintX);
-            float breakup2 = Smooth((Field(sArc, total, closed, diameter * 2.1f, offC + 91f, scroll * 0.9f) - 0.34f) / 0.30f);
+            float breakup2 = DrawHelpers.Smooth((Field(sArc, total, closed, diameter * 2.1f, offC + 91f, scroll * 0.9f) - 0.34f) / 0.30f);
             Glint(FillHalf, r.T, r.SinA, r.CosA, r.Radius, breakup2, wetField, 7f, out r.Glint2, out r.GlintX2);
 
             // ---- skin pattern coordinates (periodic on a closed loop) ----
@@ -328,12 +296,7 @@ public sealed class StrokeParasite : IStrokeMaterial
         return count;
     }
 
-    /// <summary>
-    /// Where a light's reflection falls on a tube, and how strongly. A cylinder reflects a light along a
-    /// line, at the angle where its normal meets the half vector; that line is brightest where the tube runs
-    /// square to the light and fades as it turns toward it, which is why a glossy tentacle's highlight
-    /// breaks up as it curves. Returns the strength and the offset across the tube from its centre line.
-    /// </summary>
+    /// <summary>Where a light's reflection falls on a tube, and how strongly: a cylinder reflects along a line (brightest square to the light) that breaks up as the tube curves. Returns strength and offset across the tube.</summary>
     private static void Glint(Vector3 half, Vector2 t, float sinA, float cosA, float radius, float breakup, float wet,
                               float sharpness, out float strength, out float across)
     {
@@ -347,17 +310,14 @@ public sealed class StrokeParasite : IStrokeMaterial
         strength = MathF.Pow(hPerp, sharpness) * (0.25f + 0.75f * breakup) * wet;
     }
 
-    /// <summary>
-    /// A slow 0..1 field along the strand, scrolling at <paramref name="scroll"/> px: what slime does as it
-    /// creeps downhill. On a closed loop it is sampled round a circle, so it has no seam.
-    /// </summary>
+    /// <summary>A slow 0..1 field along the strand, scrolling at scroll px (slime creeping downhill); sampled round a circle on a closed loop, so there is no seam.</summary>
     private static float Field(float sArc, float total, bool closed, float scale, float offset, float scroll)
     {
         float s = sArc - scroll;
-        if (!closed) return FireNoise.Value(s / scale + offset, offset * 0.37f);
+        if (!closed) return Noise.Value(s / scale + offset, offset * 0.37f);
         float a = MathF.Tau * s / total;
         float rr = total / (MathF.Tau * scale);
-        return FireNoise.Value(rr * MathF.Cos(a) + offset, rr * MathF.Sin(a) + offset * 0.37f);
+        return Noise.Value(rr * MathF.Cos(a) + offset, rr * MathF.Sin(a) + offset * 0.37f);
     }
 
     // Fraction up the dome for each end-cap row, tip last. 0 is where the cap meets the body.
@@ -380,10 +340,7 @@ public sealed class StrokeParasite : IStrokeMaterial
         count++;
     }
 
-    /// <summary>
-    /// Smooth tangents at every path point; rows interpolate them, so a coarse path shades without
-    /// facets at its vertices. (Same scheme as Rope.)
-    /// </summary>
+    /// <summary>Smooth tangents at every path point, interpolated per row, so a coarse path shades without facets (as in Rope).</summary>
     private void PreparePointTangents(StrandPath path, int pn, bool closed)
     {
         var pts = path.Points;
@@ -414,9 +371,7 @@ public sealed class StrokeParasite : IStrokeMaterial
         t = len > 1e-4f ? d / len : _pointTan[seg];
     }
 
-    // =========================================================================
-    // Shadow: a soft band under the tentacle, narrowing with it
-    // =========================================================================
+    // ---- Shadow: a soft band under the tentacle, narrowing with it ----
 
     private static readonly float[] ShadowAcross = { -1f, -0.55f, 0f, 0.55f, 1f };
     private static readonly float[] ShadowProfile = { 0f, 0.62f, 1f, 0.62f, 0f };
@@ -466,9 +421,7 @@ public sealed class StrokeParasite : IStrokeMaterial
         }
     }
 
-    // =========================================================================
-    // Body
-    // =========================================================================
+    // ---- Body ----
 
     private void DrawBody(ImDrawListPtr dl, int rowCount, Tier tier, in Look look, in MaterialContext ctx)
     {
@@ -532,17 +485,16 @@ public sealed class StrokeParasite : IStrokeMaterial
             // Position on the tentacle's own surface, measured from its belly line. This turns with Twist.
             float phi = theta[c] + row.Psi;
             float belly = MathF.Cos(phi);
-            Vector3 tint = Vector3.Lerp(DorsalTint, VentralTint, Smooth((belly + 0.2f) / 1.0f));
+            Vector3 tint = Vector3.Lerp(DorsalTint, VentralTint, DrawHelpers.Smooth((belly + 0.2f) / 1.0f));
             col *= tint * row.Tone;
 
             // Mottling: broad blotches and a few dark freckles, painted on the skin (so they ride round with the twist).
             if (detail > 0.45f)
             {
-                // Round the tube, not along an unwrapped angle: noise is not periodic in phi, so a belly line that has
-                // turned a whole number of times (a closed loop's seam) would otherwise jump to a different pattern.
+                // Noise round the tube, not along an unwrapped angle: noise isn't periodic in phi, so a closed loop's seam would otherwise jump pattern.
                 float mx = row.MX + MathF.Cos(phi) * 1.15f, my = row.MY + MathF.Sin(phi) * 1.15f;
-                float m = FireNoise.Value(mx, my);
-                float freckle = Smooth((FireNoise.Value(mx * 3.6f + 17f, my * 3.6f + 9f) - 0.72f) / 0.14f);
+                float m = Noise.Value(mx, my);
+                float freckle = DrawHelpers.Smooth((Noise.Value(mx * 3.6f + 17f, my * 3.6f + 9f) - 0.72f) / 0.14f);
                 col *= 1f + (m - 0.5f) * 0.38f * detail - freckle * 0.20f * detail;
             }
 
@@ -556,8 +508,7 @@ public sealed class StrokeParasite : IStrokeMaterial
             if (look.Agit > 0.01f) col += col * (col * (0.45f * look.Agit));
             if (look.Fog > 0f) col = Vector3.Lerp(col, StrandShading.DepthFog, look.Fog);
 
-            uint rgb = FireColor.Pack(col.X, col.Y, col.Z);
-            outC[vb + 1 + c] = look.Overridden ? DrawHelpers.WithAlpha(rgb, look.Alpha) : (rgb & 0x00FFFFFFu) | look.AlphaBits;
+            outC[vb + 1 + c] = DrawHelpers.VertexColor(col, look.Alpha, look.AlphaBits, look.Overridden);
         }
 
         // Soft edge: the neighbouring column's colour at alpha 0, pushed outward by the feather.
@@ -567,28 +518,19 @@ public sealed class StrokeParasite : IStrokeMaterial
         outC[vb + nc + 1] = outC[vb + nc] & 0x00FFFFFFu;
     }
 
-    // =========================================================================
-    // Suckers
-    // =========================================================================
+    // ---- Suckers ----
 
     private const float SuckerRadiusFrac = 0.60f;       // disc radius, in tube radii
     private const float SuckerRowAngle   = 0.66f;       // each row sits this far (rad) either side of the belly line
     private const float SuckerPitch      = 1.22f;       // spacing along a row, in tube diameters
 
-    // Rings of a sucker, centre outward. A cup is a torus: a floor, a steep inner wall, a raised rim, and an
-    // outer flank that blends back into the skin. Each ring says how far the surface tilts there (+ outward,
-    // - toward the centre) and how deep in shadow it sits. The last ring is the soft edge.
+    // Sucker rings, centre outward (floor, steep inner wall, raised rim, outer flank): each gives surface tilt and shadow depth; the last is the soft edge.
     private static readonly float[] CupRho    = { 0.00f, 0.28f, 0.50f, 0.68f, 0.79f, 0.93f, 1.10f, 1.28f };
     private static readonly float[] CupTilt   = { 0.00f, -0.20f, -0.80f, -0.60f, 0.00f, 0.95f, 0.55f, 0.15f };
     private static readonly float[] CupShadow = { 0.34f, 0.34f, 0.38f, 0.16f, 0.00f, 0.00f, 0.12f, 0.00f };
     private static readonly Vector3 CupTint = new(1.00f, 0.80f, 0.86f);      // the inside of a cup is a pinker, softer flesh
 
-    /// <summary>
-    /// Two rows of cups along the belly. Each is a disc lying on the tube's surface, foreshortened by how
-    /// far round the tube it is (so it narrows as it turns away) and shaded by a cup-shaped normal field: a
-    /// bright raised rim, a dark steep inner wall, a glossy floor. A cup is only drawn while it faces the viewer,
-    /// and since the belly line turns with Twist, cups sweep into and out of view as the tentacle twists.
-    /// </summary>
+    /// <summary>Two rows of cups along the belly: foreshortened discs with a cup-shaped normal field (bright rim, dark wall, glossy floor), drawn only while facing the viewer, so Twist sweeps them in and out of view.</summary>
     private void DrawSuckers(ImDrawListPtr dl, int rowCount, Tier tier, in Look look, in MaterialContext ctx,
                              float visibleLen, float total, bool closed)
     {
@@ -656,7 +598,7 @@ public sealed class StrokeParasite : IStrokeMaterial
         float theta = WrapAngle(beltAngle - row.Psi);
         float co = MathF.Cos(theta);
         if (co < 0.12f) return;
-        float vis = Smooth((co - 0.12f) / 0.26f);
+        float vis = DrawHelpers.Smooth((co - 0.12f) / 0.26f);
         float sn = MathF.Sin(theta);
 
         Vector2 T = row.T;
@@ -704,11 +646,7 @@ public sealed class StrokeParasite : IStrokeMaterial
                 if (look.Agit > 0.01f) col += col * (col * (0.45f * look.Agit));
                 if (look.Fog > 0f) col = Vector3.Lerp(col, StrandShading.DepthFog, look.Fog);
 
-                uint rgb = FireColor.Pack(col.X, col.Y, col.Z);
-                float al = edge ? 0f : alphaBase;
-                outC[v] = look.Overridden
-                    ? DrawHelpers.WithAlpha(rgb, al)
-                    : (rgb & 0x00FFFFFFu) | ((uint)(int)(255f * Math.Clamp(al, 0f, 1f)) << 24);
+                outC[v] = DrawHelpers.Tint(DrawHelpers.Pack(col.X, col.Y, col.Z), edge ? 0f : alphaBase, look.Overridden);
             }
         }
         MeshDraw.Grid(dl, segs, rings - 1, uv);
@@ -722,20 +660,14 @@ public sealed class StrokeParasite : IStrokeMaterial
         return a;
     }
 
-    // =========================================================================
-    // Glints
-    // =========================================================================
+    // ---- Glints ----
 
-    /// <summary>
-    /// A thin hard highlight along the tube where the key light's reflection falls. It is far narrower than
-    /// the body mesh's vertex spacing, so it is its own ribbon, laid over the body. It breaks up along the
-    /// strand (slime is not an even film) and fades wherever the tube is turned away from the reflection.
-    /// </summary>
+    /// <summary>A thin hard highlight where the key light's reflection falls: narrower than the body's vertex spacing, so its own ribbon over the body; breaks up along the strand and fades where the tube turns away.</summary>
     private void DrawGlints(ImDrawListPtr dl, int rowCount, in Look look, in MaterialContext ctx)
     {
         // The key light's reflection is the hard warm one; the fill's is dimmer, cooler and broader.
-        DrawGlintStrip(dl, rowCount, in look, in ctx, fill: false, FireColor.Pack(1.00f, 0.97f, 0.86f));
-        DrawGlintStrip(dl, rowCount, in look, in ctx, fill: true,  FireColor.Pack(0.82f, 0.93f, 1.00f));
+        DrawGlintStrip(dl, rowCount, in look, in ctx, fill: false, DrawHelpers.Pack(1.00f, 0.97f, 0.86f));
+        DrawGlintStrip(dl, rowCount, in look, in ctx, fill: true,  DrawHelpers.Pack(0.82f, 0.93f, 1.00f));
     }
 
     private void DrawGlintStrip(ImDrawListPtr dl, int rowCount, in Look look, in MaterialContext ctx, bool fill, uint tint)
@@ -785,36 +717,24 @@ public sealed class StrokeParasite : IStrokeMaterial
         }
     }
 
-    private static uint GlintColour(uint rgb, float alpha, in Look look) =>
-        look.Overridden
-            ? DrawHelpers.WithAlpha(rgb, alpha)
-            : (rgb & 0x00FFFFFFu) | ((uint)(int)(255f * Math.Clamp(alpha, 0f, 1f)) << 24);
+    private static uint GlintColour(uint rgb, float alpha, in Look look) => DrawHelpers.Tint(rgb, alpha, look.Overridden);
 
-    // =========================================================================
-    // Tip
-    // =========================================================================
+    // ---- Tip ----
 
     private static void DrawTip(ImDrawListPtr dl, Vector2 tip, float bar, float k, in Look look, in MaterialContext ctx)
     {
         if (k <= 0.004f) return;
         // A bead of slime on the end of a tentacle that is still reaching: a hard pinprick glint and the faintest sheen round it.
-        uint halo = DrawHelpers.WithAlpha(FireColor.Pack(0.82f, 0.95f, 0.55f), 0.11f * k * look.Alpha);
-        uint clear = DrawHelpers.WithAlpha(FireColor.Pack(0.82f, 0.95f, 0.55f), 0f);
-        uint pip = DrawHelpers.WithAlpha(FireColor.Pack(1.00f, 1.00f, 0.92f), 0.90f * k * look.Alpha);
+        uint halo = DrawHelpers.WithAlpha(DrawHelpers.Pack(0.82f, 0.95f, 0.55f), 0.11f * k * look.Alpha);
+        uint clear = DrawHelpers.WithAlpha(DrawHelpers.Pack(0.82f, 0.95f, 0.55f), 0f);
+        uint pip = DrawHelpers.WithAlpha(DrawHelpers.Pack(1.00f, 1.00f, 0.92f), 0.90f * k * look.Alpha);
         Span<float> rr = stackalloc float[2] { bar * 0.9f, bar * 2.3f };
         Span<uint> cc = stackalloc uint[2] { halo, clear };
         MeshDraw.Radial(dl, tip, MeshDraw.WhiteUv(ctx.Time), pip, 10, rr, cc, 0f, 1f, 0, 0f);
     }
 
-    private static float Smooth(float t)
-    {
-        t = Math.Clamp(t, 0f, 1f);
-        return t * t * (3f - 2f * t);
-    }
 
-    // =========================================================================
-    // What a tentacle sheds, and what happens when it is hit
-    // =========================================================================
+    // ---- What a tentacle sheds, and what happens when it is hit ----
 
     public ReadOnlySpan<StrokeEmission> Emissions => Shed;
 

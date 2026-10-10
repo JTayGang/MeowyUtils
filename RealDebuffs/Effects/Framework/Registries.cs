@@ -24,12 +24,7 @@ public interface IHasHeroSlots
     EffectHeroSlot[] HeroSlots { get; }
 }
 
-/// <summary>
-/// Registry of every effect's declared metadata, populated once by Plugin from the effect roster.
-/// Effects self-declare hero and swappable slots, so no table here needs changing when a new
-/// effect is added. Fallback* methods provide type-appropriate defaults so an unregistered
-/// material name never crashes the renderer.
-/// </summary>
+/// <summary>Every effect's declared slots and defaults, registered once by Plugin; Fallback* keeps unknown names from crashing the renderer.</summary>
 public static class EffectRegistry
 {
     private static readonly Dictionary<(DebuffKind, string, string), string> _defaults = new();
@@ -74,36 +69,30 @@ public static class EffectRegistry
     public static DebuffKind[] KindsWithSlots =>
         _sortedKindsWithSlots ??= _kindsWithSlots.OrderBy(k => k.ToString(), StringComparer.OrdinalIgnoreCase).ToArray();
 
-    public static string FallbackStroke() => "stroke.simple";
+    public const string FallbackStroke = "stroke.simple";
 
     public static string FallbackParticle(PrimitiveRole role) => role switch
     {
-        PrimitiveRole.Ember      => "particle.ember",
-        PrimitiveRole.Smoke      => "particle.smoke",
-        PrimitiveRole.Cinder     => "particle.cinder",
-        PrimitiveRole.Snowflake  => "particle.snowflake",
-        PrimitiveRole.Snow       => "particle.snow",
-        PrimitiveRole.Fog        => "particle.fog",
-        PrimitiveRole.Drip       => "particle.drip",
-        PrimitiveRole.Flow       => "particle.drip",
-        PrimitiveRole.Dust       => "particle.dust",
-        PrimitiveRole.Flake      => "particle.flake",
-        PrimitiveRole.Fibre      => "particle.fibre",
-        PrimitiveRole.Glint      => "particle.glint",
-        PrimitiveRole.Mist       => "particle.mist",
-        PrimitiveRole.Goop       => "particle.slime",
-        _                        => "particle.spark",
+        PrimitiveRole.Ember     => "particle.ember",
+        PrimitiveRole.Smoke     => "particle.smoke",
+        PrimitiveRole.Cinder    => "particle.cinder",
+        PrimitiveRole.Snowflake => "particle.snowflake",
+        PrimitiveRole.Snow      => "particle.snow",
+        PrimitiveRole.Mist      => "particle.mist",
+        PrimitiveRole.Drip      => "particle.drip",
+        PrimitiveRole.Dust      => "particle.dust",
+        PrimitiveRole.Flake     => "particle.flake",
+        PrimitiveRole.Fibre     => "particle.fibre",
+        PrimitiveRole.Glint     => "particle.glint",
+        PrimitiveRole.Goop      => "particle.slime",
+        _                       => "particle.spark",
     };
 
     public static string FallbackRegion(in RegionPrimitive r) =>
         r.HasEdge ? "region.edge-glow" : "region.flat-fill";
 }
 
-/// <summary>
-/// Name-keyed registry for every material. Config stores names as strings, so no enum churn.
-/// Vocabulary merges every material's NaturalLanguageWords into a word -> material-name map;
-/// first registered wins on conflict.
-/// </summary>
+/// <summary>Name-keyed registry of every material. Vocabulary maps each NaturalLanguageWord to a material name; first registered wins.</summary>
 public static class MaterialRegistry
 {
     private static readonly Dictionary<string, IStrokeMaterial>   Strokes   = new(StringComparer.OrdinalIgnoreCase);
@@ -133,17 +122,14 @@ public static class MaterialRegistry
 
         Add(Particles, new ParticleEmber());
         Add(Particles, new ParticleCinder());
-        Add(Particles, new ParticleSmoke());
-        Add(Particles, new ParticleSnowflake());
-        Add(Particles, new ParticleSnow());
-        Add(Particles, new ParticleFog());
         Add(Particles, new ParticleSpark());
-        Add(Particles, new ParticleDrip());
-        Add(Particles, new ParticleDust());
+        Add(Particles, new ParticleSnow());
+        Add(Particles, new ParticleSnowflake());
+        Add(Particles, new ParticleGlint());
+        foreach (var puff in ParticlePuff.All) Add(Particles, puff);
         Add(Particles, new ParticleFlake());
         Add(Particles, new ParticleFibre());
-        Add(Particles, new ParticleGlint());
-        Add(Particles, new ParticleMist());
+        Add(Particles, new ParticleDrip());
         Add(Particles, new ParticleSlime());
 
         var vocabulary = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -173,26 +159,16 @@ public static class MaterialRegistry
         Regions.TryGetValue(name, out var m) ? m : null;
 }
 
-/// <summary>
-/// Shared key format for material overrides.
-///  - Material axis: (Kind, "Stroke"|"Particle"|"Region", Role-or-tag) -> material name.
-///  - Emit axis: (Kind, "Stroke", Role) + ".Emit" -> particle material name.
-/// </summary>
+/// <summary>Override keys: "{Kind}.{Stroke|Particle}.{Role}", "{Kind}.Region.{EdgeGlow|FlatFill}", and "...{Role}.Emit" for the emitter material.</summary>
 public static class MaterialOverrideKey
 {
-    // These keys are looked up per stroke / region / particle, every frame. Building the string each
-    // time allocated on every call; there are only a handful of distinct keys, so build each once.
-    // (GetOrAdd with a static lambda allocates nothing on a hit; thread-safe in case a settings
-    // window and the draw loop ever ask at once.)
+    // Keys are built once per distinct tuple: they're looked up per primitive per frame, and rebuilding the string allocated.
     private static readonly ConcurrentDictionary<(DebuffKind, string, PrimitiveRole), string> ForKeys = new();
     private static readonly ConcurrentDictionary<(DebuffKind, string), string> RegionKeys = new();
     private static readonly ConcurrentDictionary<(DebuffKind, PrimitiveRole), string> EmitKeys = new();
     private static readonly ConcurrentDictionary<PrimitiveRole, string> RoleNames = new();
 
-    /// <summary>
-    /// A role's name without the boxing allocation of <c>role.ToString()</c> (an enum has to be boxed
-    /// to call it), which on a per-stroke, per-frame path adds up to garbage every frame.
-    /// </summary>
+    /// <summary>A role's name without ToString()'s boxing allocation, on a per-primitive hot path.</summary>
     public static string RoleName(PrimitiveRole role) =>
         RoleNames.GetOrAdd(role, static r => r.ToString());
 
@@ -201,9 +177,6 @@ public static class MaterialOverrideKey
 
     public static string ForRegion(DebuffKind kind, string regionKind) =>
         RegionKeys.GetOrAdd((kind, regionKind), static k => $"{k.Item1}.Region.{k.Item2}");
-
-    public static string ForRegion(DebuffKind kind, in RegionPrimitive r) =>
-        ForRegion(kind, r.HasEdge ? "EdgeGlow" : "FlatFill");
 
     public static string ForStrokeEmit(DebuffKind kind, PrimitiveRole role) =>
         EmitKeys.GetOrAdd((kind, role), static k => $"{k.Item1}.Stroke.{k.Item2}.Emit");
@@ -220,15 +193,11 @@ public static class MaterialOverrideKey
             return name;
 
         return EffectRegistry.DefaultFor(owner, "Stroke", RoleName(role))
-            ?? EffectRegistry.FallbackStroke();
+            ?? EffectRegistry.FallbackStroke;
     }
 }
 
-/// <summary>
-/// Finds every ISceneEffect implementation in the assembly, sorted by DrawOrder. Cached for the
-/// session - call exactly once per session from Plugin's constructor. Effects must be public
-/// classes with a public parameterless constructor.
-/// </summary>
+/// <summary>Finds every ISceneEffect with a public parameterless constructor, sorted by DrawOrder. Cached; call once from the Plugin constructor.</summary>
 public static class EffectDiscovery
 {
     private static IReadOnlyList<ISceneEffect>? _cached;

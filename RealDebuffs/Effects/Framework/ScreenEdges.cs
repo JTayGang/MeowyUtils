@@ -2,7 +2,7 @@ using System.Numerics;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Screen edges, numbered clockwise from the top. Pinned: effects pick edges by number (FromPerimeter maps onto it; Disease's far tentacle chooses by value), so do not reorder.</summary>
+/// <summary>Screen edges numbered clockwise from the top. Values are pinned (effects pick edges by number; FromPerimeter maps onto it).</summary>
 public enum ScreenEdge : byte
 {
     Top = 0,
@@ -11,18 +11,10 @@ public enum ScreenEdge : byte
     Left = 3,
 }
 
-/// <summary>
-/// Geometry for effects whose strands enter from, and are anchored to, the edges of the screen.
-/// Shared so every such effect (tendrils, chains, a future rope) agrees on what "an anchor on the
-/// left edge" and "inward" mean.
-/// </summary>
+/// <summary>Geometry for strands anchored to screen edges, so every effect agrees on "anchor" and "inward".</summary>
 public static class ScreenEdges
 {
-    /// <summary>
-    /// A point on <paramref name="edge"/>, <paramref name="along"/> (0..1) of the way along it and
-    /// pushed <paramref name="overhang"/> pixels OUTSIDE the screen, so the strand's base is hidden.
-    /// Top/Bottom run left to right; Right/Left run top to bottom.
-    /// </summary>
+    /// <summary>Point `along` (0..1) an edge, pushed `overhang` px outside the screen. Top/Bottom run left to right; Right/Left top to bottom.</summary>
     public static Vector2 Anchor(Vector2 size, ScreenEdge edge, float along, float overhang) => edge switch
     {
         ScreenEdge.Top    => new Vector2(along * size.X, -overhang),
@@ -40,11 +32,7 @@ public static class ScreenEdges
         _                 => new Vector2(1f, 0f),
     };
 
-    /// <summary>
-    /// Maps a position on the screen's perimeter (0..4, wrapping, clockwise from the top-left
-    /// corner: one unit per edge) to an anchor point, with the same overhang as <see cref="Anchor"/>.
-    /// Handy for "pick two spots on the border at least a quarter turn apart".
-    /// </summary>
+    /// <summary>Maps a perimeter position (0..4, wrapping, clockwise from top-left, one unit per edge) to an anchor with the same overhang as Anchor.</summary>
     public static Vector2 FromPerimeter(Vector2 size, float p, float overhang, out ScreenEdge edge)
     {
         p %= 4f;
@@ -69,12 +57,7 @@ public static class ScreenEdges
         return edge;
     }
 
-    /// <summary>
-    /// Finds where a strand last crosses the screen boundary on its way out, scanning from its far
-    /// end backwards: the point where a chain "disappears off the edge". Returns false if the
-    /// strand never leaves the screen (or never enters it). <paramref name="outward"/> is the unit
-    /// direction of travel at the crossing, pointing out of the screen.
-    /// </summary>
+    /// <summary>Where a strand last crosses the screen boundary leaving it (scanned from the far end); false if it never does.</summary>
     public static bool TryFindExit(StrandPath path, Vector2 size, out Vector2 point, out Vector2 outward)
     {
         point = default;
@@ -101,11 +84,7 @@ public static class ScreenEdges
         return false;
     }
 
-    /// <summary>
-    /// The mirror of <see cref="TryFindExit"/>: finds where a strand first comes ON screen, scanning
-    /// from its start, the point where it appears from behind the edge it is anchored to.
-    /// <paramref name="inward"/> is the unit direction of travel at the crossing, pointing into the screen.
-    /// </summary>
+    /// <summary>Mirror of TryFindExit: where a strand first comes on screen, scanning from its start.</summary>
     public static bool TryFindEntry(StrandPath path, Vector2 size, out Vector2 point, out Vector2 inward)
     {
         point = default;

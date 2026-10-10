@@ -3,16 +3,7 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>
-/// A branching, growing line structure: a fern-like crystal, a lightning bolt, a root or a crack.
-/// Build it once (every point of every polyline "chain" gets an arrival time, so the whole thing is a
-/// fixed timeline), then Draw(age) shows exactly the part that has grown by that age with the newest
-/// chain partly extended. No per-frame simulation and no allocation: it is flat arrays.
-///
-/// The generator here makes fern-style growth (a gently curving stem, side branches that curve back
-/// toward the stem tip, and finer twigs on those), which is what frost on glass looks like. Other
-/// shapes would be other generators writing chains into the same arrays.
-/// </summary>
+/// <summary>Branching growing lines (frost fern, lightning, roots): built once with arrival times, then Draw(age) shows what has grown.</summary>
 internal sealed class Dendrite
 {
     /// <summary>Shape and pace of one fern.</summary>
@@ -32,10 +23,8 @@ internal sealed class Dendrite
     public int Count { get; private set; }
 
     /// <summary>Total line segments across all chains: the number that drives draw cost.</summary>
-    public int Segments { get; private set; }
 
-    // points (x, y, arrival time, strip normal) and per-chain metadata. The normals are worked out once,
-    // when a chain is added; drawing never recomputes the shape of a chain, only how much of it has grown.
+    // Flat arrays: points (x, y, arrival time, strip normal) and per-chain metadata; normals are computed once when a chain is added.
     private float[] _px = new float[4096], _py = new float[4096], _pt = new float[4096];
     private Vector2[] _nm = new Vector2[4096];
     private int _pn;
@@ -47,7 +36,6 @@ internal sealed class Dendrite
     public void Clear(Vector2 bounds)
     {
         Count = 0;
-        Segments = 0;
         _pn = 0;
         _min = new Vector2(-48f, -48f);
         _max = bounds + new Vector2(48f, 48f);
@@ -94,7 +82,6 @@ internal sealed class Dendrite
             _px[_pn] = pts[i].X; _py[_pn] = pts[i].Y; _pt[_pn] = t; _nm[_pn] = nrm[i];
             _pn++;
         }
-        Segments += n - 1;
     }
 
     /// <summary>A single short hair at <paramref name="at"/>; cheap texture for the area between the ferns.</summary>
@@ -106,10 +93,7 @@ internal sealed class Dendrite
         AddChain(p, t0, length / 0.25f, width, 3, phase);
     }
 
-    /// <summary>
-    /// Grows a fern from <paramref name="root"/> heading along <paramref name="angle"/> for
-    /// <paramref name="length"/> pixels, starting at <paramref name="t0"/> seconds.
-    /// </summary>
+    /// <summary>Grows a fern from root heading along angle for length pixels, starting at t0 seconds.</summary>
     public void AddFern(Vector2 root, float angle, float length, float t0, float width, int seed, in FernStyle st)
     {
         int pieces = Math.Clamp(st.StemPieces, 2, MaxChainPoints - 1);
@@ -195,14 +179,7 @@ internal sealed class Dendrite
         }
     }
 
-    /// <summary>
-    /// How the chains are drawn. Colors go through DrawHelpers.WithAlpha, so the user's color override
-    /// applies. Stems and branches get two soft underlays: a darker copy shifted by
-    /// <paramref name="ShadowOffset"/> (pass StudioLighting.ShadowDirection scaled to pixels), which
-    /// reads as the shadow of a raised crystal lit from the same side as everything else in the
-    /// scene, and a wide faint <paramref name="Body"/> that stands for the milky ice around the bright
-    /// core: where many branches overlap it accumulates into frosted glass with fern-shaped edges.
-    /// </summary>
+    /// <summary>Chain drawing (colours go through WithAlpha, so overrides apply): shifted shadow, wide faint Body, bright core.</summary>
     public readonly record struct DrawStyle(
         Palette Core, uint Shadow, Vector2 ShadowOffset, float ShadowAlpha,
         uint Body, float BodyAlpha, float WidthScale, float Alpha, float Time);
@@ -210,14 +187,8 @@ internal sealed class Dendrite
     /// <summary>Static scratch (single-threaded UI draw), so a Dendrite allocates nothing per frame.</summary>
     private static readonly MeshBuilder Mesh = new();
 
-    // Crystal colors for this frame: [generation][shimmer step]. A chain's color only varies with its
-    // generation and a slow shimmer, so the palette lookup and color-override remap are done for
-    // 4 x 17 colors a frame instead of once per chain.
-    /// <summary>
-    /// Deepest generation that gets a shadow underlay (0 = stems, 1 = branches). Branches are most of the
-    /// chains, so dropping them to 0 saves roughly a fifth of the fern geometry, at the cost of the
-    /// branches looking flatter. Body and core layers are unaffected.
-    /// </summary>
+    // Crystal colours for this frame by [generation][shimmer step]: 4 x 17 lookups a frame instead of one per chain.
+    /// <summary>Deepest generation that gets a shadow underlay (0 = stems, 1 = branches); 0 saves about a fifth of the geometry.</summary>
     private const int ShadowMaxGen = 1;
 
     private const int ShimmerSteps = 16;
@@ -327,11 +298,7 @@ internal sealed class Dendrite
         for (int i = 0; i < n; i++) hw[i] = root * (1f - (1f - tipFraction) * (i * inv));
     }
 
-    /// <summary>
-    /// Copies the grown part of chain <paramref name="c"/> (positions and strip normals) into the
-    /// buffers; returns the point count. The still-growing tip is interpolated and borrows the normal
-    /// of the point it is heading for.
-    /// </summary>
+    /// <summary>Copies the grown part of chain c (positions and strip normals) into the buffers; returns the point count.</summary>
     private int Visible(int c, float age, Span<Vector2> buf, Span<Vector2> nrm, out bool growing)
     {
         growing = false;

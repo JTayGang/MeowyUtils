@@ -3,18 +3,7 @@ using RealDebuffs.Effects.Framework;
 
 namespace RealDebuffs.Effects;
 
-/// <summary>
-/// Frost: the screen freezing over. Condensation fogs the glass, then ice nucleates at a few points on
-/// the border and creeps inward as a fractal front, thick and milky behind it, with fern crystals
-/// growing along it. Everything that sits on the ice (crystals, glints, mist) is placed from
-/// the same growth field, so it appears exactly where and when the front reaches it.
-///
-/// A wind blows the whole time: snow streaks across the screen in gusts and drifts in lulls, and the mist
-/// is carried along with it, so the freeze reads as cold and windy as well as frosted.
-///
-/// Layers, bottom to top: frost cover (haze + ferns, one region material), intro flash, crystals,
-/// mist, glints, blowing snow.
-/// </summary>
+/// <summary>Frost: condensation, then ice creeping in as a fractal front; ferns, glints and mist are placed from one growth field; wind-blown snow.</summary>
 public sealed class FrostEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
 {
     public DebuffKind Kind => DebuffKind.Frost;
@@ -49,15 +38,14 @@ public sealed class FrostEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
     };
 
     // ---- palette ----
-    private static readonly uint Flash = DrawHelpers.ToU32(0.70f, 0.86f, 1.00f, 1f);
+    private static readonly uint Flash = DrawHelpers.Pack(0.70f, 0.86f, 1.00f);
 
     // ---- state ----
     private readonly CastTracker _cast = new();
     private readonly FrostField _field = new();
     private Vector2 _builtFor;
 
-    // The mist is the only emitter-driven particle. Spawn callbacks are built once (they read
-    // _field/_screen/_px/_windDir), so nothing is allocated per frame.
+    // Mist is the only emitter-driven particle; spawn callbacks are built once, so nothing allocates per frame.
     private readonly ParticleEmitter _mist = new(maxParticles: 18, seedSalt: 0xF05701);
     private readonly Func<int, Vector2> _mistPos, _mistVel;
 
@@ -186,9 +174,7 @@ public sealed class FrostEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
             });
         }
 
-        // ---- the wind, and the snow it carries ----
-        // The storm builds as the glass freezes, and drops away as it thaws. A gust drives the flakes into
-        // streaks and brings more of them out; a lull leaves them drifting.
+        // ---- wind and snow: builds as the glass freezes, drops away as it thaws; gusts streak the flakes ----
         float gust = WindField.Gust(age, _gustSeed);
         float build = Math.Clamp((age - 0.4f) / 3.5f, 0f, 1f);
         float density = build * MathF.Pow(thaw, 0.6f) * (0.70f + 0.30f * gust);

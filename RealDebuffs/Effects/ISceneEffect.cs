@@ -27,6 +27,16 @@ public interface ISceneEffect
     void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride);
 }
 
+/// <summary>
+/// Optional: an effect that reacts when the chat blocker swallows an outgoing message, so the player can see why
+/// nothing was sent. Only an effect that is currently on screen is told.
+/// </summary>
+public interface IReactsToBlockedChat
+{
+    /// <summary>One or more messages were swallowed since the last frame. <paramref name="time"/> is the same clock Emit gets.</summary>
+    void OnChatBlocked(float time);
+}
+
 /// <summary>Detects a fresh application: a gap over a second between Emit calls means the status was re-applied; Start is that moment.</summary>
 public sealed class CastTracker
 {

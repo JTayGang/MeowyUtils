@@ -46,6 +46,7 @@ public sealed class EffectManager
     private readonly StatusCatalog _catalog;
     private readonly Configuration _config;
     private readonly ChatBlocker _chatBlocker;
+    private int _seenBlocked;
     private readonly CustomStatusWatcher _customStatuses;
     private readonly IPluginLog _log;
 
@@ -127,6 +128,11 @@ public sealed class EffectManager
 
         _chatBlocker.SetSilenced(_config.SilenceBlocksChat && _activeScratch.Contains(DebuffKind.Silence));
 
+        // Messages swallowed since last frame. Read even when nothing is listening, so a block is never replayed later.
+        int blockedNow = _chatBlocker.BlockedCount;
+        bool chatBlocked = blockedNow != _seenBlocked;
+        _seenBlocked = blockedNow;
+
         var screenSize = ImGui.GetIO().DisplaySize;
         if (screenSize.X <= 0 || screenSize.Y <= 0) return;
 
@@ -154,12 +160,15 @@ public sealed class EffectManager
 
             try
             {
+                if (chatBlocked && effect is IReactsToBlockedChat reactsToChat)
+                    reactsToChat.OnChatBlocked(time);
+
                 effect.Emit(_scene, screenSize, current * strength, time, dt, color);
             }
             catch (Exception ex)
             {
                 _crashedKinds.Add(effect.Kind);
-                _log.Error(ex, $"RealDebuffs: {effect.Kind} effect threw during Emit - skipping it for the rest of this session.");
+                _log.Error(ex, $"RealDebuffs: {effect.Kind} effect threw during Emit or OnChatBlocked - skipping it for the rest of this session.");
             }
         }
 

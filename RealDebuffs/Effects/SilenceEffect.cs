@@ -3,8 +3,8 @@ using RealDebuffs.Effects.Framework;
 
 namespace RealDebuffs.Effects;
 
-/// <summary>Silence: a curse seal stamped over the screen. Five layers of rings, runes and two turning triangles hang at different depths and turn against each other as the whole stack slowly precesses; a shock swallows the sound, the layers slam down from the lens, and a seal burns on with light running round it and the odd hush rippling out. The outer binding ring is the hero: made of chains, rope or tentacles it keeps the glow.</summary>
-public sealed class SilenceEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
+/// <summary>Silence: a curse seal stamped over the screen. Five layers of rings, runes and two turning triangles hang at different depths and turn against each other as the whole stack slowly precesses; a shock swallows the sound, the layers slam down from the lens, and a seal burns on with light running round it and the odd hush rippling out. The outer binding ring is the hero: made of chains, rope or tentacles it keeps the glow. When the chat blocker swallows a message the seal rejects it (see OnChatBlocked).</summary>
+public sealed class SilenceEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots, IReactsToBlockedChat
 {
     public DebuffKind Kind => DebuffKind.Silence;
     public string DisplayName => "Silence";
@@ -84,6 +84,15 @@ public sealed class SilenceEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
     private const float HushSecondsLong = 2.4f;
     private const float HushGain = 0.55f;
 
+    // ---- a message swallowed by the chat blocker: the seal jerks side to side, flares, and sends a shock out through every ring ----
+    private const float DenySeconds = 1.0f;
+    private const float DenyShake = 14f;            // px at 1080p the whole seal is thrown sideways, at first
+    private const float DenyShakeRate = 42f;        // rad/s: about two and a half shakes before it settles
+    private const float DenyShakeDecay = 0.13f;     // seconds for the shake to die to 1/e
+    private const float DenyTilt = 0.08f;           // extra lean, decaying over DenyFlareDecay
+    private const float DenyFlareDecay = 0.30f;
+    private const float DenyGain = 0.9f;
+
     // ---- runes and motes ----
     private const float RuneSize = 27f;             // half-height in px at 1080p
     private const int   MaxFloating = 14;
@@ -95,6 +104,8 @@ public sealed class SilenceEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
     private static readonly uint Veil = DrawHelpers.Pack(0.58f, 0.13f, 0.82f);
 
     // ---- state ----
+    private const float NeverDenied = -1000f;
+
     private enum Layer { Far, Hero, Seal, Triangles, Nodes }
 
     private const int RingSegments = 128, HeroSegments = 144, NodeSegments = 20, ShockSegments = 96;
@@ -126,6 +137,7 @@ public sealed class SilenceEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
     private readonly CastTracker _cast = new();
     private int _seed;
     private float _azimuth, _azimuthDir, _hushEvery, _nextRune, _lastAlpha, _peakAlpha, _rampLead;
+    private float _deniedAt = NeverDenied;
     private bool _leaving, _stamped;
     private int _runeSpawns;
 
@@ -160,6 +172,9 @@ public sealed class SilenceEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         };
     }
 
+    /// <summary>The chat blocker has just swallowed a message: the seal rejects it. Called by EffectManager, once per frame at most, only while this effect is on screen.</summary>
+    public void OnChatBlocked(float time) => _deniedAt = time;
+
     public void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride)
     {
         if (screenSize.X < 64f || screenSize.Y < 64f) return;
@@ -189,17 +204,23 @@ public sealed class SilenceEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
             alpha *= MathF.Min(3f, toFull);
         }
 
+        // A swallowed message: the shake is a damped sine (a head-shake "no"), the flare a plain decay. Not while the curse is lifting.
+        float sinceDenied = time - _deniedAt;
+        bool denied = !_leaving && sinceDenied >= 0f && sinceDenied < DenySeconds;
+        float denyFlare = denied ? MathF.Exp(-sinceDenied / DenyFlareDecay) : 0f;
+        float shake = denied ? MathF.Sin(sinceDenied * DenyShakeRate) * MathF.Exp(-sinceDenied / DenyShakeDecay) * DenyShake * _px : 0f;
+
         float tilt = BaseTilt + TiltSway * MathF.Sin(age * 0.23f + 1.3f)
-                   + LurchTilt * MathF.Exp(-age / LurchSeconds) + 0.10f * leave;
+                   + LurchTilt * MathF.Exp(-age / LurchSeconds) + 0.10f * leave + DenyTilt * denyFlare;
         float azimuth = _azimuth + _azimuthDir * PrecessionRate * age;
-        var cam = new LayerCamera(_center, CameraDistance * _px, tilt, azimuth);
+        var cam = new LayerCamera(_center + new Vector2(shake, 0f), CameraDistance * _px, tilt, azimuth);
 
         float breath = 0.90f + 0.10f * MathF.Sin(age * 1.9f + 0.7f);
 
-        Span<Ripple> ripples = stackalloc Ripple[3];
-        int rippleCount = BuildRipples(ripples, age, shortSide);
+        Span<Ripple> ripples = stackalloc Ripple[4];
+        int rippleCount = BuildRipples(ripples, age, denied ? sinceDenied : -1f, shortSide);
 
-        EmitAtmosphere(scene, screenSize, shortSide, alpha, gate, age, breath, colorOverride);
+        EmitAtmosphere(scene, screenSize, shortSide, alpha, gate, age, breath, denyFlare, colorOverride);
         EmitRings(scene, in cam, shortSide, alpha, age, breath, leave, ripples[..rippleCount], colorOverride);
         EmitFarRunes(scene, in cam, shortSide, alpha, age, breath, leave, ripples[..rippleCount], colorOverride);
         EmitFloatingRunes(scene, in cam, alpha, age, colorOverride);
@@ -213,6 +234,7 @@ public sealed class SilenceEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
     {
         _seed = seed;
         _rampLead = dt;
+        _deniedAt = NeverDenied;
         _azimuth = DrawHelpers.Hash01(seed + 1) * MathF.Tau;
         _azimuthDir = DrawHelpers.Hash01(seed + 2) < 0.5f ? -1f : 1f;
         _hushEvery = DrawHelpers.HashRange(seed + 3, 9f, 12f);
@@ -244,8 +266,8 @@ public sealed class SilenceEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         }
     }
 
-    /// <summary>The shocks running through the stack, strongest first-ish: sound being swallowed (inward), the seal locking (outward), and the occasional hush once it has settled.</summary>
-    private int BuildRipples(Span<Ripple> into, float age, float shortSide)
+    /// <summary>The shocks running through the stack: sound being swallowed (inward), the seal locking (outward), a message bouncing off it, and the occasional hush once it has settled.</summary>
+    private int BuildRipples(Span<Ripple> into, float age, float sinceDenied, float shortSide)
     {
         int n = 0;
 
@@ -273,7 +295,19 @@ public sealed class SilenceEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
             };
         }
 
-        // 3. Settled: now and then the curse reasserts itself, softly.
+        // 3. A message bounced off the seal: a sharp shock from the middle, firmer than the hush (sinceDenied is negative when there is none).
+        if (sinceDenied >= 0f && n < into.Length)
+        {
+            float u = sinceDenied / DenySeconds;
+            into[n++] = new Ripple
+            {
+                Front = shortSide * (0.16f + 0.95f * DrawHelpers.EaseOutCubic(u)),
+                Width = shortSide * 0.055f,
+                Gain = DenyGain * (1f - DrawHelpers.Smooth(u)),
+            };
+        }
+
+        // 4. Settled: now and then the curse reasserts itself, softly.
         float th = age - FirstHush;
         if (th > 0f && n < into.Length)
         {
@@ -321,15 +355,15 @@ public sealed class SilenceEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
     // ---- atmosphere ----
 
     private static void EmitAtmosphere(EffectScene scene, Vector2 size, float shortSide, float alpha, float castGate, float age,
-                                       float breath, Vector4? colorOverride)
+                                       float breath, float denyFlare, Vector4? colorOverride)
     {
         float castIn = DrawHelpers.Smooth(age / 0.45f);
 
-        scene.RequestVignette(CurseColor.Vignette, 0.17f, alpha * 0.62f * castIn * breath, priority: 15, colorOverride);
+        scene.RequestVignette(CurseColor.Vignette, 0.17f + 0.04f * denyFlare, alpha * 0.62f * castIn * breath, priority: 15, colorOverride);
 
         // Light from the seal spills onto the screen's edges.
         float depth = shortSide * 0.13f;
-        float a = 0.20f * alpha * castIn * breath;
+        float a = 0.20f * alpha * castIn * breath * (1f + 1.2f * denyFlare);
         scene.AddRegion(new RegionPrimitive { Min = Vector2.Zero, Max = new Vector2(size.X, depth), Tint = Veil, Alpha = a, Top = true, ColorOverride = colorOverride });
         scene.AddRegion(new RegionPrimitive { Min = new Vector2(0f, size.Y - depth), Max = size, Tint = Veil, Alpha = a, Bottom = true, ColorOverride = colorOverride });
         scene.AddRegion(new RegionPrimitive { Min = Vector2.Zero, Max = new Vector2(depth, size.Y), Tint = Veil, Alpha = a, Left = true, ColorOverride = colorOverride });

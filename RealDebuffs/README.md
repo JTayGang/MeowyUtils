@@ -174,6 +174,17 @@ outgoing messages while you're silenced. The signature can stop resolving after 
 patch; it fails safe by logging once and doing nothing, so the visual effect is unaffected
 either way.
 
+Which statuses count as "silenced" is decided the same way as for the visuals: an effect
+declares them in `TriggerStatuses`, so the real Silence debuff blocks chat because
+`SilenceEffect` names it (a custom Moodles/Loci rule or tooltip keyword mapped to Silence
+works too). Blocking does not depend on the Silence visual being switched on, and the
+debug "force effect" button never blocks your chat.
+
+The blocker keeps a lock-free count of swallowed messages. `EffectManager` polls it each
+frame and tells any live effect that implements `IReactsToBlockedChat`; Silence uses that
+to reject the message, with the seal jerking sideways and a shock running out through
+every ring, so the player can see why nothing was sent.
+
 ---
 
 ## Building

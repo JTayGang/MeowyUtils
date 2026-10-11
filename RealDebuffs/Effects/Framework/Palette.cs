@@ -123,3 +123,27 @@ internal static class IceColor
         (0.55f, 0.84f, 0.93f, 1.00f),
         (1.00f, 1.00f, 1.00f, 1.00f));
 }
+
+/// <summary>Curse magic: plum shadow through violet and orchid to hot pink and a pale pink-white core. The counterpart of FireColor and IceColor for any hex, seal or curse effect.</summary>
+internal static class CurseColor
+{
+    /// <summary>Light, dim to hot: 0 = deep violet, 0.55 = orchid, 0.8 = hot pink, 1 = pale pink-white.</summary>
+    public static readonly Palette Glow = new(
+        (0.00f, 0.20f, 0.030f, 0.38f),
+        (0.30f, 0.50f, 0.100f, 0.78f),
+        (0.55f, 0.82f, 0.240f, 0.92f),
+        (0.78f, 1.00f, 0.480f, 0.86f),
+        (1.00f, 1.00f, 0.880f, 0.97f));
+
+    /// <summary>The unlit side of a curse: near-black plum to dusky violet. For smoke, veils and the shade beneath glowing things.</summary>
+    public static readonly Palette Murk = new(
+        (0.00f, 0.045f, 0.012f, 0.075f),
+        (0.50f, 0.190f, 0.050f, 0.300f),
+        (1.00f, 0.420f, 0.130f, 0.560f));
+
+    /// <summary>Edge tint for the screen's vignette: very dark plum.</summary>
+    public static readonly uint Vignette = DrawHelpers.Pack(0.030f, 0.008f, 0.052f);
+
+    /// <summary>The white-hot flash a curse lands with (pink-tinged, so it stays chromatic under a colour override).</summary>
+    public static readonly uint Flash = DrawHelpers.Pack(0.95f, 0.62f, 1.00f);
+}

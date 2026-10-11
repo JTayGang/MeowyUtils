@@ -150,6 +150,77 @@ internal sealed class MeshBuilder
         _in = w;
     }
 
+    /// <summary>Ribbon with a colour (and so an alpha) per point, for light that varies along a strand: pulses, dashes, fades. The feather takes each point's own RGB at zero alpha.</summary>
+    public void Ribbon(ReadOnlySpan<Vector2> pts, ReadOnlySpan<Vector2> normals, ReadOnlySpan<float> halfWidth, ReadOnlySpan<uint> colors, float feather)
+    {
+        int n = pts.Length;
+        if (n < 2 || normals.Length < n || halfWidth.Length < n || colors.Length < n) return;
+
+        Room(n * 4, (n - 1) * 18);
+        int first = _vn, v = _vn;
+        Vector2[] P = _pos; uint[] C = _col;
+        for (int k = 0; k < n; k++)
+        {
+            Vector2 p = pts[k], nm = normals[k];
+            float hw = MathF.Max(0f, halfWidth[k]);
+            uint color = colors[k];
+            uint edge = color & 0x00FFFFFFu;
+            P[v] = p - nm * (hw + feather); C[v] = edge;  v++;
+            P[v] = p - nm * hw;             C[v] = color; v++;
+            P[v] = p + nm * hw;             C[v] = color; v++;
+            P[v] = p + nm * (hw + feather); C[v] = edge;  v++;
+        }
+        _vn = v;
+
+        ushort[] I = _idx; int w = _in;
+        for (int k = 0; k + 1 < n; k++)
+        {
+            // A fully clear span draws nothing: dashes cost no fill.
+            if (((colors[k] | colors[k + 1]) >> 24) == 0) continue;
+            int a = first + k * 4, b = a + 4;
+            for (int q = 0; q < 3; q++)
+            {
+                I[w++] = (ushort)(a + q); I[w++] = (ushort)(a + q + 1); I[w++] = (ushort)(b + q + 1);
+                I[w++] = (ushort)(a + q); I[w++] = (ushort)(b + q + 1); I[w++] = (ushort)(b + q);
+            }
+        }
+        _in = w;
+    }
+
+    /// <summary>Tent with a colour and a reach per point: a soft underlay whose strength follows the strand's own light.</summary>
+    public void Tent(ReadOnlySpan<Vector2> pts, ReadOnlySpan<Vector2> normals, ReadOnlySpan<float> reach, ReadOnlySpan<uint> colors)
+    {
+        int n = pts.Length;
+        if (n < 2 || normals.Length < n || reach.Length < n || colors.Length < n) return;
+
+        Room(n * 3, (n - 1) * 12);
+        int first = _vn, v = _vn;
+        Vector2[] P = _pos; uint[] C = _col;
+        for (int k = 0; k < n; k++)
+        {
+            Vector2 p = pts[k];
+            Vector2 off = normals[k] * MathF.Max(0f, reach[k]);
+            uint color = colors[k];
+            uint edge = color & 0x00FFFFFFu;
+            P[v] = p - off; C[v] = edge;  v++;
+            P[v] = p;       C[v] = color; v++;
+            P[v] = p + off; C[v] = edge;  v++;
+        }
+        _vn = v;
+
+        ushort[] I = _idx; int w = _in;
+        for (int k = 0; k + 1 < n; k++)
+        {
+            if (((colors[k] | colors[k + 1]) >> 24) == 0) continue;
+            int a = first + k * 3, b = a + 3;
+            I[w++] = (ushort)a;       I[w++] = (ushort)(a + 1); I[w++] = (ushort)(b + 1);
+            I[w++] = (ushort)a;       I[w++] = (ushort)(b + 1); I[w++] = (ushort)b;
+            I[w++] = (ushort)(a + 1); I[w++] = (ushort)(a + 2); I[w++] = (ushort)(b + 2);
+            I[w++] = (ushort)(a + 1); I[w++] = (ushort)(b + 2); I[w++] = (ushort)(b + 1);
+        }
+        _in = w;
+    }
+
     /// <summary>A single tapering spike from root (soft cross-section rootReach px either side) to a point tip: four vertices. For twigs, needles, thorns.</summary>
     public void Sliver(Vector2 root, Vector2 tip, float rootReach, uint rootColor, uint tipColor)
     {

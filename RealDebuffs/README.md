@@ -106,6 +106,19 @@ material draws. `ParticleGoop` draws them as lit geometry, shaded by a `LiquidSp
 liquid is a colour/gloss/translucency preset plus a few lines naming it. Sites hang off the
 strand's real surface, because a material can override `IStrokeMaterial.RadiusAt`.
 
+**Layered light (2.5D)** — Silence's seal is built from reusable parts so the next curse,
+charm or hex doesn't start from scratch. `LayerCamera` stacks flat layers at different
+heights behind one tilted perspective camera; slowly precessing the tilt makes the layers
+slide over one another and the near side of every ring grow, which is all the depth the
+screen needs. `SigilGeometry` fills `StrandPath`s with rings and polygons on those layers,
+and `RuneGlyphs` is a small hand-drawn rune alphabet. `stroke.sigil` and `stroke.glow` draw
+lines of light (honouring `Reveal`, `Dash`, `Depth` and `Agitation`, with pulses running
+along them); `particle.rune` draws a glyph (it reads `ParticlePrimitive.Rotation`);
+`particle.mote` draws soft arcane light, going out of focus when large. `CurseColor` is the
+palette. A closed ring that may be swapped for a chain should set its `WidthHint` from its
+own length, so the link count stays fixed however the ring zooms or tilts (see
+`SilenceEffect`).
+
 ### The "made of X" and color override system
 
 Status descriptions go through `TooltipKeywordParser`, which:

@@ -3,7 +3,7 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>A soft, irregular radial puff with no rim. Smoke, mist (also fog) and dust are the same mesh with a different <see cref="Look"/>.</summary>
+/// <summary>A soft, irregular radial puff with no rim. Smoke, mist (also fog), dust and miasma are the same mesh with a different <see cref="Look"/>.</summary>
 public sealed class ParticlePuff : IParticleMaterial
 {
     /// <summary>Colour runs Warm to Cool over CoolSpan (0 = stays Warm); radius = Size*(GrowFrom + GrowBy*smooth(age)); FadeIn/FadeOutAt envelope (FadeOutAt 1 = none); Thin fades as it grows; Highlight adds a lit blob.</summary>
@@ -47,7 +47,21 @@ public sealed class ParticlePuff : IParticleMaterial
             PrimaryDirection: new Vector2(0f, 1f),
             Gravity: new Vector2(0f, 22f)));
 
-    public static readonly ParticlePuff[] All = { Smoke, Mist, Dust };
+    public static readonly ParticlePuff Miasma = new("particle.miasma", new[] { "miasma", "murk" },
+        new Look(Warm: DrawHelpers.Pack(0.42f, 0.13f, 0.56f), Cool: DrawHelpers.Pack(0.07f, 0.015f, 0.12f), CoolSpan: 0.85f,
+                 GrowFrom: 0.60f, GrowBy: 0.90f, FadeIn: 0.25f, FadeOutAt: 0.55f,
+                 Alpha: 0.30f, Squash: 0.82f, Irregular: 0.55f, MinSize: 2f,
+                 Highlight: DrawHelpers.Pack(0.85f, 0.30f, 0.80f), Thin: 0.35f),
+        new StrokeEmission(Role: PrimitiveRole.Miasma,
+            DensityPer100px: 0.4f,
+            SpeedMin: 5f, SpeedMax: 14f,
+            LifespanMin: 2.4f, LifespanMax: 4.2f,
+            SizeMin: 14f, SizeMax: 28f,
+            SpreadRadians: 1.4f,
+            BiasVelocity: new Vector2(0f, -8f),
+            PrimaryDirection: new Vector2(0f, -1f)));
+
+    public static readonly ParticlePuff[] All = { Smoke, Mist, Dust, Miasma };
 
     private const int Segs = 12;
 

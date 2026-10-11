@@ -13,7 +13,9 @@ public sealed class EffectManager
 {
     private readonly ISceneEffect[] _order;
 
-    private const float FadeInPerSecond = 1f / 0.35f;
+    /// <summary>How long an effect takes to fade fully in from nothing. Effects that stage an intro can read it to know how much of the cast the fade will hide.</summary>
+    internal const float FadeInSeconds = 0.35f;
+    private const float FadeInPerSecond = 1f / FadeInSeconds;
     private const float FadeOutPerSecond = 1f / 0.6f;
 
     /// <summary>Effects that have thrown this session; skipped until reload. Config is left untouched.</summary>

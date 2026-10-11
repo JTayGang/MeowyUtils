@@ -20,6 +20,11 @@ public enum PrimitiveRole
     Glint = 23,
     Mist = 24,
     Goop = 25,
+    Rune = 26,
+    Inscription = 27,
+    Halo = 28,
+    Mote = 29,
+    Miasma = 30,
 }
 
 public struct StrokePrimitive
@@ -55,6 +60,9 @@ public struct StrokePrimitive
 
     /// <summary>Rotation about the strand's own axis at its middle, in radians (zero at anchored ends); materials with a lay (rope, braid) slide it.</summary>
     public float Twist;
+
+    /// <summary>0 = a solid line; above 0, the line is broken into dashes this many px (at 1080p) from the start of one to the start of the next. Light-drawn materials honour it; physical ones (chain, rope) ignore it.</summary>
+    public float Dash;
 }
 
 public struct ParticlePrimitive
@@ -79,6 +87,9 @@ public struct ParticlePrimitive
 
     /// <summary>Position with the horizontal sway applied: where the particle is actually drawn.</summary>
     public readonly Vector2 DrawPos => new(Position.X + Sway, Position.Y);
+
+    /// <summary>Which way the particle's own "up" points, in radians clockwise from screen-up. Only things with an up (glyphs, shards) read it; zero is neutral.</summary>
+    public float Rotation;
 
     // ---- Optional thread. Zero is neutral, so a particle that never sets these draws as it always did. ----
 

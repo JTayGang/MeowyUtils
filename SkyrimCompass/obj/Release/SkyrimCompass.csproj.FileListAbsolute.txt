@@ -22,3 +22,5 @@ C:\Users\Justi\Downloads\MeowyUtils-main\MeowyUtils-main\SkyrimCompass\obj\Relea
 C:\Users\Justi\Downloads\MeowyUtils-main\MeowyUtils-main\SkyrimCompass\obj\Release\SkyrimCompass.AssemblyInfo.cs
 C:\Users\Justi\Downloads\MeowyUtils-main\MeowyUtils-main\SkyrimCompass\obj\Release\SkyrimCompass.csproj.CoreCompileInputs.cache
 C:\Users\Justi\Downloads\MeowyUtils-main\MeowyUtils-main\SkyrimCompass\obj\Release\SkyrimCompass.dll
+C:\Users\Justi\Downloads\SkyrimCompass\bin\Release\MemoryPack.Core.dll
+C:\Users\Justi\Downloads\SkyrimCompass\obj\Release\SkyrimCo.2AF4CFEF.Up2Date

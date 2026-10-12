@@ -16,4 +16,14 @@
     -->
     <Version>2.0.2.1</Version>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Decodes the base64 Moodles/Loci manager payloads (same MemoryPack version both plugins pin) to read
+      each status's absolute ExpiresAt for target-bar timers. See StatusExpiry.cs.
+    -->
+    <PackageReference Include="MemoryPack" Version="1.21.4" />
+    <PackageReference Include="MemoryPack.Core" Version="1.21.4" />
+    <PackageReference Include="MemoryPack.Generator" Version="1.21.4" />
+  </ItemGroup>
 </Project>

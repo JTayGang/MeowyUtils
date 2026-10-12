@@ -1,11 +1,14 @@
 {
   "version": 2,
-  "dgSpecHash": "Bg9JVu6sQEE=",
+  "dgSpecHash": "K9fGJZHIkGo=",
   "success": true,
   "projectFilePath": "C:\\Users\\Justi\\Downloads\\SkyrimCompass\\SkyrimCompass.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\Justi\\.nuget\\packages\\dalamudpackager\\15.0.0\\dalamudpackager.15.0.0.nupkg.sha512",
-    "C:\\Users\\Justi\\.nuget\\packages\\dotnet.reproduciblebuilds\\1.2.39\\dotnet.reproduciblebuilds.1.2.39.nupkg.sha512"
+    "C:\\Users\\Justi\\.nuget\\packages\\dotnet.reproduciblebuilds\\1.2.39\\dotnet.reproduciblebuilds.1.2.39.nupkg.sha512",
+    "C:\\Users\\Justi\\.nuget\\packages\\memorypack\\1.21.4\\memorypack.1.21.4.nupkg.sha512",
+    "C:\\Users\\Justi\\.nuget\\packages\\memorypack.core\\1.21.4\\memorypack.core.1.21.4.nupkg.sha512",
+    "C:\\Users\\Justi\\.nuget\\packages\\memorypack.generator\\1.21.4\\memorypack.generator.1.21.4.nupkg.sha512"
   ],
   "logs": []
 }

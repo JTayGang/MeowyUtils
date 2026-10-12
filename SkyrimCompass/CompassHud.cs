@@ -53,6 +53,8 @@ public sealed class CompassHud : IDisposable
     private readonly ICallGateSubscriber<nint, List<LociStatusInfo>> _lociGet;
     private readonly ICallGateSubscriber<int> _moodlesVer;
     private readonly ICallGateSubscriber<(int, int)> _lociVer;
+    private readonly ICallGateSubscriber<nint, string?> _moodlesGetStr;       // Moodles.GetStatusManagerByPtrV2 -> base64 (null if not rendered)
+    private readonly ICallGateSubscriber<nint, (int, string?)> _lociGetStr;   // Loci.GetManagerByPtr -> (LociApiEc, base64); ec 0 == Success
 
     private PluginIpcState _moodlesIpc = new("Moodles", 4, PluginIpcKind.Moodles);
     private PluginIpcState _lociIpc = new("Loci", 0, PluginIpcKind.Loci);
@@ -78,11 +80,10 @@ public sealed class CompassHud : IDisposable
     private Vector2 _tbLabelSize;
 
     private readonly List<(float Remaining, int Icon, string Name, string Desc, System.Guid Guid, int Stacks, int MaxStacks, bool Dispellable)> _statusBuf = new();
-    private readonly Dictionary<System.Guid, (float FirstSeen, long TotalMs)> _moodleTrack = new();
-    private readonly Dictionary<System.Guid, (float FirstSeen, long TotalMs)> _lociTrack = new();
-    private readonly HashSet<System.Guid> _presentScratch = new();
-    private readonly List<System.Guid> _staleGuids = new();
-    private float _nextPruneAt;
+    // Absolute ExpiresAt per status GUID for the current target (see StatusExpiry.cs). The tuple IPC's
+    // "ExpireTicks" is only the status's total configured duration, so it can't tell us time remaining.
+    private readonly ExpiryFeed _moodlesExpiry;
+    private readonly ExpiryFeed _lociExpiry;
 
     private List<MoodlesStatusInfo>? _cachedMoodles;
     private nint _cachedMoodlesTarget = IntPtr.Zero;
@@ -194,6 +195,10 @@ public sealed class CompassHud : IDisposable
         _lociGet = pi.GetIpcSubscriber<nint, List<LociStatusInfo>>("Loci.GetManagerInfoByPtr");
         _moodlesVer = pi.GetIpcSubscriber<int>("Moodles.Version");
         _lociVer = pi.GetIpcSubscriber<(int,int)>("Loci.ApiVersion");
+        _moodlesGetStr = pi.GetIpcSubscriber<nint, string?>("Moodles.GetStatusManagerByPtrV2");
+        _lociGetStr = pi.GetIpcSubscriber<nint, (int, string?)>("Loci.GetManagerByPtr");
+        _moodlesExpiry = new ExpiryFeed("Moodles", a => _moodlesGetStr.InvokeFunc(a), StatusExpiryCodec.TryDecodeMoodles, m => _log.Warning(m));
+        _lociExpiry = new ExpiryFeed("Loci", a => { var (ec, str) = _lociGetStr.InvokeFunc(a); return ec == 0 ? str : null; }, StatusExpiryCodec.TryDecodeLoci, m => _log.Warning(m));
         _gathPtSheet = dm.GetExcelSheet<GatheringPoint>();
         _gathPtBaseSheet = dm.GetExcelSheet<GatheringPointBase>();
         _gathTypeSheet = dm.GetExcelSheet<GatheringType>();
@@ -880,7 +885,6 @@ public sealed class CompassHud : IDisposable
         // dot coloring elsewhere, so this stays consistent with "enemy" everywhere else.
         bool targetIsEnemy = ch.ObjectKind==ObjectKind.BattleNpc && ch is IBattleNpc bnpc
             && bnpc.BattleNpcKind==BattleNpcSubKind.Combatant;
-        PruneTrackers(now);
         _statusBuf.Clear();
 
         // vanilla statuses
@@ -899,12 +903,12 @@ public sealed class CompassHud : IDisposable
         {
             if (_statusBuf.Count<max && IsPluginActive(_moodlesIpc,now) && IsVerOk(_moodlesIpc,now))
                 AppendPluginStatuses(ch.Address,max,now,_moodlesGet,ref _cachedMoodles,
-                    ref _cachedMoodlesTarget,ref _cachedMoodlesAt,_moodleTrack,s=>s.GUID,s=>s.IconID,
+                    ref _cachedMoodlesTarget,ref _cachedMoodlesAt,_moodlesExpiry,s=>s.GUID,s=>s.IconID,
                     s=>(s.Title,s.Description),s=>s.ExpireTicks,s=>s.Stacks,
                     s=>(s.Modifiers & PluginStatusCanDispelBit)!=0);
             if (_statusBuf.Count<max && IsPluginActive(_lociIpc,now) && IsVerOk(_lociIpc,now))
                 AppendPluginStatuses(ch.Address,max,now,_lociGet,ref _cachedLoci,
-                    ref _cachedLociTarget,ref _cachedLociAt,_lociTrack,s=>s.GUID,s=>(int)s.IconID,
+                    ref _cachedLociTarget,ref _cachedLociAt,_lociExpiry,s=>s.GUID,s=>(int)s.IconID,
                     s=>(s.Title,s.Description),s=>s.ExpireTicks,s=>s.Stacks,
                     s=>(s.Modifiers & PluginStatusCanDispelBit)!=0);
         }
@@ -1030,7 +1034,7 @@ public sealed class CompassHud : IDisposable
     private void AppendPluginStatuses<T>(nint addr,int max,float now,
         ICallGateSubscriber<nint,List<T>> getter,
         ref List<T>? cache, ref nint cacheTarget, ref float cacheAt,
-        Dictionary<System.Guid,(float FirstSeen,long TotalMs)> tracker,
+        ExpiryFeed expiry,
         Func<T,System.Guid> guidSel, Func<T,int> iconSel,
         Func<T,(string Name,string Desc)> textSel,
         Func<T,long> expireSel, Func<T,int> stacksSel, Func<T,bool> dispellableSel)
@@ -1039,15 +1043,8 @@ public sealed class CompassHud : IDisposable
         {
             cacheTarget=addr; cacheAt=now;
             try { cache=getter.InvokeFunc(addr); } catch { cache=null; }
-            if (cache!=null && tracker.Count>0)
-            {
-                _presentScratch.Clear();
-                foreach (var s in cache) _presentScratch.Add(guidSel(s));
-                _staleGuids.Clear();
-                foreach (var g in tracker.Keys)
-                    if (!_presentScratch.Contains(g)) _staleGuids.Add(g);
-                foreach (var g in _staleGuids) tracker.Remove(g);
-            }
+            // Same tick, same target: pull the absolute ExpiresAt values (only worth the call if there's something to time).
+            if (cache!=null && cache.Count>0) expiry.Refresh(addr); else expiry.Clear();
         }
         if (cache==null) return;
         foreach (var s in cache)
@@ -1057,36 +1054,22 @@ public sealed class CompassHud : IDisposable
             int icon=iconSel(s);
             if (icon<=0) continue;
             if (GuidInBuffer(g)) continue;
+            // Tuple ExpireTicks is the TOTAL duration (-1 == no expiry), not time left, so the timer comes from
+            // ExpiresAt. Unknown (payload unavailable/undecodable) shows the icon with no timer rather than a wrong one.
+            float rem=0f;
+            if (expireSel(s)>=0)
+            {
+                var state=expiry.Get(g,out rem);
+                if (state==ExpiryState.Expired) continue; // Moodles/Loci hide these on their own target bars too
+                if (state!=ExpiryState.Active) rem=0f;
+            }
             var (name,desc)=textSel(s);
-            long expire=expireSel(s);
-            float rem=EstimateRemaining(tracker,g,expire,now);
             _statusBuf.Add((rem,icon,name,desc,g,stacksSel(s),0,dispellableSel(s)));
         }
     }
 
     private bool GuidInBuffer(System.Guid g)
     { for (int i=0;i<_statusBuf.Count;i++) if (_statusBuf[i].Guid==g) return true; return false; }
-
-    private static float EstimateRemaining(Dictionary<System.Guid,(float FirstSeen,long TotalMs)> tracker,
-        System.Guid g, long expireMs, float now)
-    {
-        if (expireMs<0) return 0f;
-        if (!tracker.TryGetValue(g, out var tracked) || tracked.TotalMs != expireMs)
-            tracker[g] = (now, expireMs);
-        return MathF.Max(0f, expireMs/1000f - (now - tracker[g].FirstSeen));
-    }
-
-    private void PruneTrackers(float now) { if (now<_nextPruneAt) return; _nextPruneAt=now+60f; PruneTracker(_moodleTrack,now); PruneTracker(_lociTrack,now); }
-
-    private void PruneTracker(Dictionary<System.Guid,(float FirstSeen,long TotalMs)> tracker,float now)
-    {
-        if (tracker.Count==0) return;
-        _staleGuids.Clear();
-        foreach (var (g,tracked) in tracker)
-            if (now - tracked.FirstSeen > tracked.TotalMs/1000f + 30f)
-                _staleGuids.Add(g);
-        foreach (var g in _staleGuids) tracker.Remove(g);
-    }
 
     private static readonly Dictionary<string,ushort> _namedColors = new(StringComparer.OrdinalIgnoreCase)
     {

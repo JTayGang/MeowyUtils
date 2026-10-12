@@ -57,6 +57,18 @@
               "suppressParent": "All",
               "target": "Package",
               "version": "[1.2.39, )"
+            },
+            "MemoryPack": {
+              "target": "Package",
+              "version": "[1.21.4, )"
+            },
+            "MemoryPack.Core": {
+              "target": "Package",
+              "version": "[1.21.4, )"
+            },
+            "MemoryPack.Generator": {
+              "target": "Package",
+              "version": "[1.21.4, )"
             }
           },
           "imports": [

@@ -38,7 +38,7 @@ public sealed class VerletStrand
     public float BendStiffness = 0.35f;
 
     private Vector2 _startFrom, _startTo, _endFrom, _endTo;
-    private float _accum;
+    private float _lastH = SubstepSeconds;     // the substep length Prev was left at: velocity is (Pos - Prev) / this
     private bool _anchored;
 
     public VerletStrand(int nodeCount)
@@ -55,7 +55,17 @@ public sealed class VerletStrand
     {
         for (int i = 0; i < Count; i++) { Pos[i] = at; Prev[i] = at; }
         _startFrom = _startTo = _endFrom = _endTo = at;
-        _accum = 0f;
+        _lastH = SubstepSeconds;
+        _anchored = false;
+    }
+
+    /// <summary>Puts every node on the pose, at rest. Drive keeps the velocity the move implies, which straight after a Reset would be a launch from the root.</summary>
+    public void Place(ReadOnlySpan<Vector2> pose)
+    {
+        for (int i = 0; i < Count; i++) { Pos[i] = pose[i]; Prev[i] = pose[i]; }
+        _startFrom = _startTo = pose[0];
+        _endFrom = _endTo = pose[Count - 1];
+        _lastH = SubstepSeconds;
         _anchored = false;
     }
 
@@ -84,34 +94,39 @@ public sealed class VerletStrand
             Pos[i] = pose[i];
             Prev[i] = Pos[i] - (Pos[i] - was) * k;
         }
-        _accum = 0f;
+        _lastH = SubstepSeconds;
     }
 
     /// <summary>Instantly changes a node's velocity (Verlet keeps velocity implicitly in Prev).</summary>
     public void Impulse(int node, Vector2 deltaVelocity)
     {
         if ((uint)node >= (uint)Count) return;
-        Prev[node] -= deltaVelocity * SubstepSeconds;
+        Prev[node] -= deltaVelocity * _lastH;
     }
 
     public void Step(float dt)
     {
-        _accum += MathF.Max(0f, dt);
-        int steps = Math.Min(MaxSubstepsPerFrame, (int)(_accum / SubstepSeconds));
-        _accum -= steps * SubstepSeconds;
-        if (steps == MaxSubstepsPerFrame) _accum = 0f;     // a stall: drop the debt rather than spiral
+        if (!(dt > 1e-6f)) return;
+
+        // Advance by EXACTLY dt, in a whole number of near-equal substeps. Fixed substeps with a carried remainder advance the
+        // strand by 5, 6 or 7 of them on different frames, so with uneven frame times anything that moves judders by up to a substep
+        // of travel. At a steady 60 fps this is the same six substeps of 1/360 s.
+        dt = MathF.Min(dt, MaxSubstepsPerFrame * SubstepSeconds * 1.25f);       // a stall: run slow rather than leap
+        int steps = Math.Clamp((int)MathF.Round(dt / SubstepSeconds), 1, MaxSubstepsPerFrame);
+        float h = dt / steps;
 
         for (int s = 0; s < steps; s++)
         {
             float k = (s + 1f) / steps;
-            Substep(SubstepSeconds, Vector2.Lerp(_startFrom, _startTo, k), Vector2.Lerp(_endFrom, _endTo, k));
+            Substep(h, Vector2.Lerp(_startFrom, _startTo, k), Vector2.Lerp(_endFrom, _endTo, k));
         }
     }
 
     private void Substep(float h, Vector2 start, Vector2 end)
     {
-        float dragK = MathF.Max(0f, 1f - Drag * h);
+        float dragK = MathF.Max(0f, 1f - Drag * h) * (h / _lastH);      // the rescale keeps velocity right when the substep length differs from the last one's
         float hh = h * h;
+        _lastH = h;
 
         for (int i = 0; i < Count; i++)
         {

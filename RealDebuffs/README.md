@@ -105,6 +105,7 @@ optional thread (`Tether` / `Anchor` / `ThreadEnd` on `ParticlePrimitive`) the p
 material draws. `ParticleGoop` draws them as lit geometry, shaded by a `LiquidSpec`, so a
 liquid is a colour/gloss/translucency preset plus a few lines naming it. Sites hang off the
 strand's real surface, because a material can override `IStrokeMaterial.RadiusAt`.
+Liquid is drawn right after the stroke it hangs from (`ParticlePrimitive.HasHost`/`HostSeed`, honoured when the particle material returns `DrawsWithHost`), so a nearer stroke drawn later covers a farther one's slime; every other particle is still drawn over all strokes.
 
 **Layered light (2.5D)** — Silence's seal is built from reusable parts so the next curse,
 charm or hex doesn't start from scratch. `LayerCamera` stacks flat layers at different

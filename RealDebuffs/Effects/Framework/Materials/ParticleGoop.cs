@@ -22,6 +22,8 @@ public abstract class ParticleGoop : IParticleMaterial
         GoopDraw.Draw(dl, in p, _liquid, in ctx);
 
     public ReadOnlySpan<StrokeEmission> Emissions => _emissions;
+
+    public bool DrawsWithHost => true;
 }
 
 /// <summary>Thick, translucent, sickly-green mucus: hangs in long stretching strings, lets go, falls as a glossy teardrop. Disease's drips; also "made of slime".</summary>

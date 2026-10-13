@@ -474,6 +474,7 @@ public static class StrokeAutoEmitter
                 Size = d.Size,
                 Brightness = d.Brightness * ParticleEmitter.FadeFor(ageT),
                 Seed = d.StrokeSeed + i * 7919,
+                HasHost = true, HostSeed = d.StrokeSeed,
                 Role = d.Role,
                 MaterialName = d.MaterialName,
                 ColorOverride = d.ColorOverride,

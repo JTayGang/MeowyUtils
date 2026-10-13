@@ -36,6 +36,7 @@ public static class GoopEmitter
         public float RecoilTime;          // how long the string takes to snap back; 0 = no string
         public float Drag;
         public int   Seed;
+        public int   HostSeed;               // the strand it came from, so it is drawn with that strand
         public string? Material;
         public Vector4? ColorOverride;
     }
@@ -183,6 +184,7 @@ public static class GoopEmitter
                 AgeRatio = q,
                 Brightness = s.Brightness * awake,         // distance shows in the drop's size, not its opacity: a dimmed translucent liquid just turns into a dark ghost
                 Seed = cycleSeed,
+                HasHost = true, HostSeed = s.Seed,
                 Role = e.Role,
                 MaterialName = particleMaterial,
                 ColorOverride = s.ColorOverride,
@@ -224,6 +226,7 @@ public static class GoopEmitter
             Tether = neck,
             RecoilTime = 0.15f + 0.12f * Math.Clamp(o.Stringiness, 0f, 1f),
             Seed = seed,
+            HostSeed = s.Seed,
             Material = material,
             ColorOverride = s.ColorOverride,
         };
@@ -244,6 +247,7 @@ public static class GoopEmitter
                 Size = rb * DrawHelpers.HashRange(seed + 10, 0.20f, 0.32f),
                 Brightness = s.Brightness,
                 Seed = seed + 99,
+                HostSeed = s.Seed,
                 Material = material,
                 ColorOverride = s.ColorOverride,
             };
@@ -271,6 +275,7 @@ public static class GoopEmitter
                 AgeRatio = t01,
                 Brightness = d.Brightness * ParticleEmitter.FadeFor(t01),
                 Seed = d.Seed,
+                HasHost = true, HostSeed = d.HostSeed,
                 Role = PrimitiveRole.Goop,
                 MaterialName = d.Material,
                 ColorOverride = d.ColorOverride,

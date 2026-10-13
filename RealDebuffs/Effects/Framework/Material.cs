@@ -46,6 +46,9 @@ public interface IParticleMaterial : IMaterial
 
     /// <summary>Emissions this material contributes as a stroke emitter; empty means it can't be one.</summary>
     ReadOnlySpan<StrokeEmission> Emissions => ReadOnlySpan<StrokeEmission>.Empty;
+
+    /// <summary>True for matter that clings to or falls from a strand (slime, blood): it is drawn right after its host stroke, so a nearer stroke drawn later covers it. Default: drawn over every stroke.</summary>
+    bool DrawsWithHost => false;
 }
 
 public interface IRegionMaterial : IMaterial

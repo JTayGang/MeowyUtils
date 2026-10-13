@@ -47,22 +47,48 @@ public static class EffectSceneRenderer
             finally { DrawHelpers.PopColorOverride(); }
         }
 
-        // 3. Strokes.
-        foreach (var s in scene.Strokes)
+        // 3. Strokes, each followed by the particles that belong to it (see IParticleMaterial.DrawsWithHost), so a nearer stroke
+        //    drawn later covers a farther one's slime. 4. Then every other particle, over everything.
+        int pc = scene.Particles.Count;
+        if (_host.Length < pc) { int n = Math.Max(pc, _host.Length * 2); _host = new int[n]; _hostMat = new IParticleMaterial?[n]; }
+        bool anyHosted = false;
+        for (int j = 0; j < pc; j++)
         {
+            var p = scene.Particles[j];
+            var mat = ParticleFor(in p, materialOverrides);
+            _hostMat[j] = mat;
+            _host[j] = -1;
+            if (!p.HasHost || mat is null || !mat.DrawsWithHost) continue;
+            for (int i = scene.Strokes.Count - 1; i >= 0; i--)
+                if (scene.Strokes[i].Owner == p.Owner && scene.Strokes[i].Seed == p.HostSeed) { _host[j] = i; anyHosted = true; break; }
+        }
+
+        for (int i = 0; i < scene.Strokes.Count; i++)
+        {
+            var s = scene.Strokes[i];
             DrawHelpers.PushColorOverride(s.ColorOverride);
             try { StrokeFor(in s, materialOverrides)?.Draw(dl, in s, in ctx); }
             finally { DrawHelpers.PopColorOverride(); }
+
+            if (!anyHosted) continue;
+            for (int j = 0; j < pc; j++)
+                if (_host[j] == i) DrawParticle(dl, scene.Particles[j], _hostMat[j], in ctx);
         }
 
-        // 4. Particles.
-        foreach (var p in scene.Particles)
-        {
-            DrawHelpers.PushColorOverride(p.ColorOverride);
-            try { ParticleFor(in p, materialOverrides)?.Draw(dl, in p, in ctx); }
-            finally { DrawHelpers.PopColorOverride(); }
-        }
+        for (int j = 0; j < pc; j++)
+            if (_host[j] < 0) DrawParticle(dl, scene.Particles[j], _hostMat[j], in ctx);
     }
+
+    private static void DrawParticle(ImDrawListPtr dl, in ParticlePrimitive p, IParticleMaterial? mat, in MaterialContext ctx)
+    {
+        DrawHelpers.PushColorOverride(p.ColorOverride);
+        try { mat?.Draw(dl, in p, in ctx); }
+        finally { DrawHelpers.PopColorOverride(); }
+    }
+
+    // Scratch for the pass above: which stroke each particle is drawn with (-1: none), and its resolved material.
+    private static int[] _host = new int[2048];
+    private static IParticleMaterial?[] _hostMat = new IParticleMaterial?[2048];
 
     private static IRegionMaterial? RegionFor(in RegionPrimitive r, IReadOnlyDictionary<string, string>? overrides)
     {

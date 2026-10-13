@@ -101,6 +101,10 @@ public struct ParticlePrimitive
 
     /// <summary>The thread's free end: equals Position while attached; once snapped it slides back toward Anchor (the string recoiling) as the drop falls.</summary>
     public Vector2 ThreadEnd;
+
+    /// <summary>Set when the particle belongs to a stroke (identified by owner and <see cref="HostSeed"/>). A material that opts in with DrawsWithHost then draws it with that stroke instead of over all of them.</summary>
+    public bool HasHost;
+    public int  HostSeed;
 }
 
 public struct RegionPrimitive

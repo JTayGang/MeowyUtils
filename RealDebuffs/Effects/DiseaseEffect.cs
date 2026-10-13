@@ -279,7 +279,7 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         s.Reset(r.Root);
         float length = BuildTarget(r, px, time, 0f, out _);
         s.Length = MathF.Max(8f, length);
-        s.Drive(s.Target, 1f / 60f);
+        s.Place(s.Target);                               // at rest: Drive would launch every node from the root at its implied speed
     }
 
     // ---- Behaviour ----

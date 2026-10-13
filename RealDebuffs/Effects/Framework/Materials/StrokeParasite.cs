@@ -576,7 +576,7 @@ public sealed class StrokeParasite : IStrokeMaterial
     private static readonly float[] CupZ      = { 0.00f, 0.00f, 0.02f, 0.14f, 0.34f, 0.54f, 0.70f, 0.80f, 0.78f, 0.66f, 0.48f, 0.30f, 0.19f, 0.15f, 0.20f };
     private static readonly float[] CupAlpha  = { 0.00f, 0.42f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f };
     // How open to the sky each ring is: the skirt sits in its own contact shadow and the cavity is deep in the cup.
-    private static readonly float[] CupOpen   = { 1.00f, 1.00f, 0.72f, 0.84f, 0.93f, 1.00f, 1.00f, 1.06f, 1.00f, 0.92f, 0.76f, 0.58f, 0.46f, 0.42f, 0.50f };
+    private static readonly float[] CupOpen   = { 1.00f, 1.00f, 0.90f, 0.95f, 0.98f, 1.00f, 1.00f, 1.06f, 1.00f, 0.92f, 0.76f, 0.58f, 0.46f, 0.42f, 0.50f };
     private const int FirstFlesh = 2;                   // rings before this are the contact shadow
     private const int FirstCavity = 10;                 // rings from here on are inside the cup
     private static readonly Vector3 CupTint = new(1.00f, 0.78f, 0.84f);          // inside a cup the flesh is pinker and softer
@@ -624,6 +624,7 @@ public sealed class StrokeParasite : IStrokeMaterial
     private readonly uint[]    _cupCol = new uint[MaxCupVerts];
     private readonly float[]   _cupZ   = new float[MaxCupVerts];        // depth toward the viewer
     private readonly float[]   _cupNz  = new float[MaxCupVerts];        // the normal's component toward the viewer
+    private readonly float[]   _cupSide = new float[MaxCupVerts];       // cosine of the point's angle round the tube: > 0 on the half facing the viewer
     private int _cupVerts;
     private int[] _remap = new int[MaxCupVerts];
 
@@ -768,33 +769,45 @@ public sealed class StrokeParasite : IStrokeMaterial
                 _cupPos[v] = screen;
                 _cupZ[v] = pos.Z;
                 _cupNz[v] = n3.Z;
-                _cupCol[v] = CupColour(j, n3, in row, wet, alphaK, in look);
+                _cupSide[v] = cT;
+                _cupCol[v] = CupColour(j, n3, in row, wet, alphaK, MathF.Cos(th + row.Psi), in look);
             }
         }
         _cupVerts = vb + rings * stride;
 
-        // Quads that can be seen: those facing the viewer. Sorted by depth later, so near parts of a cup cover far ones.
+        // Quads that can be seen. Only strongly back-facing ones are dropped: an edge-on sliver is harmless, while culling it
+        // can leave a hole right beside the silhouette where nothing else covers it (the black crescents beside a cup in profile).
+        // Painter's order (far first) lets whatever is nearer cover the rest.
+        float near = DrawHelpers.Smooth((MathF.Cos(theta) + 0.72f) / 0.87f);       // 0: cup well behind the arm; 1: at or in front of its edge
+        float frontFrom = -0.55f * near;
+
         for (int j = 0; j < rings - 1; j++)
         for (int i = 0; i < segs; i++)
         {
             int v0 = vb + j * stride + i, v1 = v0 + 1, v2 = v0 + stride, v3 = v2 + 1;
             float nz = 0.25f * (_cupNz[v0] + _cupNz[v1] + _cupNz[v2] + _cupNz[v3]);
-            if (nz < -0.04f) continue;                                   // faces away: always hidden behind its own front
+            if (nz < -0.35f) continue;
             float z = 0.25f * (_cupZ[v0] + _cupZ[v1] + _cupZ[v2] + _cupZ[v3]);
             float height = 0.5f * (CupZ[j] + CupZ[j + 1]) * lift;
             float key = z + 0.35f * height;                              // taller parts win a tie where the depths barely differ
 
-            if (z >= 0f) { if (_nFront < MaxCupQuads) { _keyFront[_nFront] = key; _quadFront[_nFront++] = (strideCode << StrideShift) | v0; } }
-            else if (j > FirstFlesh)
+            // Which side of the body a quad is on is a question about the tube's cross-section, not about its depth (on a pitched
+            // tube, moving along the axis shifts z): split on the angle round the tube. The body is drawn between the two groups,
+            // so the back group is what the arm hides. Strictly that is everything past the silhouette plane, but a cup AT the
+            // edge then reads as sliced off flat along it; so near the edge the plane is moved back, letting the cup's base
+            // overlap the arm's outline, and it returns to the true plane as the cup goes round behind the arm.
+            float side = 0.25f * (_cupSide[v0] + _cupSide[v1] + _cupSide[v2] + _cupSide[v3]);
+            int code = (strideCode << StrideShift) | v0;
+
+            if (side >= frontFrom) { if (_nFront < MaxCupQuads) { _keyFront[_nFront] = key; _quadFront[_nFront++] = code; } }
+            else if (j >= FirstFlesh)                                       // the contact shadow lies on skin the arm hides: never behind it
             {
-                // Behind the silhouette plane. The skirt and contact shadow of such a cup lie on skin the body already
-                // hides; drawing them only lets a dark fringe leak through the body's soft edge. Only the cup proper can show.
-                if (_nBack < MaxCupQuads) { _keyBack[_nBack] = key; _quadBack[_nBack++] = (strideCode << StrideShift) | v0; }
+                if (_nBack < MaxCupQuads) { _keyBack[_nBack] = key; _quadBack[_nBack++] = code; }
             }
         }
     }
 
-    private uint CupColour(int ring, Vector3 n, in Row row, float wet, float alphaK, in Look look)
+    private uint CupColour(int ring, Vector3 n, in Row row, float wet, float alphaK, float belly, in Look look)
     {
         float a = CupAlpha[ring] * alphaK;
 
@@ -805,7 +818,11 @@ public sealed class StrokeParasite : IStrokeMaterial
             return DrawHelpers.WithAlpha(StrandShading.ShadowTint, a * 0.9f * DrawHelpers.Smooth(n.Z / 0.45f));
         }
 
-        Vector3 col = Flesh.Sample(n.X, n.Y) * (VentralTint * (1.04f * row.Tone * CupOpen[ring]));
+        // The skirt is a fillet: at its foot it takes the colour of the skin it grows from (the same belly-to-back tint the body uses at
+        // that angle), and shades into the cup's own pale flesh over its first few rings. Pale all the way down it reads as a patch on the skin.
+        Vector3 skinTint = Vector3.Lerp(DorsalTint, VentralTint, DrawHelpers.Smooth(belly + 0.2f));
+        Vector3 tint = Vector3.Lerp(skinTint, VentralTint * 1.04f, DrawHelpers.Smooth((ring - FirstFlesh) / 3f));
+        Vector3 col = Flesh.Sample(n.X, n.Y) * (tint * (row.Tone * CupOpen[ring]));
         if (ring >= FirstCavity) col *= CupTint;
 
         // Wet: the same clear gloss as the body, so the cups and the skin around them agree.

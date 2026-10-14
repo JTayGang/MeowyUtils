@@ -16,7 +16,6 @@ internal static class GoopDraw
         public float Alpha;
         public float Feather;
         public bool  Overridden;
-        public float Dye;
         public Vector2 Uv;
     }
 
@@ -32,7 +31,6 @@ internal static class GoopDraw
             Alpha = alpha > 1f ? 1f : alpha,
             Feather = MathF.Max(0.8f, ctx.ScreenScale * 0.9f),
             Overridden = DrawHelpers.ColorOverrideActive,
-            Dye = DrawHelpers.ColorOverrideChroma,
             Uv = MeshDraw.WhiteUv(ctx.Time),
         };
 
@@ -46,6 +44,23 @@ internal static class GoopDraw
         }
         if (threaded) Stub(dl, in p, in look);
         Bead(dl, in p, in look);
+    }
+
+    // Angles that never change are not worth a sine and a cosine per vertex, per row, per drop, per frame. Each table holds exactly what the expression it replaced
+    // evaluated to (same formula, evaluated once), so the output is bit-for-bit what it was.
+    private static readonly float[] HalfSin = HalfTable(cos: false), HalfCos = HalfTable(cos: true);
+    private static float[] HalfTable(bool cos)
+    {
+        var t = new float[Half + 1];
+        for (int c = 0; c <= Half; c++) { float theta = MathF.PI * (c / (float)Half - 0.5f); t[c] = cos ? MathF.Cos(theta) : MathF.Sin(theta); }
+        return t;
+    }
+    private static readonly float[] PendantBeadCos = PhiCos(11), BeadCos = PhiCos(10);       // must match beadRows in Pendant and Bead
+    private static float[] PhiCos(int rows)
+    {
+        var t = new float[rows];
+        for (int k = 0; k < rows; k++) { float phi = MathF.PI * (k + 0.5f) / rows; t[k] = MathF.Cos(phi); }
+        return t;
     }
 
     // ---- profiles: each fills s[] (distance along the axis) and r[] (radius there) ----
@@ -90,8 +105,7 @@ internal static class GoopDraw
         const int beadRows = 11;
         for (int k = 0; k < beadRows; k++)
         {
-            float phi = MathF.PI * (k + 0.5f) / beadRows;
-            float sk = len - hb * MathF.Cos(phi);
+            float sk = len - hb * PendantBeadCos[k];
             if (sk <= s[n - 1] + 0.05f) continue;                       // behind the start of the profile
             s[n] = sk; r[n] = Union(sk, len, hb, rb, rn, rTop, fillet); n++;
         }
@@ -146,8 +160,7 @@ internal static class GoopDraw
         const int beadRows = 10;
         for (int k = 0; k < beadRows; k++)
         {
-            float phi = MathF.PI * (k + 0.5f) / beadRows;
-            float sk = sc - a * MathF.Cos(phi);
+            float sk = sc - a * BeadCos[k];
             if (sk <= s[n - 1] + 0.05f) continue;
             s[n] = sk; r[n] = TeardropRadius(sk, sc, a, rb, tail); n++;
         }
@@ -271,8 +284,7 @@ internal static class GoopDraw
 
             for (int c = 0; c <= Half; c++)
             {
-                float theta = MathF.PI * (c / (float)Half - 0.5f);      // -90 deg .. +90 deg across the visible half
-                float sn = MathF.Sin(theta), cs = MathF.Cos(theta);
+                float sn = HalfSin[c], cs = HalfCos[c];                 // -90 deg .. +90 deg across the visible half
 
                 // Normal of a surface of revolution: radial component minus the profile's slope along the axis.
                 Vector2 nxy = perp * sn - d * slope;
@@ -297,7 +309,6 @@ internal static class GoopDraw
     private static uint Pack(Vector4 lit, float fade, in Look look, uint alphaBitsMax)
     {
         Vector3 col = new(lit.X, lit.Y, lit.Z);
-        if (look.Dye > 0f) col = DrawHelpers.WithSaturation(col, look.Dye);
         return DrawHelpers.Tint(DrawHelpers.Pack(col.X, col.Y, col.Z), lit.W * fade * look.Alpha, look.Overridden);
     }
 

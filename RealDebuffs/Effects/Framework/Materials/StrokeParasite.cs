@@ -63,7 +63,6 @@ public sealed class StrokeParasite : IStrokeMaterial
         public float Alpha;
         public uint  AlphaBits;
         public bool  Overridden;
-        public float Dye;
         public float Detail;                    // 0..1: how much of the fine skin work is worth doing at this size
         public float MottleFreq;                // 1/px along the strand
         public float MottleOffset;              // per tentacle, so no two share a pattern
@@ -155,7 +154,6 @@ public sealed class StrokeParasite : IStrokeMaterial
             Alpha = alpha,
             AlphaBits = (uint)(int)(255f * (alpha > 0f ? (alpha < 1f ? alpha : 1f) : 0f)) << 24,
             Overridden = DrawHelpers.ColorOverrideActive,
-            Dye = DrawHelpers.ColorOverrideChroma,
             Detail = Math.Clamp(diameter / (22f * px), 0.4f, 1f),
             MottleFreq = 1f / MathF.Min(diameter * 2.3f, 100f * px),   // skin detail is a size in pixels, not a fraction of the limb: a thicker arm has more skin, not bigger pores
             MottleOffset = DrawHelpers.HashRange(seed + 71, 0f, 300f),
@@ -259,13 +257,26 @@ public sealed class StrokeParasite : IStrokeMaterial
         float total = p.Total, diameter = p.Diameter, time = p.Time, fs = p.FieldScale;
 
         Vector2 c = r.P;
-        r.On = c.X > -p.Margin && c.Y > -p.Margin && c.X < p.ScreenW && c.Y < p.ScreenH;
-        if (!r.On) return;
-
+        // The margin is on every side: a tube whose centre line is past the bottom or right border still reaches back onto the screen.
+        r.On = c.X > -p.Margin && c.Y > -p.Margin && c.X < p.ScreenW + p.Margin && c.Y < p.ScreenH + p.Margin;
         float u = total > 1f ? sArc / total : 0f;
+        if (!r.On)
+        {
+            // Nothing here is seen, but the body is shaded in whole chunks and this row can sit beside one that is. The row array is
+            // shared by every tentacle drawn with this material, so leave plain values, not whatever the last tentacle put in this slot.
+            r.Radius = p.Radius * Taper(u, closed) * r.CapW;
+            r.SinA = 0f; r.CosA = 1f; r.Psi = 0f; r.Tone = 1f; r.Wet = 0f; r.LumpTilt = 0f; r.Feather = 0f;
+            r.Glint = r.GlintX = r.Glint2 = r.GlintX2 = 0f;
+            r.MX = r.MY = 0f;
+            return;
+        }
 
         // ---- width: taper, a slow muscular swell, slime lumps, and perspective ----
-        float swell = 1f + (0.045f + 0.03f * look.Agit) * MathF.Sin(MathF.Tau * sArc * p.WobbleRate - time * (1.7f + 3f * look.Agit) + p.Ph1);
+        // Agitation adds a second, faster wave of its own amplitude. It must not scale the RATE: phase is time * rate, so a rate that
+        // follows Agitation turns every change in Agitation into a phase leap of (time * change), thousands of radians an hour in.
+        float swellPhase = MathF.Tau * sArc * p.WobbleRate + p.Ph1;
+        float swell = 1f + 0.045f * MathF.Sin(swellPhase - time * 1.7f)
+                         + 0.030f * look.Agit * MathF.Sin(swellPhase - time * 4.7f);
 
         float lumpField = DrawHelpers.Smooth((Field(sArc, total, closed, fs * 2.4f, p.OffA, p.Scroll * 0.8f) - 0.46f) / 0.28f);
         float wetField  = 0.55f + 0.45f * DrawHelpers.Smooth((Field(sArc, total, closed, fs * 3.3f, p.OffB, p.Scroll) - 0.34f) / 0.34f);
@@ -544,7 +555,6 @@ public sealed class StrokeParasite : IStrokeMaterial
             col = col * (1f - 0.10f * wet);
             col = col + gloss * wet - col * gloss * wet;     // screen: gloss lightens without clipping
 
-            if (look.Dye > 0f) col = DrawHelpers.WithSaturation(col, look.Dye);
             if (look.Agit > 0.01f) col += col * (col * (0.45f * look.Agit));
             if (look.Fog > 0f) col = Vector3.Lerp(col, StrandShading.DepthFog, look.Fog);
 
@@ -747,8 +757,11 @@ public sealed class StrokeParasite : IStrokeMaterial
             float rho = CupRho[j] * rc;
             float z = CupZ[j] * lift;
             (float nR, float nZ) = CupNormal[j];
+            RingShade shade = new(j, in row, wet, alphaK, in look);
 
-            for (int i = 0; i < stride; i++)
+            // The last ring is the cup's axis: rho = 0, so every vertex on it is the same vertex. Work it out once.
+            int count = j == rings - 1 ? 1 : stride;
+            for (int i = 0; i < count; i++)
             {
                 float cs = cupCos[i], sn = cupSin[i];
                 float x = rho * cs, y = rho * sn;                       // along the tube, and round it, in px
@@ -770,7 +783,12 @@ public sealed class StrokeParasite : IStrokeMaterial
                 _cupZ[v] = pos.Z;
                 _cupNz[v] = n3.Z;
                 _cupSide[v] = cT;
-                _cupCol[v] = CupColour(j, n3, in row, wet, alphaK, MathF.Cos(th + row.Psi), in look);
+                _cupCol[v] = CupColour(in shade, n3, MathF.Cos(th + row.Psi), in look);
+            }
+            for (int i = count; i < stride; i++)
+            {
+                int v = vb + j * stride + i, v0 = vb + j * stride;
+                _cupPos[v] = _cupPos[v0]; _cupZ[v] = _cupZ[v0]; _cupNz[v] = _cupNz[v0]; _cupSide[v] = _cupSide[v0]; _cupCol[v] = _cupCol[v0];
             }
         }
         _cupVerts = vb + rings * stride;
@@ -807,35 +825,48 @@ public sealed class StrokeParasite : IStrokeMaterial
         }
     }
 
-    private uint CupColour(int ring, Vector3 n, in Row row, float wet, float alphaK, float belly, in Look look)
+    /// <summary>What colouring one ring of a cup needs that does not change from vertex to vertex round it: worked out once per ring, not once per vertex.</summary>
+    private readonly struct RingShade
     {
-        float a = CupAlpha[ring] * alphaK;
+        public readonly bool Shadow, Cavity;
+        public readonly float Alpha, Blend, ToneOpen, Wet, Keep;
 
-        if (ring < FirstFlesh)
+        public RingShade(int ring, in Row row, float wet, float alphaK, in Look look)
+        {
+            Alpha = CupAlpha[ring] * alphaK;
+            Shadow = ring < FirstFlesh;
+            Cavity = ring >= FirstCavity;
+            Blend = DrawHelpers.Smooth((ring - FirstFlesh) / 3f);
+            ToneOpen = row.Tone * CupOpen[ring];
+            Wet = wet * (Cavity ? 0.8f : 1f);                 // the same clear gloss as the body, so the cups and the skin around them agree
+            Keep = 1f - 0.10f * Wet;
+        }
+    }
+
+    private static uint CupColour(in RingShade r, Vector3 n, float belly, in Look look)
+    {
+        if (r.Shadow)
         {
             // The contact shadow: the same tint as the tentacle's cast shadow, a little darker. It lies on the skin, so
             // it fades as the skin turns edge-on (n.Z is the skin's own normal here); left alone it ends in a hard dark wedge at the silhouette.
-            return DrawHelpers.WithAlpha(StrandShading.ShadowTint, a * 0.9f * DrawHelpers.Smooth(n.Z / 0.45f));
+            return DrawHelpers.WithAlpha(StrandShading.ShadowTint, r.Alpha * 0.9f * DrawHelpers.Smooth(n.Z / 0.45f));
         }
 
         // The skirt is a fillet: at its foot it takes the colour of the skin it grows from (the same belly-to-back tint the body uses at
         // that angle), and shades into the cup's own pale flesh over its first few rings. Pale all the way down it reads as a patch on the skin.
         Vector3 skinTint = Vector3.Lerp(DorsalTint, VentralTint, DrawHelpers.Smooth(belly + 0.2f));
-        Vector3 tint = Vector3.Lerp(skinTint, VentralTint * 1.04f, DrawHelpers.Smooth((ring - FirstFlesh) / 3f));
-        Vector3 col = Flesh.Sample(n.X, n.Y) * (tint * (row.Tone * CupOpen[ring]));
-        if (ring >= FirstCavity) col *= CupTint;
+        Vector3 tint = Vector3.Lerp(skinTint, VentralTint * 1.04f, r.Blend);
+        Vector3 col = Flesh.Sample(n.X, n.Y) * (tint * r.ToneOpen);
+        if (r.Cavity) col *= CupTint;                           // inside a cup the flesh is pinker and softer
 
-        // Wet: the same clear gloss as the body, so the cups and the skin around them agree.
         Vector3 gloss = Coat.Sample(n.X, n.Y);
-        float w = wet * (ring >= FirstCavity ? 0.8f : 1f);
-        col = col * (1f - 0.10f * w);
-        col = col + gloss * w - col * gloss * w;
+        col = col * r.Keep;
+        col = col + gloss * r.Wet - col * gloss * r.Wet;
 
-        if (look.Dye > 0f) col = DrawHelpers.WithSaturation(col, look.Dye);
         if (look.Agit > 0.01f) col += col * (col * (0.45f * look.Agit));
         if (look.Fog > 0f) col = Vector3.Lerp(col, StrandShading.DepthFog, look.Fog);
 
-        return DrawHelpers.Tint(DrawHelpers.Pack(col.X, col.Y, col.Z), a, look.Overridden);
+        return DrawHelpers.Tint(DrawHelpers.Pack(col.X, col.Y, col.Z), r.Alpha, look.Overridden);
     }
 
     /// <summary>Draws the cup quads behind the tube's silhouette plane (call before the body) or in front of it (after), far to near.</summary>
@@ -847,7 +878,7 @@ public sealed class StrokeParasite : IStrokeMaterial
         int[] quads = behind ? _quadBack : _quadFront;
         MeshBuilder mesh = behind ? _cupMeshBack : _cupMeshFront;
 
-        Array.Sort(keys, quads, 0, n);                                   // far first: the painter's algorithm
+        SortByKey(keys, quads, n);                                       // far first: the painter's algorithm
 
         // Only the vertices this group's triangles reference: a cup's other half belongs to the other group.
         mesh.Clear();
@@ -861,6 +892,38 @@ public sealed class StrokeParasite : IStrokeMaterial
             mesh.Tri(a, d, c);
         }
         mesh.Flush(dl, uv);
+    }
+
+    private readonly uint[] _sortKeyA = new uint[MaxCupQuads], _sortKeyB = new uint[MaxCupQuads];
+    private readonly int[]  _sortValB = new int[MaxCupQuads];
+    private readonly int[]  _sortHist = new int[3 * 2048];
+
+    /// <summary>
+    /// Sorts <paramref name="quads"/>[0..n) by <paramref name="keys"/>[0..n), ascending. The order is exactly that of comparing the floats (only exact ties differ:
+    /// they keep their input order instead of an arbitrary one). A least-significant-digit radix sort on the float's order-preserving integer image,
+    /// three passes of 11 bits: linear in n, no allocation. A comparison sort over the tens of thousands of quads a tentacle's cups make was the largest single cost here.
+    /// </summary>
+    private void SortByKey(float[] keys, int[] quads, int n)
+    {
+        uint[] ka = _sortKeyA, kb = _sortKeyB;
+        int[] vb = _sortValB, h = _sortHist;
+        Array.Clear(h, 0, h.Length);
+        for (int i = 0; i < n; i++)
+        {
+            uint u = BitConverter.SingleToUInt32Bits(keys[i]);
+            u = (u & 0x80000000u) != 0 ? ~u : (u | 0x80000000u);          // negative floats sort below positive ones, and larger magnitude means smaller
+            ka[i] = u;
+            h[u & 2047]++; h[2048 + ((u >> 11) & 2047)]++; h[4096 + (u >> 22)]++;
+        }
+        for (int d = 0; d < 3; d++)
+        {
+            int sum = 0, o = d * 2048;
+            for (int b = 0; b < 2048; b++) { int c = h[o + b]; h[o + b] = sum; sum += c; }
+        }
+        for (int i = 0; i < n; i++) { uint u = ka[i]; int pos = h[u & 2047]++;               kb[pos] = u; vb[pos] = quads[i]; }
+        for (int i = 0; i < n; i++) { uint u = kb[i]; int pos = h[2048 + ((u >> 11) & 2047)]++; ka[pos] = u; quads[pos] = vb[i]; }
+        for (int i = 0; i < n; i++) { uint u = ka[i]; int pos = h[4096 + (u >> 22)]++;        kb[pos] = u; vb[pos] = quads[i]; }
+        Array.Copy(vb, quads, n);
     }
 
     private int Use(MeshBuilder mesh, int v)

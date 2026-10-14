@@ -64,6 +64,7 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
     // ---- intro ----
     private const float UnfurlCurl = 1.9f;         // radians of curl in the tip as it emerges
     private const float UnfurlRate = 2.1f;         // 1/s: how quickly it uncurls
+    private const float AgitationAttack = 0.12f;   // s: time constant for Agitation to catch up with a new target
 
     private static readonly uint Gloom = DrawHelpers.Pack(0.010f, 0.020f, 0.012f);
     private static readonly uint Vignette = DrawHelpers.Pack(0.012f, 0.022f, 0.012f);
@@ -109,6 +110,7 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         public Vector2 Goal, GoalVel, GripPoint, PinFrom, PinVel, LastTip, TipVelocity;
         public float HeadAngle, HeadVel, Curl, CurlVel, Tension, TensionVel;
         public float Agitation, Reveal;
+        public float AgitTarget;               // what events and mode floors ask for; Agitation chases it, so nothing the material sees ever steps
         public float Age;                      // seconds since this tentacle started
         public float GripSide;                 // which way the tip hooks round the border
     }
@@ -159,7 +161,7 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
                 Phase = rig.Phase,
                 Depth = rig.Depth,
                 Agitation = rig.Agitation,
-                Twist = rig.TwistAmp * MathF.Sin(0.27f * time + rig.TwistPhase) + (rig.Mode == Mode.Grip ? 0.5f * rig.Tension : 0f),
+                Twist = rig.TwistAmp * MathF.Sin(0.27f * time + rig.TwistPhase) + 0.5f * rig.Tension * DrawHelpers.Smooth((rig.Tension - 0.6f) / 0.4f),   // weighted by Tension, which is a spring: a mode test here stepped the twist by half a radian on grab and release
                 ColorOverride = colorOverride,
             });
         }
@@ -247,13 +249,14 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         if (!r.Entered && r.Reveal * r.Length > r.Overhang + 14f)
         {
             r.Entered = true;
-            r.Agitation = 1f;
+            r.AgitTarget = 1f;
             if (ScreenEdges.TryFindEntry(r.Path, size, out Vector2 at, out Vector2 inward))
                 Splat(scene, at, inward, 1f - 0.4f * r.Depth, alpha, time, r.Seed, colorOverride);
         }
 
         float floor = r.Mode switch { Mode.Reach => 0.30f, Mode.Grip => 0.22f + 0.14f * MathF.Sin(time * 2.6f + r.Phase), _ => 0.04f };
-        r.Agitation = MathF.Max(r.Agitation * MathF.Exp(-dt / 0.9f), floor);
+        r.AgitTarget = MathF.Max(r.AgitTarget * MathF.Exp(-dt / 0.9f), floor);
+        r.Agitation += (r.AgitTarget - r.Agitation) * (1f - MathF.Exp(-dt / AgitationAttack));
     }
 
     /// <summary>Places a tentacle that has just begun: its strand lies exactly on its first target, so nothing has to settle.</summary>
@@ -273,6 +276,7 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         r.Tension = 0f;
         r.TensionVel = 0f;
         r.Agitation = 1f;
+        r.AgitTarget = 1f;
         r.Reveal = 0f;
 
         var s = r.Strand;
@@ -321,7 +325,7 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
                     float reachDist = Vector2.Distance(tipNow, r.GripPoint);
                     float cap = 3f * reachDist / PinSeconds;
                     r.PinVel = r.TipVelocity.LengthSquared() > cap * cap ? Vector2.Normalize(r.TipVelocity) * cap : r.TipVelocity;
-                    r.Agitation = 0.9f;
+                    r.AgitTarget = MathF.Max(r.AgitTarget, 0.9f);
                 }
                 else if (time - r.ModeTime > 3.2f) { r.Mode = Mode.Release; r.ModeTime = time; }   // it could not get there; let go
                 break;
@@ -680,7 +684,7 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         r.Entered = false;
         r.Mode = Mode.Wander;
         r.Reveal = 0f;
-        r.Agitation = 0f;
+        r.Agitation = 0f; r.AgitTarget = 0f;
         r.Path.Count = 0;
     }
 }

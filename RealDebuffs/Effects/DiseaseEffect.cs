@@ -33,7 +33,13 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
     };
 
     // ---- layout ----
-    private const int MaxTentacles = 8;
+    // Every tentacle is mesh built and shaded every frame (about 0.5 ms for a top one, 1.1 to 1.5 ms for a big one), so which of them a cast uses is a budget as well as a layout.
+    // Measured over many casts: dropping the hazy layer costs almost no coverage (it is behind the rest and dim), and skipping one side tentacle leaves the centre
+    // of the frame as full as before. Dropping the middle bottom one instead opened a hole in the centre in two casts out of three.
+    private const bool UseHazyLayer = false;      // the depth layer: long and thin, so it has the most cups per length (~1.2 ms), yet it adds little to what is covered
+    private const bool SkipOneSide = true;        // skip either the left or the right tentacle, chosen per cast so neither side is systematically the emptier
+    private const int  AllTentacles = 8;
+    private const int  MaxTentacles = AllTentacles - (UseHazyLayer ? 0 : 1) - (SkipOneSide ? 1 : 0);
     private const int StrandNodes = 18;
     private const int PathSamples = 64;
     private const int GuideSamples = 64;           // density of the target curve before it is cut into nodes
@@ -80,12 +86,13 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         new(ScreenEdge.Bottom, 0.08f, 0.30f, 0.80f, 0.94f, 0.130f, 0.152f, false),   // three big near ones rising from below
         new(ScreenEdge.Bottom, 0.40f, 0.62f, 0.76f, 0.90f, 0.130f, 0.152f, false),
         new(ScreenEdge.Bottom, 0.70f, 0.92f, 0.80f, 0.94f, 0.130f, 0.152f, false),
-        new(ScreenEdge.Left,   0.28f, 0.66f, 0.66f, 0.82f, 0.098f, 0.118f, false),    // one from each side
+        new(ScreenEdge.Left,   0.28f, 0.66f, 0.66f, 0.82f, 0.098f, 0.118f, false),    // one from each side (a cast skips one of them: SkipOneSide)
         new(ScreenEdge.Right,  0.28f, 0.66f, 0.66f, 0.82f, 0.098f, 0.118f, false),
         new(ScreenEdge.Top,    0.08f, 0.38f, 0.56f, 0.70f, 0.092f, 0.110f, false),    // two hanging from the top: the tip is the lowest point, so it drips
         new(ScreenEdge.Top,    0.62f, 0.92f, 0.56f, 0.70f, 0.092f, 0.110f, false),
-        new(ScreenEdge.Bottom, 0.00f, 1.00f, 0.62f, 0.76f, 0.058f, 0.070f, true),     // a hazy one behind the rest, for depth
+        new(ScreenEdge.Bottom, 0.00f, 1.00f, 0.62f, 0.76f, 0.058f, 0.070f, true),     // a hazy one behind the rest, for depth (off: UseHazyLayer)
     };
+
 
     private sealed class Rig
     {
@@ -117,6 +124,7 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
 
     private readonly Rig[] _rigs = new Rig[MaxTentacles];
     private readonly int[] _drawOrder = new int[MaxTentacles];
+    private readonly int[] _active = new int[MaxTentacles];        // the archetype each rig is built from, this cast
     private int _count;
 
     private readonly CastTracker _cast = new();
@@ -626,10 +634,19 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
     {
         float shortSide = MathF.Min(size.X, size.Y);
         float overhang = shortSide * 0.12f;      // a thick root must stay behind the edge: its flat cut is never meant to be seen
-        _count = Math.Min(MaxTentacles, Archetypes.Length);
+
+        // Which archetypes this cast uses. A rig's seed comes from its archetype's index, so a tentacle that is kept looks exactly as it always did.
+        ScreenEdge? skipEdge = SkipOneSide ? (DrawHelpers.Hash01(unchecked(castSeed * 31 + 17)) < 0.5f ? ScreenEdge.Left : ScreenEdge.Right) : null;
+        _count = 0;
+        for (int a = 0; a < Archetypes.Length && _count < MaxTentacles; a++)
+        {
+            if (Archetypes[a].Far && !UseHazyLayer) continue;
+            if (!Archetypes[a].Far && Archetypes[a].Edge == skipEdge) continue;
+            _active[_count++] = a;
+        }
 
         for (int i = 0; i < _count; i++)
-            BuildRig(_rigs[i], i, castSeed, size, overhang, shortSide);
+            BuildRig(_rigs[i], _active[i], castSeed, size, overhang, shortSide);
 
         // Far ones are painted first.
         for (int i = 0; i < _count; i++) _drawOrder[i] = i;

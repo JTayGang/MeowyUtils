@@ -41,6 +41,24 @@ internal sealed class MeshBuilder
         _idx[_in++] = (ushort)a; _idx[_in++] = (ushort)b; _idx[_in++] = (ushort)c;
     }
 
+    /// <summary>Makes room for this many more vertices and indices, so the *Reserved calls below, which do no capacity test of their own, are safe for that many.</summary>
+    public void Reserve(int verts, int idx) => Room(verts, idx);
+
+    public int VertexReserved(Vector2 p, uint color)
+    {
+        _pos[_vn] = p; _col[_vn] = color;
+        return _vn++;
+    }
+
+    /// <summary>The quad a b / c d as the two triangles (a, b, d) and (a, d, c). No capacity test: Reserve first.</summary>
+    public void QuadReserved(int a, int b, int c, int d)
+    {
+        ushort[] idx = _idx; int i = _in;
+        idx[i] = (ushort)a; idx[i + 1] = (ushort)b; idx[i + 2] = (ushort)d;
+        idx[i + 3] = (ushort)a; idx[i + 4] = (ushort)d; idx[i + 5] = (ushort)c;
+        _in = i + 6;
+    }
+
     public void Flush(ImDrawListPtr dl, Vector2 uv)
     {
         MeshDraw.Mesh(dl, _pos, _col, _idx, _vn, _in, uv);

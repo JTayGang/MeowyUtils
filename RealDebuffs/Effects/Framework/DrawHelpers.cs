@@ -182,6 +182,26 @@ internal static class DrawHelpers
         return new Vector3(mx - (mx - c.X) * k, mx - (mx - c.Y) * k, mx - (mx - c.Z) * k);
     }
 
+    /// <summary>
+    /// How far a recolour pulls a material's own saturation toward the picked colour's, for materials whose palette is pale but should not be
+    /// dyed all the way (the tentacles and their slime). 0 keeps the material's own saturation; 1 forces the picked colour's, which is what the rope
+    /// wants and is far too vivid for flesh.
+    /// </summary>
+    public const float SoftDye = 0.4f;
+
+    /// <summary>
+    /// Moves <paramref name="c"/>'s saturation <paramref name="amount"/> of the way toward <paramref name="target"/>. Only ever raises it: picking a
+    /// pale colour does not wash the material out below its own palette. Grey has no hue to saturate and is returned as it is.
+    /// </summary>
+    public static Vector3 BoostSaturation(Vector3 c, float target, float amount)
+    {
+        float mx = MathF.Max(c.X, MathF.Max(c.Y, c.Z));
+        float mn = MathF.Min(c.X, MathF.Min(c.Y, c.Z));
+        float have = mx > 1e-4f ? (mx - mn) / mx : 0f;
+        if (have < 1e-3f || target <= have) return c;
+        return WithSaturation(c, have + (target - have) * amount);
+    }
+
     /// <summary>Applies the colour override, then scales alpha by <paramref name="mul"/> (0..1).</summary>
     public static uint WithAlpha(uint color, float mul)
     {

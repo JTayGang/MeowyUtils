@@ -16,6 +16,7 @@ internal static class GoopDraw
         public float Alpha;
         public float Feather;
         public bool  Overridden;
+        public float Dye;
         public Vector2 Uv;
     }
 
@@ -31,6 +32,7 @@ internal static class GoopDraw
             Alpha = alpha > 1f ? 1f : alpha,
             Feather = MathF.Max(0.8f, ctx.ScreenScale * 0.9f),
             Overridden = DrawHelpers.ColorOverrideActive,
+            Dye = DrawHelpers.ColorOverrideChroma,
             Uv = MeshDraw.WhiteUv(ctx.Time),
         };
 
@@ -309,6 +311,7 @@ internal static class GoopDraw
     private static uint Pack(Vector4 lit, float fade, in Look look, uint alphaBitsMax)
     {
         Vector3 col = new(lit.X, lit.Y, lit.Z);
+        if (look.Dye > 0f) col = DrawHelpers.BoostSaturation(col, look.Dye, DrawHelpers.SoftDye);
         return DrawHelpers.Tint(DrawHelpers.Pack(col.X, col.Y, col.Z), lit.W * fade * look.Alpha, look.Overridden);
     }
 

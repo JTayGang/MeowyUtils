@@ -117,6 +117,29 @@ public sealed class Matcap
         return new Vector3(c.X, c.Y, c.Z);
     }
 
+    /// <summary>
+    /// Samples two matcaps at the same normal. They share a size, so the cell and its four weights are worked out once; each result is exactly what that
+    /// matcap's own <see cref="Sample"/> returns (the arithmetic is the same).
+    /// </summary>
+    public static void SamplePair(Matcap a, Matcap b, float nx, float ny, out Vector3 ca, out Vector3 cb)
+    {
+        float fx = (nx * 0.5f + 0.5f) * (N - 1);
+        float fy = (ny * 0.5f + 0.5f) * (N - 1);
+        fx = fx < 0f ? 0f : (fx > N - 1.001f ? N - 1.001f : fx);
+        fy = fy < 0f ? 0f : (fy > N - 1.001f ? N - 1.001f : fy);
+
+        int x0 = (int)fx, y0 = (int)fy;
+        float tx = fx - x0, ty = fy - y0;
+        int i00 = y0 * N + x0;
+
+        float w00 = (1f - tx) * (1f - ty), w10 = tx * (1f - ty), w01 = (1f - tx) * ty, w11 = tx * ty;
+        Vector4[] ra = a._rgb, rb = b._rgb;
+        Vector4 c = ra[i00] * w00 + ra[i00 + 1] * w10 + ra[i00 + N] * w01 + ra[i00 + N + 1] * w11;
+        ca = new Vector3(c.X, c.Y, c.Z);
+        c = rb[i00] * w00 + rb[i00 + 1] * w10 + rb[i00 + N] * w01 + rb[i00 + N + 1] * w11;
+        cb = new Vector3(c.X, c.Y, c.Z);
+    }
+
     private static Vector3 Shade(Vector3 n, in SurfaceSpec s)
     {
         Vector3 v = Vector3.UnitZ;

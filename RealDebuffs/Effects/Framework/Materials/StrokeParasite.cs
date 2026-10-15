@@ -575,9 +575,16 @@ public sealed class StrokeParasite : IStrokeMaterial
 
     // ---- Suckers: real geometry, placed in material coordinates ----
 
-    private const float SuckerRadiusFrac = 0.50f;       // cup radius, in tube radii (of the static profile)
+    // Spacing and size go together: pitch 4% wider than the original 0.85 and cups 2% bigger than the original 0.50, so a cup's share of the arm (size squared over spacing)
+    // is unchanged, and there are 4% fewer of them.
+    private const float SuckerRadiusFrac = 0.51f;       // cup radius, in tube radii (of the static profile)
     private const float SuckerRowAngle   = 0.72f;       // each row sits this far (rad) either side of the belly line
-    private const float SuckerPitch      = 0.85f;       // spacing along a row, in tube diameters
+    private const float SuckerPitch      = 0.884f;      // spacing along a row, in tube diameters
+
+    // Toward the tip the cups are tiny and a tentacle's point reads as a point whatever is on it, yet spacing in local diameters would keep them packing in as the arm
+    // thins (28% of all cups sat in the last tenth, at about 5 px). So the spacing opens up smoothly from the original at TipThinStart to (1 + TipThinExtra) times it at the tip.
+    private const float TipThinStart = 0.50f;           // fraction of the arm at which cups start to thin out
+    private const float TipThinExtra = 1.00f;           // extra spacing at the very tip: 1.0 means twice the spacing there (0 turns it off). Measured: 0.6 = 25% fewer cups, 1.0 = 33%, 1.5 = 40% (and bare-looking)
     private const float SuckerFirst      = 1.35f;       // the first cup, in pitches from the root
     private const float SuckerLift       = 1.20f;       // how tall a cup stands, in cup radii
     private const int   MaxCups          = 96;
@@ -690,7 +697,11 @@ public sealed class StrokeParasite : IStrokeMaterial
         // n(u): how many cups fit before fraction u of the arm, given that they shrink as it tapers.
         _profileN[0] = 0f;
         for (int i = 0; i < ProfileSteps; i++)
-            _profileN[i + 1] = _profileN[i] + scaleN / (ProfileSteps * Taper((i + 0.5f) / ProfileSteps, false));
+        {
+            float uMid = (i + 0.5f) / ProfileSteps;
+            float openUp = 1f + TipThinExtra * DrawHelpers.Smooth((uMid - TipThinStart) / (1f - TipThinStart));
+            _profileN[i + 1] = _profileN[i] + scaleN / (ProfileSteps * Taper(uMid, false) * openUp);
+        }
         float nTotal = _profileN[ProfileSteps];
 
         for (int m = 0; cups < MaxCups; m++)

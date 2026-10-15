@@ -168,7 +168,7 @@ internal sealed class ExpiryFeed
         if (!Ok && !_warned)
         {
             _warned = true;
-            _warn($"[SkyrimCompass] Couldn't decode {_name}'s status data - its layout probably changed. " +
+            _warn($"Couldn't decode {_name}'s status data - its layout probably changed. " +
                   "Status icons still work, but timers are hidden until SkyrimCompass is updated.");
         }
     }

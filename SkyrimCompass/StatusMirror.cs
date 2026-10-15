@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using Dalamud.Game.ClientState.Objects.SubKinds;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Ipc;
@@ -89,13 +90,17 @@ internal sealed class MirrorState
         try
         {
             var path = FilePath(pi);
-            if (!File.Exists(path)) return new MirrorState();
-            var loaded = JsonSerializer.Deserialize<MirrorState>(File.ReadAllText(path));
-            return loaded ?? new MirrorState();
+            // A stray .tmp can only be left behind by a kill mid-save; the real file is intact in that case.
+            try { if (File.Exists(path + ".tmp")) File.Delete(path + ".tmp"); } catch { }
+            if (!File.Exists(path)) { log.Information("No mirror ledger on disk yet - starting empty."); return new MirrorState(); }
+            var loaded = JsonSerializer.Deserialize<MirrorState>(File.ReadAllText(path)) ?? new MirrorState();
+            log.Information("Loaded mirror ledger: {ToLoci} twin(s) in Loci, {ToMoodles} in Moodles (file last written {When:yyyy-MM-dd HH:mm:ss}).",
+                loaded.MirroredIntoLoci.Count, loaded.MirroredIntoMoodles.Count, File.GetLastWriteTime(path));
+            return loaded;
         }
-        catch
+        catch (Exception ex)
         {
-            log.Warning("[SkyrimCompass] Failed to load persisted status-mirror state — starting fresh.");
+            log.Warning(ex, "Failed to load persisted status-mirror state - starting fresh.");
             return new MirrorState();
         }
     }
@@ -106,11 +111,22 @@ internal sealed class MirrorState
         {
             var path = FilePath(pi);
             Directory.CreateDirectory(pi.ConfigDirectory.FullName);
-            File.WriteAllText(path, JsonSerializer.Serialize(this));
+            var json = JsonSerializer.Serialize(this);
+            // Write a temp file, flush it to disk, then swap it in. If the game is killed mid-save (/xlkill, crash, power loss)
+            // the old ledger survives intact instead of being left truncated (which would make every mirrored twin look like a new status).
+            var tmp = path + ".tmp";
+            using (var fs = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                var bytes = new UTF8Encoding(false).GetBytes(json);
+                fs.Write(bytes, 0, bytes.Length);
+                fs.Flush(true);
+            }
+            if (File.Exists(path)) File.Replace(tmp, path, null);
+            else File.Move(tmp, path);
         }
         catch (Exception ex)
         {
-            log.Warning(ex, "[SkyrimCompass] Failed to save status-mirror state.");
+            log.Warning(ex, "Failed to save status-mirror state.");
         }
     }
 }
@@ -145,15 +161,15 @@ internal sealed class MoodlesMirrorIpc : IDisposable
     {
         var was = Available;
         try { Available = _ver.InvokeFunc() >= MinApiVersion; } catch { Available = false; }
-        if (Available && !was) { _log.Information("[SkyrimCompass] Moodles IPC became available."); TrySubscribe(); }
-        else if (!Available && was) _log.Information("[SkyrimCompass] Moodles IPC became unavailable.");
+        if (Available && !was) { _log.Information("Moodles IPC became available."); TrySubscribe(); }
+        else if (!Available && was) _log.Information("Moodles IPC became unavailable.");
     }
 
     private void TrySubscribe()
     {
         if (_subscribed) return;
         try { _modified.Subscribe(OnModified); _subscribed = true; }
-        catch (Exception ex) { _log.Debug(ex, "[SkyrimCompass] Could not subscribe to Moodles.StatusManagerModified yet."); }
+        catch (Exception ex) { _log.Debug(ex, "Could not subscribe to Moodles.StatusManagerModified yet."); }
     }
 
     private void OnModified(nint addr) => LocalStatusesChanged?.Invoke(addr);
@@ -162,21 +178,21 @@ internal sealed class MoodlesMirrorIpc : IDisposable
     {
         if (!Available) return [];
         try { return _get.InvokeFunc() ?? []; }
-        catch (Exception ex) { _log.Warning(ex, "[SkyrimCompass] Failed to read local Moodles statuses."); return []; }
+        catch (Exception ex) { _log.Warning(ex, "Failed to read local Moodles statuses."); return []; }
     }
 
     public bool TryApply(MoodlesStatusInfo status, IPlayerCharacter local)
     {
         if (!Available) return false;
         try { _add.InvokeAction(status, local); return true; }
-        catch (Exception ex) { _log.Warning(ex, "[SkyrimCompass] Failed to apply a mirrored Moodle."); return false; }
+        catch (Exception ex) { _log.Warning(ex, "Failed to apply a mirrored Moodle."); return false; }
     }
 
     public bool TryRemove(System.Guid guid, IPlayerCharacter local)
     {
         if (!Available) return false;
         try { _remove.InvokeAction(guid, local); return true; }
-        catch (Exception ex) { _log.Warning(ex, "[SkyrimCompass] Failed to remove a mirrored Moodle."); return false; }
+        catch (Exception ex) { _log.Warning(ex, "Failed to remove a mirrored Moodle."); return false; }
     }
 
     public void Dispose()
@@ -217,15 +233,15 @@ internal sealed class LociMirrorIpc : IDisposable
         var was = Available;
         try { _ver.InvokeFunc(); Available = _enabled.InvokeFunc(); }
         catch { Available = false; }
-        if (Available && !was) { _log.Information("[SkyrimCompass] Loci IPC became available."); TrySubscribe(); }
-        else if (!Available && was) _log.Information("[SkyrimCompass] Loci IPC became unavailable.");
+        if (Available && !was) { _log.Information("Loci IPC became available."); TrySubscribe(); }
+        else if (!Available && was) _log.Information("Loci IPC became unavailable.");
     }
 
     private void TrySubscribe()
     {
         if (_subscribed) return;
         try { _modified.Subscribe(OnModified); _subscribed = true; }
-        catch (Exception ex) { _log.Debug(ex, "[SkyrimCompass] Could not subscribe to Loci.ManagerChanged yet."); }
+        catch (Exception ex) { _log.Debug(ex, "Could not subscribe to Loci.ManagerChanged yet."); }
     }
 
     private void OnModified(nint addr, int type) => LocalStatusesChanged?.Invoke(addr);
@@ -234,7 +250,7 @@ internal sealed class LociMirrorIpc : IDisposable
     {
         if (!Available) return [];
         try { return _get.InvokeFunc() ?? []; }
-        catch (Exception ex) { _log.Warning(ex, "[SkyrimCompass] Failed to read local Loci statuses."); return []; }
+        catch (Exception ex) { _log.Warning(ex, "Failed to read local Loci statuses."); return []; }
     }
 
     public LociApiEc TryApply(LociStatusInfo status)
@@ -244,10 +260,10 @@ internal sealed class LociMirrorIpc : IDisposable
         {
             var ec = (LociApiEc)_apply.InvokeFunc(status, 0u);
             if (ec is not (LociApiEc.Success or LociApiEc.NoChange))
-                _log.Warning($"[SkyrimCompass] Loci rejected a mirrored status: {ec}");
+                _log.Warning($"Loci rejected a mirrored status: {ec}");
             return ec;
         }
-        catch (Exception ex) { _log.Warning(ex, "[SkyrimCompass] Failed to apply a mirrored Loci status."); return LociApiEc.UnkError; }
+        catch (Exception ex) { _log.Warning(ex, "Failed to apply a mirrored Loci status."); return LociApiEc.UnkError; }
     }
 
     public LociApiEc TryRemove(System.Guid guid)
@@ -257,10 +273,10 @@ internal sealed class LociMirrorIpc : IDisposable
         {
             var ec = (LociApiEc)_remove.InvokeFunc(guid, 0u);
             if (ec is not (LociApiEc.Success or LociApiEc.NoChange or LociApiEc.DataNotFound))
-                _log.Warning($"[SkyrimCompass] Loci rejected removing a mirrored status: {ec}");
+                _log.Warning($"Loci rejected removing a mirrored status: {ec}");
             return ec;
         }
-        catch (Exception ex) { _log.Warning(ex, "[SkyrimCompass] Failed to remove a mirrored Loci status."); return LociApiEc.UnkError; }
+        catch (Exception ex) { _log.Warning(ex, "Failed to remove a mirrored Loci status."); return LociApiEc.UnkError; }
     }
 
     public void Dispose()
@@ -299,6 +315,57 @@ public sealed class StatusMirrorEngine : IDisposable
     private bool _mirrorsNeedRefresh;
     private DateTime _nextReconcile = DateTime.MinValue;
     private volatile bool _pendingReconcile = true;
+
+    // ---- Mirror activity log -------------------------------------------------------------------------------------
+    // Moodles and Loci restore your statuses from their own last save, which after a hard kill (/xlkill) is older than the
+    // state you left. Each write the mirror makes is logged (Information, visible in /xllog) so a "ghost" status can be traced
+    // to where it came from, and every line says how long after the first reconcile of this session it happened (so a status
+    // restored at login shows up as a few seconds, anything later was put there by something else). Writes only happen on real changes, and
+    // identical repeats of the same (status, action) are gated to once per 10s so a stuck loop can't flood the log.
+    private DateTime? _firstReconcileAt;
+    private bool _startupLogged;
+    private readonly Dictionary<(System.Guid, string), (DateTime At, int Suppressed)> _logGate = new();
+
+    private void LogMirror(string direction, string action, System.Guid guid, string? title, string why)
+    {
+        var now = DateTime.UtcNow;
+        var key = (guid, action);
+        var suppressed = 0;
+        if (_logGate.TryGetValue(key, out var gate))
+        {
+            if ((now - gate.At).TotalSeconds < 10) { _logGate[key] = (gate.At, gate.Suppressed + 1); return; }
+            suppressed = gate.Suppressed;
+        }
+        if (_logGate.Count > 512) _logGate.Clear();
+        _logGate[key] = (now, 0);
+        // ':l' = literal: Dalamud/Serilog otherwise wraps string arguments in double quotes. (Dalamud already prefixes the plugin name.)
+        _log.Information("Mirror {Direction:l}: {Action:l} '{Title:l}' ({Guid}) - {Why:l}{Repeats:l}{Phase:l}",
+            direction, action, (title ?? "").ReplaceLineEndings(" "), guid, why,
+            suppressed > 0 ? $" (+{suppressed} identical repeat(s) suppressed)" : "",
+            _firstReconcileAt is { } t0 ? $" [+{FormatElapsed(now - t0)} since first reconcile]" : "");
+    }
+
+    private static string FormatElapsed(TimeSpan t) => t.TotalHours >= 1 ? t.ToString(@"h\:mm\:ss") : t.ToString(@"m\:ss");
+
+    private string LedgerNote(System.Guid g, bool inMoodles)
+    {
+        var (twinOf, originalOf) = inMoodles ? (MirroredIntoMoodles, MirroredIntoLoci) : (MirroredIntoLoci, MirroredIntoMoodles);
+        if (twinOf.ContainsKey(g)) return inMoodles ? "ledger: twin created from a Loci status" : "ledger: twin created from a Moodles status";
+        if (originalOf.ContainsKey(g)) return inMoodles ? "ledger: original, mirrored into Loci" : "ledger: original, mirrored into Moodles";
+        return "NOT in ledger (will be treated as a newly applied status)";
+    }
+
+    private void LogStartupSnapshot(List<MoodlesStatusInfo> moodleList, List<LociStatusInfo> lociList)
+    {
+        _log.Information("First mirror reconcile after launch: Moodles reports {Moodles} status(es), Loci reports {Loci}; " +
+            "ledger tracks {ToLoci} twin(s) in Loci and {ToMoodles} in Moodles. Statuses seen now were restored by Moodles/Loci from their " +
+            "last save (after /xlkill that is older than the state you left). Loci may still be loading if its count looks too low.",
+            moodleList.Count, lociList.Count, MirroredIntoLoci.Count, MirroredIntoMoodles.Count);
+        foreach (var m in moodleList)
+            _log.Information("  Moodles has '{Title:l}' ({Guid}) - {Note:l}", (m.Title ?? "").ReplaceLineEndings(" "), m.GUID, LedgerNote(m.GUID, true));
+        foreach (var l in lociList)
+            _log.Information("  Loci has '{Title:l}' ({Guid}) - {Note:l}", (l.Title ?? "").ReplaceLineEndings(" "), l.GUID, LedgerNote(l.GUID, false));
+    }
 
     public bool MoodlesAvailable => _moodles.Available;
     public bool LociAvailable => _loci.Available;
@@ -365,7 +432,7 @@ public sealed class StatusMirrorEngine : IDisposable
         _pendingReconcile = false;
         _nextReconcile = now + TimeSpan.FromSeconds(MinReconcileInterval);
         try { Reconcile(); }
-        catch (Exception ex) { _log.Error(ex, "[SkyrimCompass] Reconcile threw."); }
+        catch (Exception ex) { _log.Error(ex, "Reconcile threw."); }
         if (_dirty && now >= _nextSave)
         {
             _state.Save(_pi, _log);
@@ -384,6 +451,12 @@ public sealed class StatusMirrorEngine : IDisposable
         if (!_moodles.Available || !_loci.Available) return;
         var moodleList = _moodles.GetLocalStatuses();
         var lociList = _loci.GetLocalStatuses();
+        if (!_startupLogged)
+        {
+            _startupLogged = true;
+            _firstReconcileAt = DateTime.UtcNow;
+            LogStartupSnapshot(moodleList, lociList);
+        }
         SyncMoodlesToLoci(moodleList, lociList, _mirrorsNeedRefresh);
         SyncLociToMoodles(lociList, moodleList, local, _mirrorsNeedRefresh);
         _mirrorsNeedRefresh = false;
@@ -412,17 +485,20 @@ public sealed class StatusMirrorEngine : IDisposable
                 var sig = MirrorSignature.FromMoodles(src);
                 if (MirroredIntoLoci.TryGetValue(g, out var existing) && existing == sig) continue;
                 if (IsReapplyOnCooldown(_lastAppliedToLoci, g, now))
-                { _log.Debug($"[SkyrimCompass] Skipped re-applying {g} to Loci - cooldown."); continue; }
+                { _log.Debug($"Skipped re-applying {g} to Loci - cooldown."); continue; }
                 if (_lociRejected.TryGetValue(g, out var retryAt) && now < retryAt) continue;
                 var conv = MirrorConverter.ToLoci(src);
                 var ec = _loci.TryApply(conv);
                 if (ec is LociApiEc.Success or LociApiEc.NoChange)
-                { MirroredIntoLoci[g] = sig; MarkDirty(); _lastAppliedToLoci[g] = now; _lociRejected.Remove(g); }
+                {
+                    MirroredIntoLoci[g] = sig; MarkDirty(); _lastAppliedToLoci[g] = now; _lociRejected.Remove(g);
+                    if (ec == LociApiEc.Success) LogMirror("Moodles -> Loci", "re-applied", g, src.Title, "source status changed");
+                }
                 else if (ec == LociApiEc.ItemLocked) _locked.Add(g);
                 else
                 {
                     if (!_lociRejected.ContainsKey(g))
-                        _log.Warning($"[SkyrimCompass] Loci rejected mirrored status '{src.Title}' ({g}) as invalid data ({ec}) - likely a bad icon ID, empty title, zero duration, or text-formatting error, not a permission setting.");
+                        _log.Warning($"Loci rejected mirrored status '{src.Title}' ({g}) as invalid data ({ec}) - likely a bad icon ID, empty title, zero duration, or text-formatting error, not a permission setting.");
                     _lociRejected[g] = now + TimeSpan.FromSeconds(MoodlesRejectRetrySecs);
                 }
             }
@@ -439,9 +515,14 @@ public sealed class StatusMirrorEngine : IDisposable
             var sig = MirrorSignature.FromMoodles(m);
             bool already = MirroredIntoLoci.TryGetValue(m.GUID, out var known);
             if (already && known == sig && lociGuids.Contains(m.GUID)) continue;
-            if (!already && lociGuids.Contains(m.GUID)) { MirroredIntoLoci[m.GUID] = sig; MarkDirty(); continue; }
+            if (!already && lociGuids.Contains(m.GUID))
+            {
+                MirroredIntoLoci[m.GUID] = sig; MarkDirty();
+                LogMirror("Moodles -> Loci", "adopted existing Loci copy (no write)", m.GUID, m.Title, "same GUID already in Loci but the ledger didn't know it");
+                continue;
+            }
             if (already && IsReapplyOnCooldown(_lastAppliedToLoci, m.GUID, now))
-            { _log.Debug($"[SkyrimCompass] Skipped re-applying {m.GUID} to Loci - cooldown."); continue; }
+            { _log.Debug($"Skipped re-applying {m.GUID} to Loci - cooldown."); continue; }
             if (_lociRejected.TryGetValue(m.GUID, out var retryAt) && now < retryAt) continue;
             if (!already)
             {
@@ -452,18 +533,27 @@ public sealed class StatusMirrorEngine : IDisposable
             var conv = MirrorConverter.ToLoci(m);
             var ec = _loci.TryApply(conv);
             if (ec is LociApiEc.Success or LociApiEc.NoChange)
-            { MirroredIntoLoci[m.GUID] = sig; MarkDirty(); _lastAppliedToLoci[m.GUID] = now; _lociRejected.Remove(m.GUID); }
+            {
+                MirroredIntoLoci[m.GUID] = sig; MarkDirty(); _lastAppliedToLoci[m.GUID] = now; _lociRejected.Remove(m.GUID);
+                if (ec == LociApiEc.Success)
+                    LogMirror("Moodles -> Loci", already ? "re-applied" : "applied", m.GUID, m.Title,
+                        already ? "twin was missing from Loci or changed" : "Moodles status not yet mirrored");
+            }
             else if (ec != LociApiEc.ItemLocked)
             {
                 if (!_lociRejected.ContainsKey(m.GUID))
-                    _log.Warning($"[SkyrimCompass] Loci rejected mirrored status '{m.Title}' ({m.GUID}) as invalid data ({ec}) - likely a bad icon ID, empty title, zero duration, or text-formatting error, not a permission setting.");
+                    _log.Warning($"Loci rejected mirrored status '{m.Title}' ({m.GUID}) as invalid data ({ec}) - likely a bad icon ID, empty title, zero duration, or text-formatting error, not a permission setting.");
                 _lociRejected[m.GUID] = now + TimeSpan.FromSeconds(MoodlesRejectRetrySecs);
             }
         }
 
         var staleSet = new HashSet<Guid>(staleTwins);
         foreach (var g in staleSet)
-        { _loci.TryRemove(g); _recentRemoved[g] = DateTime.UtcNow; _supersededMoodleGhosts.Add(g); }
+        {
+            var staleEc = _loci.TryRemove(g);
+            LogMirror("Moodles -> Loci", "removed stale twin", g, lociExisting.Find(x => x.GUID == g).Title, $"replaced by a new GUID with identical content ({staleEc})");
+            _recentRemoved[g] = DateTime.UtcNow; _supersededMoodleGhosts.Add(g);
+        }
 
         var toRemove = new List<Guid>();
         foreach (var kv in MirroredIntoLoci)
@@ -473,10 +563,15 @@ public sealed class StatusMirrorEngine : IDisposable
             if (lociGuids.Contains(g))
             {
                 var ec = _loci.TryRemove(g);
-                if (ec == LociApiEc.ItemLocked) { if (_locked.Add(g)) _log.Warning($"[SkyrimCompass] Loci status locked: {g}"); }
-                else _locked.Remove(g);
+                if (ec == LociApiEc.ItemLocked) { if (_locked.Add(g)) _log.Warning($"Loci status locked: {g}"); }
+                else
+                {
+                    _locked.Remove(g);
+                    LogMirror("Moodles -> Loci", "removed twin", g, lociExisting.Find(x => x.GUID == g).Title, $"source status is no longer in Moodles ({ec})");
+                }
                 continue;
             }
+            _log.Debug("Ledger entry dropped for {Guid} (Loci twin confirmed gone).", g);
             MirroredIntoLoci.Remove(g); MarkDirty(); _locked.Remove(g); _recentRemoved[g] = DateTime.UtcNow;
         }
     }
@@ -505,9 +600,13 @@ public sealed class StatusMirrorEngine : IDisposable
                 var sig = MirrorSignature.FromLoci(src);
                 if (MirroredIntoMoodles.TryGetValue(g, out var existing) && existing == sig) continue;
                 if (IsReapplyOnCooldown(_lastAppliedToMoodles, g, now))
-                { _log.Debug($"[SkyrimCompass] Skipped re-applying {g} to Moodles - cooldown."); continue; }
+                { _log.Debug($"Skipped re-applying {g} to Moodles - cooldown."); continue; }
                 var conv = MirrorConverter.ToMoodles(src);
-                if (_moodles.TryApply(conv, local)) { MirroredIntoMoodles[g] = sig; MarkDirty(); _lastAppliedToMoodles[g] = now; }
+                if (_moodles.TryApply(conv, local))
+                {
+                    MirroredIntoMoodles[g] = sig; MarkDirty(); _lastAppliedToMoodles[g] = now;
+                    LogMirror("Loci -> Moodles", "re-applied", g, src.Title, "source status changed");
+                }
             }
         }
 
@@ -535,7 +634,7 @@ public sealed class StatusMirrorEngine : IDisposable
                 MarkDirty();
                 already = false;
                 if (!_moodlesRejected.ContainsKey(l.GUID))
-                    _log.Warning($"[SkyrimCompass] Moodles rejected mirrored status '{l.Title}' ({l.GUID}) - check 'Allow other plugins apply Moodles' and 'Allow applying moodles from everyone' in Moodles' settings.");
+                    _log.Warning($"Moodles rejected mirrored status '{l.Title}' ({l.GUID}) - check 'Allow other plugins apply Moodles' and 'Allow applying moodles from everyone' in Moodles' settings.");
                 _moodlesRejected[l.GUID] = now + TimeSpan.FromSeconds(MoodlesRejectRetrySecs);
             }
 
@@ -543,13 +642,14 @@ public sealed class StatusMirrorEngine : IDisposable
             {
                 MirroredIntoMoodles[l.GUID] = sig; MarkDirty();
                 _moodlesRejected.Remove(l.GUID);
+                LogMirror("Loci -> Moodles", "adopted existing Moodles copy (no write)", l.GUID, l.Title, "same GUID already in Moodles but the ledger didn't know it");
                 continue;
             }
 
             if (_moodlesRejected.TryGetValue(l.GUID, out var retryAt) && now < retryAt) continue;
 
             if (already && IsReapplyOnCooldown(_lastAppliedToMoodles, l.GUID, now))
-            { _log.Debug($"[SkyrimCompass] Skipped re-applying {l.GUID} to Moodles - cooldown."); continue; }
+            { _log.Debug($"Skipped re-applying {l.GUID} to Moodles - cooldown."); continue; }
 
             if (!already)
             {
@@ -558,19 +658,34 @@ public sealed class StatusMirrorEngine : IDisposable
                     { staleTwins.Add(kv.Key); break; }
             }
             var conv = MirrorConverter.ToMoodles(l);
-            if (_moodles.TryApply(conv, local)) { MirroredIntoMoodles[l.GUID] = sig; MarkDirty(); _lastAppliedToMoodles[l.GUID] = now; }
+            if (_moodles.TryApply(conv, local))
+            {
+                MirroredIntoMoodles[l.GUID] = sig; MarkDirty(); _lastAppliedToMoodles[l.GUID] = now;
+                LogMirror("Loci -> Moodles", already ? "re-applied" : "applied", l.GUID, l.Title,
+                    already ? "twin was missing from Moodles or changed" : "Loci status not yet mirrored");
+            }
         }
 
         var staleSet = new HashSet<Guid>(staleTwins);
         foreach (var g in staleSet)
-        { _moodles.TryRemove(g, local); _recentRemoved[g] = DateTime.UtcNow; _supersededLociGhosts.Add(g); }
+        {
+            _moodles.TryRemove(g, local);
+            LogMirror("Loci -> Moodles", "removed stale twin", g, moodlesExisting.Find(x => x.GUID == g).Title, "replaced by a new GUID with identical content");
+            _recentRemoved[g] = DateTime.UtcNow; _supersededLociGhosts.Add(g);
+        }
 
         var toRemove = new List<Guid>();
         foreach (var kv in MirroredIntoMoodles)
             if (!allLociGuids.Contains(kv.Key)) toRemove.Add(kv.Key);
         foreach (var g in toRemove)
         {
-            if (moodleGuids.Contains(g)) { _moodles.TryRemove(g, local); continue; }
+            if (moodleGuids.Contains(g))
+            {
+                _moodles.TryRemove(g, local);
+                LogMirror("Loci -> Moodles", "removed twin", g, moodlesExisting.Find(x => x.GUID == g).Title, "source status is no longer in Loci");
+                continue;
+            }
+            _log.Debug("Ledger entry dropped for {Guid} (Moodles twin confirmed gone).", g);
             MirroredIntoMoodles.Remove(g); MarkDirty(); _recentRemoved[g] = DateTime.UtcNow;
         }
     }

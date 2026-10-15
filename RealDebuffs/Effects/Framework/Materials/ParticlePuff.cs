@@ -61,7 +61,22 @@ public sealed class ParticlePuff : IParticleMaterial
             BiasVelocity: new Vector2(0f, -8f),
             PrimaryDirection: new Vector2(0f, -1f)));
 
-    public static readonly ParticlePuff[] All = { Smoke, Mist, Dust, Miasma };
+    // A charged cloud deck: dark umber that the flashes inside it light to amber. The effect drives the flashes through Brightness.
+    public static readonly ParticlePuff Thunderhead = new("particle.thunderhead", new[] { "thunderhead", "thundercloud", "stormcloud", "storm" },
+        new Look(Warm: DrawHelpers.Pack(0.80f, 0.38f, 0.060f), Cool: DrawHelpers.Pack(0.12f, 0.058f, 0.012f), CoolSpan: 0.85f,
+                 GrowFrom: 0.60f, GrowBy: 0.50f, FadeIn: 0.30f, FadeOutAt: 0.55f,
+                 Alpha: 0.40f, Squash: 0.70f, Irregular: 0.60f, MinSize: 2f,
+                 Highlight: DrawHelpers.Pack(1.00f, 0.74f, 0.24f), Thin: 0.30f),
+        new StrokeEmission(Role: PrimitiveRole.Haze,
+            DensityPer100px: 0.35f,
+            SpeedMin: 4f, SpeedMax: 12f,
+            LifespanMin: 2.4f, LifespanMax: 4.4f,
+            SizeMin: 16f, SizeMax: 30f,
+            SpreadRadians: 1.4f,
+            BiasVelocity: new Vector2(0f, -6f),
+            PrimaryDirection: new Vector2(0f, -1f)));
+
+    public static readonly ParticlePuff[] All = { Smoke, Mist, Dust, Miasma, Thunderhead };
 
     private const int Segs = 12;
 

@@ -113,8 +113,22 @@ public sealed class ParticleRune : IParticleMaterial
 /// <summary>A speck of arcane light: a soft halo round a bright pip, with a four-point flare on some. Large ones turn into out-of-focus discs, so whatever is nearest the camera reads as blurred.</summary>
 public sealed class ParticleMote : IParticleMaterial
 {
-    public string Name => "particle.mote";
-    public string[] NaturalLanguageWords { get; } = { "mote", "motes", "wisp", "wisps" };
+    private readonly string _name;
+    private readonly Palette _palette;
+
+    /// <summary>The curse-violet mote (particle.mote).</summary>
+    public ParticleMote() : this("particle.mote", CurseColor.Glow, "mote", "motes", "wisp", "wisps") { }
+
+    /// <summary>The same drifting speck of light in another palette: register one per theme (see particle.static in MaterialRegistry).</summary>
+    internal ParticleMote(string name, Palette palette, params string[] words)
+    {
+        _name = name;
+        _palette = palette;
+        NaturalLanguageWords = words;
+    }
+
+    public string Name => _name;
+    public string[] NaturalLanguageWords { get; }
 
     // Past this radius (at 1080p) a mote is drawn as a soft disc instead of a point of light.
     private const float BokehFrom = 11f;
@@ -140,11 +154,11 @@ public sealed class ParticleMote : IParticleMaterial
             Span<float> rr = stackalloc float[3] { size * 0.80f, size * 0.93f, size };
             Span<uint> rc = stackalloc uint[3]
             {
-                DrawHelpers.WithAlpha(CurseColor.Glow.Sample(0.34f), k * 0.17f),
-                DrawHelpers.WithAlpha(CurseColor.Glow.Sample(0.50f), k * 0.26f),
-                DrawHelpers.WithAlpha(CurseColor.Glow.Sample(0.40f), 0f),
+                DrawHelpers.WithAlpha(_palette.Sample(0.34f), k * 0.17f),
+                DrawHelpers.WithAlpha(_palette.Sample(0.50f), k * 0.26f),
+                DrawHelpers.WithAlpha(_palette.Sample(0.40f), 0f),
             };
-            MeshDraw.Radial(dl, pos, uv, DrawHelpers.WithAlpha(CurseColor.Glow.Sample(0.30f), k * 0.12f),
+            MeshDraw.Radial(dl, pos, uv, DrawHelpers.WithAlpha(_palette.Sample(0.30f), k * 0.12f),
                             18, rr, rc, 0f, 1f, 0, 0f);
             return;
         }
@@ -152,17 +166,17 @@ public sealed class ParticleMote : IParticleMaterial
         Span<float> hr = stackalloc float[2] { size * 1.4f, size * 3.2f };
         Span<uint> hc = stackalloc uint[2]
         {
-            DrawHelpers.WithAlpha(CurseColor.Glow.Sample(0.45f), k * 0.30f),
-            DrawHelpers.WithAlpha(CurseColor.Glow.Sample(0.25f), 0f),
+            DrawHelpers.WithAlpha(_palette.Sample(0.45f), k * 0.30f),
+            DrawHelpers.WithAlpha(_palette.Sample(0.25f), 0f),
         };
-        MeshDraw.Radial(dl, pos, uv, DrawHelpers.WithAlpha(CurseColor.Glow.Sample(0.60f), k * 0.55f), 10, hr, hc, 0f, 1f, 0, 0f);
-        dl.AddCircleFilled(pos, MathF.Max(0.7f, size * 0.55f), DrawHelpers.WithAlpha(CurseColor.Glow.Sample(0.97f), k * 0.95f));
+        MeshDraw.Radial(dl, pos, uv, DrawHelpers.WithAlpha(_palette.Sample(0.60f), k * 0.55f), 10, hr, hc, 0f, 1f, 0, 0f);
+        dl.AddCircleFilled(pos, MathF.Max(0.7f, size * 0.55f), DrawHelpers.WithAlpha(_palette.Sample(0.97f), k * 0.95f));
 
         // A flare on about one in eight.
         if ((p.Seed & 7) == 0)
         {
             float r = size * 4.2f;
-            uint ray = DrawHelpers.WithAlpha(CurseColor.Glow.Sample(0.85f), k * 0.55f);
+            uint ray = DrawHelpers.WithAlpha(_palette.Sample(0.85f), k * 0.55f);
             dl.AddLine(pos + new Vector2(-r, 0f), pos + new Vector2(r, 0f), ray, 0.8f);
             dl.AddLine(pos + new Vector2(0f, -r), pos + new Vector2(0f, r), ray, 0.8f);
         }

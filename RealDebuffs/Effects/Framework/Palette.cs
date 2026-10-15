@@ -147,3 +147,27 @@ internal static class CurseColor
     /// <summary>The white-hot flash a curse lands with (pink-tinged, so it stays chromatic under a colour override).</summary>
     public static readonly uint Flash = DrawHelpers.Pack(0.95f, 0.62f, 1.00f);
 }
+
+/// <summary>Electricity: rust through burnt orange and amber to a pale yellow-white core, matching the vanilla paralysis spark. The counterpart of FireColor, IceColor and CurseColor for any lightning, shock or static effect.</summary>
+internal static class StormColor
+{
+    /// <summary>Light, dim to hot: 0 = deep rust, 0.3 = burnt orange, 0.55 = vivid orange, 0.78 = amber, 1 = pale yellow-white.</summary>
+    public static readonly Palette Glow = new(
+        (0.00f, 0.34f, 0.080f, 0.010f),
+        (0.30f, 0.78f, 0.300f, 0.020f),
+        (0.55f, 1.00f, 0.560f, 0.070f),
+        (0.78f, 1.00f, 0.800f, 0.200f),
+        (1.00f, 1.00f, 0.975f, 0.760f));
+
+    /// <summary>The unlit side of a storm: near-black umber to a dusty copper. For haze, cloud and the shade beneath glowing things.</summary>
+    public static readonly Palette Murk = new(
+        (0.00f, 0.040f, 0.020f, 0.004f),
+        (0.50f, 0.170f, 0.082f, 0.014f),
+        (1.00f, 0.360f, 0.185f, 0.034f));
+
+    /// <summary>Edge tint for the screen's vignette: very dark umber.</summary>
+    public static readonly uint Vignette = DrawHelpers.Pack(0.030f, 0.014f, 0.002f);
+
+    /// <summary>The white-hot flash a strike lands with (yellow-tinged, so it stays chromatic under a colour override).</summary>
+    public static readonly uint Flash = DrawHelpers.Pack(1.00f, 0.96f, 0.80f);
+}

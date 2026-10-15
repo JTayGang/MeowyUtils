@@ -25,6 +25,8 @@ public enum PrimitiveRole
     Halo = 28,
     Mote = 29,
     Miasma = 30,
+    Arc = 31,
+    Haze = 32,
 }
 
 public struct StrokePrimitive

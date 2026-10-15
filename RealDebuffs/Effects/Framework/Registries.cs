@@ -88,6 +88,8 @@ public static class EffectRegistry
         PrimitiveRole.Rune      => "particle.rune",
         PrimitiveRole.Mote      => "particle.mote",
         PrimitiveRole.Miasma    => "particle.miasma",
+        PrimitiveRole.Arc       => "particle.arc",
+        PrimitiveRole.Haze      => "particle.thunderhead",
         _                       => "particle.spark",
     };
 
@@ -123,7 +125,9 @@ public static class MaterialRegistry
         Add(Strokes, new StrokeParasite());
         Add(Strokes, new StrokeRope());
         Add(Strokes, new StrokeSigil());
+        Add(Strokes, new StrokeLightning());
         Add(Strokes, new StrokeGlow());
+        Add(Strokes, new StrokeGlow("stroke.corona", StormColor.Glow, "corona", "flare", "flares"));
 
         Add(Particles, new ParticleEmber());
         Add(Particles, new ParticleCinder());
@@ -137,7 +141,9 @@ public static class MaterialRegistry
         Add(Particles, new ParticleDrip());
         Add(Particles, new ParticleSlime());
         Add(Particles, new ParticleRune());
+        Add(Particles, new ParticleArc());
         Add(Particles, new ParticleMote());
+        Add(Particles, new ParticleMote("particle.static", StormColor.Glow, "static", "plasma", "ions"));
 
         var vocabulary = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var material in All)

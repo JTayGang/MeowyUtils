@@ -41,6 +41,30 @@ internal static class SigilGeometry
         path.BuildArc();
     }
 
+    /// <summary>
+    /// An open curve between two anchors on the layer at <paramref name="height"/> (plane coordinates, as for Ring): a quadratic bow whose middle sits <paramref name="bow"/> off the chord, plus a sideways wobble
+    /// (amplitudes in plane px, evaluated over one turn of its harmonics from end to end) that is pinned to nothing at both ends so the anchors never move. Capacity segments + 1.
+    /// For a bolt, a cable or a rope hung between two points; hand it to any stroke.
+    /// </summary>
+    public static void Span(StrandPath path, int segments, in LayerCamera cam, Vector2 from, Vector2 to, Vector2 bow, float height, in RingWobble wobble)
+    {
+        Vector2 chord = to - from;
+        float cl = chord.Length();
+        Vector2 side = cl > 1e-4f ? new Vector2(-chord.Y, chord.X) / cl : Vector2.UnitY;
+        Vector2 control = (from + to) * 0.5f + bow * 2f;      // a quadratic's middle is halfway to its control point
+
+        for (int i = 0; i <= segments; i++)
+        {
+            float t = i / (float)segments;
+            float k = 1f - t;
+            Vector2 q = k * k * from + 2f * k * t * control + t * t * to;
+            q += side * (wobble.At(t * MathF.Tau) * MathF.Sin(t * MathF.PI));
+            path.Points[i] = cam.Project(q.X, q.Y, height, out _);
+        }
+        path.Count = segments + 1;
+        path.BuildArc();
+    }
+
     /// <summary>A point on a ring, with the perspective scale there (what to multiply a size by) and the screen direction pointing outward from the ring's centre.</summary>
     public static Vector2 PointOn(in LayerCamera cam, float radius, float height, float angle, out float scale, out Vector2 outward)
     {

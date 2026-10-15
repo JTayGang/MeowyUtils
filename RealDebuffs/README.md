@@ -120,6 +120,29 @@ palette. A closed ring that may be swapped for a chain should set its `WidthHint
 own length, so the link count stays fixed however the ring zooms or tilts (see
 `SilenceEffect`).
 
+**Themed light** — the light materials aren't tied to the violet curse palette. `StrokeGlow`
+and `ParticleMote` take a `Palette` (and a name and vocabulary) in an internal constructor,
+and `MaterialRegistry` registers one per theme: `stroke.glow` / `particle.mote` are
+`CurseColor`, `stroke.corona` / `particle.static` are `StormColor`. A new theme is a palette
+in `Palette.cs` plus one line each in the registry. The default-constructed instances
+reproduce the original violet output exactly.
+
+**Electricity** — Paralysis is built from parts any shock, stun or lightning effect can
+reuse. `Bolt` holds the shape language (a slow wander, a mid kink and a fast crackle as
+lattice noise, plus bent twigs for forks); it is stateless, so a bolt re-rolls its fine
+shape without allocating. `stroke.lightning` turns *any* smooth strand into a live bolt
+(it honours `Reveal` as a racing leader, `Dash`, `Depth` for haze and `Agitation` for
+violence, and fades its light into open ends); because the effect owns a smooth path and
+the material owns the jaggedness, the same strand can be swapped to a chain, rope or
+tentacle and keep its anchors and twitch, and the lightning can be swapped onto Heavy's
+chains or Bind's ropes. `particle.arc` is a small crackle that re-rolls about sixteen times
+a second (a cheap zigzag when small, branching when large) and declares `Emissions`, so it
+crawls along any stroke or replaces a flower or ember slot. `SigilGeometry.Span` builds an
+open arc between two anchors on a layer (a bow plus a wobble pinned at both ends).
+`StormColor` is the palette, and `particle.thunderhead` is a `ParticlePuff` look for a
+cloud deck lit from inside (the effect drives the flashes through `Brightness`).
+`PrimitiveRole.Arc` and `Haze` are the roles for the last two.
+
 ### The "made of X" and color override system
 
 Status descriptions go through `TooltipKeywordParser`, which:
@@ -213,6 +236,10 @@ moves to a newer .NET.
   `IRegionMaterial`, and add it to the appropriate list in `MaterialRegistry`'s static
   constructor. Give it a `NaturalLanguageWords` array if it should be selectable via a
   `"made of X"` phrase.
+- **A new colour of light** (a different curse, a holy glow): add a `Palette` to
+  `Palette.cs`, then register `new StrokeGlow(name, palette, words)` and/or
+  `new ParticleMote(name, palette, words)` in `MaterialRegistry`. Effects name them in
+  their slots exactly as they would any material.
 - **A new viscous liquid** (blood, sludge, venom): add a `LiquidSpec` to `LiquidPresets`,
   then subclass `ParticleGoop` with a name, `NaturalLanguageWords` and a drip emission (see
   `ParticleSlime`, about ten lines) and register it. Any stroke can then shed it by

@@ -253,8 +253,22 @@ public sealed class StrokeSigil : IStrokeMaterial
 /// <summary>A bare band of soft light along a path, with no line in it: lay it under any stroke (a chain, a rope) to wrap that stroke in glow. WidthHint is the whole band's width in px.</summary>
 public sealed class StrokeGlow : IStrokeMaterial
 {
-    public string Name => "stroke.glow";
-    public string[] NaturalLanguageWords { get; } = { "glow", "halo", "aura" };
+    private readonly string _name;
+    private readonly Palette _palette;
+
+    /// <summary>The curse-violet glow (stroke.glow).</summary>
+    public StrokeGlow() : this("stroke.glow", CurseColor.Glow, "glow", "halo", "aura") { }
+
+    /// <summary>The same band of light in another palette: register one of these per theme (see stroke.corona in MaterialRegistry) so any effect can wrap a physical stroke in its own colour of glow.</summary>
+    internal StrokeGlow(string name, Palette palette, params string[] words)
+    {
+        _name = name;
+        _palette = palette;
+        NaturalLanguageWords = words;
+    }
+
+    public string Name => _name;
+    public string[] NaturalLanguageWords { get; }
 
     private static readonly LightStrand Strand = new();
     private static readonly MeshBuilder Mb = new();
@@ -287,7 +301,7 @@ public sealed class StrokeGlow : IStrokeMaterial
         {
             half[i] = width * 0.5f;
             float l = Math.Min(st.Lum[i], 1.7f);
-            col[i] = DrawHelpers.Tint(CurseColor.Glow.Sample(0.26f + 0.22f * l), alpha * 0.30f * near * l, overridden);
+            col[i] = DrawHelpers.Tint(_palette.Sample(0.26f + 0.22f * l), alpha * 0.30f * near * l, overridden);
         }
 
         Mb.Clear();

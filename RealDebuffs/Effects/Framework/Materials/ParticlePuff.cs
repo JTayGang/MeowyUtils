@@ -63,10 +63,10 @@ public sealed class ParticlePuff : IParticleMaterial
 
     // A charged cloud deck: dark umber that the flashes inside it light to amber. The effect drives the flashes through Brightness.
     public static readonly ParticlePuff Thunderhead = new("particle.thunderhead", new[] { "thunderhead", "thundercloud", "stormcloud", "storm" },
-        new Look(Warm: DrawHelpers.Pack(0.80f, 0.38f, 0.060f), Cool: DrawHelpers.Pack(0.12f, 0.058f, 0.012f), CoolSpan: 0.85f,
+        new Look(Warm: DrawHelpers.Pack(0.95f, 0.62f, 0.24f), Cool: DrawHelpers.Pack(0.075f, 0.055f, 0.045f), CoolSpan: 0.60f,
                  GrowFrom: 0.60f, GrowBy: 0.50f, FadeIn: 0.30f, FadeOutAt: 0.55f,
-                 Alpha: 0.40f, Squash: 0.70f, Irregular: 0.60f, MinSize: 2f,
-                 Highlight: DrawHelpers.Pack(1.00f, 0.74f, 0.24f), Thin: 0.30f),
+                 Alpha: 0.36f, Squash: 0.55f, Irregular: 0.35f, MinSize: 2f,
+                 Highlight: DrawHelpers.Pack(1.00f, 0.86f, 0.56f), Thin: 0.12f),
         new StrokeEmission(Role: PrimitiveRole.Haze,
             DensityPer100px: 0.35f,
             SpeedMin: 4f, SpeedMax: 12f,

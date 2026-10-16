@@ -115,15 +115,17 @@ public sealed class ParticleMote : IParticleMaterial
 {
     private readonly string _name;
     private readonly Palette _palette;
+    private readonly bool _flares;
 
     /// <summary>The curse-violet mote (particle.mote).</summary>
-    public ParticleMote() : this("particle.mote", CurseColor.Glow, "mote", "motes", "wisp", "wisps") { }
+    public ParticleMote() : this("particle.mote", CurseColor.Glow, true, "mote", "motes", "wisp", "wisps") { }
 
-    /// <summary>The same drifting speck of light in another palette: register one per theme (see particle.static in MaterialRegistry).</summary>
-    internal ParticleMote(string name, Palette palette, params string[] words)
+    /// <summary>The same drifting speck of light in another palette: register one per theme (see particle.static in MaterialRegistry). With flares off, none of them draws the cross-shaped sparkle that one mote in eight otherwise does.</summary>
+    internal ParticleMote(string name, Palette palette, bool flares, params string[] words)
     {
         _name = name;
         _palette = palette;
+        _flares = flares;
         NaturalLanguageWords = words;
     }
 
@@ -173,7 +175,7 @@ public sealed class ParticleMote : IParticleMaterial
         dl.AddCircleFilled(pos, MathF.Max(0.7f, size * 0.55f), DrawHelpers.WithAlpha(_palette.Sample(0.97f), k * 0.95f));
 
         // A flare on about one in eight.
-        if ((p.Seed & 7) == 0)
+        if (_flares && (p.Seed & 7) == 0)
         {
             float r = size * 4.2f;
             uint ray = DrawHelpers.WithAlpha(_palette.Sample(0.85f), k * 0.55f);

@@ -36,24 +36,27 @@ internal static class Bolt
     }
 
     /// <summary>
-    /// Lateral kink, in px along each sample's normal, for n samples spaced stepPx apart: a slow drifting wander, a mid kink and a fast crackle (cells of 12, 4 and 2 samples).
-    /// <paramref name="violence"/> 1 is a calm arc, 2 a thrashing one. <paramref name="soft"/> is the wander alone (a smooth centreline for bloom to follow).
+    /// Lateral kink, in px along each sample's normal, for n samples spaced stepPx apart: a slow large-scale meander, a drifting wander, a mid kink and a fast crackle
+    /// (cells of 28, 12, 4 and 2 samples). <paramref name="violence"/> 1 is a calm arc, 2 a thrashing one. <paramref name="soft"/> is the meander plus the wander alone
+    /// (a smooth centreline for light to follow).
     /// </summary>
     public static void Crackle(Span<float> hard, Span<float> soft, int n, float stepPx, int seed, float time, float violence)
     {
+        float a_1 = 2.0f * stepPx * (0.7f + 0.3f * violence);
         float a0 = 1.2f * stepPx * violence;
         float a1 = 0.95f * stepPx * violence;
         float a2 = 0.50f * stepPx * violence;
 
         // Tick clocks are offset per seed so a crowd of bolts never re-rolls in step.
         float ph = DrawHelpers.Hash01(seed + 11) * 50f;
+        float tm = time * 0.7f + ph * 0.6f;
         float t0 = time * 2.2f + ph;
         float t1 = time * 7.0f + ph * 1.7f;
         float t2 = time * (17f + 9f * MathF.Max(0f, violence - 1f)) + ph * 2.3f;
 
         for (int k = 0; k < n; k++)
         {
-            float w = a0 * Level(seed, k, 12, t0, true);
+            float w = a_1 * Level(seed + 53, k, 28, tm, true) + a0 * Level(seed, k, 12, t0, true);
             soft[k] = w;
             hard[k] = w + a1 * Level(seed + 101, k, 4, t1, true) + a2 * Level(seed + 211, k, 2, t2, false);
         }

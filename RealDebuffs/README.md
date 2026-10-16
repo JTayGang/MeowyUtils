@@ -128,20 +128,66 @@ in `Palette.cs` plus one line each in the registry. The default-constructed inst
 reproduce the original violet output exactly.
 
 **Electricity** — Paralysis is built from parts any shock, stun or lightning effect can
-reuse. `Bolt` holds the shape language (a slow wander, a mid kink and a fast crackle as
-lattice noise, plus bent twigs for forks); it is stateless, so a bolt re-rolls its fine
-shape without allocating. `stroke.lightning` turns *any* smooth strand into a live bolt
-(it honours `Reveal` as a racing leader, `Dash`, `Depth` for haze and `Agitation` for
-violence, and fades its light into open ends); because the effect owns a smooth path and
-the material owns the jaggedness, the same strand can be swapped to a chain, rope or
-tentacle and keep its anchors and twitch, and the lightning can be swapped onto Heavy's
-chains or Bind's ropes. `particle.arc` is a small crackle that re-rolls about sixteen times
-a second (a cheap zigzag when small, branching when large) and declares `Emissions`, so it
-crawls along any stroke or replaces a flower or ember slot. `SigilGeometry.Span` builds an
-open arc between two anchors on a layer (a bow plus a wobble pinned at both ends).
-`StormColor` is the palette, and `particle.thunderhead` is a `ParticlePuff` look for a
-cloud deck lit from inside (the effect drives the flashes through `Brightness`).
-`PrimitiveRole.Arc` and `Haze` are the roles for the last two.
+reuse. `Bolt` holds the shape language (a large-scale meander, a drifting wander, a mid kink
+and a fast crackle as lattice noise, plus bent twigs for forks); it is stateless, so a bolt
+re-rolls its fine shape without allocating. `stroke.lightning` turns *any* smooth strand into
+a live bolt and is drawn the way a camera sees one: a blown-out white core that thickens as
+the light overexposes, a pale-yellow body, flared hot spots where the channel kinks hard, a
+smooth falloff built from several stacked widening layers (that fades into open ends rather
+than stopping flat), and two-level forks. It honours `Reveal` (a dim leader racing along the
+strand), the new `SurgeAt`/`SurgeGain` stroke hints (a return stroke: a blinding run of
+current along the channel), `Dash`, `Depth` and `Agitation`. Because the effect owns a smooth
+path and the material owns the jaggedness, the same strand can be swapped to a chain, rope or
+tentacle and keep its anchors and twitch, and the lightning can be swapped onto Heavy's chains
+or Bind's ropes. `particle.arc` is a small crackle that re-rolls about sixteen times a second
+(a cheap zigzag when small, branching when large) and declares `Emissions`, so it crawls along
+any stroke or replaces a flower or ember slot. `particle.flare` is a soft white-hot burst with
+an exponential-looking falloff, for where a discharge touches down. `SigilGeometry.Span`
+builds an open arc between two anchors on a layer (a bow plus a wobble pinned at both ends).
+`StormColor` is the palette, and `particle.thunderhead` is a `ParticlePuff` look for a dark
+cloud deck that only shows when the effect lights it (through `Brightness`).
+`PrimitiveRole.Arc`, `Haze` and `Flash` are the roles for the last three. `particle.static`
+is `particle.mote` in storm colours with its cross-shaped sparkle switched off.
+
+**Pacing an effect in beats** — Paralysis is a cycle, not a loop of ambient motion: an idle
+that is quiet but never dead, a charge that builds for `ChargeLead` seconds, a shock every
+`ShockMin`-`ShockMax` seconds, then a discharge. Each arc keeps its own timeline (`Envelope`:
+leader, return stroke, re-strikes, cooling, afterglow), so the shock is a set of per-arc start
+times (a few milliseconds apart) rather than a global switch, and a "stray" can fire a single
+arc between shocks. The view's reaction is stepped on purpose (`Spasm`: it snaps to a new
+offset at set instants, then rings out, with a shiver on top, and a depth "punch" that yanks the
+camera toward the layers): a muscle, not the pendulum swing used for an effect that is denied
+rather than shocked. Whole-screen light follows one smoothed function of the shock
+(`ShockLight`: a flash and usually one weaker re-flash), which also lights the clouds, the edge
+glow and the vignette, so nothing flickers on its own; this keeps it to at most two
+full-screen flashes in any second.
+
+**No two shocks alike** — a shock is decided in advance as a `Plan` (strength, the direction
+it hits from, what share of the arcs take part, the order they strike in: by layer, a sweep
+round the perimeter, a wave from the hit, or all at once; leader length, re-strike count,
+flash, violence). As soon as the previous shock's arcs are all spent, the whole cage is laid
+out afresh for the next plan (`RollAll`: new spans, bows, seeds and anchor positions, with
+the arcs facing the hit favoured), so the idle streamers that lengthen during the charge
+already point at where the shock will land. The spasm is thrown away from the hit and its
+timing and gains are jittered per shock. To make a new effect's repeats vary, roll a plan, not
+a random number per frame: variation that is decided early can be telegraphed and reads as
+intent.
+
+**The idle layer** — between shocks the screen is still electrified, quietly, so it never
+looks switched off or like a continuous shock: sparks run along the screen's border (a head
+and a fading tail of zigzag crackles, `EmitRunners`), small static pops go off at the edges
+(`EmitPops`), short streamers flicker from the anchors of the arcs the next shock will strike,
+crackles hop on the visible stretch of the arcs (`MeasureVisible` finds it, so they are never
+placed off-screen), the static twinkles, and the edges keep a faint warm rim. Everything in it
+is stateless (a hash of slot and time), gives way to the shock (`quiet`) and returns after it,
+and swells with the charge.
+
+**Anchors that stay off-screen** — an effect that hangs strands from the screen's edge must
+not trust the layout to keep the anchors there: a tilted layer camera swings a point by its
+distance from the centre times the tilt, so on a wide screen (or in a shake) anchors can be
+dragged hundreds of pixels inside and show their ends. Paralysis scales its tilt by the
+aspect ratio and then pushes each anchor outward until the camera's own projection puts it
+past the edge (`KeepOffscreen`).
 
 ### The "made of X" and color override system
 

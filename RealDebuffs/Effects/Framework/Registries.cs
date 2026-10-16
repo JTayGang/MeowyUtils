@@ -90,6 +90,7 @@ public static class EffectRegistry
         PrimitiveRole.Miasma    => "particle.miasma",
         PrimitiveRole.Arc       => "particle.arc",
         PrimitiveRole.Haze      => "particle.thunderhead",
+        PrimitiveRole.Flash     => "particle.flare",
         _                       => "particle.spark",
     };
 
@@ -142,8 +143,9 @@ public static class MaterialRegistry
         Add(Particles, new ParticleSlime());
         Add(Particles, new ParticleRune());
         Add(Particles, new ParticleArc());
+        Add(Particles, new ParticleFlare());
         Add(Particles, new ParticleMote());
-        Add(Particles, new ParticleMote("particle.static", StormColor.Glow, "static", "plasma", "ions"));
+        Add(Particles, new ParticleMote("particle.static", StormColor.Glow, false, "static", "plasma", "ions"));
 
         var vocabulary = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var material in All)

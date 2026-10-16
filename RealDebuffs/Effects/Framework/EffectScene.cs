@@ -27,6 +27,7 @@ public enum PrimitiveRole
     Miasma = 30,
     Arc = 31,
     Haze = 32,
+    Flash = 33,
 }
 
 public struct StrokePrimitive
@@ -65,6 +66,12 @@ public struct StrokePrimitive
 
     /// <summary>0 = a solid line; above 0, the line is broken into dashes this many px (at 1080p) from the start of one to the start of the next. Light-drawn materials honour it; physical ones (chain, rope) ignore it.</summary>
     public float Dash;
+
+    /// <summary>Where a bolt of current is racing along the strand right now: 0 at the start, 1 at the end. Only meaningful with SurgeGain above zero.</summary>
+    public float SurgeAt;
+
+    /// <summary>How brightly that surge lights the strand: 0 = no surge (neutral), about 1 = a clear bright run, 2 or more = blinding. Light-drawn materials honour it; physical ones ignore it.</summary>
+    public float SurgeGain;
 }
 
 public struct ParticlePrimitive

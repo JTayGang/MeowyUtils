@@ -29,12 +29,12 @@ public sealed class StrokeParasite : IStrokeMaterial
 
     // Skin relief: warts (height as a fraction of the arm's radius, and how strongly their slope tilts the shading) and folds.
     private const float CupSegPerPx   = 0.90f;       // segments round a cup per px of its radius (a segment is then ~7 px of rim: the sagitta stays under 0.6 px)
-    private const float BumpHeightFrac = 0.075f;
+    private const float BumpHeightFrac = 0.16f;
     private const float BumpTilt       = 1.00f;
-    private const float FoldDepth      = 0.012f;       // radius modulation of the folds
+    private const float FoldDepth      = 0.02f;       // radius modulation of the folds
     private const float FoldTilt       = 0.17f;        // and the tilt they give the shading
-    private const float CavityDark     = 0.20f;        // how dark the hollows between warts go
-    private const float CrestLift      = 0.07f;        // and how much the crests brighten
+    private const float CavityDark     = 0.26f;        // how dark the hollows between warts go
+    private const float CrestLift      = 0.11f;        // and how much the crests brighten
 
     /// <summary>Level of detail: columns across the visible half (evenly spaced in ANGLE, putting vertices at the silhouette), rows along the length, and the finest a cup is cut (a smaller cup is cut coarser).</summary>
     private sealed class Tier
@@ -363,7 +363,7 @@ public sealed class StrokeParasite : IStrokeMaterial
             WobbleRate = Rate(diameter * 6.4f), ToneRateA = Rate(diameter * 4.3f), ToneRateB = Rate(diameter * 9.1f),
             PitchRate = Rate(diameter * 13f), TwistRate = Rate(diameter * 40f),
             // Skin relief. Rows are `step` apart and Gouraud shading turns anything under ~4 samples a wavelength into blocky smudges, so the warts are ~4.6 rows a wavelength. Only on limbs cut finely enough to carry it (not the coarse tiers, not loops).
-            BumpWave = (!closed && tier.Cols >= 11) ? MathF.Max(4.6f * step, 0.30f * diameter) : 0f,
+            BumpWave = (!closed && tier.Cols >= 11) ? MathF.Max(3.9f * step, 0.25f * diameter) : 0f,
             BumpOff = DrawHelpers.HashRange(seed + 91, 0f, 200f),
             FoldWave = diameter * 0.30f,
         };

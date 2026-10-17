@@ -4,7 +4,7 @@ using RealDebuffs.Effects.Framework;
 namespace RealDebuffs.Effects;
 
 /// <summary>
-/// Paralysis: being shocked rigid, over and over. Between shocks the screen is still electrified, but quietly: sparks run round its edges, small static pops go off, short streamers flicker at the edges and
+/// Paralysis: being shocked rigid, over and over. Between shocks the screen is still electrified, but quietly: bolts surge along its edges, small static pops go off, short streamers flicker at the edges and
 /// the charged air twinkles. About two and a half seconds before each shock the charge builds (the streamers lengthen where the shock is about to land, crackles hop more, the static brightens); then it
 /// lands. A dozen arcs hung between anchors at four depths are struck, each with a dim leader, a blinding return stroke and quick re-strikes; the view flashes, goes numb and is thrown about in a
 /// stuttering spasm; the clouds light from inside; then the channels die, an afterglow lingers and the screen settles back to its idle crackle. A shock lands every 6-10 seconds (ShockMin, ShockMax).
@@ -17,7 +17,7 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
 {
     public DebuffKind Kind => DebuffKind.Paralysis;
     public string DisplayName => "Paralysis";
-    public string Description => "Sparks crawl the screen's edges, static builds, then a different shock slams arcs of electricity across the screen every few seconds.";
+    public string Description => "Bolts surge along the screen's edges, static builds, then a different shock slams arcs of electricity across the screen every few seconds.";
     public int DrawOrder => 7;
 
     public IReadOnlyDictionary<string, float> TriggerStatuses { get; } = new Dictionary<string, float>
@@ -43,6 +43,7 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
     {
         new("Stroke",   PrimitiveRole.MainStroke, "Arcs",         "stroke.lightning"),
         new("Stroke",   PrimitiveRole.Halo,       "Arc afterglow", "stroke.corona"),
+        new("Stroke",   PrimitiveRole.Edge,       "Edge arcs",    "stroke.lightning"),
         new("Particle", PrimitiveRole.Arc,        "Crackle",      "particle.arc"),
         new("Particle", PrimitiveRole.Spark,      "Sparks",       "particle.spark"),
         new("Particle", PrimitiveRole.Flash,      "Flare",        "particle.flare"),
@@ -98,7 +99,7 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
 
     // ---- sprinkled on top ----
     private const int CrawlSlots = 16;
-    private const int RunnerSlots = 4, RunnerTrail = 8;  // sparks that run round the screen's edges
+    private const int EdgeSlots = 4, EdgePoints = 28;    // bolts that surge along the screen's edges
     private const int PopSlots = 6;                      // static pops at the edges
     private const int MoteCount = 34;
     private const float MoteNear = 650f, MoteFar = -420f;
@@ -150,6 +151,7 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
     private readonly float[] _visA = new float[ArcCount], _visB = new float[ArcCount];     // the span of each arc that is on screen, as fractions of its length (-1 if none)
     private readonly float[] _layerStart = new float[Layers.Length];
     private readonly float[] _spT = new float[SpasmAt.Length], _spG = new float[SpasmGain.Length];
+    private readonly StrandPath[] _edgePaths = new StrandPath[EdgeSlots];
     private readonly Mote[] _motes = new Mote[MoteCount];
 
     private readonly CastTracker _cast = new();
@@ -163,6 +165,7 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
     public ParalysisEffect()
     {
         for (int i = 0; i < ArcCount; i++) _paths[i] = new StrandPath(ArcSegments + 1);
+        for (int i = 0; i < EdgeSlots; i++) _edgePaths[i] = new StrandPath(EdgePoints);
     }
 
     public void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride)
@@ -224,7 +227,7 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
         EmitHaze(scene, in cam, screenSize, alpha, age, leave, light, charge, colorOverride);
         EmitArcs(scene, in cam, screenSize, shortSide, alpha, age, tau, leave, charge, quiet, colorOverride);
         EmitCrawlers(scene, alpha, age, screenSize, tau, leave, charge, quiet, colorOverride);
-        EmitRunners(scene, alpha, age, screenSize, leave, charge, quiet, colorOverride);
+        EmitEdgeArcs(scene, alpha, age, screenSize, leave, charge, quiet, colorOverride);
         EmitPops(scene, alpha, age, screenSize, leave, charge, quiet, colorOverride);
         EmitMotes(scene, in cam, screenSize, alpha, age, leave, light, charge, colorOverride);
     }
@@ -792,51 +795,96 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
     }
 
     /// <summary>
-    /// Sparks that run round the edges of the screen: each is a few zigzag crackles in a row, a head and a fading tail, racing along the border a finger's width inside it, for about a second.
-    /// A couple are always going while the screen idles; the charge sends more.
+    /// Bolts that surge along the edges of the screen: real lightning strands (the same material, forks, glow and white-hot core as the shock's arcs, only smaller and dimmer) lying along the border,
+    /// anchored to it at both ends and bowed a little inward. Each strikes with a quick leader, then crackles and pulses as surges of current run along it, then dies; they come and go in a few places at a time.
+    /// Stateless: each slot re-rolls where and when every cycle.
     /// </summary>
-    private void EmitRunners(EffectScene scene, float alpha, float age, Vector2 size, float leave, float charge, float quiet, Vector4? color)
+    private void EmitEdgeArcs(EffectScene scene, float alpha, float age, Vector2 size, float leave, float charge, float quiet, Vector4? color)
     {
         float ramp = DrawHelpers.Smooth((age - 0.6f) / 0.8f) * (1f - DrawHelpers.Smooth(leave)) * quiet;
         if (ramp <= 0.002f) return;
-        float px = _px, perimeter = 2f * (size.X + size.Y);
+        float px = _px;
+        float perimeter = 2f * (size.X + size.Y);
+        float margin = 30f * px;
 
-        for (int slot = 0; slot < RunnerSlots; slot++)
+        for (int slot = 0; slot < EdgeSlots; slot++)
         {
-            float period = 2.2f + 1.6f * DrawHelpers.Hash01(slot * 17 + 3);
+            float period = 1.7f + 1.3f * DrawHelpers.Hash01(slot * 17 + 3);
             float x = age / period + DrawHelpers.Hash01(slot * 29 + 5);
             int epoch = (int)MathF.Floor(x);
             float f = x - epoch;
-            const float runFrac = 0.55f;                         // each cycle it runs for this share of the time, and rests for the rest
-            if (f > runFrac) continue;
+            const float liveFrac = 0.50f;                        // each cycle a bolt is up for this share of it
+            if (f > liveFrac) continue;
 
             int hs = _seed + slot * 7717 + epoch * 104729;
-            if (DrawHelpers.Hash01(hs + 1) > 0.65f + 0.30f * charge) continue;
+            if (DrawHelpers.Hash01(hs + 1) > 0.70f + 0.25f * charge) continue;
 
-            float t = f / runFrac;
-            float runSeconds = runFrac * period;
-            float dir = DrawHelpers.Hash01(hs + 3) < 0.5f ? -1f : 1f;
-            float speed = (520f + 520f * DrawHelpers.Hash01(hs + 2)) * px;
-            float s = DrawHelpers.Hash01(hs + 4) * perimeter + dir * speed * t * runSeconds;
-            float env = DrawHelpers.Smooth(t / 0.15f) * (1f - DrawHelpers.Smooth((t - 0.70f) / 0.30f));
-            float inset = (6f + 10f * DrawHelpers.Hash01(hs + 5)) * px;
-            float gap = 17f * px;
-            float baseBright = alpha * ramp * env * (0.60f + 0.40f * charge);
+            float t = f * period;                                // seconds since it struck
+            float life = liveFrac * period;                      // seconds it lasts
 
-            for (int k = 0; k < RunnerTrail; k++)
+            // Where: an edge (more often a long one), a stretch of it clear of the corners, and how far it bows into the screen.
+            float pick = DrawHelpers.Hash01(hs + 2) * perimeter;
+            int edge = 0;
+            float edgeLen = size.X;
+            while (edge < 3 && pick >= edgeLen) { pick -= edgeLen; edge++; edgeLen = (edge & 1) == 0 ? size.X : size.Y; }
+            float len = MathF.Min((280f + 340f * DrawHelpers.Hash01(hs + 3)) * px, edgeLen - 2f * margin - 1f);
+            if (len < 60f * px) continue;
+            float along0 = margin + DrawHelpers.Hash01(hs + 4) * (edgeLen - 2f * margin - len);
+            bool flip = DrawHelpers.Hash01(hs + 5) < 0.5f;       // which end the leader sets out from
+            float bow = (28f + 55f * DrawHelpers.Hash01(hs + 6)) * px;
+
+            StrandPath path = _edgePaths[slot];
+            for (int i = 0; i < EdgePoints; i++)
             {
-                Vector2 p = PerimeterPoint(size, s - dir * k * gap, inset, out Vector2 tangent);
-                float fall = MathF.Pow(1f - k / (float)RunnerTrail, 1.3f);
-                scene.AddParticle(new ParticlePrimitive
-                {
-                    Position = p, Size = (13f + 2.9f * DrawHelpers.Hash01(hs + 6 + k)) * px, AgeRatio = 0.35f,
-                    Brightness = baseBright * fall, Seed = hs + k * 131, Role = PrimitiveRole.Arc,
-                    Rotation = MathF.Atan2(tangent.X, -tangent.Y), ColorOverride = color,
-                });
+                float u = i / (float)(EdgePoints - 1);
+                float along = along0 + len * (flip ? 1f - u : u);
+                float depth = -3f * px + bow * MathF.Pow(MathF.Max(0f, MathF.Sin(MathF.PI * u)), 0.8f);       // both ends touch the border (sin(pi) is a hair negative, and a negative base to 0.8 is NaN)
+                path.Points[i] = EdgePoint(size, edge, along, depth);
             }
-            AddFlare(scene, PerimeterPoint(size, s, inset, out _), 17f * px, baseBright * 0.9f, hs + 7, color);
+            path.Count = EdgePoints;
+            path.BuildArc();
+
+            // A quick leader, then it crackles and pulses (a surge of current runs the length of it every quarter second or so, each time the other way), then it dies away.
+            const float leader = 0.10f;
+            float reveal = DrawHelpers.Saturate(t / leader);
+            float fade = 1f - DrawHelpers.Smooth((t - (life - 0.38f)) / 0.38f);
+            float flick = 0.75f + 0.25f * DrawHelpers.Hash01(hs * 13 + (int)(age * 14f));
+            float level = (0.34f + 0.40f * charge) * ramp * fade * flick;
+            if (level <= 0.01f) continue;
+
+            float surgeAt = 0f, surgeGain = 0f;
+            float ts = t - leader;
+            if (ts >= 0f)
+            {
+                const float surgePeriod = 0.27f;
+                int k = (int)(ts / surgePeriod);
+                float u = (ts - k * surgePeriod) / surgePeriod;
+                surgeAt = (k & 1) == 0 ? u : 1f - u;
+                surgeGain = 0.9f + 0.4f * charge;
+            }
+
+            scene.AddStroke(new StrokePrimitive
+            {
+                Path = path, Role = PrimitiveRole.Edge, Reveal = reveal, WidthHint = (16f + 8f * DrawHelpers.Hash01(hs + 7)) * px,
+                Brightness = alpha * level, Seed = hs, Phase = slot * 0.9f, Depth = 0f, Agitation = reveal < 0.999f ? 1f : 0.35f + 0.35f * charge,
+                TipFlare = reveal < 0.999f ? 1f : 0f, SurgeAt = surgeAt, SurgeGain = surgeGain, ColorOverride = color,
+            });
+
+            // Anchored: a small flash of light where each end meets the border.
+            float anchor = alpha * level * (0.9f + 0.6f * (1f - DrawHelpers.Smooth(t / 0.25f)));
+            AddFlare(scene, EdgePoint(size, edge, along0, 4f * px), 11f * px, anchor, hs + 8, color);
+            AddFlare(scene, EdgePoint(size, edge, along0 + len, 4f * px), 11f * px, anchor, hs + 9, color);
         }
     }
+
+    /// <summary>A point on the screen's border: edge 0 is the top (left to right), 1 the right (top to bottom), 2 the bottom (right to left), 3 the left (bottom to top); <paramref name="along"/> px from its start, <paramref name="depth"/> px into the screen.</summary>
+    private static Vector2 EdgePoint(Vector2 size, int edge, float along, float depth) => edge switch
+    {
+        0 => new Vector2(along, depth),
+        1 => new Vector2(size.X - depth, along),
+        2 => new Vector2(size.X - along, size.Y - depth),
+        _ => new Vector2(depth, size.Y - along),
+    };
 
     /// <summary>Static pops at the edges: a small crackle and a flash of light that lasts a fifth of a second, somewhere along the border, now and then.</summary>
     private void EmitPops(EffectScene scene, float alpha, float age, Vector2 size, float leave, float charge, float quiet, Vector4? color)

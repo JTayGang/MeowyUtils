@@ -146,7 +146,7 @@ an exponential-looking falloff, for where a discharge touches down. `SigilGeomet
 builds an open arc between two anchors on a layer (a bow plus a wobble pinned at both ends).
 `StormColor` is the palette, and `particle.thunderhead` is a `ParticlePuff` look for a dark
 cloud deck that only shows when the effect lights it (through `Brightness`).
-`PrimitiveRole.Arc`, `Haze` and `Flash` are the roles for the last three. `particle.static`
+`PrimitiveRole.Arc`, `Haze` and `Flash` are the roles for the last three, and `Edge` is for a strand hugging the screen's border. `particle.static`
 is `particle.mote` in storm colours with its cross-shaped sparkle switched off.
 
 **Pacing an effect in beats** — Paralysis is a cycle, not a loop of ambient motion: an idle
@@ -174,13 +174,17 @@ a random number per frame: variation that is decided early can be telegraphed an
 intent.
 
 **The idle layer** — between shocks the screen is still electrified, quietly, so it never
-looks switched off or like a continuous shock: sparks run along the screen's border (a head
-and a fading tail of zigzag crackles, `EmitRunners`), small static pops go off at the edges
-(`EmitPops`), short streamers flicker from the anchors of the arcs the next shock will strike,
-crackles hop on the visible stretch of the arcs (`MeasureVisible` finds it, so they are never
-placed off-screen), the static twinkles, and the edges keep a faint warm rim. Everything in it
-is stateless (a hash of slot and time), gives way to the shock (`quiet`) and returns after it,
-and swells with the charge.
+looks switched off or like a continuous shock: bolts surge along the screen's border, small
+static pops go off at the edges (`EmitPops`), short streamers flicker from the anchors of the
+arcs the next shock will strike, crackles hop on the visible stretch of the arcs
+(`MeasureVisible` finds it, so they are never placed off-screen), the static twinkles, and the
+edges keep a faint warm rim. The edge bolts (`EmitEdgeArcs`) are real `stroke.lightning`
+strands, not particles: each lies along an edge, anchored to the border at both ends and bowed
+a little inward, strikes with a quick leader, then crackles while `SurgeAt`/`SurgeGain` runs a
+pulse of current the length of it (each time the other way) and dies away. They use their own
+`PrimitiveRole.Edge` slot ("Edge arcs"), so they stay electric when the main arcs are swapped
+to chains. Everything in the layer is stateless (a hash of slot and time), gives way to the
+shock (`quiet`) and returns after it, and swells with the charge.
 
 **Anchors that stay off-screen** — an effect that hangs strands from the screen's edge must
 not trust the layout to keep the anchors there: a tilted layer camera swings a point by its

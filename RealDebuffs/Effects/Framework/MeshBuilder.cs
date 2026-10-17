@@ -44,10 +44,27 @@ internal sealed class MeshBuilder
     /// <summary>Makes room for this many more vertices and indices, so the *Reserved calls below, which do no capacity test of their own, are safe for that many.</summary>
     public void Reserve(int verts, int idx) => Room(verts, idx);
 
+    /// <summary>Appends the first <paramref name="count"/> entries of two parallel arrays as vertices and returns the index of the first: one block copy instead of a call per vertex. Reserve first.</summary>
+    public int AddBlockReserved(Vector2[] pos, uint[] col, int count)
+    {
+        int first = _vn;
+        Array.Copy(pos, 0, _pos, first, count);
+        Array.Copy(col, 0, _col, first, count);
+        _vn = first + count;
+        return first;
+    }
+
     public int VertexReserved(Vector2 p, uint color)
     {
         _pos[_vn] = p; _col[_vn] = color;
         return _vn++;
+    }
+
+    /// <summary>One triangle. No capacity test: Reserve first.</summary>
+    public void TriReserved(int a, int b, int c)
+    {
+        _idx[_in] = (ushort)a; _idx[_in + 1] = (ushort)b; _idx[_in + 2] = (ushort)c;
+        _in += 3;
     }
 
     /// <summary>The quad a b / c d as the two triangles (a, b, d) and (a, d, c). No capacity test: Reserve first.</summary>

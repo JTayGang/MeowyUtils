@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework;
@@ -42,6 +43,91 @@ internal static unsafe partial class MeshDraw
         h->VtxWritePtr = v + vtxCount;
         h->IdxWritePtr = ix + idxCount;
         h->VtxCurrentIdx = b + (uint)vtxCount;
+        if (_rec != null) Record(v, ix, vtxCount, idxCount, b);
+    }
+
+    // ---- Recording and replay ----
+    //
+    // A finished mesh can be copied out of the draw list as it is written, and written back later (a frame or two on) without building it again. The vertices are copied
+    // as they are; the indices are stored relative to the start of the recording, and re-based on replay. Only what End() already sees is used, so this holds for every
+    // primitive above, and a recording is correct however the draw list split its batches while it was being made.
+
+    /// <summary>One recorded run of triangles.</summary>
+    internal sealed class MeshCache
+    {
+        public ImDrawVert[] V = new ImDrawVert[8192];
+        public ushort[] I = new ushort[32768];
+        public int Vn, In;
+        public bool Valid;
+    }
+
+    private static MeshCache? _rec;
+
+    /// <summary>Starts copying everything drawn from now on into <paramref name="cache"/>, replacing what it held.</summary>
+    public static void BeginRecord(MeshCache cache)
+    {
+        _rec = cache;
+        cache.Vn = 0; cache.In = 0; cache.Valid = true;
+    }
+
+    /// <summary>Stops recording. False when nothing was drawn, or it did not fit 16-bit indices (the cache is then not valid for replay).</summary>
+    public static bool EndRecord()
+    {
+        MeshCache? c = _rec;
+        _rec = null;
+        if (c == null) return false;
+        if (c.Vn == 0 || c.In == 0) c.Valid = false;
+        return c.Valid;
+    }
+
+    private static void Record(ImDrawVert* v, ushort* ix, int vtxCount, int idxCount, uint b)
+    {
+        MeshCache c = _rec!;
+        if (!c.Valid) return;
+        if (c.Vn + vtxCount > 65000) { c.Valid = false; return; }
+        if (c.Vn + vtxCount > c.V.Length) Array.Resize(ref c.V, Math.Max(c.V.Length * 2, c.Vn + vtxCount));
+        if (c.In + idxCount > c.I.Length) Array.Resize(ref c.I, Math.Max(c.I.Length * 2, c.In + idxCount));
+
+        fixed (ImDrawVert* dv = &c.V[c.Vn])
+            Buffer.MemoryCopy(v, dv, (long)vtxCount * sizeof(ImDrawVert), (long)vtxCount * sizeof(ImDrawVert));
+        fixed (ushort* di = &c.I[c.In])
+            AddDelta(ix, di, idxCount, unchecked((ushort)(c.Vn - (int)b)));    // index - b = local to this batch; + Vn = local to the recording
+        c.Vn += vtxCount; c.In += idxCount;
+    }
+
+    /// <summary>Writes a recording back into the draw list. Indices are re-based on wherever the draw list is now.</summary>
+    public static void Replay(ImDrawListPtr dl, MeshCache c)
+    {
+        if (!c.Valid || c.Vn == 0 || c.In == 0) return;
+        Begin(dl, c.In, c.Vn, out ImDrawVert* v, out ushort* ix, out uint b);
+        fixed (ImDrawVert* sv = c.V)
+            Buffer.MemoryCopy(sv, v, (long)c.Vn * sizeof(ImDrawVert), (long)c.Vn * sizeof(ImDrawVert));
+        fixed (ushort* si = c.I)
+            AddDelta(si, ix, c.In, unchecked((ushort)b));
+        h_End(dl, v, ix, c.Vn, c.In, b);
+    }
+
+    // End without recording (a replay must not record itself if a recording is open).
+    private static void h_End(ImDrawListPtr dl, ImDrawVert* v, ushort* ix, int vtxCount, int idxCount, uint b)
+    {
+        ImDrawList* h = dl.Handle;
+        h->VtxWritePtr = v + vtxCount;
+        h->IdxWritePtr = ix + idxCount;
+        h->VtxCurrentIdx = b + (uint)vtxCount;
+    }
+
+    /// <summary>dst[k] = src[k] + delta (16-bit wrap), a vector at a time.</summary>
+    private static void AddDelta(ushort* src, ushort* dst, int n, ushort delta)
+    {
+        int k = 0;
+        if (Vector.IsHardwareAccelerated)
+        {
+            int w = Vector<ushort>.Count;
+            var d = new Vector<ushort>(delta);
+            for (; k <= n - w; k += w)
+                Unsafe.WriteUnaligned(dst + k, Unsafe.ReadUnaligned<Vector<ushort>>(src + k) + d);
+        }
+        for (; k < n; k++) dst[k] = unchecked((ushort)(src[k] + delta));
     }
 
     /// <summary>Draws the (cols+1) x (rows+1) vertex grid currently in P/C (row-major) as 2*cols*rows triangles.</summary>

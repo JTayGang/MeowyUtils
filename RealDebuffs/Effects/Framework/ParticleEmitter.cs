@@ -59,6 +59,9 @@ public sealed class ParticleEmitter
         }
     }
 
+    /// <summary>Integrates and retires the live particles without spawning any: for an emitter fed only by <see cref="Burst"/>, which would otherwise never move.</summary>
+    public void Step(float time, float dt) => Integrate(time, dt);
+
     /// <summary>One-shot spawn. Each particle gets a hashed seed so two bursts at the same time differ.</summary>
     public void Burst(int count, float time,
                       Func<int, Vector2> spawnPos, Func<int, Vector2> spawnVelocity,

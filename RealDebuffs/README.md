@@ -193,6 +193,57 @@ dragged hundreds of pixels inside and show their ends. Paralysis scales its tilt
 aspect ratio and then pushes each anchor outward until the camera's own projection puts it
 past the edge (`KeepOffscreen`).
 
+**Infernal light and blood (Doom)** — Doom is a summoning, and it is built from parts any
+demonic, blood-ritual or hellfire effect can reuse. `HellColor` is the palette family
+(`Glow` for light, `Flame` for a flame's temperature, `Murk` for soot). The themed light
+materials grew the same way `stroke.corona` did: `StrokeSigil`, `ParticleRune`, `ParticleEmber`
+and `RegionFirelight` now take a palette (and, for runes, a glyph range) in an internal
+constructor, and the registry holds one per theme: `stroke.brand` (a hairline of hell-light),
+`particle.hellrune` (the infernal alphabet, `RuneGlyphs.FirstInfernal`), `particle.hellfire`
+(a darker, redder flame than Burns'), `region.hellglow` (firelight thrown up from below) and
+`particle.brimstone` (smoke lit from the fire beneath it, `Look.LitFromBelow`). The defaults
+reproduce their old output bit for bit. `RuneGlyphs.Pick(seed)` still draws only from the
+original 18 glyphs however many sets are added, so no existing effect changes its letters.
+
+New materials: **`stroke.blood`** is wet paint as lit geometry: a flattened-tube ribbon shaded
+by its own display-space paint LUT, with its two highlights (the key light's hard streak and
+the fill side's cooler window) computed analytically per row so they never flicker, an uneven
+hand-laid edge, and runs hanging from its underside through `GoopEmitter`. **`stroke.magma`**
+is a bar of molten metal whose temperature drifts along it (crust and white-hot patches) and
+which sheds sparks. **`stroke.horn`** is a tapered, ridged keratin horn lit by the key light
+plus fire's warm under-light. **`particle.candle`** is a lit wax pillar with a molten pool, set
+wax runs and a flickering flame; `AgeRatio` is how far the wick has caught, `Variant` the
+flame's vigour (a guttering candle), `Sway` the draught. **`particle.blood`** is the third
+viscous liquid (`LiquidPresets.Blood`, a ten-line `ParticleGoop` subclass, as promised above).
+
+Small shared pieces added for it: `CastEnvelope` (the manager's alpha turned into a punchy
+fade-in, a flash `Gate` and a `Leave` fraction, which Silence and Paralysis each hand-roll),
+`ShockFront` (a ring of excitement travelling through concentric rings), `SigilGeometry.Star`
+(a star polygon as one closed stroke, so `Reveal` lays it down in a single pen stroke),
+`ParticleEmitter.Step` (integrate a burst-only emitter) and `Noise.Along` (noise that
+returns to its start on a closed loop).
+
+Things worth knowing before writing the next one:
+
+- **Authoring dark things.** `LiquidMatcap` and `Matcap` are authored in linear space and baked
+  through a gamma, so a neutral reflection of 0.01 is a visible grey veil over a near-black
+  body. Blood authored as "dark red" came out as pale mauve. `LiquidSpec` therefore has `Sheen`
+  and `Window` (gains for the broad and the fill-side highlight; the defaults are the old
+  constants), and `SurfacePresets.Horn` is authored far darker than it looks. A paint-like
+  surface that wants a saturated body is better off with its own display-space LUT
+  (`StrokeBlood.PaintLut`).
+- **A hard highlight on a tube exists only where the strand faces the light**, so a sharp
+  exponent leaves most of a ring dull. Relax the peak toward 1 and lower the exponent for a
+  streak that runs the whole length (`StrokeBlood.Streak`).
+- **Closed strokes have a seam.** Anything that varies by arc length must come back to its
+  start (`Noise.Along`), and `StrokeGlow`'s shimmer isn't periodic, which shows as a hairline
+  in a glow. Doom pins its ring's seam to where the ring is off screen.
+- **Every particle is drawn over every stroke, and each role maps to one material**, so a
+  stroke can never be "behind" smoke, and distinct kinds of stroke need distinct roles (Doom
+  uses `MainStroke` for blood, `Halo`, `Edge` for magma, `Inscription` and `Horn`).
+- **Flames set on a surface need lifting.** A flame's skirt dissolves below its base point, so
+  stand it a little above the line it grows from, or it looks as though it hovers.
+
 ### The "made of X" and color override system
 
 Status descriptions go through `TooltipKeywordParser`, which:
@@ -294,5 +345,17 @@ moves to a newer .NET.
   then subclass `ParticleGoop` with a name, `NaturalLanguageWords` and a drip emission (see
   `ParticleSlime`, about ten lines) and register it. Any stroke can then shed it by
   declaring an emission with a `Drip` block; a colour override re-hues it for free.
+  (Blood is done: `LiquidPresets.Blood` and `ParticleBlood`. A pale liquid keeps the default
+  `Sheen` and `Window`; a dark one must turn them down.)
+- **A new theme for lit things** (a holy, void or infernal look): besides the palette and
+  `StrokeGlow` / `ParticleMote`, `new StrokeSigil(name, palette, moteMaterial, words)`,
+  `new ParticleRune(name, palette, firstGlyph, glyphCount, words)`,
+  `new ParticleEmber(name, heatRamp, words)` and `new RegionFirelight(name, heatRamp)` are the
+  same material in another colour. Add a glyph set to `RuneGlyphs` after the existing ones
+  and give it a `First`/`Count` pair; don't change `LegacyCount`.
+- **A staged cast** (an intro, a held state, a lifting): `CastEnvelope` and `CastTracker`
+  give the timing, `ShockFront` the rings of excitement; see `DoomEffect` for a cast whose
+  every piece (pen-drawn rings, a star, candles, fire) is placed on a timeline, and for a
+  periodic "toll" that re-rolls its timing, power and echo each time.
 - **A new `DebuffKind`**: add it at the END of the enum (numeric values are serialized),
   then write an effect that declares it.

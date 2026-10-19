@@ -171,3 +171,40 @@ internal static class StormColor
     /// <summary>The white-hot flash a strike lands with (yellow-tinged, so it stays chromatic under a colour override).</summary>
     public static readonly uint Flash = DrawHelpers.Pack(1.00f, 0.96f, 0.80f);
 }
+
+/// <summary>Hellfire and blood: dried-blood black through crimson and arterial red to ember orange and a pale gold core. The counterpart of FireColor, IceColor, CurseColor and StormColor for any demonic, infernal or blood-ritual effect. Redder and darker than FireColor, so it never reads as plain fire.</summary>
+internal static class HellColor
+{
+    /// <summary>Light, dim to hot: 0 = dried-blood black, 0.25 = deep crimson, 0.50 = blood red, 0.72 = red-orange, 0.88 = orange, 1 = pale gold core.</summary>
+    public static readonly Palette Glow = new(
+        (0.00f, 0.170f, 0.008f, 0.010f),
+        (0.25f, 0.520f, 0.024f, 0.020f),
+        (0.50f, 0.920f, 0.095f, 0.026f),
+        (0.72f, 1.000f, 0.300f, 0.046f),
+        (0.88f, 1.000f, 0.560f, 0.130f),
+        (1.00f, 1.000f, 0.900f, 0.600f));
+
+    /// <summary>A flame's temperature ramp: smouldering maroon at the cool edge, crimson, red, orange, and a pale gold-white only at the very heart. Index with a flame's temperature.</summary>
+    public static readonly Palette Flame = new(
+        (0.00f, 0.140f, 0.006f, 0.008f),
+        (0.16f, 0.440f, 0.020f, 0.014f),
+        (0.38f, 0.860f, 0.100f, 0.020f),
+        (0.60f, 1.000f, 0.300f, 0.040f),
+        (0.80f, 1.000f, 0.560f, 0.120f),
+        (1.00f, 1.000f, 0.880f, 0.520f));
+
+    /// <summary>The unlit side of hell: near-black maroon to a dull oxblood. For smoke, soot and the shade beneath glowing things.</summary>
+    public static readonly Palette Murk = new(
+        (0.00f, 0.020f, 0.004f, 0.005f),
+        (0.50f, 0.110f, 0.018f, 0.016f),
+        (1.00f, 0.300f, 0.050f, 0.034f));
+
+    /// <summary>Edge tint for the screen's vignette: near-black blood.</summary>
+    public static readonly uint Vignette = DrawHelpers.Pack(0.022f, 0.003f, 0.004f);
+
+    /// <summary>The flash an infernal cast lands with (orange-red, so it stays chromatic under a colour override).</summary>
+    public static readonly uint Flash = DrawHelpers.Pack(1.00f, 0.36f, 0.12f);
+
+    /// <summary>Firelight cast on dark surfaces from below.</summary>
+    public static readonly uint Underlight = DrawHelpers.Pack(1.00f, 0.30f, 0.05f);
+}

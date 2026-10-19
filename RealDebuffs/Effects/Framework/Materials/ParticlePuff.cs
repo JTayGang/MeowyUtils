@@ -6,13 +6,13 @@ namespace RealDebuffs.Effects.Framework.Materials;
 /// <summary>A soft, irregular radial puff with no rim. Smoke, mist (also fog), dust and miasma are the same mesh with a different <see cref="Look"/>.</summary>
 public sealed class ParticlePuff : IParticleMaterial
 {
-    /// <summary>Colour runs Warm to Cool over CoolSpan (0 = stays Warm); radius = Size*(GrowFrom + GrowBy*smooth(age)); FadeIn/FadeOutAt envelope (FadeOutAt 1 = none); Thin fades as it grows; Highlight adds a lit blob.</summary>
+    /// <summary>Colour runs Warm to Cool over CoolSpan (0 = stays Warm); radius = Size*(GrowFrom + GrowBy*smooth(age)); FadeIn/FadeOutAt envelope (FadeOutAt 1 = none); Thin fades as it grows; Highlight adds a lit blob (toward the shared key light, or toward the bottom of the screen when LitFromBelow: smoke over a fire).</summary>
     public readonly record struct Look(
         uint Warm, uint Cool, float CoolSpan,
         float GrowFrom, float GrowBy,
         float FadeIn, float FadeOutAt,
         float Alpha, float Squash, float Irregular, float MinSize,
-        uint Highlight = 0, float Thin = 0f);
+        uint Highlight = 0, float Thin = 0f, bool LitFromBelow = false);
 
     public static readonly ParticlePuff Smoke = new("particle.smoke", new[] { "smoke", "smog", "soot" },
         new Look(Warm: DrawHelpers.Pack(0.30f, 0.125f, 0.055f), Cool: DrawHelpers.Pack(0.055f, 0.050f, 0.055f), CoolSpan: 0.55f,
@@ -76,7 +76,22 @@ public sealed class ParticlePuff : IParticleMaterial
             BiasVelocity: new Vector2(0f, -6f),
             PrimaryDirection: new Vector2(0f, -1f)));
 
-    public static readonly ParticlePuff[] All = { Smoke, Mist, Dust, Miasma, Thunderhead };
+    // Smoke over a hellfire: ember-lit oxblood while it is young, soot once it has risen out of the light, its lit side toward the flames beneath it.
+    public static readonly ParticlePuff Brimstone = new("particle.brimstone", new[] { "brimstone", "sulphur", "sulfur", "hellsmoke" },
+        new Look(Warm: DrawHelpers.Pack(0.46f, 0.075f, 0.030f), Cool: DrawHelpers.Pack(0.030f, 0.020f, 0.024f), CoolSpan: 0.55f,
+                 GrowFrom: 0.60f, GrowBy: 1.05f, FadeIn: 0.22f, FadeOutAt: 0.58f,
+                 Alpha: 0.46f, Squash: 0.84f, Irregular: 0.55f, MinSize: 2f,
+                 Highlight: DrawHelpers.Pack(0.95f, 0.28f, 0.05f), Thin: 0.28f, LitFromBelow: true),
+        new StrokeEmission(Role: PrimitiveRole.Smoke,
+            DensityPer100px: 0.45f,
+            SpeedMin: 8f, SpeedMax: 22f,
+            LifespanMin: 2.4f, LifespanMax: 4.2f,
+            SizeMin: 14f, SizeMax: 28f,
+            SpreadRadians: 1.3f,
+            BiasVelocity: new Vector2(0f, -12f),
+            PrimaryDirection: new Vector2(0f, -1f)));
+
+    public static readonly ParticlePuff[] All = { Smoke, Mist, Dust, Miasma, Thunderhead, Brimstone };
 
     private const int Segs = 12;
 
@@ -114,7 +129,7 @@ public sealed class ParticlePuff : IParticleMaterial
 
         if (L.Highlight != 0)
         {
-            Vector2 toLight = new(StudioLighting.Key.X, StudioLighting.Key.Y);
+            Vector2 toLight = L.LitFromBelow ? new Vector2(0f, 0.85f) : new Vector2(StudioLighting.Key.X, StudioLighting.Key.Y);
             Blob(dl, pos + toLight * (radius * 0.30f), uv, L.Highlight, a, 0.85f, radius * 0.70f, rot + 1.3f, L.Squash, p.Seed + 77, L.Irregular - 0.1f);
         }
     }

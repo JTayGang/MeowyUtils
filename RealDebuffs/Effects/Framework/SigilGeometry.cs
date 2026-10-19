@@ -41,6 +41,19 @@ internal static class SigilGeometry
         path.BuildArc();
     }
 
+    /// <summary>A star polygon {n/k}: n corners, each joined to the one k places on, drawn as a single closed stroke (a pentagram is {5/2}, a heptagram {7/3}), so a Reveal lays it down in one continuous pen stroke. n and k should share no factor, or one stroke cannot reach every corner. One corner at <paramref name="angle"/>. Capacity n + 1.</summary>
+    public static void Star(StrandPath path, in LayerCamera cam, int n, int k, float radius, float height, float angle)
+    {
+        for (int i = 0; i < n; i++)
+        {
+            float a = angle + MathF.Tau * ((i * k) % n) / n;
+            path.Points[i] = cam.Project(radius * MathF.Cos(a), radius * MathF.Sin(a), height, out _);
+        }
+        path.Points[n] = path.Points[0];
+        path.Count = n + 1;
+        path.BuildArc();
+    }
+
     /// <summary>
     /// An open curve between two anchors on the layer at <paramref name="height"/> (plane coordinates, as for Ring): a quadratic bow whose middle sits <paramref name="bow"/> off the chord, plus a sideways wobble
     /// (amplitudes in plane px, evaluated over one turn of its harmonics from end to end) that is pinned to nothing at both ends so the anchors never move. Capacity segments + 1.

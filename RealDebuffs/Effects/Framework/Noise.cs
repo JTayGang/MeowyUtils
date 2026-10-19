@@ -82,4 +82,17 @@ internal static class Noise
         }
         return sum / norm;
     }
+
+    /// <summary>
+    /// <see cref="Value"/> along a strand, sampled at arc length <paramref name="arc"/>: noise that comes back to where it started. On a closed loop the value at the end must equal the value at the start,
+    /// or paint, metal or light that varies by it has a step at the seam (and, drawn as a thin strip, a hairline); over the last 14% of a loop it is blended back to the start's, so it is seamless wherever the loop is cut.
+    /// An open strand gets plain noise.
+    /// </summary>
+    public static float Along(float arc, float freq, float offset, float y, float total, bool closed)
+    {
+        float v = Value(arc * freq + offset, y);
+        if (!closed || total < 1f) return v;
+        float t = DrawHelpers.Smooth(0.86f, 1f, arc / total);
+        return t <= 0f ? v : v * (1f - t) + Value((arc - total) * freq + offset, y) * t;
+    }
 }

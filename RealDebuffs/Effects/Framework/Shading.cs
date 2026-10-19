@@ -76,6 +76,18 @@ public static class SurfacePresets
     public static readonly SurfaceSpec Rust = new(
         Albedo: new(0.110f, 0.044f, 0.020f), F0: new(0.05f, 0.03f, 0.02f),
         Metalness: 0.04f, Roughness: 0.92f, EnvStrength: 0.04f, Ambient: 0.012f);
+
+    /// <summary>Horn: near-black keratin with a smooth satin skin, a soft broad sheen and a faint deep-red bleed where the light just fails (horn is slightly translucent, like fingernail). Authored very dark and only mildly reflective: the bake is gamma-lifted, so a pale-looking albedo or a strong surround reflection turns it into grey stone.</summary>
+    public static readonly SurfaceSpec Horn = new(
+        Albedo: new(0.012f, 0.009f, 0.008f), F0: new(0.050f, 0.046f, 0.042f),
+        Metalness: 0.0f, Roughness: 0.42f, EnvStrength: 0.20f, Ambient: 0.003f,
+        Wrap: 0.28f, Scatter: new(0.050f, 0.010f, 0.004f));
+
+    /// <summary>Candle tallow: ivory, soft and waxy; wrapped diffuse and a warm amber bleed at the terminator, which is what makes wax glow instead of read as plastic.</summary>
+    public static readonly SurfaceSpec Tallow = new(
+        Albedo: new(0.62f, 0.54f, 0.38f), F0: new(0.050f, 0.046f, 0.040f),
+        Metalness: 0.0f, Roughness: 0.58f, EnvStrength: 0.10f, Ambient: 0.020f,
+        Wrap: 0.55f, Scatter: new(0.150f, 0.075f, 0.022f));
 }
 
 /// <summary>A "material capture": lit colour by facing direction baked to a small table, so shading a vertex is one bilinear lookup (display-space RGB).</summary>
@@ -314,7 +326,8 @@ internal static class StrandShading
     }
 }
 
-/// <summary>How a viscous liquid answers light (slime, blood, sludge, venom), authored in linear space; a LiquidMatcap bakes it to display colour and opacity. Cues: translucent, richer where thick, a caustic crescent on the shadow side, a glossy highlight plus surround reflection.</summary>
+/// <summary>How a viscous liquid answers light (slime, blood, sludge, venom), authored in linear space; a LiquidMatcap bakes it to display colour and opacity. Cues: translucent, richer where thick, a caustic crescent on the shadow side, a glossy highlight plus surround reflection.
+/// Linear space matters for dark liquids: the bake applies a gamma, so a neutral reflection of only 0.01 shows as a grey veil over a near-black body. Sheen is the gain of the broad, dim highlight under the hard one (0.20 suits a pale liquid; a dark one wants far less), Window that of the smaller cool reflection from the fill side (0.30 is what makes a bead read as wet; over a long smear it is a grey stripe), and Env that of the surround's reflection.</summary>
 public readonly record struct LiquidSpec(
     Vector3 Thin,
     Vector3 Deep,
@@ -322,7 +335,9 @@ public readonly record struct LiquidSpec(
     float EdgeOpacity,
     float Gloss,
     float Caustic,
-    float Env);
+    float Env,
+    float Sheen = 0.20f,
+    float Window = 0.30f);
 
 /// <summary>Ready-made liquids. A new viscous effect starts here: add a preset, then a three-line ParticleGoop subclass; drip simulation, mesh and shading are shared.</summary>
 public static class LiquidPresets
@@ -331,6 +346,11 @@ public static class LiquidPresets
     public static readonly LiquidSpec Slime = new(
         Thin: new(0.62f, 0.72f, 0.16f), Deep: new(0.045f, 0.105f, 0.012f),
         Opacity: 0.90f, EdgeOpacity: 0.55f, Gloss: 0.88f, Caustic: 1.15f, Env: 1.0f);
+
+    /// <summary>Blood: arterial red where thin, nearly black where deep, almost opaque, with a hard wet highlight. Authored dark: the surround and the broad highlights are turned well down, or they veil a body this dark in grey.</summary>
+    public static readonly LiquidSpec Blood = new(
+        Thin: new(0.55f, 0.008f, 0.012f), Deep: new(0.17f, 0.000f, 0.004f),
+        Opacity: 0.97f, EdgeOpacity: 0.80f, Gloss: 0.92f, Caustic: 0.30f, Env: 0.12f, Sheen: 0.02f, Window: 0.12f);
 }
 
 /// <summary>A LiquidSpec baked into a lookup by view-space normal (as Matcap does for opaque surfaces) with an extra opacity channel; straight, not premultiplied, display colour. Drop, neck and tail are surfaces of revolution with analytic normals, so this table is the whole shading model.</summary>
@@ -392,12 +412,12 @@ public sealed class LiquidMatcap
         float nh = MathF.Max(0f, Vector3.Dot(n, h));
         // Per-vertex shading can't carry a lobe narrower than the vertex spacing, so this one stays wide enough to survive interpolation; GoopDraw lays an analytic glint over it.
         float sharp = 30f + 240f * s.Gloss * s.Gloss;
-        add += StudioLighting.KeyColor * (MathF.Pow(nh, sharp) * 1.5f + MathF.Pow(nh, 14f) * 0.20f);
+        add += StudioLighting.KeyColor * (MathF.Pow(nh, sharp) * 1.5f + MathF.Pow(nh, 14f) * s.Sheen);
 
         // A smaller, cooler window reflected from the fill side: the second highlight is what makes a drop read as wet rather than shiny.
         Vector3 hf = Vector3.Normalize(StudioLighting.Fill + Vector3.UnitZ);
         float nhf = MathF.Max(0f, Vector3.Dot(n, hf));
-        add += new Vector3(0.80f, 0.92f, 1.0f) * (MathF.Pow(nhf, sharp * 0.5f) * 0.30f);
+        add += new Vector3(0.80f, 0.92f, 1.0f) * (MathF.Pow(nhf, sharp * 0.5f) * s.Window);
 
         // The surround, reflected at grazing angles (Schlick, dielectric).
         float fres = 0.04f + 0.96f * MathF.Pow(rimness, 4.5f);

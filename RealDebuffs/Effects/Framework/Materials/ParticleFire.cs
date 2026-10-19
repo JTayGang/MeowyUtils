@@ -10,8 +10,22 @@ public sealed class ParticleEmber : IParticleMaterial
     private const float RimLo = 0.12f, RimHi = 0.52f;
     private const float TempFloor = 0.20f;
 
-    public string Name => "particle.ember";
-    public string[] NaturalLanguageWords { get; } = { "fire", "flame", "flames", "ember", "embers" };
+    private readonly string _name;
+    private readonly Palette? _ramp;       // null = FireColor.Heat, the black-body fire every existing effect uses
+
+    /// <summary>The orange black-body flame (particle.ember).</summary>
+    public ParticleEmber() : this("particle.ember", null, "fire", "flame", "flames", "ember", "embers") { }
+
+    /// <summary>The same flame tongue on another temperature ramp: register one per theme (see particle.hellfire in MaterialRegistry).</summary>
+    internal ParticleEmber(string name, Palette? ramp, params string[] words)
+    {
+        _name = name;
+        _ramp = ramp;
+        NaturalLanguageWords = words;
+    }
+
+    public string Name => _name;
+    public string[] NaturalLanguageWords { get; }
 
     public void Draw(ImDrawListPtr dl, in ParticlePrimitive p, in MaterialContext ctx)
     {
@@ -112,7 +126,7 @@ public sealed class ParticleEmber : IParticleMaterial
                 float a = DrawHelpers.Smooth((d - RimLo) / (RimHi - RimLo));
 
                 MeshDraw.P[i] = new Vector2(cx + u * half, cy);
-                MeshDraw.C[i] = DrawHelpers.WithAlpha(FireColor.Heat(temp), a * k * alphaK);
+                MeshDraw.C[i] = DrawHelpers.WithAlpha(_ramp is null ? FireColor.Heat(temp) : _ramp.Sample(temp), a * k * alphaK);
                 i++;
             }
         }

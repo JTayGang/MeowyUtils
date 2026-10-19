@@ -10,8 +10,25 @@ namespace RealDebuffs.Effects.Framework.Materials;
 /// </summary>
 public sealed class ParticleRune : IParticleMaterial
 {
-    public string Name => "particle.rune";
-    public string[] NaturalLanguageWords { get; } = { "rune", "runes", "glyph", "glyphs" };
+    private readonly string _name;
+    private readonly Palette _palette;
+    private readonly int _firstGlyph, _glyphCount;
+
+    /// <summary>The curse-violet rune in the general script (particle.rune).</summary>
+    public ParticleRune() : this("particle.rune", CurseColor.Glow, 0, RuneGlyphs.LegacyCount, "rune", "runes", "glyph", "glyphs") { }
+
+    /// <summary>The same glowing rune in another palette and another set of letters: register one per theme (see particle.hellrune in MaterialRegistry). Its letters come from the glyphCount glyphs starting at firstGlyph.</summary>
+    internal ParticleRune(string name, Palette palette, int firstGlyph, int glyphCount, params string[] words)
+    {
+        _name = name;
+        _palette = palette;
+        _firstGlyph = firstGlyph;
+        _glyphCount = glyphCount;
+        NaturalLanguageWords = words;
+    }
+
+    public string Name => _name;
+    public string[] NaturalLanguageWords { get; }
 
     private const int MaxPts = 24;
     private static readonly MeshBuilder Mb = new();
@@ -29,7 +46,7 @@ public sealed class ParticleRune : IParticleMaterial
 
         bool inscribed = (p.Variant & 1) != 0;
         int forced = p.Variant >> 1;
-        int glyph = forced > 0 ? forced - 1 : RuneGlyphs.Pick(p.Seed);
+        int glyph = forced > 0 ? forced - 1 : RuneGlyphs.Pick(p.Seed, _firstGlyph, _glyphCount);
 
         // A slow private flicker, so a ring of runes never pulses in unison.
         float seedPhase = DrawHelpers.Hash01(p.Seed + 4) * MathF.Tau;
@@ -46,10 +63,10 @@ public sealed class ParticleRune : IParticleMaterial
         Span<float> rr = stackalloc float[2] { size * 0.75f, size * (inscribed ? 1.5f : 1.9f) };
         Span<uint> rc = stackalloc uint[2]
         {
-            DrawHelpers.WithAlpha(CurseColor.Glow.Sample(0.30f), k * (inscribed ? 0.10f : 0.17f)),
-            DrawHelpers.WithAlpha(CurseColor.Glow.Sample(0.20f), 0f),
+            DrawHelpers.WithAlpha(_palette.Sample(0.30f), k * (inscribed ? 0.10f : 0.17f)),
+            DrawHelpers.WithAlpha(_palette.Sample(0.20f), 0f),
         };
-        MeshDraw.Radial(dl, pos, uv, DrawHelpers.WithAlpha(CurseColor.Glow.Sample(0.34f), k * (inscribed ? 0.15f : 0.26f)),
+        MeshDraw.Radial(dl, pos, uv, DrawHelpers.WithAlpha(_palette.Sample(0.34f), k * (inscribed ? 0.15f : 0.26f)),
                         12, rr, rc, 0f, 1f, 0, 0f);
 
         float cos = MathF.Cos(p.Rotation), sin = MathF.Sin(p.Rotation);
@@ -59,9 +76,9 @@ public sealed class ParticleRune : IParticleMaterial
         float bodyHalf = MathF.Max(0.65f * px, size * 0.050f);
         float coreHalf = MathF.Max(0.40f * px, size * 0.020f);
 
-        uint bloomCol = DrawHelpers.Tint(CurseColor.Glow.Sample(0.30f), k * 0.30f, overridden);
-        uint bodyCol  = DrawHelpers.Tint(CurseColor.Glow.Sample(0.70f), k * 0.95f, overridden);
-        uint coreCol  = DrawHelpers.Tint(CurseColor.Glow.Sample(0.95f), k * 0.90f, overridden);
+        uint bloomCol = DrawHelpers.Tint(_palette.Sample(0.30f), k * 0.30f, overridden);
+        uint bodyCol  = DrawHelpers.Tint(_palette.Sample(0.70f), k * 0.95f, overridden);
+        uint coreCol  = DrawHelpers.Tint(_palette.Sample(0.95f), k * 0.90f, overridden);
 
         // Three passes across every stroke (bloom, body, core) so one stroke's glow never sits on top of another's core.
         Mb.Clear();

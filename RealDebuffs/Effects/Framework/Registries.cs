@@ -91,6 +91,7 @@ public static class EffectRegistry
         PrimitiveRole.Arc       => "particle.arc",
         PrimitiveRole.Haze      => "particle.thunderhead",
         PrimitiveRole.Flash     => "particle.flare",
+        PrimitiveRole.Candle    => "particle.candle",
         _                       => "particle.spark",
     };
 
@@ -119,6 +120,7 @@ public static class MaterialRegistry
         Add(Regions, new RegionFlatFill());
         Add(Regions, new RegionEdgeGlow());
         Add(Regions, new RegionFirelight());
+        Add(Regions, new RegionFirelight("region.hellglow", HellColor.Flame));
         Add(Regions, new RegionFrost());
 
         Add(Strokes, new StrokeSimple());
@@ -129,6 +131,11 @@ public static class MaterialRegistry
         Add(Strokes, new StrokeLightning());
         Add(Strokes, new StrokeGlow());
         Add(Strokes, new StrokeGlow("stroke.corona", StormColor.Glow, "corona", "flare", "flares"));
+        Add(Strokes, new StrokeSigil("stroke.brand", HellColor.Glow, "particle.hellmote", "brand", "brands", "branded", "scorched"));
+        Add(Strokes, new StrokeMagma());
+        Add(Strokes, new StrokeHorn());
+        Add(Strokes, new StrokeGlow("stroke.hellglow", HellColor.Glow, "hellglow", "hellglare", "brimglow"));
+        Add(Strokes, new StrokeBlood());
 
         Add(Particles, new ParticleEmber());
         Add(Particles, new ParticleCinder());
@@ -146,6 +153,11 @@ public static class MaterialRegistry
         Add(Particles, new ParticleFlare());
         Add(Particles, new ParticleMote());
         Add(Particles, new ParticleMote("particle.static", StormColor.Glow, false, "static", "plasma", "ions"));
+        Add(Particles, new ParticleBlood());
+        Add(Particles, new ParticleCandle());
+        Add(Particles, new ParticleEmber("particle.hellfire", HellColor.Flame, "hellfire", "hellflame", "hellflames", "inferno", "infernal"));
+        Add(Particles, new ParticleRune("particle.hellrune", HellColor.Glow, RuneGlyphs.FirstInfernal, RuneGlyphs.InfernalCount, "occult", "hex", "hexes", "hexglyph"));
+        Add(Particles, new ParticleMote("particle.hellmote", HellColor.Glow, false, "emberlight", "fireflies", "firefly"));
 
         var vocabulary = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var material in All)

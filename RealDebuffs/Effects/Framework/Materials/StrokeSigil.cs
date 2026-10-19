@@ -107,8 +107,48 @@ internal sealed class LightStrand
 /// <summary>Light drawn as a line: a wide soft bloom, an orchid glow, a hot-pink body and a pale core, brightening wherever a pulse is running through it. Honours Reveal (it draws itself on, with a spark at the tip), Dash, Depth and Agitation. WidthHint is the whole glowing width in px.</summary>
 public sealed class StrokeSigil : IStrokeMaterial
 {
-    public string Name => "stroke.sigil";
-    public string[] NaturalLanguageWords { get; } = { "sigil", "sigils", "arcane", "neon" };
+    private readonly string _name;
+    private readonly Palette _palette;
+    private readonly StrokeEmission[] _shed;
+    private readonly ImpactEmission[] _hit;
+
+    /// <summary>The curse-violet sigil (stroke.sigil).</summary>
+    public StrokeSigil() : this("stroke.sigil", CurseColor.Glow, "particle.mote", "sigil", "sigils", "arcane", "neon") { }
+
+    /// <summary>The same line of light in another palette: register one per theme (see stroke.brand in MaterialRegistry). moteMaterial is what it sheds and throws off when struck, so its sparks match its colour.</summary>
+    internal StrokeSigil(string name, Palette palette, string moteMaterial, params string[] words)
+    {
+        _name = name;
+        _palette = palette;
+        NaturalLanguageWords = words;
+
+        // A faint trickle of light drifting off the line, mostly up and a little away from it; and, when a seal slams down, a burst thrown off along the surface.
+        _shed = new StrokeEmission[]
+        {
+            new(Role: PrimitiveRole.Mote,
+                DensityPer100px: 0.30f,
+                SpeedMin: 6f, SpeedMax: 26f,
+                LifespanMin: 1.3f, LifespanMax: 2.6f,
+                SizeMin: 1.6f, SizeMax: 3.6f,
+                SpreadRadians: 1.5f,
+                BiasVelocity: new Vector2(0f, -16f),
+                RenderMaterial: moteMaterial),
+        };
+        _hit = new ImpactEmission[]
+        {
+            new(Role: PrimitiveRole.Mote,
+                CountMin: 9, CountMax: 18,
+                SpeedMin: 140f, SpeedMax: 560f,
+                LifespanMin: 0.7f, LifespanMax: 1.6f,
+                SizeMin: 3f, SizeMax: 7f,
+                ConeRadians: 1.0f,
+                Gravity: new Vector2(0f, -30f),
+                RenderMaterial: moteMaterial),
+        };
+    }
+
+    public string Name => _name;
+    public string[] NaturalLanguageWords { get; }
 
     private static readonly LightStrand Strand = new();
     private static readonly MeshBuilder Mb = new();
@@ -158,7 +198,7 @@ public sealed class StrokeSigil : IStrokeMaterial
         for (int i = 0; i < n; i++)
         {
             half[i] = reach;
-            col[i] = Tint(CurseColor.Glow.Sample(0.20f), alpha * bloom * near * Math.Min(lum[i], 1.6f), overridden);
+            col[i] = Tint(_palette.Sample(0.20f), alpha * bloom * near * Math.Min(lum[i], 1.6f), overridden);
         }
         Mb.Tent(pts, nrm, half, col);
 
@@ -170,7 +210,7 @@ public sealed class StrokeSigil : IStrokeMaterial
             for (int i = 0; i < n; i++)
             {
                 half[i] = glowHalf;
-                col[i] = Tint(CurseColor.Glow.Sample(0.36f + 0.12f * lum[i] - heat), alpha * 0.46f * near * Math.Min(lum[i], 1.5f), overridden);
+                col[i] = Tint(_palette.Sample(0.36f + 0.12f * lum[i] - heat), alpha * 0.46f * near * Math.Min(lum[i], 1.5f), overridden);
             }
             Mb.Ribbon(pts, nrm, half, col, glowFeather);
         }
@@ -180,7 +220,7 @@ public sealed class StrokeSigil : IStrokeMaterial
         for (int i = 0; i < n; i++)
         {
             half[i] = bodyHalf;
-            col[i] = Tint(CurseColor.Glow.Sample(0.50f + 0.34f * (lum[i] - 0.55f) - heat), alpha * 0.92f * near * Math.Min(lum[i], 1.25f), overridden);
+            col[i] = Tint(_palette.Sample(0.50f + 0.34f * (lum[i] - 0.55f) - heat), alpha * 0.92f * near * Math.Min(lum[i], 1.25f), overridden);
         }
         Mb.Ribbon(pts, nrm, half, col, 1.0f * px);
 
@@ -192,7 +232,7 @@ public sealed class StrokeSigil : IStrokeMaterial
             {
                 half[i] = coreHalf;
                 float k = Math.Clamp((lum[i] - 0.35f) / 0.9f, 0f, 1f);
-                col[i] = Tint(CurseColor.Glow.Sample(0.88f), alpha * near * (0.30f + 0.70f * k), overridden);
+                col[i] = Tint(_palette.Sample(0.88f), alpha * near * (0.30f + 0.70f * k), overridden);
             }
             Mb.Ribbon(pts, nrm, half, col, 0.8f * px);
         }
@@ -206,48 +246,22 @@ public sealed class StrokeSigil : IStrokeMaterial
 
     private static uint Tint(uint rgb, float a, bool overridden) => DrawHelpers.Tint(rgb, a, overridden);
 
-    private static void DrawTip(ImDrawListPtr dl, Vector2 tip, float width, float k, in MaterialContext ctx)
+    private void DrawTip(ImDrawListPtr dl, Vector2 tip, float width, float k, in MaterialContext ctx)
     {
         if (k <= 0.004f) return;
         Span<float> rr = stackalloc float[2] { width * 0.35f, width * 1.1f };
         Span<uint> cc = stackalloc uint[2]
         {
-            DrawHelpers.WithAlpha(CurseColor.Glow.Sample(0.62f), 0.40f * k),
-            DrawHelpers.WithAlpha(CurseColor.Glow.Sample(0.35f), 0f),
+            DrawHelpers.WithAlpha(_palette.Sample(0.62f), 0.40f * k),
+            DrawHelpers.WithAlpha(_palette.Sample(0.35f), 0f),
         };
-        MeshDraw.Radial(dl, tip, MeshDraw.WhiteUv(ctx.Time), DrawHelpers.WithAlpha(CurseColor.Glow.Sample(1f), 0.95f * k),
+        MeshDraw.Radial(dl, tip, MeshDraw.WhiteUv(ctx.Time), DrawHelpers.WithAlpha(_palette.Sample(1f), 0.95f * k),
                         10, rr, cc, 0f, 1f, 0, 0f);
     }
 
-    public ReadOnlySpan<StrokeEmission> Emissions => Shed;
+    public ReadOnlySpan<StrokeEmission> Emissions => _shed;
 
-    // A faint trickle of light drifting off the line, mostly up and a little away from it.
-    private static readonly StrokeEmission[] Shed =
-    {
-        new(Role: PrimitiveRole.Mote,
-            DensityPer100px: 0.30f,
-            SpeedMin: 6f, SpeedMax: 26f,
-            LifespanMin: 1.3f, LifespanMax: 2.6f,
-            SizeMin: 1.6f, SizeMax: 3.6f,
-            SpreadRadians: 1.5f,
-            BiasVelocity: new Vector2(0f, -16f),
-            RenderMaterial: "particle.mote"),
-    };
-
-    public ReadOnlySpan<ImpactEmission> ImpactEmissions => Hit;
-
-    // A seal slamming down: a burst of light thrown off along the surface.
-    private static readonly ImpactEmission[] Hit =
-    {
-        new(Role: PrimitiveRole.Mote,
-            CountMin: 9, CountMax: 18,
-            SpeedMin: 140f, SpeedMax: 560f,
-            LifespanMin: 0.7f, LifespanMax: 1.6f,
-            SizeMin: 3f, SizeMax: 7f,
-            ConeRadians: 1.0f,
-            Gravity: new Vector2(0f, -30f),
-            RenderMaterial: "particle.mote"),
-    };
+    public ReadOnlySpan<ImpactEmission> ImpactEmissions => _hit;
 }
 
 /// <summary>A bare band of soft light along a path, with no line in it: lay it under any stroke (a chain, a rope) to wrap that stroke in glow. WidthHint is the whole band's width in px.</summary>

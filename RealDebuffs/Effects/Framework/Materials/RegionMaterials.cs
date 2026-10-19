@@ -49,7 +49,22 @@ public sealed class RegionEdgeGlow : IRegionMaterial
 /// <summary>Firelight: warm light thrown on the surroundings as a vertex grid; alpha ~(1-s)^2.2 down the rows, per-column drifting brightness. Min/Max is the bottom glow's reach (Bottom flag only).</summary>
 public sealed class RegionFirelight : IRegionMaterial
 {
-    public string Name => "region.firelight";
+    private readonly string _name;
+    private readonly Palette? _ramp;       // null = FireColor.Heat, the orange firelight every existing effect uses
+
+    /// <summary>Orange firelight (region.firelight).</summary>
+    public RegionFirelight() : this("region.firelight", null) { }
+
+    /// <summary>The same thrown light on another heat ramp: register one per theme (see region.hellglow in MaterialRegistry).</summary>
+    internal RegionFirelight(string name, Palette? ramp)
+    {
+        _name = name;
+        _ramp = ramp;
+    }
+
+    public string Name => _name;
+
+    private uint Heat(float t) => _ramp is null ? FireColor.Heat(t) : _ramp.Sample(t);
 
     private const int Rows = 8;
 
@@ -87,7 +102,7 @@ public sealed class RegionFirelight : IRegionMaterial
             float s = row / (float)Rows;
             float fall = MathF.Pow(1f - s, 2.2f);
             float y = bottom - s * reach;
-            uint baseCol = FireColor.Heat(0.60f - 0.34f * s);
+            uint baseCol = Heat(0.60f - 0.34f * s);
 
             for (int c = 0; c <= cols; c++)
             {
@@ -115,7 +130,7 @@ public sealed class RegionFirelight : IRegionMaterial
                 float y = bottom - sy * sideH;
                 float vFall = MathF.Pow(1f - sy, 1.6f);
                 float rowFlick = 0.7f + 0.3f * (0.5f + 0.5f * Noise.Perlin(sy * 3f + side * 11f, t * 1.3f));
-                uint col = FireColor.Heat(0.55f - 0.30f * sy);
+                uint col = Heat(0.55f - 0.30f * sy);
 
                 for (int c = 0; c <= sCols; c++)
                 {

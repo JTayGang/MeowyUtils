@@ -55,3 +55,33 @@ public sealed class ParticleSlime : ParticleGoop
                 SatelliteChance: 0.55f)),
     };
 }
+
+/// <summary>Blood: runnier and darker than slime, so it hangs in shorter necks, lets go sooner and falls as a small dark teardrop with a hard highlight. A blood-ritual's drips; also "made of blood" (a stroke made of blood bleeds).</summary>
+public sealed class ParticleBlood : ParticleGoop
+{
+    public ParticleBlood() : base(LiquidPresets.Blood, Spec) { }
+
+    public override string Name => "particle.blood";
+    public override string[] NaturalLanguageWords { get; } =
+        { "blood", "bloody", "bloodied", "gore", "gory" };
+
+    /// <summary>Runnier than slime: shorter cycles, shorter necks, a little less often a satellite drop.</summary>
+    private static readonly StrokeEmission[] Spec =
+    {
+        new(
+            Role: PrimitiveRole.Goop,
+            DensityPer100px: 0f,                       // ignored: a drip block spaces its own sites
+            SpeedMin: 70f, SpeedMax: 150f,
+            LifespanMin: 2.0f, LifespanMax: 2.8f,
+            SizeMin: 2.8f, SizeMax: 4.6f,
+            SpreadRadians: 0f,
+            BiasVelocity: Vector2.Zero,
+            Gravity: new Vector2(0f, 1800f),
+            Drip: new StrokeDripOptions(
+                SiteSpacingPx: 110f,
+                CycleSecondsMin: 2.2f, CycleSecondsMax: 4.2f,
+                MinSlope: 0.38f,
+                Stringiness: 0.50f,
+                SatelliteChance: 0.30f)),
+    };
+}

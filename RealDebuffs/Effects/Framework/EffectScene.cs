@@ -29,6 +29,8 @@ public enum PrimitiveRole
     Haze = 32,
     Flash = 33,
     Edge = 34,
+    Candle = 35,
+    Horn = 36,
 }
 
 public struct StrokePrimitive

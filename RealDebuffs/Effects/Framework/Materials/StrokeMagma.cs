@@ -3,13 +3,7 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>
-/// A bar of molten metal laid along a path. Where <see cref="StrokeSigil"/> is a hairline of light, this has body: a cross-section that is white-gold at the core, orange and then crimson toward the rim,
-/// and a temperature that varies along its length, so patches of it cool to a dull maroon crust and flare white again as the heat drifts through (two octaves of slow noise, plus the pulses of energy
-/// that <see cref="LightStrand"/> already runs down a sigil). Hotter means a little wider. A wide faint bloom sits under it, and it sheds sparks that rise away. Honours Reveal (a hot tip
-/// where it is still being laid), Closed, Depth and Agitation; Agitation heats the whole line. WidthHint is the bar's full width in px.
-/// Palette-driven, so another theme is a palette and a line in MaterialRegistry.
-/// </summary>
+/// <summary>A bar of molten metal laid along a path.</summary>
 public sealed class StrokeMagma : IStrokeMaterial
 {
     private readonly string _name;
@@ -54,7 +48,7 @@ public sealed class StrokeMagma : IStrokeMaterial
         bool overridden = DrawHelpers.ColorOverrideActive;
         float agit = Math.Clamp(s.Agitation, 0f, 1f);
 
-        float step = Math.Clamp(width * 1.4f, 14f * px, 22f * px);          // the heat varies over tens of px, so it needs no finer
+        float step = Math.Clamp(width * 1.4f, 14f * px, 22f * px);  // the heat varies over tens of px, so it needs no finer
         var st = Strand;
         st.Resample(path, visibleLen, step);
         st.Light(in s, time, total, width, px, 0f);
@@ -63,7 +57,7 @@ public sealed class StrokeMagma : IStrokeMaterial
 
         float near = 1f - 0.55f * depth;
         float soften = 1f + 0.9f * depth;
-        float cool = 0.16f * depth;                                 // far metal has lost its top end to the haze
+        float cool = 0.16f * depth;  // far metal has lost its top end to the haze
 
         var pts = st.Pts;
         var nrm = st.Nrm;
@@ -110,7 +104,7 @@ public sealed class StrokeMagma : IStrokeMaterial
                 float u = Across[c];
                 bool fringe = c == 0 || c == Cols - 1;
                 float uc = Math.Clamp(u, -1f, 1f);
-                float prof = 1f - uc * uc;                           // 1 at the core, 0 at the rim
+                float prof = 1f - uc * uc;  // 1 at the core, 0 at the rim
 
                 // Temperature across the section: the core carries the full heat, the rim well under it.
                 float temp = h * MathF.Pow(Math.Max(prof, 0f), 0.85f) + 0.04f;

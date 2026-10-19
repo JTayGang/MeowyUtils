@@ -7,9 +7,8 @@ internal sealed class Palette
 {
     private const int N = 256;
     private readonly uint[] _lut = new uint[N];
-    private readonly uint[] _lutTint = new uint[N];      // the same ramp, lifted off grey (see IceColor.Tintable)
+    private readonly uint[] _lutTint = new uint[N];  // the same ramp, lifted off grey (see IceColor.Tintable)
 
-    /// <param name="stops">Ascending (t, r, g, b) keyframes, t in 0..1, linearly interpolated.</param>
     public Palette(params (float T, float R, float G, float B)[] stops)
     {
         for (int i = 0; i < N; i++)
@@ -41,13 +40,13 @@ internal static class FireColor
 
     private static readonly Vector3[] StopC =
     {
-        new(0.30f, 0.040f, 0.010f),   // dull ember
-        new(0.70f, 0.110f, 0.020f),   // deep red
-        new(0.96f, 0.290f, 0.040f),   // red-orange
-        new(1.00f, 0.520f, 0.090f),   // orange
-        new(1.00f, 0.760f, 0.260f),   // yellow-orange
-        new(1.00f, 0.920f, 0.620f),   // pale yellow
-        new(1.00f, 0.985f, 0.880f),   // near-white
+        new(0.30f, 0.040f, 0.010f),  // dull ember
+        new(0.70f, 0.110f, 0.020f),  // deep red
+        new(0.96f, 0.290f, 0.040f),  // red-orange
+        new(1.00f, 0.520f, 0.090f),  // orange
+        new(1.00f, 0.760f, 0.260f),  // yellow-orange
+        new(1.00f, 0.920f, 0.620f),  // pale yellow
+        new(1.00f, 0.985f, 0.880f),  // near-white
     };
 
     private const int N = 256;
@@ -55,7 +54,7 @@ internal static class FireColor
 
     public static uint Heat(float t)
     {
-        t = t > 0f ? (t < 1f ? t : 1f) : 0f;      // NaN lands on 0
+        t = t > 0f ? (t < 1f ? t : 1f) : 0f;  // NaN lands on 0
         return Lut[(int)(t * (N - 1) + 0.5f)];
     }
 
@@ -78,12 +77,12 @@ internal static class FireColor
 /// <summary>Cold palettes and colour helpers: the ice counterpart of FireColor.</summary>
 internal static class IceColor
 {
-    /// <summary>The override fully saturates near-grey colours (< ~0.05), splitting pale-blue-to-white ramps into steps; this lifts near-white to saturation 0.16.</summary>
+    /// <summary>The override fully saturates near-grey colours (&lt; ~0.05), splitting pale-blue-to-white ramps into steps</summary>
     public static uint Tintable(uint c)
     {
         uint r = c & 255, g = (c >> 8) & 255, b = (c >> 16) & 255;
         uint max = Math.Max(r, Math.Max(g, b));
-        uint cap = (uint)(max * 0.84f);                          // saturation >= 0.16
+        uint cap = (uint)(max * 0.84f);  // saturation >= 0.16
         // Pull down the smallest channel (red for frost, whose tint is blue) if it is above the cap.
         if (r <= g && r <= b) { if (r > cap) r = cap; }
         else if (g <= b)      { if (g > cap) g = cap; }
@@ -106,8 +105,8 @@ internal static class IceColor
         return DrawHelpers.ColorOverrideActive ? Tintable(c) : c;
     }
 
-    public static readonly uint Cold  = DrawHelpers.Pack(0.68f, 0.84f, 1.00f);   // pale blue glow
-    public static readonly uint Core  = DrawHelpers.Pack(0.98f, 1.00f, 1.00f);   // near-white (greyscale under a colour override)
+    public static readonly uint Cold  = DrawHelpers.Pack(0.68f, 0.84f, 1.00f);  // pale blue glow
+    public static readonly uint Core  = DrawHelpers.Pack(0.98f, 1.00f, 1.00f);  // near-white (greyscale under a colour override)
     public const uint White = 0xFFFFFFFFu;
 
     /// <summary>Frost body: 0 = thin bluish film, 1 = dense milky white.</summary>
@@ -124,7 +123,7 @@ internal static class IceColor
         (1.00f, 1.00f, 1.00f, 1.00f));
 }
 
-/// <summary>Curse magic: plum shadow through violet and orchid to hot pink and a pale pink-white core. The counterpart of FireColor and IceColor for any hex, seal or curse effect.</summary>
+/// <summary>Curse magic: plum shadow through violet and orchid to hot pink and a pale pink-white core.</summary>
 internal static class CurseColor
 {
     /// <summary>Light, dim to hot: 0 = deep violet, 0.55 = orchid, 0.8 = hot pink, 1 = pale pink-white.</summary>
@@ -135,12 +134,6 @@ internal static class CurseColor
         (0.78f, 1.00f, 0.480f, 0.86f),
         (1.00f, 1.00f, 0.880f, 0.97f));
 
-    /// <summary>The unlit side of a curse: near-black plum to dusky violet. For smoke, veils and the shade beneath glowing things.</summary>
-    public static readonly Palette Murk = new(
-        (0.00f, 0.045f, 0.012f, 0.075f),
-        (0.50f, 0.190f, 0.050f, 0.300f),
-        (1.00f, 0.420f, 0.130f, 0.560f));
-
     /// <summary>Edge tint for the screen's vignette: very dark plum.</summary>
     public static readonly uint Vignette = DrawHelpers.Pack(0.030f, 0.008f, 0.052f);
 
@@ -148,7 +141,7 @@ internal static class CurseColor
     public static readonly uint Flash = DrawHelpers.Pack(0.95f, 0.62f, 1.00f);
 }
 
-/// <summary>Electricity: rust through burnt orange and amber to a pale yellow-white core, matching the vanilla paralysis spark. The counterpart of FireColor, IceColor and CurseColor for any lightning, shock or static effect.</summary>
+/// <summary>Electricity: rust through burnt orange and amber to a pale yellow-white core, matching the vanilla paralysis spark.</summary>
 internal static class StormColor
 {
     /// <summary>Light, dim to hot: 0 = deep rust, 0.3 = burnt orange, 0.55 = vivid orange, 0.78 = amber, 1 = pale yellow-white.</summary>
@@ -159,12 +152,6 @@ internal static class StormColor
         (0.78f, 1.00f, 0.800f, 0.200f),
         (1.00f, 1.00f, 0.975f, 0.760f));
 
-    /// <summary>The unlit side of a storm: near-black umber to a dusty copper. For haze, cloud and the shade beneath glowing things.</summary>
-    public static readonly Palette Murk = new(
-        (0.00f, 0.040f, 0.020f, 0.004f),
-        (0.50f, 0.170f, 0.082f, 0.014f),
-        (1.00f, 0.360f, 0.185f, 0.034f));
-
     /// <summary>Edge tint for the screen's vignette: very dark umber.</summary>
     public static readonly uint Vignette = DrawHelpers.Pack(0.030f, 0.014f, 0.002f);
 
@@ -172,7 +159,7 @@ internal static class StormColor
     public static readonly uint Flash = DrawHelpers.Pack(1.00f, 0.96f, 0.80f);
 }
 
-/// <summary>Hellfire and blood: dried-blood black through crimson and arterial red to ember orange and a pale gold core. The counterpart of FireColor, IceColor, CurseColor and StormColor for any demonic, infernal or blood-ritual effect. Redder and darker than FireColor, so it never reads as plain fire.</summary>
+/// <summary>Hellfire and blood: dried-blood black through crimson and arterial red to ember orange and a pale gold core.</summary>
 internal static class HellColor
 {
     /// <summary>Light, dim to hot: 0 = dried-blood black, 0.25 = deep crimson, 0.50 = blood red, 0.72 = red-orange, 0.88 = orange, 1 = pale gold core.</summary>
@@ -184,7 +171,7 @@ internal static class HellColor
         (0.88f, 1.000f, 0.560f, 0.130f),
         (1.00f, 1.000f, 0.900f, 0.600f));
 
-    /// <summary>A flame's temperature ramp: smouldering maroon at the cool edge, crimson, red, orange, and a pale gold-white only at the very heart. Index with a flame's temperature.</summary>
+    /// <summary>A flame's temperature ramp: smouldering maroon at the cool edge, crimson, red, orange, and a pale gold-white only at the very heart.</summary>
     public static readonly Palette Flame = new(
         (0.00f, 0.140f, 0.006f, 0.008f),
         (0.16f, 0.440f, 0.020f, 0.014f),
@@ -193,18 +180,9 @@ internal static class HellColor
         (0.80f, 1.000f, 0.560f, 0.120f),
         (1.00f, 1.000f, 0.880f, 0.520f));
 
-    /// <summary>The unlit side of hell: near-black maroon to a dull oxblood. For smoke, soot and the shade beneath glowing things.</summary>
-    public static readonly Palette Murk = new(
-        (0.00f, 0.020f, 0.004f, 0.005f),
-        (0.50f, 0.110f, 0.018f, 0.016f),
-        (1.00f, 0.300f, 0.050f, 0.034f));
-
     /// <summary>Edge tint for the screen's vignette: near-black blood.</summary>
     public static readonly uint Vignette = DrawHelpers.Pack(0.022f, 0.003f, 0.004f);
 
     /// <summary>The flash an infernal cast lands with (orange-red, so it stays chromatic under a colour override).</summary>
     public static readonly uint Flash = DrawHelpers.Pack(1.00f, 0.36f, 0.12f);
-
-    /// <summary>Firelight cast on dark surfaces from below.</summary>
-    public static readonly uint Underlight = DrawHelpers.Pack(1.00f, 0.30f, 0.05f);
 }

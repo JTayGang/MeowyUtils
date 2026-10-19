@@ -213,7 +213,7 @@ public static class StrokeAutoEmitter
             var emitter = MaterialRegistry.TryGetParticle(emitOverride);
             if (emitter is null) return;
 
-            // A particle material only declares a trickle, so derive a burst: a handful on its own speeds, lifespans and sizes, fanned at least ~40 deg.
+            // A particle material only declares a trickle, so derive a burst: a handful on its own speeds, lifespans and sizes
             var specs = emitter.Emissions;
             for (int e = 0; e < specs.Length; e++)
             {
@@ -325,7 +325,7 @@ public static class StrokeAutoEmitter
         };
     }
 
-    /// <summary>False if debris is wanted only near a screen edge (EmitEdgeReach) and this point is further in or off-screen; rejecting keeps local density.</summary>
+    /// <summary>False if debris is wanted only near a screen edge (EmitEdgeReach) and this point is further in or off-screen</summary>
     private static bool WithinEmitReach(in StrokePrimitive s, Vector2 p)
     {
         if (s.EmitEdgeReach <= 0f || _screen.X <= 0f) return true;

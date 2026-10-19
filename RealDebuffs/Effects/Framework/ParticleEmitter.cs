@@ -31,8 +31,6 @@ public sealed class ParticleEmitter
         _seedSalt = seedSalt;
     }
 
-    public int Count => _count;
-
     /// <summary>0 at spawn/despawn, 1 in the steady middle.</summary>
     public static float FadeFor(float age01) =>
         age01 < 0.25f ? age01 / 0.25f
@@ -59,7 +57,7 @@ public sealed class ParticleEmitter
         }
     }
 
-    /// <summary>Integrates and retires the live particles without spawning any: for an emitter fed only by <see cref="Burst"/>, which would otherwise never move.</summary>
+    /// <summary>Integrates and retires the live particles without spawning any: for an emitter fed only by Burst, which would otherwise never move.</summary>
     public void Step(float time, float dt) => Integrate(time, dt);
 
     /// <summary>One-shot spawn. Each particle gets a hashed seed so two bursts at the same time differ.</summary>

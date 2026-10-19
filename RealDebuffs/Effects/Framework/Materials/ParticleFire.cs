@@ -3,15 +3,15 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>One flame tongue as a CPU-shaded mesh: density (parabolic cross-section x falloff, noise-eroded) drives alpha and temperature. Layers: back, body, front, bed.</summary>
+/// <summary>One flame tongue as a CPU-shaded mesh: density (parabolic cross-section x falloff, noise-eroded) drives alpha and temperature.</summary>
 public sealed class ParticleEmber : IParticleMaterial
 {
-    // Straight alpha: a dim dark fringe would ink an outline round every tongue, so fringe alpha stays ~0 until density passes RimLo; TempFloor lifts the heat ramp's bottom.
+    // Straight alpha: a dim dark fringe would ink an outline round every tongue
     private const float RimLo = 0.12f, RimHi = 0.52f;
     private const float TempFloor = 0.20f;
 
     private readonly string _name;
-    private readonly Palette? _ramp;       // null = FireColor.Heat, the black-body fire every existing effect uses
+    private readonly Palette? _ramp;  // null = FireColor.Heat, the black-body fire every existing effect uses
 
     /// <summary>The orange black-body flame (particle.ember).</summary>
     public ParticleEmber() : this("particle.ember", null, "fire", "flame", "flames", "ember", "embers") { }
@@ -34,17 +34,17 @@ public sealed class ParticleEmber : IParticleMaterial
 
         float t = ctx.Time;
         int seed = p.Seed;
-        float sf = (seed & 0x3FFF) * 0.0173f;           // this tongue's private offset into the noise field
+        float sf = (seed & 0x3FFF) * 0.0173f;  // this tongue's private offset into the noise field
         float age = p.AgeRatio;
 
         // Layer tuning: heat scales temperature, alphaK opacity, tall the aspect, rough how hard noise erodes the silhouette.
         float heat, alphaK, tall, rough;
         switch (p.Variant)
         {
-            case 1:  heat = 0.78f; alphaK = 0.44f; tall = 1.02f; rough = 1.95f; break;   // back
-            case 2:  heat = 1.22f; alphaK = 0.92f; tall = 0.86f; rough = 0.90f; break;   // front
-            case 3:  heat = 1.08f; alphaK = 0.90f; tall = 0.42f; rough = 0.80f; break;   // bed: wide, low, continuous
-            default: heat = 1.00f; alphaK = 0.82f; tall = 1.00f; rough = 1.00f; break;   // body
+            case 1:  heat = 0.78f; alphaK = 0.44f; tall = 1.02f; rough = 1.95f; break;  // back
+            case 2:  heat = 1.22f; alphaK = 0.92f; tall = 0.86f; rough = 0.90f; break;  // front
+            case 3:  heat = 1.08f; alphaK = 0.90f; tall = 0.42f; rough = 0.80f; break;  // bed: wide, low, continuous
+            default: heat = 1.00f; alphaK = 0.82f; tall = 1.00f; rough = 1.00f; break;  // body
         }
 
         // Life envelope: catch fast, hold, then shrink and cool.
@@ -54,7 +54,7 @@ public sealed class ParticleEmber : IParticleMaterial
         float heightK = (0.30f + 0.70f * grow) * (1f - 0.45f * decay);
         heat *= 1f - 0.22f * decay;
 
-        float w = p.Size * 2f * widthK;      // Size is radius-like (half-width)
+        float w = p.Size * 2f * widthK;  // Size is radius-like (half-width)
         float aspect = (2.3f + 1.4f * DrawHelpers.Hash01(seed + 3)) * tall;
         float h = w * aspect * heightK;
         if (h < 1.5f) return;
@@ -81,7 +81,7 @@ public sealed class ParticleEmber : IParticleMaterial
         for (int r = 0; r <= rows; r++)
         {
             float v = r / (float)rows;
-            float vPow = v * MathF.Sqrt(v);              // v^1.5: bends grow toward the tip
+            float vPow = v * MathF.Sqrt(v);  // v^1.5: bends grow toward the tip
 
             float sway = Noise.Value(sf * 3.1f + v * 1.25f, flickerPhase - t * 1.55f) * 0.60f
                        + Noise.Value(sf * 1.7f + v * 3.20f, flickerPhase * 1.7f - t * 3.60f) * 0.22f;
@@ -95,8 +95,8 @@ public sealed class ParticleEmber : IParticleMaterial
 
             float longi = MathF.Pow(1f - v, 0.55f);
             float erodeGain = (0.14f + 0.86f * DrawHelpers.Smooth(v / 0.75f)) * rough;
-            float tipFade = DrawHelpers.Smooth((1f - v) / 0.10f);                 // exactly 0 at the tip vertex
-            bool fine = v > 0.22f;                                                // no fine octave near the base
+            float tipFade = DrawHelpers.Smooth((1f - v) / 0.10f);  // exactly 0 at the tip vertex
+            bool fine = v > 0.22f;  // no fine octave near the base
 
             for (int c = 0; c <= cols; c++)
             {
@@ -104,7 +104,7 @@ public sealed class ParticleEmber : IParticleMaterial
                 float au = MathF.Abs(u);
 
                 float cross = 1f - u * u;
-                cross *= MathF.Sqrt(cross);                                       // (1-u^2)^1.5
+                cross *= MathF.Sqrt(cross);  // (1-u^2)^1.5
 
                 float n1 = 0.5f + 0.5f * Noise.Value(u * 1.5f + sf * 5.3f, v * 2.7f - t * 2.6f + flickerPhase);
                 float n = n1;
@@ -116,7 +116,7 @@ public sealed class ParticleEmber : IParticleMaterial
                 float erode = (n - 0.5f) * erodeGain * 1.05f;
 
                 float d = cross * longi + erode;
-                d *= 1f - DrawHelpers.Smooth((au - 0.62f) / 0.38f);              // silhouette edge is exactly 0
+                d *= 1f - DrawHelpers.Smooth((au - 0.62f) / 0.38f);  // silhouette edge is exactly 0
                 d *= tipFade;
                 d = d < 0f ? 0f : (d > 1f ? 1f : d);
 
@@ -260,7 +260,7 @@ public sealed class ParticleSpark : IParticleMaterial
 
     public ReadOnlySpan<StrokeEmission> Emissions => Shed;
 
-    // Launched hard (1000-2000 px/s), pulled down; gusts ~0.45s apart share one direction (fan +-0.12 rad). Heavy's impact bursts are separate (StrokeChain.Hit).
+    // Launched hard (1000-2000 px/s), pulled down; gusts ~0.45s apart share one direction (fan +-0.12 rad).
     private static readonly StrokeEmission[] Shed =
     {
         new(Role: PrimitiveRole.Spark,

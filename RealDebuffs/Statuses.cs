@@ -7,7 +7,7 @@ using Dalamud.Plugin.Services;
 using RealDebuffs.Effects;
 using RealDebuffs.Effects.Framework;
 
-// Moodles/Loci return a status over IPC as (Version, GUID, IconID, Title, Description, ...); Description stays raw for the keyword parser.
+// Moodles/Loci return a status over IPC as (Version, GUID, IconID, Title, Description, ...)
 using StatusHead = (int Version, System.Guid GUID, long IconID, string Title, string Description);
 namespace RealDebuffs;
 
@@ -240,7 +240,7 @@ public sealed class CustomStatusSnapshot
     }
 }
 
-/// <summary>Reads Moodles/Loci over IPC into a CustomStatusSnapshot about once a second (sooner on settings change); a missing plugin is re-probed slowly.</summary>
+/// <summary>Reads Moodles/Loci over IPC into a CustomStatusSnapshot about once a second (sooner on settings change)</summary>
 public sealed class CustomStatusWatcher : IDisposable
 {
     private const int HeartbeatMs = 1000;

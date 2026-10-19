@@ -3,38 +3,29 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>
-/// A strand drawn as live lightning: the path you give it is the bolt's channel, and the crackle (a large-scale meander, a drifting wander, a mid kink and a fast jitter), the forks and the flicker are the
-/// material's own, so any smooth strand an effect owns can be shown as electricity.
-///
-/// Drawn the way a camera sees a discharge: a blown-out white core that thickens as the bolt gets brighter, a pale-yellow body, hot spots where the channel kinks hard, and the surrounding air lit by a
-/// smooth falloff (several stacked, widening layers rather than one band) that fades into the ends instead of stopping flat. Forks come in two levels (a twig can grow a twig).
-///
-/// Honours Reveal (a dim leader races along the strand, bright at its head, with a pip at the tip), SurgeAt/SurgeGain (a return stroke: a blinding run of current along the channel), Dash, Depth (far bolts
-/// are dimmer, smoother, wider-glowing and cooler) and Agitation (more violent kinks, more forks, brighter flicker). WidthHint is the whole glowing width in px; 20-40 px gives a crisp bolt with a wide glow.
-/// </summary>
+/// <summary>A strand drawn as live lightning: the path you give it is the bolt's channel</summary>
 public sealed class StrokeLightning : IStrokeMaterial
 {
     public string Name => "stroke.lightning";
     public string[] NaturalLanguageWords { get; } = { "lightning", "bolt", "bolts", "arc", "arcs", "electric", "electricity", "thunder", "shock" };
 
     private const int MaxSamples = 640;
-    private const int Stride = 3;                       // the scatter is smooth, so it is built from every third sample
+    private const int Stride = 3;  // the scatter is smooth, so it is built from every third sample
     private const int MaxDecimated = MaxSamples / Stride + 2;
     private const int TwigPoints = 7, SubPoints = 4;
 
     private static readonly MeshBuilder Mb = new();
 
     // Scratch, UI thread only.
-    private static readonly Vector2[] Hard = new Vector2[MaxSamples];     // the visible bolt, every kink
-    private static readonly Vector2[] Soft = new Vector2[MaxSamples];     // the meander and wander alone: light follows this so it reads as light, not as a fat zigzag
+    private static readonly Vector2[] Hard = new Vector2[MaxSamples];  // the visible bolt, every kink
+    private static readonly Vector2[] Soft = new Vector2[MaxSamples];  // the meander and wander alone: light follows this so it reads as light, not as a fat zigzag
     private static readonly Vector2[] NrmHard = new Vector2[MaxSamples];
     private static readonly float[] OffHard = new float[MaxSamples];
     private static readonly float[] OffSoft = new float[MaxSamples];
     private static readonly float[] Arc = new float[MaxSamples];
     private static readonly float[] Lum = new float[MaxSamples];
-    private static readonly float[] Wid = new float[MaxSamples];          // width multiplier: wider at a hot spot or a surge
-    private static readonly float[] Fade = new float[MaxSamples];         // how far the light has faded into the nearest end, 0..1
+    private static readonly float[] Wid = new float[MaxSamples];  // width multiplier: wider at a hot spot or a surge
+    private static readonly float[] Fade = new float[MaxSamples];  // how far the light has faded into the nearest end, 0..1
     private static readonly float[] Half = new float[MaxSamples];
     private static readonly uint[] Col = new uint[MaxSamples];
 
@@ -44,7 +35,7 @@ public sealed class StrokeLightning : IStrokeMaterial
     private static readonly uint[] ColD = new uint[MaxDecimated];
     private static readonly int[] IdxD = new int[MaxDecimated];
 
-    // The scatter around the channel: widths and strengths of four stacked layers, outermost first, and where each sits in the palette (deep orange outside, yellow near the channel).
+    // The scatter around the channel: widths and strengths of four stacked layers, outermost first
     private static readonly float[] ScatterReach = { 1.00f, 0.56f, 0.32f, 0.17f };
     private static readonly float[] ScatterAlpha = { 0.055f, 0.075f, 0.110f, 0.160f };
     private static readonly float[] ScatterTone = { 0.44f, 0.52f, 0.62f, 0.74f };
@@ -72,7 +63,7 @@ public sealed class StrokeLightning : IStrokeMaterial
         if (n > MaxSamples) { step = visible / (MaxSamples - 1); n = MaxSamples; }
         if (n < 2) return;
 
-        // 1. Channel: sample the strand evenly, then kink it sideways. The ends stay pinned to the strand (an arc is anchored), the leader's head does not.
+        // 1. Channel: sample the strand evenly, then kink it sideways.
         var offHard = OffHard.AsSpan(0, n);
         var offSoft = OffSoft.AsSpan(0, n);
         Bolt.Crackle(offHard, offSoft, n, step, s.Seed, time + s.Phase * 0.37f, 1f + 0.8f * agit);
@@ -105,8 +96,7 @@ public sealed class StrokeLightning : IStrokeMaterial
 
         Mb.Clear();
 
-        // 2. Scatter: the lit air. Four widening layers on a third of the samples build a smooth, exponential-looking falloff; the light fades into both ends (and into the leader's head)
-        // rather than being cut off flat, which on a thick strand shows as a rectangle.
+        // 2. Scatter: the lit air.
         float reach = MathF.Max(10f * px, width * 0.95f * soften);
         float cap = MathF.Max(reach * 0.9f, 24f * px);
         int m = 0;
@@ -179,10 +169,7 @@ public sealed class StrokeLightning : IStrokeMaterial
             DrawTip(dl, Hard[n - 1], width, Math.Clamp(s.TipFlare, 0f, 1f) * alpha, ctx);
     }
 
-    /// <summary>
-    /// Lum (about 0.45 to 3) and width multiplier per sample: a steady flicker in blocks of four samples, two surges drifting along the channel, the return stroke if SurgeGain is set, a hot head while the
-    /// leader travels, a flare wherever the channel kinks hard, agitation, and an optional dash mask.
-    /// </summary>
+    /// <summary>Lum (about 0.45 to 3) and width multiplier per sample: a steady flicker in blocks of four samples</summary>
     private static void ComputeLight(in StrokePrimitive s, int n, float time, float total, float visible, float reveal, float agit, float px)
     {
         float pulseW = 60f * px;
@@ -243,7 +230,7 @@ public sealed class StrokeLightning : IStrokeMaterial
                 Vector2 v1 = Hard[i] - Hard[i - 1], v2 = Hard[i + 1] - Hard[i];
                 float cross = MathF.Abs(v1.X * v2.Y - v1.Y * v2.X);
                 float dot = v1.X * v2.X + v1.Y * v2.Y;
-                float turn = MathF.Atan2(cross, dot);                    // 0 straight on, pi doubling back
+                float turn = MathF.Atan2(cross, dot);  // 0 straight on, pi doubling back
                 float hot = Math.Clamp(turn / 0.9f, 0f, 1f);
                 lum += 0.45f * hot;
                 wid += 0.45f * hot;

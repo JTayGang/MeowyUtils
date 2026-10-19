@@ -13,7 +13,7 @@ internal static class DrawHelpers
     // Signed conversion: float -> uint is several times slower on x64. NaN lands on 0.
     private static uint Q(float v) => (uint)(int)((v > 0f ? (v < 1f ? v : 1f) : 0f) * 255f + 0.5f);
 
-    // ---- colour override ----
+    // colour override
 
     private readonly struct HueOverride
     {
@@ -31,7 +31,7 @@ internal static class DrawHelpers
     private static readonly Stack<HueOverride?> ColorOverrideStack = new();
     private static HueOverride? _colorOverride;
 
-    // Memo for ApplyColorOverride (HSV round trip + Pow per vertex): direct-mapped, keyed on the override's id, not "the current push".
+    // Memo for ApplyColorOverride (HSV round trip + Pow per vertex): direct-mapped, keyed on the override's id
     private const int OverrideCacheBits = 11;
     private static readonly uint[] OverrideIn  = new uint[1 << OverrideCacheBits];
     private static readonly uint[] OverrideOut = new uint[1 << OverrideCacheBits];
@@ -75,11 +75,11 @@ internal static class DrawHelpers
         if (s >= 0.05f)
             SetOverride(new HueOverride(h, s));
         else if (v >= 0.72f)
-            SetOverride(new HueOverride(h, s, valuePower: 0.35f));                    // white / silver
+            SetOverride(new HueOverride(h, s, valuePower: 0.35f));  // white / silver
         else if (v <= 0.20f)
             SetOverride(new HueOverride(h, s, valuePower: 4.0f, valueScale: 0.55f));  // black
         else
-            SetOverride(new HueOverride(h, s));                                       // grey
+            SetOverride(new HueOverride(h, s));  // grey
     }
 
     public static void PopColorOverride() =>
@@ -170,29 +170,22 @@ internal static class DrawHelpers
     public static float ColorOverrideChroma =>
         _colorOverride is { } ov && ov.Saturation >= 0.05f ? ov.Saturation : 0f;
 
-    /// <summary>The colour with HSV saturation set to <paramref name="s"/>; hue and value unchanged.</summary>
+    /// <summary>The colour with HSV saturation set to s; hue and value unchanged.</summary>
     public static Vector3 WithSaturation(Vector3 c, float s)
     {
         float mx = MathF.Max(c.X, MathF.Max(c.Y, c.Z));
         float mn = MathF.Min(c.X, MathF.Min(c.Y, c.Z));
         float have = mx > 1e-4f ? (mx - mn) / mx : 0f;
-        if (have < 1e-3f) return c;                       // grey has no hue to saturate
+        if (have < 1e-3f) return c;  // grey has no hue to saturate
 
         float k = Math.Clamp(s, 0f, 1f) / have;
         return new Vector3(mx - (mx - c.X) * k, mx - (mx - c.Y) * k, mx - (mx - c.Z) * k);
     }
 
-    /// <summary>
-    /// How far a recolour pulls a material's own saturation toward the picked colour's, for materials whose palette is pale but should not be
-    /// dyed all the way (the tentacles and their slime). 0 keeps the material's own saturation; 1 forces the picked colour's, which is what the rope
-    /// wants and is far too vivid for flesh.
-    /// </summary>
+    /// <summary>How far a recolour pulls a material's own saturation toward the picked colour's</summary>
     public const float SoftDye = 0.4f;
 
-    /// <summary>
-    /// Moves <paramref name="c"/>'s saturation <paramref name="amount"/> of the way toward <paramref name="target"/>. Only ever raises it: picking a
-    /// pale colour does not wash the material out below its own palette. Grey has no hue to saturate and is returned as it is.
-    /// </summary>
+    /// <summary>Moves c's saturation amount of the way toward target.</summary>
     public static Vector3 BoostSaturation(Vector3 c, float target, float amount)
     {
         float mx = MathF.Max(c.X, MathF.Max(c.Y, c.Z));
@@ -202,7 +195,7 @@ internal static class DrawHelpers
         return WithSaturation(c, have + (target - have) * amount);
     }
 
-    /// <summary>Applies the colour override, then scales alpha by <paramref name="mul"/> (0..1).</summary>
+    /// <summary>Applies the colour override, then scales alpha by mul (0..1).</summary>
     public static uint WithAlpha(uint color, float mul)
     {
         color = ApplyColorOverride(color);
@@ -223,11 +216,11 @@ internal static class DrawHelpers
     public static uint Tint(uint rgb, float alpha, bool overridden) =>
         overridden ? WithAlpha(rgb, alpha) : (rgb & 0x00FFFFFFu) | AlphaBits(alpha);
 
-    /// <summary>The alpha byte of <paramref name="alpha"/> (0..1), shifted into place for VertexColor.</summary>
+    /// <summary>The alpha byte of alpha (0..1), shifted into place for VertexColor.</summary>
     public static uint AlphaBits(float alpha) =>
         (uint)(int)(255f * (alpha > 0f ? (alpha < 1f ? alpha : 1f) : 0f)) << 24;
 
-    // ---- maths ----
+    // maths
 
     public static uint LerpColor(uint a, uint b, float t)
     {
@@ -283,7 +276,7 @@ internal static class DrawHelpers
     public static float PixelScale(Vector2 size) =>
         size.X > 0f ? Math.Clamp(MathF.Min(size.X, size.Y) / 1080f, 0.75f, 2.4f) : 1f;
 
-    /// <summary>Soft edge vignette. Fades to the same colour at zero alpha: ImGui blends non-premultiplied, so fading to transparent black would grey it.</summary>
+    /// <summary>Soft edge vignette.</summary>
     public static void DrawVignette(ImDrawListPtr dl, Vector2 size, uint color, float thicknessFrac, float alpha)
     {
         if (alpha <= 0f) return;

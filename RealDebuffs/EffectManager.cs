@@ -8,12 +8,12 @@ using RealDebuffs.Effects.Framework;
 
 namespace RealDebuffs;
 
-/// <summary>Maps the player's statuses to DebuffKinds every frame and dispatches enabled effects in DrawOrder with fades; heavier resolution is per heartbeat.</summary>
+/// <summary>Maps the player's statuses to DebuffKinds every frame and dispatches enabled effects in DrawOrder with fades</summary>
 public sealed class EffectManager
 {
     private readonly ISceneEffect[] _order;
 
-    /// <summary>How long an effect takes to fade fully in from nothing. Effects that stage an intro can read it to know how much of the cast the fade will hide.</summary>
+    /// <summary>How long an effect takes to fade fully in from nothing.</summary>
     internal const float FadeInSeconds = 0.35f;
     private const float FadeInPerSecond = 1f / FadeInSeconds;
     private const float FadeOutPerSecond = 1f / 0.6f;
@@ -134,7 +134,7 @@ public sealed class EffectManager
         _seenBlocked = blockedNow;
 
         var screenSize = ImGui.GetIO().DisplaySize;
-        if (screenSize.X <= 0 || screenSize.Y <= 0) return;
+        if (screenSize.X < 64f || screenSize.Y < 64f) return;
 
         var dl = ImGui.GetForegroundDrawList();
         _scene.Clear();

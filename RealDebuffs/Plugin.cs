@@ -70,7 +70,7 @@ public sealed class Plugin : IDalamudPlugin
         _pi.UiBuilder.Draw += OnDraw;
         _pi.UiBuilder.OpenConfigUi += OnOpenConfig;
 
-        // Materials with no NaturalLanguageWords can't be used in "made of X" phrases: fine for regions and stroke.simple, a warning otherwise.
+        // Materials with no NaturalLanguageWords can't be used in "made of X" phrases: fine for regions and stroke.simple
         foreach (var material in MaterialRegistry.AllMaterials)
         {
             if (material.NaturalLanguageWords.Length == 0
@@ -142,7 +142,7 @@ public sealed class Plugin : IDalamudPlugin
         {
             _windowSystem.Draw();
 
-            // On the settings window's open -> closed edge, clear the preview overrides (before effects draw, so a failure there can't skip it).
+            // On the settings window's open -> closed edge
             bool isOpen = _configWindow.IsOpen;
             if (_configWasOpen && !isOpen && ClearGeneratorOverrides())
                 _effects.Invalidate();

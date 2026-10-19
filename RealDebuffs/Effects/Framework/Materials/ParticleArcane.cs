@@ -3,11 +3,7 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>
-/// A glowing rune. Size is the glyph's half-height in px, Rotation turns it, and its letter comes from Seed (stable for life).
-/// Variant bit 0 = inscribed: tighter, steadier light for a rune set into a ring; clear = a free-floating rune with more bloom.
-/// Variant above 1 forces a letter: (Variant >> 1) - 1 picks the glyph.
-/// </summary>
+/// <summary>A glowing rune. Size is the glyph's half-height in px, Rotation turns it, and its letter comes from Seed (stable for life).</summary>
 public sealed class ParticleRune : IParticleMaterial
 {
     private readonly string _name;
@@ -17,7 +13,7 @@ public sealed class ParticleRune : IParticleMaterial
     /// <summary>The curse-violet rune in the general script (particle.rune).</summary>
     public ParticleRune() : this("particle.rune", CurseColor.Glow, 0, RuneGlyphs.LegacyCount, "rune", "runes", "glyph", "glyphs") { }
 
-    /// <summary>The same glowing rune in another palette and another set of letters: register one per theme (see particle.hellrune in MaterialRegistry). Its letters come from the glyphCount glyphs starting at firstGlyph.</summary>
+    /// <summary>The same glowing rune in another palette and another set of letters: register one per theme (see particle.hellrune in MaterialRegistry).</summary>
     internal ParticleRune(string name, Palette palette, int firstGlyph, int glyphCount, params string[] words)
     {
         _name = name;
@@ -127,7 +123,7 @@ public sealed class ParticleRune : IParticleMaterial
     };
 }
 
-/// <summary>A speck of arcane light: a soft halo round a bright pip, with a four-point flare on some. Large ones turn into out-of-focus discs, so whatever is nearest the camera reads as blurred.</summary>
+/// <summary>A speck of arcane light: a soft halo round a bright pip, with a four-point flare on some.</summary>
 public sealed class ParticleMote : IParticleMaterial
 {
     private readonly string _name;
@@ -137,7 +133,7 @@ public sealed class ParticleMote : IParticleMaterial
     /// <summary>The curse-violet mote (particle.mote).</summary>
     public ParticleMote() : this("particle.mote", CurseColor.Glow, true, "mote", "motes", "wisp", "wisps") { }
 
-    /// <summary>The same drifting speck of light in another palette: register one per theme (see particle.static in MaterialRegistry). With flares off, none of them draws the cross-shaped sparkle that one mote in eight otherwise does.</summary>
+    /// <summary>The same drifting speck of light in another palette: register one per theme (see particle.static in MaterialRegistry).</summary>
     internal ParticleMote(string name, Palette palette, bool flares, params string[] words)
     {
         _name = name;

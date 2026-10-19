@@ -6,18 +6,7 @@ using FFXIVClientStructs.FFXIV.Component.Shell;
 
 namespace RealDebuffs;
 
-/// <summary>
-/// Optional (see Configuration.SilenceBlocksChat): swallows outgoing chat while silenced, by
-/// hooking the game's post-Enter chat-input processor. Credit: Project GagSpeak
-/// (github.com/Project-GagSpeak/client), GameInternals/Signatures.cs. An earlier version hooked
-/// UIModule.ProcessChatBoxEntry - the function programmatic helpers call INTO, not the one the
-/// game itself calls on Enter - so it silently did nothing.
-///
-/// Swallowed messages are counted (BlockedCount) so effects can react to them; see IReactsToBlockedChat.
-///
-/// Signature hooks can stop resolving after a game patch. Fails safe: logs a warning once and
-/// leaves _hook null; every visual effect is unaffected either way.
-/// </summary>
+/// <summary>Optional (see Configuration.SilenceBlocksChat): swallows outgoing chat while silenced</summary>
 public sealed unsafe class ChatBlocker : IDisposable
 {
     private const string ProcessChatInputSignature = "E8 ?? ?? ?? ?? FE 87 ?? ?? ?? ?? C7 87";
@@ -48,17 +37,12 @@ public sealed unsafe class ChatBlocker : IDisposable
     /// <summary>Set every frame by EffectManager from config + active statuses.</summary>
     public void SetSilenced(bool silenced) => _silenced = silenced;
 
-    /// <summary>
-    /// How many outgoing messages have been swallowed so far. A counter rather than an event: the hook runs inside
-    /// the game, so all it does is one lock-free increment, and EffectManager polls the difference each frame to
-    /// tell effects (see IReactsToBlockedChat) that a message just bounced.
-    /// </summary>
+    /// <summary>How many outgoing messages have been swallowed so far.</summary>
     public int BlockedCount => Volatile.Read(ref _blockedCount);
 
     private void Detour(ShellCommandModule* self, Utf8String* message, UIModule* uiModule)
     {
-        // Slash commands go through this same function, so they're blocked too. To let them
-        // through, check message->ToString() for a leading '/' here and call Original() for those.
+        // Slash commands go through this same function, so they're blocked too.
         if (_silenced)
         {
             Interlocked.Increment(ref _blockedCount);

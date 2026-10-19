@@ -3,7 +3,7 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>Iron chain: oval links rolled about the strand, matcap-shaded, far halves first so edge-on links interlock. WidthHint is link length; Closed wraps in an even link count.</summary>
+/// <summary>Iron chain: oval links rolled about the strand, matcap-shaded, far halves first so edge-on links interlock.</summary>
 public sealed class StrokeChain : IStrokeMaterial
 {
     public string Name => "stroke.chain";
@@ -13,7 +13,7 @@ public sealed class StrokeChain : IStrokeMaterial
     private const float MaxLinkFrac = 0.085f;
     private const int MaxLinks = 200;
 
-    // Link proportions as fractions of outer length L: 5 bar-diameters long, 3.4 wide, pitched 3 apart (= inside length, the overlap that interlocks).
+    // Link proportions as fractions of outer length L: 5 bar-diameters long, 3.4 wide
     private const float BarDiameter = 0.200f;
     private const float Pitch       = 0.600f;
     private const float HalfAxis    = 0.400f;
@@ -63,7 +63,7 @@ public sealed class StrokeChain : IStrokeMaterial
         return t;
     }
 
-    // Column offsets across the bar (-1..1; first/last are the AA fringe), with sqrt(1-u^2) precomputed so DrawHalf needn't sqrt per vertex.
+    // Column offsets across the bar (-1..1; first/last are the AA fringe)
     private static readonly float[] Cols7   = { -1f, -1f, -0.62f, 0f, 0.62f, 1f, 1f };
     private static readonly float[] Cols5   = { -1f, -1f, 0f, 1f, 1f };
     private static readonly float[] Cols7Sq = BuildSq(Cols7);
@@ -289,7 +289,7 @@ public sealed class StrokeChain : IStrokeMaterial
                 rustB = Noise.Value(nxr + 0.9f, nyr) * 0.5f + 0.5f;
             }
 
-            // Shade real columns only: the fringe columns share their neighbour's normal and colour, differing only in position and alpha (0).
+            // Shade real columns only: the fringe columns share their neighbour's normal and colour
             int vb = v;
             for (int c = 1; c < nc - 1; c++)
             {
@@ -301,7 +301,7 @@ public sealed class StrokeChain : IStrokeMaterial
 
                 Vector3 col = body.Sample(n.X, n.Y);
 
-                // Rust patches live in link space so they travel with the link; noise is sampled at the two bar edges per row and blended (it is low-frequency).
+                // Rust patches live in link space so they travel with the link
                 float rustMask = 0f;
                 if (rusty)
                 {

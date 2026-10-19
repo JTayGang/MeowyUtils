@@ -3,7 +3,7 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>The shared lighting rig: warm key (upper left/front), cold fill (lower right), cold rim; also the source of truth for shadow direction. View space: +Y down.</summary>
+/// <summary>The shared lighting rig: warm key (upper left/front), cold fill (lower right), cold rim; also the source of truth for shadow direction.</summary>
 public static class StudioLighting
 {
     public static readonly Vector3 Key  = Vector3.Normalize(new Vector3(-0.52f, -0.70f, 0.50f));
@@ -20,14 +20,14 @@ public static class StudioLighting
 
 /// <summary>How a surface answers light. Authored in linear space; the matcap converts to display space.</summary>
 public readonly record struct SurfaceSpec(
-    Vector3 Albedo,        // diffuse colour of the non-metallic part
-    Vector3 F0,            // reflectance at normal incidence: the tint of the metal
-    float   Metalness,     // 0 = pure diffuse (rust, stone), 1 = pure metal
-    float   Roughness,     // 0 = mirror, 1 = chalk
-    float   EnvStrength,   // how much of the surrounding scene shows in the reflection
-    float   Ambient,       // flat fill so no normal is ever pure black
-    float   Wrap = 0f,     // diffuse wrap: 0 = Lambert; ~0.4 lets light bleed past the terminator, which is what skin, wax and flesh do
-    Vector3 Scatter = default);   // colour of that bleed, added where light fades out (a cheap subsurface glow); zero = none
+    Vector3 Albedo,  // diffuse colour of the non-metallic part
+    Vector3 F0,  // reflectance at normal incidence: the tint of the metal
+    float   Metalness,  // 0 = pure diffuse (rust, stone), 1 = pure metal
+    float   Roughness,  // 0 = mirror, 1 = chalk
+    float   EnvStrength,  // how much of the surrounding scene shows in the reflection
+    float   Ambient,  // flat fill so no normal is ever pure black
+    float   Wrap = 0f,  // diffuse wrap: 0 = Lambert; ~0.4 lets light bleed past the terminator, which is what skin
+    Vector3 Scatter = default);  // colour of that bleed, added where light fades out (a cheap subsurface glow); zero = none
 
 public static class SurfacePresets
 {
@@ -61,13 +61,13 @@ public static class SurfacePresets
         Albedo: new(0.085f, 0.060f, 0.040f), F0: new(0.07f, 0.065f, 0.060f),
         Metalness: 0.0f, Roughness: 0.62f, EnvStrength: 0.20f, Ambient: 0.008f);
 
-    /// <summary>Parasite flesh: sickly olive-green satin (the gloss is a separate WetCoat, since slime comes and goes), wrapped diffuse and a yellow-green terminator glow so it reads as living tissue, not rubber.</summary>
+    /// <summary>Parasite flesh: sickly olive-green satin (the gloss is a separate WetCoat, since slime comes and goes)</summary>
     public static readonly SurfaceSpec ParasiteFlesh = new(
         Albedo: new(0.215f, 0.245f, 0.125f), F0: new(0.04f, 0.04f, 0.035f),
         Metalness: 0.0f, Roughness: 0.50f, EnvStrength: 0.22f, Ambient: 0.020f,
         Wrap: 0.42f, Scatter: new(0.060f, 0.082f, 0.020f));
 
-    /// <summary>A clear liquid film over something else: no colour, only a hard highlight and a reflection of the surround; over a body's matcap it looks wet. F0 is deliberately high (highlight strength, not a real IOR).</summary>
+    /// <summary>A clear liquid film over something else: no colour, only a hard highlight and a reflection of the surround</summary>
     public static readonly SurfaceSpec WetCoat = new(
         Albedo: new(0f, 0f, 0f), F0: new(0.34f, 0.34f, 0.34f),
         Metalness: 0.0f, Roughness: 0.16f, EnvStrength: 0.95f, Ambient: 0f);
@@ -77,24 +77,24 @@ public static class SurfacePresets
         Albedo: new(0.110f, 0.044f, 0.020f), F0: new(0.05f, 0.03f, 0.02f),
         Metalness: 0.04f, Roughness: 0.92f, EnvStrength: 0.04f, Ambient: 0.012f);
 
-    /// <summary>Horn: near-black keratin with a smooth satin skin, a soft broad sheen and a faint deep-red bleed where the light just fails (horn is slightly translucent, like fingernail). Authored very dark and only mildly reflective: the bake is gamma-lifted, so a pale-looking albedo or a strong surround reflection turns it into grey stone.</summary>
+    /// <summary>Horn: near-black keratin with a smooth satin skin</summary>
     public static readonly SurfaceSpec Horn = new(
         Albedo: new(0.012f, 0.009f, 0.008f), F0: new(0.050f, 0.046f, 0.042f),
         Metalness: 0.0f, Roughness: 0.42f, EnvStrength: 0.20f, Ambient: 0.003f,
         Wrap: 0.28f, Scatter: new(0.050f, 0.010f, 0.004f));
 
-    /// <summary>Candle tallow: ivory, soft and waxy; wrapped diffuse and a warm amber bleed at the terminator, which is what makes wax glow instead of read as plastic.</summary>
+    /// <summary>Candle tallow: ivory, soft and waxy; wrapped diffuse and a warm amber bleed at the terminator</summary>
     public static readonly SurfaceSpec Tallow = new(
         Albedo: new(0.62f, 0.54f, 0.38f), F0: new(0.050f, 0.046f, 0.040f),
         Metalness: 0.0f, Roughness: 0.58f, EnvStrength: 0.10f, Ambient: 0.020f,
         Wrap: 0.55f, Scatter: new(0.150f, 0.075f, 0.022f));
 }
 
-/// <summary>A "material capture": lit colour by facing direction baked to a small table, so shading a vertex is one bilinear lookup (display-space RGB).</summary>
+/// <summary>A "material capture": lit colour by facing direction baked to a small table</summary>
 public sealed class Matcap
 {
     private const int N = 48;
-    private readonly Vector4[] _rgb = new Vector4[N * N];   // w unused: one 16-byte load per texel
+    private readonly Vector4[] _rgb = new Vector4[N * N];  // w unused: one 16-byte load per texel
 
     public Matcap(in SurfaceSpec spec)
     {
@@ -129,10 +129,7 @@ public sealed class Matcap
         return new Vector3(c.X, c.Y, c.Z);
     }
 
-    /// <summary>
-    /// Samples two matcaps at the same normal. They share a size, so the cell and its four weights are worked out once; each result is exactly what that
-    /// matcap's own <see cref="Sample"/> returns (the arithmetic is the same).
-    /// </summary>
+    /// <summary>Samples two matcaps at the same normal.</summary>
     public static void SamplePair(Matcap a, Matcap b, float nx, float ny, out Vector3 ca, out Vector3 cb)
     {
         float fx = (nx * 0.5f + 0.5f) * (N - 1);
@@ -160,7 +157,7 @@ public sealed class Matcap
         float ndlFill = MathF.Max(0f, Vector3.Dot(n, StudioLighting.Fill));
         float ndlRim  = MathF.Max(0f, Vector3.Dot(n, StudioLighting.Rim));
 
-        // ---- diffuse ---- wrapped lighting spills past the terminator; the specular terms keep the unwrapped dots so wrapping doesn't also widen the highlight.
+        // diffuse ---- wrapped lighting spills past the terminator; the specular terms keep the unwrapped dots so wrapping doesn't also widen the highlight.
         float dKey = ndlKey, dFill = ndlFill;
         if (s.Wrap > 0f)
         {
@@ -180,7 +177,7 @@ public sealed class Matcap
             diffuse += s.Scatter * (terminator * (0.35f + 0.65f * (1f - n.Z)) * (1f - s.Metalness));
         }
 
-        // ---- key highlight: tight lobe plus a broad sheen, Fresnel-weighted ----
+        // key highlight: tight lobe plus a broad sheen, Fresnel-weighted
         Vector3 h = Vector3.Normalize(StudioLighting.Key + v);
         float nh = MathF.Max(0f, Vector3.Dot(n, h));
         float vh = MathF.Max(0f, Vector3.Dot(v, h));
@@ -190,17 +187,17 @@ public sealed class Matcap
         Vector3 fSchlick = s.F0 + (Vector3.One - s.F0) * fres;
         Vector3 spec = fSchlick * StudioLighting.KeyColor * (lobe * ndlKey);
 
-        // ---- environment reflection ----
-        Vector3 r = 2f * n.Z * n - v;                       // view vector reflected about n
+        // environment reflection
+        Vector3 r = 2f * n.Z * n - v;  // view vector reflected about n
         // Rough metal reflects a blurred surround: blend the sharp environment toward its own average.
         float blur = s.Roughness * s.Roughness * 1.6f;
         blur = blur > 0.85f ? 0.85f : blur;
         Vector3 reflected = Vector3.Lerp(Environment(r), EnvAverage, blur) * s.EnvStrength;
-        float grazing = MathF.Pow(1f - n.Z, 3f);            // reflections strengthen toward the silhouette
+        float grazing = MathF.Pow(1f - n.Z, 3f);  // reflections strengthen toward the silhouette
         Vector3 envF = s.F0 + (Vector3.One - s.F0) * (grazing * 0.55f);
         Vector3 refl = reflected * envF * (0.55f + 0.45f * s.Metalness);
 
-        // ---- cold rim from behind: only where the surface turns away from the viewer ----
+        // cold rim from behind: only where the surface turns away from the viewer
         float rim = MathF.Pow(1f - n.Z, 2.4f) * ndlRim;
         Vector3 rimLight = StudioLighting.RimColor * (0.30f * rim) * (0.25f + 0.75f * s.Metalness);
 
@@ -213,7 +210,7 @@ public sealed class Matcap
     /// <summary>A mostly dark surround (black ground, cool sky, faint warm horizon, cold backlight): dark on purpose, so iron reads as mirror-like.</summary>
     internal static Vector3 Environment(Vector3 r)
     {
-        float up = -r.Y;                                    // screen up is -Y
+        float up = -r.Y;  // screen up is -Y
         float sky = DrawHelpers.Smooth(-0.35f, 0.85f, up);
 
         Vector3 ground = new(0.006f, 0.006f, 0.008f);
@@ -227,7 +224,7 @@ public sealed class Matcap
         env += StudioLighting.RimColor * (MathF.Pow(back, 7f) * 0.85f);
 
         float key = MathF.Max(0f, Vector3.Dot(r, StudioLighting.Key));
-        env += StudioLighting.KeyColor * (MathF.Pow(key, 12f) * 0.55f);   // softbox glow in the reflection
+        env += StudioLighting.KeyColor * (MathF.Pow(key, 12f) * 0.55f);  // softbox glow in the reflection
         return env;
     }
 
@@ -237,7 +234,7 @@ public sealed class Matcap
         static float F(float x)
         {
             x = MathF.Max(0f, x);
-            x = 1f - MathF.Exp(-1.55f * x);                // shoulders highlights instead of clipping them
+            x = 1f - MathF.Exp(-1.55f * x);  // shoulders highlights instead of clipping them
             return MathF.Pow(x, 1f / 2.2f);
         }
         return new Vector3(F(lin.X), F(lin.Y), F(lin.Z));
@@ -326,8 +323,7 @@ internal static class StrandShading
     }
 }
 
-/// <summary>How a viscous liquid answers light (slime, blood, sludge, venom), authored in linear space; a LiquidMatcap bakes it to display colour and opacity. Cues: translucent, richer where thick, a caustic crescent on the shadow side, a glossy highlight plus surround reflection.
-/// Linear space matters for dark liquids: the bake applies a gamma, so a neutral reflection of only 0.01 shows as a grey veil over a near-black body. Sheen is the gain of the broad, dim highlight under the hard one (0.20 suits a pale liquid; a dark one wants far less), Window that of the smaller cool reflection from the fill side (0.30 is what makes a bead read as wet; over a long smear it is a grey stripe), and Env that of the surround's reflection.</summary>
+/// <summary>How a viscous liquid answers light (slime, blood, sludge, venom), authored in linear space</summary>
 public readonly record struct LiquidSpec(
     Vector3 Thin,
     Vector3 Deep,
@@ -339,7 +335,7 @@ public readonly record struct LiquidSpec(
     float Sheen = 0.20f,
     float Window = 0.30f);
 
-/// <summary>Ready-made liquids. A new viscous effect starts here: add a preset, then a three-line ParticleGoop subclass; drip simulation, mesh and shading are shared.</summary>
+/// <summary>Ready-made liquids.</summary>
 public static class LiquidPresets
 {
     /// <summary>Sickly yellow-green mucus: translucent, glossy, with a bright caustic.</summary>
@@ -347,17 +343,17 @@ public static class LiquidPresets
         Thin: new(0.62f, 0.72f, 0.16f), Deep: new(0.045f, 0.105f, 0.012f),
         Opacity: 0.90f, EdgeOpacity: 0.55f, Gloss: 0.88f, Caustic: 1.15f, Env: 1.0f);
 
-    /// <summary>Blood: arterial red where thin, nearly black where deep, almost opaque, with a hard wet highlight. Authored dark: the surround and the broad highlights are turned well down, or they veil a body this dark in grey.</summary>
+    /// <summary>Blood: arterial red where thin, nearly black where deep, almost opaque, with a hard wet highlight.</summary>
     public static readonly LiquidSpec Blood = new(
         Thin: new(0.55f, 0.008f, 0.012f), Deep: new(0.17f, 0.000f, 0.004f),
         Opacity: 0.97f, EdgeOpacity: 0.80f, Gloss: 0.92f, Caustic: 0.30f, Env: 0.12f, Sheen: 0.02f, Window: 0.12f);
 }
 
-/// <summary>A LiquidSpec baked into a lookup by view-space normal (as Matcap does for opaque surfaces) with an extra opacity channel; straight, not premultiplied, display colour. Drop, neck and tail are surfaces of revolution with analytic normals, so this table is the whole shading model.</summary>
+/// <summary>A LiquidSpec baked into a lookup by view-space normal (as Matcap does for opaque surfaces) with an extra opacity channel; straight</summary>
 public sealed class LiquidMatcap
 {
     private const int N = 64;
-    private readonly Vector4[] _tex = new Vector4[N * N];   // rgb = display colour, w = opacity
+    private readonly Vector4[] _tex = new Vector4[N * N];  // rgb = display colour, w = opacity
 
     public LiquidMatcap(in LiquidSpec spec)
     {
@@ -391,26 +387,26 @@ public sealed class LiquidMatcap
     private static Vector4 Shade(Vector3 n, in LiquidSpec s)
     {
         float nz = n.Z;
-        float rimness = 1f - nz;                              // 0 at the middle of a bead, 1 at its silhouette
-        float thick = MathF.Pow(nz, 0.75f);                   // how much liquid the view ray crosses
+        float rimness = 1f - nz;  // 0 at the middle of a bead, 1 at its silhouette
+        float thick = MathF.Pow(nz, 0.75f);  // how much liquid the view ray crosses
 
-        // ---- body: light that enters, is tinted by the liquid, and leaves toward the viewer ----
+        // body: light that enters, is tinted by the liquid, and leaves toward the viewer
         Vector3 body = Vector3.Lerp(s.Thin, s.Deep, thick);
         float keyWrap = MathF.Max(0f, (Vector3.Dot(n, StudioLighting.Key) + 0.55f) / 1.55f);
         Vector3 light = StudioLighting.KeyColor * (0.28f + 0.85f * keyWrap) + StudioLighting.FillColor * 0.42f;
         body *= light;
-        // A thin dark line at the silhouette: the liquid refracts the edge of the scene, which gives it definition against a bright background.
+        // A thin dark line at the silhouette: the liquid refracts the edge of the scene
         body *= 1f - 0.34f * DrawHelpers.Smooth(0.80f, 1.0f, rimness);
 
         float opacity = DrawHelpers.Lerp(s.EdgeOpacity, s.Opacity, thick);
 
-        // ---- light added on top of the body ----
+        // light added on top of the body
         Vector3 add = Vector3.Zero;
 
         // Hard key highlight and a broader, dimmer sheen under it.
         Vector3 h = Vector3.Normalize(StudioLighting.Key + Vector3.UnitZ);
         float nh = MathF.Max(0f, Vector3.Dot(n, h));
-        // Per-vertex shading can't carry a lobe narrower than the vertex spacing, so this one stays wide enough to survive interpolation; GoopDraw lays an analytic glint over it.
+        // Per-vertex shading can't carry a lobe narrower than the vertex spacing
         float sharp = 30f + 240f * s.Gloss * s.Gloss;
         add += StudioLighting.KeyColor * (MathF.Pow(nh, sharp) * 1.5f + MathF.Pow(nh, 14f) * s.Sheen);
 
@@ -435,7 +431,7 @@ public sealed class LiquidMatcap
             add += (s.Thin * 1.9f + new Vector3(0.10f)) * (crescent * s.Caustic);
         }
 
-        // ---- composite: overlay light also raises opacity, so highlights stay solid over a dark scene ----
+        // composite: overlay light also raises opacity, so highlights stay solid over a dark scene
         float lum = add.X * 0.30f + add.Y * 0.59f + add.Z * 0.11f;
         float alpha = opacity + (1f - opacity) * Math.Clamp(lum * 1.5f, 0f, 1f);
         Vector3 premult = body * opacity + add;
@@ -443,6 +439,5 @@ public sealed class LiquidMatcap
         Vector3 display = Matcap.ToDisplay(straight);
         return new Vector4(display, Math.Clamp(alpha, 0f, 1f));
     }
-
 
 }

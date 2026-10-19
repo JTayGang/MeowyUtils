@@ -8,14 +8,14 @@ internal sealed class Dendrite
 {
     /// <summary>Shape and pace of one fern.</summary>
     public readonly record struct FernStyle(
-        int StemPieces,        // line pieces the stem is split into (more = smoother curve)
-        int Pairs,             // side-branch pairs along the stem
-        float BranchAngle,     // radians between stem and branch
-        float BranchLength,    // branch length as a fraction of stem length (at its fullest)
-        int Twigs,             // twigs per branch
-        float TwigLength,      // twig length as a fraction of its branch
-        float Curl,            // random bend per stem piece, radians
-        float Duration);       // seconds for the stem to reach full length
+        int StemPieces,  // line pieces the stem is split into (more = smoother curve)
+        int Pairs,  // side-branch pairs along the stem
+        float BranchAngle,  // radians between stem and branch
+        float BranchLength,  // branch length as a fraction of stem length (at its fullest)
+        int Twigs,  // twigs per branch
+        float TwigLength,  // twig length as a fraction of its branch
+        float Curl,  // random bend per stem piece, radians
+        float Duration);  // seconds for the stem to reach full length
 
     private const int MaxChainPoints = 8;
 
@@ -24,7 +24,7 @@ internal sealed class Dendrite
 
     /// <summary>Total line segments across all chains: the number that drives draw cost.</summary>
 
-    // Flat arrays: points (x, y, arrival time, strip normal) and per-chain metadata; normals are computed once when a chain is added.
+    // Flat arrays: points (x, y, arrival time, strip normal) and per-chain metadata
     private float[] _px = new float[4096], _py = new float[4096], _pt = new float[4096];
     private Vector2[] _nm = new Vector2[4096];
     private int _pn;
@@ -43,7 +43,7 @@ internal sealed class Dendrite
 
     private static Vector2 Dir(float a) => new(MathF.Cos(a), MathF.Sin(a));
 
-    /// <summary>Adds a polyline that starts growing at <paramref name="t0"/> and extends at <paramref name="speed"/> px/s.</summary>
+    /// <summary>Adds a polyline that starts growing at t0 and extends at speed px/s.</summary>
     public void AddChain(ReadOnlySpan<Vector2> pts, float t0, float speed, float width, byte gen, float phase)
     {
         int n = Math.Min(pts.Length, MaxChainPoints);
@@ -84,7 +84,7 @@ internal sealed class Dendrite
         }
     }
 
-    /// <summary>A single short hair at <paramref name="at"/>; cheap texture for the area between the ferns.</summary>
+    /// <summary>A single short hair at at; cheap texture for the area between the ferns.</summary>
     public void AddNeedle(Vector2 at, float angle, float length, float t0, float width, float phase)
     {
         Span<Vector2> p = stackalloc Vector2[2];
@@ -119,7 +119,7 @@ internal sealed class Dendrite
         // Side branches in pairs along the stem, longest around the lower-middle and tapering to the tip.
         for (int k = 0; k < st.Pairs; k++)
         {
-            float s = (k + 0.7f) / (st.Pairs + 0.4f);                 // 0..1 along the stem
+            float s = (k + 0.7f) / (st.Pairs + 0.4f);  // 0..1 along the stem
             float f = s * pieces;
             int pi = Math.Min(pieces - 1, (int)f);
             float u = f - pi;
@@ -194,7 +194,7 @@ internal sealed class Dendrite
     private const int ShimmerSteps = 16;
     private static readonly uint[] CoreLut = new uint[4 * (ShimmerSteps + 1)];
 
-    /// <summary>Draws everything grown by <paramref name="age"/> seconds, batched into a few meshes.</summary>
+    /// <summary>Draws everything grown by age seconds, batched into a few meshes.</summary>
     public void Draw(ImDrawListPtr dl, Vector2 uv, float age, in DrawStyle st)
     {
         if (st.Alpha <= 0.002f) return;
@@ -259,7 +259,7 @@ internal sealed class Dendrite
             int n = Visible(c, age, buf, nrm, out bool growing);
             if (n < 2) continue;
 
-            int step = ShimmerSteps;                                     // growing chains are at full brightness
+            int step = ShimmerSteps;  // growing chains are at full brightness
             if (!growing)
             {
                 float shimmer = 0.80f + 0.20f * (sinT * _cosP[c] + cosT * _sinP[c]);
@@ -278,7 +278,7 @@ internal sealed class Dendrite
             else if (gen == 0)
             {
                 Taper(hw, n, half, 0.5f);
-                mesh.Ribbon(buf[..n], nrm[..n], hw[..n], col, 0.8f);     // the stem is thick enough to need a flat core
+                mesh.Ribbon(buf[..n], nrm[..n], hw[..n], col, 0.8f);  // the stem is thick enough to need a flat core
             }
             else
             {
@@ -291,7 +291,7 @@ internal sealed class Dendrite
         mesh.Flush(dl, uv);
     }
 
-    /// <summary>Half-widths easing from <paramref name="root"/> at the first point to root * <paramref name="tipFraction"/> at the last.</summary>
+    /// <summary>Half-widths easing from root at the first point to root * tipFraction at the last.</summary>
     private static void Taper(Span<float> hw, int n, float root, float tipFraction)
     {
         float inv = n > 1 ? 1f / (n - 1) : 0f;
@@ -303,7 +303,7 @@ internal sealed class Dendrite
     {
         growing = false;
         int off = _start[c], n = _len[c];
-        if (!(age > _pt[off])) return 0;                  // also rejects a NaN start time
+        if (!(age > _pt[off])) return 0;  // also rejects a NaN start time
 
         int k = 0;
         while (k < n && age >= _pt[off + k])

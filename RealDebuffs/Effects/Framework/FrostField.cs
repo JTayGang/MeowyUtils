@@ -2,7 +2,7 @@ using System.Numerics;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Everything RegionFrost draws for one cast (built by FrostEffect, passed via RegionPrimitive.State); the effect animates it, the material reads.</summary>
+/// <summary>Everything RegionFrost draws for one cast (built by FrostEffect, passed via RegionPrimitive.State); the effect animates it</summary>
 internal sealed class FrostField
 {
     public readonly ScreenGrowth Growth = new();
@@ -23,7 +23,7 @@ internal sealed class FrostField
     /// <summary>Overall opacity and clock time the haze was last built at (see RegionFrost).</summary>
     public float HazeAlpha, HazeTime = float.NegativeInfinity;
 
-    // ---- per-cast layout of the things that sit on the frost, all placed from the arrival field ----
+    // per-cast layout of the things that sit on the frost, all placed from the arrival field
 
     /// <summary>A static six-fold crystal on the glass.</summary>
     public readonly record struct Flower(Vector2 Pos, float Size, float Start, int Seed);
@@ -37,11 +37,11 @@ internal sealed class FrostField
     /// <summary>Spots just behind the ice front where condensation hangs.</summary>
     public Vector2[] MistSpots { get; private set; } = Array.Empty<Vector2>();
 
-    // ---- animated each frame by the effect ----
-    public float Age;        // seconds since the cast began
-    public float Progress;   // how far the ice front has come, in ScreenGrowth arrival units
-    public float Fog;        // how far the condensation has come (leads Progress)
-    public float Alpha;      // overall opacity including fades
+    // animated each frame by the effect
+    public float Age;  // seconds since the cast began
+    public float Progress;  // how far the ice front has come, in ScreenGrowth arrival units
+    public float Fog;  // how far the condensation has come (leads Progress)
+    public float Alpha;  // overall opacity including fades
 
     /// <summary>How far the ice front has come, in arrival units: a fast sweep, then a slow creep.</summary>
     public static float ProgressAt(float age)
@@ -51,10 +51,10 @@ internal sealed class FrostField
         return 0.95f * sweep + 0.30f * creep;
     }
 
-    /// <summary>Roughly the inverse of <see cref="ProgressAt"/>: when does the front reach <paramref name="arrival"/>?</summary>
+    /// <summary>Roughly the inverse of ProgressAt: when does the front reach arrival?</summary>
     public static float AgeFor(float arrival)
     {
-        float k = arrival > 0f ? MathF.Min(arrival / 0.95f, 0.93f) : 0f;       // NaN or negative -> 0
+        float k = arrival > 0f ? MathF.Min(arrival / 0.95f, 0.93f) : 0f;  // NaN or negative -> 0
         return 0.05f - 1.5f * MathF.Log(1f - k);
     }
 
@@ -70,7 +70,7 @@ internal sealed class FrostField
             Cap = new float[nv];
             Haze = new uint[nv];
         }
-        HazeTime = float.NegativeInfinity;                       // a rebuilt field must rebuild its haze
+        HazeTime = float.NegativeInfinity;  // a rebuilt field must rebuild its haze
 
         float ss = MathF.Max(1f, MathF.Min(size.X, size.Y));
         float off = (seed & 255) * 2.3f;
@@ -187,7 +187,7 @@ internal sealed class FrostField
         }
     }
 
-    /// <summary>Roots spaced about <paramref name="spacing"/> pixels apart along every screen edge, pointing inward.</summary>
+    /// <summary>Roots spaced about spacing pixels apart along every screen edge, pointing inward.</summary>
     private void BorderRoots(int seed, Vector2 size, float spacing, in Dendrite.FernStyle style, float px, float ss, float maxLenFrac)
     {
         for (int e = 0; e < 4; e++)

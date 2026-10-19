@@ -151,7 +151,7 @@ internal sealed class EffectRoster
         return ImGui.Combo("##kind", ref i, _names, _names.Length) ? _kinds[i] : null;
     }
 
-    /// <summary>Kind picker for an add-row; <paramref name="index"/> is the caller's selection state.</summary>
+    /// <summary>Kind picker for an add-row; index is the caller's selection state.</summary>
     public DebuffKind NewKindCombo(ref int index)
     {
         ImGui.Combo("##newkind", ref index, _names, _names.Length);
@@ -159,7 +159,7 @@ internal sealed class EffectRoster
     }
 }
 
-/// <summary>"Custom statuses" section: name -> effect rules.</summary>
+/// <summary>"Custom statuses" section: name -&gt; effect rules.</summary>
 internal sealed class CustomStatusPanel
 {
     private const float NameWidth = 180f;
@@ -589,7 +589,7 @@ internal sealed class EffectStylePanel
         return changed;
     }
 
-    /// <summary>Removes every override belonging to <paramref name="kind"/> on both the material and emit axes.</summary>
+    /// <summary>Removes every override belonging to kind on both the material and emit axes.</summary>
     private bool ResetToDefaults(DebuffKind kind)
     {
         bool removedAny = false;
@@ -800,7 +800,7 @@ internal sealed class EffectStylePanel
     /// <summary>Emit dropdown for stroke slots: "(from material)", "(none)", or a particle material.</summary>
     private bool DrawEmitRow(DebuffKind kind, in SwappableSlot slot)
     {
-        if (EmitOptions.Length == 2) return false;   // no particle material declares emissions
+        if (EmitOptions.Length == 2) return false;  // no particle material declares emissions
 
         string key = MaterialOverrideKey.ForStrokeEmit(kind, slot.Role);
 

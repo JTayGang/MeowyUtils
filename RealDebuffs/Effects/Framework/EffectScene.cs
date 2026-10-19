@@ -8,7 +8,6 @@ public enum PrimitiveRole
     MainStroke = 0,
 
     Spark = 3,
-    Drip = 4,
     Ember = 7,
     Snowflake = 10,
     Snow = 11,
@@ -47,7 +46,7 @@ public struct StrokePrimitive
     public float Phase;
     public bool  FlushStart;
 
-    // ---- optional hints; zero is neutral ----
+    // optional hints; zero is neutral
 
     /// <summary>The path is a closed loop (last point == first), so repeating elements (links, beads) wrap cleanly.</summary>
     public bool  Closed;
@@ -58,22 +57,22 @@ public struct StrokePrimitive
     /// <summary>0..1: how hard the strand is being shaken right now (decays after an impact or a tug).</summary>
     public float Agitation;
 
-    /// <summary>0 = shed along the whole strand; above 0, trickle emissions only spawn within this many px (at 1080p) of a screen edge. Needs ScreenSize.</summary>
+    /// <summary>0 = shed along the whole strand; above 0, trickle emissions only spawn within this many px (at 1080p) of a screen edge.</summary>
     public float EmitEdgeReach;
 
-    /// <summary>0 = unrestricted; above 0, trickle emissions only spawn within this arc distance (px at 1080p) of either end. Combines with EmitEdgeReach.</summary>
+    /// <summary>0 = unrestricted; above 0, trickle emissions only spawn within this arc distance (px at 1080p) of either end.</summary>
     public float EmitEndReach;
 
     /// <summary>Rotation about the strand's own axis at its middle, in radians (zero at anchored ends); materials with a lay (rope, braid) slide it.</summary>
     public float Twist;
 
-    /// <summary>0 = a solid line; above 0, the line is broken into dashes this many px (at 1080p) from the start of one to the start of the next. Light-drawn materials honour it; physical ones (chain, rope) ignore it.</summary>
+    /// <summary>0 = a solid line; above 0, the line is broken into dashes this many px (at 1080p) from the start of one to the start of the next.</summary>
     public float Dash;
 
     /// <summary>Where a bolt of current is racing along the strand right now: 0 at the start, 1 at the end. Only meaningful with SurgeGain above zero.</summary>
     public float SurgeAt;
 
-    /// <summary>How brightly that surge lights the strand: 0 = no surge (neutral), about 1 = a clear bright run, 2 or more = blinding. Light-drawn materials honour it; physical ones ignore it.</summary>
+    /// <summary>How brightly that surge lights the strand: 0 = no surge (neutral), about 1 = a clear bright run, 2 or more = blinding.</summary>
     public float SurgeGain;
 }
 
@@ -100,21 +99,21 @@ public struct ParticlePrimitive
     /// <summary>Position with the horizontal sway applied: where the particle is actually drawn.</summary>
     public readonly Vector2 DrawPos => new(Position.X + Sway, Position.Y);
 
-    /// <summary>Which way the particle's own "up" points, in radians clockwise from screen-up. Only things with an up (glyphs, shards) read it; zero is neutral.</summary>
+    /// <summary>Which way the particle's own "up" points, in radians clockwise from screen-up.</summary>
     public float Rotation;
 
-    // ---- Optional thread. Zero is neutral, so a particle that never sets these draws as it always did. ----
+    // Optional thread. Zero is neutral, so a particle that never sets these draws as it always did.
 
-    /// <summary>Filament thickness joining the particle to a point it is attached to, as a fraction of Size (a hanging neck, or the string left by a drop that let go); 0 = no thread. Materials without threads ignore the three fields.</summary>
+    /// <summary>Filament thickness joining the particle to a point it is attached to</summary>
     public float Tether;
 
-    /// <summary>The thread's fixed end, in screen pixels: where it clings to the surface. Only read when <see cref="Tether"/> is above zero.</summary>
+    /// <summary>The thread's fixed end, in screen pixels: where it clings to the surface. Only read when Tether is above zero.</summary>
     public Vector2 Anchor;
 
-    /// <summary>The thread's free end: equals Position while attached; once snapped it slides back toward Anchor (the string recoiling) as the drop falls.</summary>
+    /// <summary>The thread's free end: equals Position while attached</summary>
     public Vector2 ThreadEnd;
 
-    /// <summary>Set when the particle belongs to a stroke (identified by owner and <see cref="HostSeed"/>). A material that opts in with DrawsWithHost then draws it with that stroke instead of over all of them.</summary>
+    /// <summary>Set when the particle belongs to a stroke (identified by owner and HostSeed).</summary>
     public bool HasHost;
     public int  HostSeed;
 }
@@ -126,7 +125,6 @@ public struct RegionPrimitive
     public Vector4? ColorOverride;
     public uint Tint;
     public float Alpha;
-    public PrimitiveRole Role;
     public bool Top, Bottom, Left, Right;
 
     /// <summary>Optional payload for effect-built data too large for a primitive; materials ignore state they don't recognise.</summary>

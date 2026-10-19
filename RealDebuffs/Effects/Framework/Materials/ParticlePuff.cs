@@ -3,10 +3,10 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>A soft, irregular radial puff with no rim. Smoke, mist (also fog), dust and miasma are the same mesh with a different <see cref="Look"/>.</summary>
+/// <summary>A soft, irregular radial puff with no rim. Smoke, mist (also fog), dust and miasma are the same mesh with a different Look.</summary>
 public sealed class ParticlePuff : IParticleMaterial
 {
-    /// <summary>Colour runs Warm to Cool over CoolSpan (0 = stays Warm); radius = Size*(GrowFrom + GrowBy*smooth(age)); FadeIn/FadeOutAt envelope (FadeOutAt 1 = none); Thin fades as it grows; Highlight adds a lit blob (toward the shared key light, or toward the bottom of the screen when LitFromBelow: smoke over a fire).</summary>
+    /// <summary>Colour runs Warm to Cool over CoolSpan (0 = stays Warm); radius = Size*(GrowFrom + GrowBy*smooth(age))</summary>
     public readonly record struct Look(
         uint Warm, uint Cool, float CoolSpan,
         float GrowFrom, float GrowBy,
@@ -76,7 +76,7 @@ public sealed class ParticlePuff : IParticleMaterial
             BiasVelocity: new Vector2(0f, -6f),
             PrimaryDirection: new Vector2(0f, -1f)));
 
-    // Smoke over a hellfire: ember-lit oxblood while it is young, soot once it has risen out of the light, its lit side toward the flames beneath it.
+    // Smoke over a hellfire: ember-lit oxblood while it is young, soot once it has risen out of the light
     public static readonly ParticlePuff Brimstone = new("particle.brimstone", new[] { "brimstone", "sulphur", "sulfur", "hellsmoke" },
         new Look(Warm: DrawHelpers.Pack(0.46f, 0.075f, 0.030f), Cool: DrawHelpers.Pack(0.030f, 0.020f, 0.024f), CoolSpan: 0.55f,
                  GrowFrom: 0.60f, GrowBy: 1.05f, FadeIn: 0.22f, FadeOutAt: 0.58f,

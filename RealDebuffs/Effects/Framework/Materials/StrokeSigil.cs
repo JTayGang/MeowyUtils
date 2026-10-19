@@ -3,7 +3,7 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>Shared by the strokes drawn out of light: resamples a path evenly by arc length and works out how bright the light is at each sample (a shimmer, energy pulses running along it, dashes). Scratch only, UI thread only.</summary>
+/// <summary>Shared by the strokes drawn out of light: resamples a path evenly by arc length and works out how bright the light is at each sample</summary>
 internal sealed class LightStrand
 {
     public const int MaxSamples = 1100;
@@ -16,7 +16,7 @@ internal sealed class LightStrand
     public readonly uint[]    Col = new uint[MaxSamples];
     public int Count;
 
-    /// <summary>Samples along the first visibleLen px of the path: every original corner is kept, and long segments are split to stepPx or less (light varies faster than the geometry). A fully shown closed loop ends exactly where it began.</summary>
+    /// <summary>Samples along the first visibleLen px of the path: every original corner is kept</summary>
     public void Resample(StrandPath path, float visibleLen, float stepPx)
     {
         float total = path.Length;
@@ -53,7 +53,7 @@ internal sealed class LightStrand
         MeshBuilder.MiterNormals(Pts.AsSpan(0, Count), Nrm.AsSpan(0, Count));
     }
 
-    /// <summary>Fills Lum (about 0.5 to 1.7): a slow shimmer, three pulses running along the line, a flicker while the strand is agitated, and an optional dash mask.</summary>
+    /// <summary>Fills Lum (about 0.5 to 1.7): a slow shimmer, three pulses running along the line, a flicker while the strand is agitated</summary>
     public void Light(in StrokePrimitive s, float time, float total, float width, float px, float dashPeriod)
     {
         bool closed = s.Closed;
@@ -104,7 +104,7 @@ internal sealed class LightStrand
         closed && period > 1f ? total / MathF.Max(1f, MathF.Round(total / period)) : period;
 }
 
-/// <summary>Light drawn as a line: a wide soft bloom, an orchid glow, a hot-pink body and a pale core, brightening wherever a pulse is running through it. Honours Reveal (it draws itself on, with a spark at the tip), Dash, Depth and Agitation. WidthHint is the whole glowing width in px.</summary>
+/// <summary>Light drawn as a line: a wide soft bloom, an orchid glow, a hot-pink body and a pale core</summary>
 public sealed class StrokeSigil : IStrokeMaterial
 {
     private readonly string _name;
@@ -115,14 +115,14 @@ public sealed class StrokeSigil : IStrokeMaterial
     /// <summary>The curse-violet sigil (stroke.sigil).</summary>
     public StrokeSigil() : this("stroke.sigil", CurseColor.Glow, "particle.mote", "sigil", "sigils", "arcane", "neon") { }
 
-    /// <summary>The same line of light in another palette: register one per theme (see stroke.brand in MaterialRegistry). moteMaterial is what it sheds and throws off when struck, so its sparks match its colour.</summary>
+    /// <summary>The same line of light in another palette: register one per theme (see stroke.brand in MaterialRegistry). moteMaterial is what it</summary>
     internal StrokeSigil(string name, Palette palette, string moteMaterial, params string[] words)
     {
         _name = name;
         _palette = palette;
         NaturalLanguageWords = words;
 
-        // A faint trickle of light drifting off the line, mostly up and a little away from it; and, when a seal slams down, a burst thrown off along the surface.
+        // A faint trickle of light drifting off the line, mostly up and a little away from it; and, when a seal slams down
         _shed = new StrokeEmission[]
         {
             new(Role: PrimitiveRole.Mote,
@@ -202,7 +202,7 @@ public sealed class StrokeSigil : IStrokeMaterial
         }
         Mb.Tent(pts, nrm, half, col);
 
-        // 2. Glow. Only a fat line has room for one: on a thin line the bloom already does its job, and this is the dearest pass per px of line.
+        // 2. Glow.
         if (fat)
         {
             float glowHalf = MathF.Max(0.8f * px, width * 0.10f);
@@ -264,7 +264,7 @@ public sealed class StrokeSigil : IStrokeMaterial
     public ReadOnlySpan<ImpactEmission> ImpactEmissions => _hit;
 }
 
-/// <summary>A bare band of soft light along a path, with no line in it: lay it under any stroke (a chain, a rope) to wrap that stroke in glow. WidthHint is the whole band's width in px.</summary>
+/// <summary>A bare band of soft light along a path, with no line in it: lay it under any stroke (a chain, a rope) to wrap that stroke in glow.</summary>
 public sealed class StrokeGlow : IStrokeMaterial
 {
     private readonly string _name;
@@ -273,7 +273,7 @@ public sealed class StrokeGlow : IStrokeMaterial
     /// <summary>The curse-violet glow (stroke.glow).</summary>
     public StrokeGlow() : this("stroke.glow", CurseColor.Glow, "glow", "halo", "aura") { }
 
-    /// <summary>The same band of light in another palette: register one of these per theme (see stroke.corona in MaterialRegistry) so any effect can wrap a physical stroke in its own colour of glow.</summary>
+    /// <summary>The same band of light in another palette: register one of these per theme (see stroke.corona in MaterialRegistry) so any effect can</summary>
     internal StrokeGlow(string name, Palette palette, params string[] words)
     {
         _name = name;

@@ -3,7 +3,7 @@ using RealDebuffs.Effects.Framework;
 
 namespace RealDebuffs.Effects;
 
-/// <summary>One debuff effect. Effects emit primitives into an EffectScene rather than drawing; found by reflection (public, parameterless constructor).</summary>
+/// <summary>One debuff effect.</summary>
 public interface ISceneEffect
 {
     DebuffKind Kind { get; }
@@ -23,34 +23,13 @@ public interface ISceneEffect
     /// <summary>Words a status tooltip can contain to trigger this effect; seeds the default TooltipKeywordRule. Empty = no default rule.</summary>
     IReadOnlyList<string> TriggerKeywords => System.Array.Empty<string>();
 
-    /// <summary>Emit this frame's primitives; called only while alpha > 0 (including fades). dt is already clamped to [0, 0.25] s.</summary>
+    /// <summary>Emit this frame's primitives; called only while alpha &gt; 0 (including fades). dt is already clamped to [0, 0.25] s.</summary>
     void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride);
 }
 
-/// <summary>
-/// Optional: an effect that reacts when the chat blocker swallows an outgoing message, so the player can see why
-/// nothing was sent. Only an effect that is currently on screen is told.
-/// </summary>
+/// <summary>Optional: an effect that reacts when the chat blocker swallows an outgoing message, so the player can see why nothing was sent.</summary>
 public interface IReactsToBlockedChat
 {
-    /// <summary>One or more messages were swallowed since the last frame. <paramref name="time"/> is the same clock Emit gets.</summary>
+    /// <summary>One or more messages were swallowed since the last frame. time is the same clock Emit gets.</summary>
     void OnChatBlocked(float time);
-}
-
-/// <summary>Detects a fresh application: a gap over a second between Emit calls means the status was re-applied; Start is that moment.</summary>
-public sealed class CastTracker
-{
-    private const float NewCastGapSeconds = 1.0f;
-    private float _last = -100f;
-
-    public float Start { get; private set; }
-
-    /// <summary>Call once per Emit. Returns true when this call begins a fresh application.</summary>
-    public bool Begin(float time)
-    {
-        bool fresh = time - _last > NewCastGapSeconds;
-        if (fresh) Start = time;
-        _last = time;
-        return fresh;
-    }
 }

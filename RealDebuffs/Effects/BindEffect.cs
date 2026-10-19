@@ -3,7 +3,7 @@ using RealDebuffs.Effects.Framework;
 
 namespace RealDebuffs.Effects;
 
-/// <summary>Bind: ropes flung across the screen, made fast on the far side, hauled taut around you (Heavy's inverse): throw, haul, snap, hang. The snap's ring, sway and twist are laid over the sim path, which freezes once the ring dies.</summary>
+/// <summary>Bind: ropes flung across the screen, made fast on the far side, hauled taut around you (Heavy's inverse): throw, haul, snap, hang.</summary>
 public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
 {
     public DebuffKind Kind => DebuffKind.Bind;
@@ -63,8 +63,8 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
     private const float HoldMin = 0.60f, HoldMax = 1.00f;
     private const float HaulMin = 0.38f, HaulMax = 0.58f;
     private const float HaulEase = 2.0f;
-    private const float TautExtraMin = -0.0004f, TautExtraMax = -0.0002f;   // a taut rope is a hair shorter than its span
-    private const float TautGravityMin = 0.10f, TautGravityMax = 0.40f;      // tension swamps gravity once hauled
+    private const float TautExtraMin = -0.0004f, TautExtraMax = -0.0002f;  // a taut rope is a hair shorter than its span
+    private const float TautGravityMin = 0.10f, TautGravityMax = 0.40f;  // tension swamps gravity once hauled
 
     // The snap.
     private const float RingAmp = 12f;
@@ -125,21 +125,12 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
         }
     }
 
-    private readonly Rig[] _rigs = new Rig[MaxRopes];
-    private readonly int[] _drawOrder = new int[MaxRopes];
-    private int _count;
+    private readonly RigSet<Rig> _set = new(MaxRopes);
 
     private readonly CastTracker _cast = new();
 
-    public BindEffect()
-    {
-        for (int i = 0; i < MaxRopes; i++) _rigs[i] = new Rig();
-    }
-
     public void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride)
     {
-        if (screenSize.X < 64f || screenSize.Y < 64f) return;
-
         if (_cast.Begin(time))
             BuildLayout(unchecked((int)(_cast.Start * 1000f)), screenSize);
         float age = time - _cast.Start;
@@ -148,9 +139,9 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
 
         float haul = 0f;
 
-        for (int n = 0; n < _count; n++)
+        for (int n = 0; n < _set.Count; n++)
         {
-            var rig = _rigs[_drawOrder[n]];
+            var rig = _set.At(n);
             haul += rig.Haulness;
 
             float t = age - rig.Delay;
@@ -179,7 +170,7 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
 
         // The vignette closes in as the ropes are hauled taut.
         float castIn = DrawHelpers.Saturate(age / 0.7f);
-        float tension = _count > 0 ? haul / _count : 0f;
+        float tension = _set.Count > 0 ? haul / _set.Count : 0f;
         scene.RequestVignette(Vignette, VignetteDepth + VignetteTighten * tension,
                               alpha * VignetteAlpha * castIn * (0.7f + 0.3f * tension), priority: 20, colorOverride);
     }
@@ -213,7 +204,7 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
         {
             rig.Taut = true;
             snappedNow = true;
-            rig.TautAt = tTaut;   // the scheduled instant, not the frame that noticed
+            rig.TautAt = tTaut;  // the scheduled instant, not the frame that noticed
             rig.Agitation = 1f;
         }
 
@@ -333,12 +324,12 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
         rig.ReportEnd(scene, size, fromStart, strength, alpha,
                       unchecked(rig.Seed + (fromStart ? 31 : 17) + (int)(rig.TautAt * 1000f)), colorOverride);
 
-    // One rope cutting each corner, plus one or two partners crossing a corner rope in an X; anchors, throw end, depth, slack and timing are seeded per cast.
+    // One rope cutting each corner, plus one or two partners crossing a corner rope in an X; anchors, throw end, depth
     private void BuildLayout(int castSeed, Vector2 size)
     {
         float overhang = MathF.Min(size.X, size.Y) * 0.07f;
 
-        _count = Math.Min(5 + (int)(DrawHelpers.Hash01(castSeed + 1) * 2f), MaxRopes);
+        _set.Count = Math.Min(5 + (int)(DrawHelpers.Hash01(castSeed + 1) * 2f), MaxRopes);
 
         // Partners go on corners whose rope they can cross; never the same corner twice.
         int firstPartner = (int)(DrawHelpers.Hash01(castSeed + 2) * 4f) & 3;
@@ -348,7 +339,7 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
         Span<float> legA = stackalloc float[4];
         Span<float> legB = stackalloc float[4];
 
-        for (int i = 0; i < _count; i++)
+        for (int i = 0; i < _set.Count; i++)
         {
             int s = unchecked(castSeed + i * 977 + 17);
             float H(int salt, float lo, float hi) => DrawHelpers.HashRange(s + salt, lo, hi);
@@ -375,13 +366,13 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
             if (reach > 0.88f) { a *= 0.88f / reach; b *= 0.88f / reach; }
 
             Vector2 p = Anchor(size, (Corner)corner, a, b, overhang, out Vector2 q);
-            BuildRig(_rigs[i], s, p, q, size, partner);
+            BuildRig(_set.Rigs[i], s, p, q, size, partner);
         }
 
-        StrandRig.SortFarFirst(_rigs, _drawOrder, _count);
+        _set.Sort();
     }
 
-    /// <summary>The two anchors of a rope cutting <paramref name="corner"/>: one on the horizontal edge (returned), one on the vertical.</summary>
+    /// <summary>The two anchors of a rope cutting corner: one on the horizontal edge (returned), one on the vertical.</summary>
     private static Vector2 Anchor(Vector2 size, Corner corner, float a, float b, float overhang, out Vector2 vertical)
     {
         switch (corner)
@@ -432,7 +423,7 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
         r.RippleHz = H(13, 0.9f, 1.4f);
         r.RipplePhase = H(14, 0f, MathF.Tau);
         r.RingHz = H(15, RingHzMin, RingHzMax);
-        r.RingSign = -side;   // the rope comes up from the side it hung on, so it overshoots to the other
+        r.RingSign = -side;  // the rope comes up from the side it hung on, so it overshoots to the other
 
         // The hang: every period, phase and size is this rope's own.
         r.SwayOmegaA = MathF.Tau / H(20, SwayPeriodMin, SwayPeriodMax);

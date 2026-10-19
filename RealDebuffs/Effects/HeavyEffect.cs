@@ -3,7 +3,7 @@ using RealDebuffs.Effects.Framework;
 
 namespace RealDebuffs.Effects;
 
-/// <summary>Heavy: iron chains flung across the screen like arrows, then hanging. Kinematic shot (can't fold), released into Verlet at the far anchor.</summary>
+/// <summary>Heavy: iron chains flung across the screen like arrows, then hanging.</summary>
 public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
 {
     public DebuffKind Kind => DebuffKind.Heavy;
@@ -71,7 +71,7 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
         return t;
     }
 
-    // Fixed composition, so the screen is always covered evenly: (origin edge + range, destination edge + range); index 4 is a wildcard (BuildRig).
+    // Fixed composition, so the screen is always covered evenly: (origin edge + range, destination edge + range)
     private static readonly (ScreenEdge From, float FromLo, float FromHi,
                              ScreenEdge To,   float ToLo,   float ToHi)[] Archetypes =
     {
@@ -88,21 +88,12 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
         public Rig() : base(StrandNodes, PathSamples) { }
     }
 
-    private readonly Rig[] _rigs = new Rig[MaxChains];
-    private readonly int[] _drawOrder = new int[MaxChains];
-    private int _count;
+    private readonly RigSet<Rig> _set = new(MaxChains);
 
     private readonly CastTracker _cast = new();
 
-    public HeavyEffect()
-    {
-        for (int i = 0; i < MaxChains; i++) _rigs[i] = new Rig();
-    }
-
     public void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride)
     {
-        if (screenSize.X < 64f || screenSize.Y < 64f) return;
-
         if (_cast.Begin(time))
             BuildLayout(unchecked((int)(_cast.Start * 1000f)), screenSize);
         float age = time - _cast.Start;
@@ -111,9 +102,9 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
 
         EmitAtmosphere(scene, screenSize, alpha, time, age, colorOverride);
 
-        for (int n = 0; n < _count; n++)
+        for (int n = 0; n < _set.Count; n++)
         {
-            var rig = _rigs[_drawOrder[n]];
+            var rig = _set.At(n);
             if (age < rig.Delay) continue;
 
             Step(scene, rig, screenSize, px, alpha, time, dt, age, colorOverride);
@@ -144,19 +135,9 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
 
         scene.RequestVignette(Vignette, 0.12f, alpha * VignetteAlpha * castIn, priority: 20, colorOverride);
 
-        // Gloom pooled at the bottom edge, breathing slowly as if the weight were shifting.
+        // Gloom pooled at the bottom edge, breathing as if the weight were shifting.
         float depth = size.Y * GloomDepth * (1f + 0.15f * DrawHelpers.Pulse(time, 4.6f)) * castIn;
-        if (depth <= 1f) return;
-
-        scene.AddRegion(new RegionPrimitive
-        {
-            Min = new Vector2(0f, size.Y - depth),
-            Max = size,
-            Tint = Gloom,
-            Alpha = GloomAlpha * alpha,
-            Bottom = true,
-            ColorOverride = colorOverride,
-        });
+        scene.Pool(size, depth, Gloom, GloomAlpha * alpha, colorOverride);
     }
 
     private static void Step(EffectScene scene, Rig rig, Vector2 size, float px,
@@ -184,7 +165,7 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
         if (rig.Landed)
         {
             head = rig.End;
-            head.Y += 5.5f * px * MathF.Sin(time * 0.85f + rig.SwayPhase);   // the load on the far end eases and settles
+            head.Y += 5.5f * px * MathF.Sin(time * 0.85f + rig.SwayPhase);  // the load on the far end eases and settles
         }
 
         bool settled = rig.Landed && (time - rig.LandTime) > SettlePhysicsSeconds;
@@ -224,7 +205,7 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
         rig.Agitation *= MathF.Exp(-dt / 0.95f);
     }
 
-    // Wind displaces the published path sideways, delayed along its length, zero at the anchors; applied after the sim, since a chain's response to forces varies with sag and tension.
+    // Wind displaces the published path sideways, delayed along its length, zero at the anchors; applied after the sim
     private static void ApplySway(Rig rig, float time, float px)
     {
         var path = rig.Path;
@@ -254,7 +235,7 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
         path.BuildArc();
     }
 
-    // A hard stop sends a TRANSVERSE shock down a taut chain; never push along it (tension only: an axial push buckles into a loop).
+    // A hard stop sends a TRANSVERSE shock down a taut chain
     private static void Shock(Rig rig, float px, float strength, float time)
     {
         var strand = rig.Strand;
@@ -279,14 +260,14 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
     {
         float overhang = MathF.Min(size.X, size.Y) * 0.07f;
 
-        _count = 4 + (int)(DrawHelpers.Hash01(castSeed + 1) * 2f);
+        _set.Count = 4 + (int)(DrawHelpers.Hash01(castSeed + 1) * 2f);
 
-        int farIdx = Math.Min((int)(DrawHelpers.Hash01(castSeed + 200) * _count), _count - 1);
+        int farIdx = Math.Min((int)(DrawHelpers.Hash01(castSeed + 200) * _set.Count), _set.Count - 1);
 
-        for (int i = 0; i < _count; i++)
-            BuildRig(_rigs[i], i, castSeed, size, overhang, farIdx == i);
+        for (int i = 0; i < _set.Count; i++)
+            BuildRig(_set.Rigs[i], i, castSeed, size, overhang, farIdx == i);
 
-        StrandRig.SortFarFirst(_rigs, _drawOrder, _count);
+        _set.Sort();
     }
 
     private static void BuildRig(Rig r, int index, int castSeed, Vector2 size, float overhang, bool far)

@@ -9,9 +9,9 @@ public sealed class ParticleSnow : IParticleMaterial
     public string Name => "particle.snow";
     public string[] NaturalLanguageWords { get; } = { "snow", "frost", "hoarfrost", "rime" };
 
-    private const float StreakFromSpeed = 100f;   // px/s at 1080p; chain-shed snow tops out near 57, so it never streaks
-    private const float StreakSeconds = 0.07f;    // seconds of travel drawn behind a speck
-    private const float StreakMinSizes = 0.6f;    // streak must be this many specks long before the comet replaces the dot
+    private const float StreakFromSpeed = 100f;  // px/s at 1080p; chain-shed snow tops out near 57, so it never streaks
+    private const float StreakSeconds = 0.07f;  // seconds of travel drawn behind a speck
+    private const float StreakMinSizes = 0.6f;  // streak must be this many specks long before the comet replaces the dot
 
     public void Draw(ImDrawListPtr dl, in ParticlePrimitive p, in MaterialContext ctx)
     {
@@ -189,7 +189,7 @@ public sealed class ParticleGlint : IParticleMaterial
     public string Name => "particle.glint";
     public string[] NaturalLanguageWords { get; } = { "glint", "glints", "sparkle", "sparkles", "glitter" };
 
-    private const int Rays = 8;   // alternating long / short: tip, notch, tip, notch ...
+    private const int Rays = 8;  // alternating long / short: tip, notch, tip, notch ...
 
     public void Draw(ImDrawListPtr dl, in ParticlePrimitive p, in MaterialContext ctx)
     {

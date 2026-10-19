@@ -3,11 +3,7 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>
-/// A horn: a tapering tube of near-black keratin, ringed with growth ridges that crowd toward the tip, lit by the shared key light with a warm light thrown up from a fire beneath it
-/// and a hot rim where it turns away. Its base is lost in the dark it rises out of; its tip is a point. WidthHint is the horn's width at the base in px (it tapers to nothing over the path).
-/// Honours Reveal (it grows from the base), Depth and Agitation (Agitation brightens the fire on it). Taper and ridges follow the whole path's length, so a half-grown horn is the same horn, shorter.
-/// </summary>
+/// <summary>A horn: a tapering tube of near-black keratin, ringed with growth ridges that crowd toward the tip</summary>
 public sealed class StrokeHorn : IStrokeMaterial
 {
     public string Name => "stroke.horn";
@@ -65,14 +61,14 @@ public sealed class StrokeHorn : IStrokeMaterial
         for (int i = 0; i < n; i++)
         {
             float a = arc[i];
-            float f = a / total;                                           // 0 at the base, 1 at the tip
+            float f = a / total;  // 0 at the base, 1 at the tip
             float r = Radius(f, r0);
             if (r < 0.2f) r = 0.2f;
 
             Vector2 nm = nrm[i];
             float nl = nm.Length();
             Vector2 nu = nl > 1e-4f ? nm / nl : new Vector2(0f, -1f);
-            Vector2 tan = new(nu.Y, -nu.X);                                // along the horn, base to tip
+            Vector2 tan = new(nu.Y, -nu.X);  // along the horn, base to tip
 
             // Growth ridges: close-set bands that crowd together toward the tip. Their slope tilts the surface along the horn.
             float phase = a / (0.62f * r0) * (1f + 0.9f * f);
@@ -83,7 +79,7 @@ public sealed class StrokeHorn : IStrokeMaterial
 
             // The base fades into the dark it rises from; the tip stays crisp.
             float emerge = DrawHelpers.Smooth(0.0f, 0.22f, f);
-            float lowFire = fire * MathF.Exp(-f * 3.2f);                   // the fire's light is strongest near where it rises
+            float lowFire = fire * MathF.Exp(-f * 3.2f);  // the fire's light is strongest near where it rises
 
             for (int c = 0; c < Cols; c++)
             {
@@ -98,7 +94,7 @@ public sealed class StrokeHorn : IStrokeMaterial
                 nrmv = Vector3.Normalize(nrmv);
                 Vector3 col = Keratin.Sample(nrmv.X, nrmv.Y);
 
-                // The bake is display-space and lifted; a horn is nearly black, so deepen the curve (this keeps its highlights and crushes the mid-greys).
+                // The bake is display-space and lifted; a horn is nearly black
                 col = col * col * 1.35f;
 
                 // Ridged horn is paler on the crests, nearly black in the grooves.

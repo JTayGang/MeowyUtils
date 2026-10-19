@@ -37,10 +37,10 @@ public sealed class FrostEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
         new("Region",   PrimitiveRole.MainStroke, "Intro flash",  "region.flat-fill", "FlatFill"),
     };
 
-    // ---- palette ----
+    // palette
     private static readonly uint Flash = DrawHelpers.Pack(0.70f, 0.86f, 1.00f);
 
-    // ---- state ----
+    // state
     private readonly CastTracker _cast = new();
     private readonly FrostField _field = new();
     private Vector2 _builtFor;
@@ -53,7 +53,7 @@ public sealed class FrostEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
     private readonly WindField _snow = new();
     private Vector2 _windDir = new(1f, 0.18f);
     private float _gustSeed;
-    private const float WindSpeed = 560f;      // px/s at 1080p in a full gust (near flakes go ~1.4x, far ~0.4x)
+    private const float WindSpeed = 560f;  // px/s at 1080p in a full gust (near flakes go ~1.4x, far ~0.4x)
 
     private Vector2 _screen;
     private float _px = 1f;
@@ -74,8 +74,6 @@ public sealed class FrostEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
 
     public void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride)
     {
-        if (screenSize.X < 64f || screenSize.Y < 64f) return;
-
         // Fresh application (or a resized screen): lay out a new freeze.
         if (_cast.Begin(time) || screenSize != _builtFor)
         {
@@ -94,7 +92,7 @@ public sealed class FrostEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
         _px = MathF.Min(screenSize.X, screenSize.Y) / 1080f;
 
         float age = time - _cast.Start;
-        float thaw = MathF.Min(1f, alpha);                       // the front retreats as the effect fades out
+        float thaw = MathF.Min(1f, alpha);  // the front retreats as the effect fades out
         float prog = FrostField.ProgressAt(age) * MathF.Pow(thaw, 0.6f);
 
         _field.Age = age;
@@ -102,11 +100,11 @@ public sealed class FrostEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
         _field.Fog = prog * 1.35f + 0.08f;
         _field.Alpha = alpha;
 
-        // ---- the cover and the intro flash ----
+        // the cover and the intro flash
         scene.AddRegion(new RegionPrimitive
         {
             Min = Vector2.Zero, Max = screenSize,
-            Bottom = true,                                       // marks it an edge region -> the "Frost cover" slot
+            Bottom = true,  // marks it an edge region -> the "Frost cover" slot
             Alpha = 1f,
             ColorOverride = colorOverride,
             State = _field,
@@ -124,7 +122,7 @@ public sealed class FrostEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
             });
         }
 
-        // ---- crystals on the glass (the hero slot) ----
+        // crystals on the glass (the hero slot)
         foreach (var f in _field.Flowers)
         {
             float growth = Math.Clamp((age - f.Start) / 0.9f, 0f, 1f);
@@ -132,13 +130,13 @@ public sealed class FrostEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
             scene.AddParticle(new ParticlePrimitive
             {
                 Position = f.Pos, Size = f.Size,
-                AgeRatio = growth < 1f ? 0.20f * growth : 0.45f,   // grows in, then holds (no tumble)
+                AgeRatio = growth < 1f ? 0.20f * growth : 0.45f,  // grows in, then holds (no tumble)
                 Brightness = alpha * (0.55f + 0.40f * growth),
                 Seed = f.Seed, Role = PrimitiveRole.Snowflake, ColorOverride = colorOverride,
             });
         }
 
-        // ---- mist, hanging just inside the front ----
+        // mist, hanging just inside the front
         if (age > 0.4f && _field.MistSpots.Length > 0)
         {
             _mist.Update(time, dt, spawnIntervalMin: 0.30f, spawnIntervalMax: 0.75f,
@@ -147,7 +145,7 @@ public sealed class FrostEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
         }
         _mist.Emit(scene, time, PrimitiveRole.Mist, brightnessMul: alpha * Math.Clamp(age * 0.6f, 0f, 1f), colorOverride);
 
-        // ---- glints: nucleation flashes first, then the steady twinkle ----
+        // glints: nucleation flashes first, then the steady twinkle
         foreach (var site in _field.Growth.Sites)
         {
             float t = age - FrostField.AgeFor(site.Delay * 0.9f);
@@ -164,7 +162,7 @@ public sealed class FrostEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
             float since = age - g.Start;
             if (since < 0f) continue;
             float twinkle = MathF.Pow(MathF.Max(0f, MathF.Sin(age * g.Rate * 6.2832f + g.Phase)), g.Sharp);
-            float born = since < 0.3f ? 0.9f * (1f - since / 0.3f) : 0f;      // a flash as the ice forms under it
+            float born = since < 0.3f ? 0.9f * (1f - since / 0.3f) : 0f;  // a flash as the ice forms under it
             float inten = MathF.Max(twinkle, born);
             if (inten < 0.06f) continue;
             scene.AddParticle(new ParticlePrimitive
@@ -174,7 +172,7 @@ public sealed class FrostEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
             });
         }
 
-        // ---- wind and snow: builds as the glass freezes, drops away as it thaws; gusts streak the flakes ----
+        // wind and snow: builds as the glass freezes, drops away as it thaws; gusts streak the flakes
         float gust = WindField.Gust(age, _gustSeed);
         float build = Math.Clamp((age - 0.4f) / 3.5f, 0f, 1f);
         float density = build * MathF.Pow(thaw, 0.6f) * (0.70f + 0.30f * gust);

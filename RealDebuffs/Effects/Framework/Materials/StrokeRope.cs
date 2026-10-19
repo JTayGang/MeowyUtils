@@ -3,23 +3,23 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>Laid rope: three twisted strands, one ribbon shaded via the shared matcap. WidthHint is the DIAMETER; chromatic overrides set the rope's saturation.</summary>
+/// <summary>Laid rope: three twisted strands, one ribbon shaded via the shared matcap.</summary>
 public sealed class StrokeRope : IStrokeMaterial
 {
     public string Name => "stroke.rope";
     public string[] NaturalLanguageWords { get; } = { "rope", "ropes", "cord", "cords", "twine" };
 
-    // ---- size, as fractions of the short side ----
+    // size, as fractions of the short side
     private const float MinDiameterFrac = 0.006f;
     private const float MaxDiameterFrac = 0.045f;
 
-    // ---- the lay ----
-    private const float LayLength   = 3.6f;    // distance for a strand to go once round the rope, in diameters
-    private const float RidgeShape  = 0.10f;   // how far a ridge bulges the silhouette, as a fraction of the radius
-    private const float RidgeTilt   = 0.62f;   // how hard a ridge tilts the shading normal (before detail scaling)
-    private const float GrooveDark  = 0.42f;   // how dark the valleys between strands get
+    // the lay
+    private const float LayLength   = 3.6f;  // distance for a strand to go once round the rope, in diameters
+    private const float RidgeShape  = 0.10f;  // how far a ridge bulges the silhouette, as a fraction of the radius
+    private const float RidgeTilt   = 0.62f;  // how hard a ridge tilts the shading normal (before detail scaling)
+    private const float GrooveDark  = 0.42f;  // how dark the valleys between strands get
 
-    // ---- buffers ----
+    // buffers
     private const int MaxRows = 1200;
     private const int MaxPathPoints = 512;
 
@@ -27,7 +27,7 @@ public sealed class StrokeRope : IStrokeMaterial
     private static readonly Matcap Manila = new(SurfacePresets.Manila);
     private static readonly Matcap Tarred = new(SurfacePresets.Tarred);
 
-    // ---- strand profile (baked): G = height by angle (1 crown, 0 valley), D = its slope ----
+    // strand profile (baked): G = height by angle (1 crown, 0 valley), D = its slope
     private const int RidgeN = 512;
     private static readonly float[] RidgeH = new float[RidgeN];
     private static readonly float[] RidgeD = new float[RidgeN];
@@ -48,8 +48,8 @@ public sealed class StrokeRope : IStrokeMaterial
     private sealed class Tier
     {
         public readonly int Cols;
-        public readonly float StepFrac;      // row spacing, in diameters
-        public readonly float Detail;        // scales the ridge tilt
+        public readonly float StepFrac;  // row spacing, in diameters
+        public readonly float Detail;  // scales the ridge tilt
         public readonly float[] Turns3, Sin, Cos;
 
         public Tier(int cols, float stepFrac, float detail)
@@ -58,8 +58,8 @@ public sealed class StrokeRope : IStrokeMaterial
             Turns3 = new float[cols]; Sin = new float[cols]; Cos = new float[cols];
             for (int c = 0; c < cols; c++)
             {
-                float theta = (c / (cols - 1f) - 0.5f) * MathF.PI;   // -90..+90 degrees
-                Turns3[c] = 3f * theta / MathF.Tau;                  // pre-multiplied: the lay has three strands
+                float theta = (c / (cols - 1f) - 0.5f) * MathF.PI;  // -90..+90 degrees
+                Turns3[c] = 3f * theta / MathF.Tau;  // pre-multiplied: the lay has three strands
                 Sin[c] = MathF.Sin(theta);
                 Cos[c] = MathF.Max(0f, MathF.Cos(theta));
             }
@@ -75,16 +75,16 @@ public sealed class StrokeRope : IStrokeMaterial
     /// <summary>One cross-section of the rope: everything the vertices on it share.</summary>
     private struct Row
     {
-        public Vector2 P, T;        // centreline and unit tangent
-        public float Arc;           // distance along the path
-        public float Psi;           // lay phase, in turns
-        public float Width;         // radius multiplier: wobble along the length, and the rounded end caps
-        public float CapW;          // 1 on the body; the dome's radius factor on a rounded end
-        public float CapAxial;      // 0 on the body; how far the normal leans along the rope on a rounded end
-        public float Tone0, Tone1, Tone2;   // brightness of each of the three strands at this cross-section:
+        public Vector2 P, T;  // centreline and unit tangent
+        public float Arc;  // distance along the path
+        public float Psi;  // lay phase, in turns
+        public float Width;  // radius multiplier: wobble along the length, and the rounded end caps
+        public float CapW;  // 1 on the body; the dome's radius factor on a rounded end
+        public float CapAxial;  // 0 on the body; how far the normal leans along the rope on a rounded end
+        public float Tone0, Tone1, Tone2;  // brightness of each of the three strands at this cross-section:
                                             // length-wise mottling x that strand's own tone x its fibre grain
-        public float Feather;       // soft edge, in pixels
-        public bool  On;            // any part of this cross-section can be on screen
+        public float Feather;  // soft edge, in pixels
+        public bool  On;  // any part of this cross-section can be on screen
     }
 
     private readonly Row[] _rows = new Row[MaxRows];
@@ -96,13 +96,13 @@ public sealed class StrokeRope : IStrokeMaterial
         public Matcap Body;
         public float Radius, Shape, Tilt, Groove;
         public float Fog, Agit;
-        public float Grain, GrainRate;          // fibre grain: amplitude, and how fast it varies down a strand (1/px)
-        public float GrainOffset;               // per-rope, so two ropes never share a grain
-        public float TonePrimary, ToneSecondary, ToneTertiary;   // each strand is a slightly different batch of fibre
+        public float Grain, GrainRate;  // fibre grain: amplitude, and how fast it varies down a strand (1/px)
+        public float GrainOffset;  // per-rope, so two ropes never share a grain
+        public float TonePrimary, ToneSecondary, ToneTertiary;  // each strand is a slightly different batch of fibre
         public uint  AlphaBits;
         public float Alpha;
         public bool  Overridden;
-        public float Dye;                       // saturation to dye to under a chromatic colour override; 0 = leave the palette's own
+        public float Dye;  // saturation to dye to under a chromatic colour override; 0 = leave the palette's own
     }
 
     public void Draw(ImDrawListPtr dl, in StrokePrimitive s, in MaterialContext ctx)
@@ -128,10 +128,10 @@ public sealed class StrokeRope : IStrokeMaterial
         float visibleLen = total * reveal;
         if (visibleLen < diameter) return;
 
-        // ---- level of detail, by how many pixels the rope is wide ----
+        // level of detail, by how many pixels the rope is wide
         Tier tier = diameter >= 21f * px ? Full : (diameter >= 15f * px ? Fine : (diameter >= 8f * px ? Medium : Coarse));
 
-        // ---- this rope's own character, reseeded from the stroke's seed ----
+        // this rope's own character, reseeded from the stroke's seed
         float pick = DrawHelpers.Hash01(seed + 41);
         Matcap body = pick < 0.55f ? Hemp : (pick < 0.85f ? Manila : Tarred);
         float layLen = diameter * LayLength * DrawHelpers.HashRange(seed + 43, 0.92f, 1.08f);
@@ -166,7 +166,7 @@ public sealed class StrokeRope : IStrokeMaterial
         _screenW = ctx.ScreenW;
         _screenH = ctx.ScreenH;
 
-        // ---- cut the rope into cross-sections ----
+        // cut the rope into cross-sections
         int n = BuildRows(path, total, visibleLen, closed, s.FlushStart, diameter, radius, tier, layLen,
                           psi0, ph1, ph2, ph3, agit, ctx.Time, px, depth, s.Twist / MathF.Tau, in look);
         if (n < 2) return;
@@ -182,9 +182,9 @@ public sealed class StrokeRope : IStrokeMaterial
         }
     }
 
-    // ---- the knot ----
+    // the knot
 
-    private const float KnotSize = 1.75f;       // the fist's radius, in rope radii
+    private const float KnotSize = 1.75f;  // the fist's radius, in rope radii
     private const int KnotSegs = 28;
     private static readonly float[] KnotRings = { 0f, 0.26f, 0.50f, 0.71f, 0.87f, 1.0f };
 
@@ -254,7 +254,7 @@ public sealed class StrokeRope : IStrokeMaterial
         return 0.5f + 0.5f * MathF.Cos(lat * 4f);
     }
 
-    // ---- cross-sections ----
+    // cross-sections
 
     private int BuildRows(StrandPath path, float total, float visibleLen, bool closed, bool flushStart,
                           float diameter, float radius, Tier tier, float layLen,
@@ -304,7 +304,7 @@ public sealed class StrokeRope : IStrokeMaterial
                 AddRow(path, pn, ref seg, ref count, visibleLen - cap * (1f - DomeT[i]), +1f, DomeT[i]);
         }
 
-        // ---- per-row shading inputs ----
+        // per-row shading inputs
         for (int i = 0; i < count; i++)
         {
             ref Row r = ref _rows[i];
@@ -312,10 +312,10 @@ public sealed class StrokeRope : IStrokeMaterial
 
             Vector2 c = r.P;
             r.On = c.X > -margin && c.Y > -margin && c.X < _screenW + margin && c.Y < _screenH + margin;
-            if (!r.On) continue;                       // everything below is only ever read for rows that get drawn
+            if (!r.On) continue;  // everything below is only ever read for rows that get drawn
 
             float psi = psi0 + sArc * layRate;
-            if (!closed) psi += 0.035f * MathF.Sin(MathF.Tau * sArc / (diameter * 7.3f) + ph1);   // a lay that isn't machine-perfect
+            if (!closed) psi += 0.035f * MathF.Sin(MathF.Tau * sArc / (diameter * 7.3f) + ph1);  // a lay that isn't machine-perfect
             if (agit > 0.01f) psi += agit * 0.025f * MathF.Sin(time * 19f + sArc / diameter * 2.1f);
             // Twist: the whole rope turning about its axis. Fixed at both ends, it turns most in the middle.
             if (twistTurns != 0f) psi += twistTurns * (closed ? 1f : MathF.Sin(MathF.PI * sArc / total));
@@ -339,7 +339,7 @@ public sealed class StrokeRope : IStrokeMaterial
         return count;
     }
 
-    /// <summary>Brightness multiplier from the fibre grain of one strand, <paramref name="along"/> its length.</summary>
+    /// <summary>Brightness multiplier from the fibre grain of one strand, along its length.</summary>
     private static float Grain(in Look look, int strand, float along)
         => 1f + look.Grain * 2f * (Noise.Value(strand * 11.7f + look.GrainOffset, along) - 0.5f);
 
@@ -400,12 +400,12 @@ public sealed class StrokeRope : IStrokeMaterial
         t = len > 1e-4f ? d / len : _pointTan[seg];
     }
 
-    // ---- the mesh ----
+    // the mesh
 
     private void DrawMesh(ImDrawListPtr dl, int rowCount, Tier tier, in Look look, in MaterialContext ctx)
     {
         int nc = tier.Cols;
-        int stride = nc + 2;                         // plus the two soft-edge columns
+        int stride = nc + 2;  // plus the two soft-edge columns
         int chunkRows = MeshDraw.MaxVerts / stride;  // MeshDraw's buffer holds only so many vertices at once
         Vector2 uv = MeshDraw.WhiteUv(ctx.Time);
 
@@ -429,7 +429,7 @@ public sealed class StrokeRope : IStrokeMaterial
             }
 
             if (r1 == r0) break;
-            r0 = r1;                                  // the seam row is shared, so chunks join exactly
+            r0 = r1;  // the seam row is shared, so chunks join exactly
         }
     }
 
@@ -447,7 +447,7 @@ public sealed class StrokeRope : IStrokeMaterial
         float tilt = look.Tilt, shape = look.Shape;
         Matcap body = look.Body;
 
-        // Tilting the normal along the rope turns round ridges diagonal; relative to the tilt round it, the strands' pitch is pi / LayLength.
+        // Tilting the normal along the rope turns round ridges diagonal; relative to the tilt round it
         float tiltAround = tilt;
         float tiltAlong = tilt * (MathF.PI / LayLength);
 
@@ -501,7 +501,7 @@ public sealed class StrokeRope : IStrokeMaterial
         outC[vb + nc + 1] = outC[vb + nc] & 0x00FFFFFFu;
     }
 
-    // ---- what a rope sheds, and what happens when it is hit ----
+    // what a rope sheds, and what happens when it is hit
 
     public ReadOnlySpan<StrokeEmission> Emissions => Shed;
 

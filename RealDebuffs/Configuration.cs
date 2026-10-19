@@ -29,7 +29,7 @@ public class Configuration : IPluginConfiguration
         else         DisabledKinds.Add(kind);
     }
 
-    /// <summary>Material overrides. Key "{Kind}.{Stroke|Particle}.{Role}" or "{Kind}.Region.{EdgeGlow|FlatFill}" -> MaterialRegistry name.</summary>
+    /// <summary>Material overrides. Key "{Kind}.{Stroke|Particle}.{Role}" or "{Kind}.Region.{EdgeGlow|FlatFill}" -&gt; MaterialRegistry name.</summary>
     public Dictionary<string, string> MaterialOverrides { get; set; } = new();
 
     /// <summary>Per-effect color overrides, keyed by DebuffKind; value is a color word from NamedColors.</summary>
@@ -38,7 +38,7 @@ public class Configuration : IPluginConfiguration
     /// <summary>"While I have this custom status, show this effect" links.</summary>
     public List<CustomStatusRule> CustomStatusRules { get; set; } = new();
 
-    /// <summary>Also scan each active status's tooltip for <see cref="TooltipKeywordRules"/>. Off by default.</summary>
+    /// <summary>Also scan each active status's tooltip for TooltipKeywordRules. Off by default.</summary>
     public bool ParseCustomStatusTooltips { get; set; }
 
     /// <summary>"If a status's tooltip contains this word, show this effect" links.</summary>

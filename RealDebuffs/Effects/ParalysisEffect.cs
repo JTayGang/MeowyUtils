@@ -3,16 +3,7 @@ using RealDebuffs.Effects.Framework;
 
 namespace RealDebuffs.Effects;
 
-/// <summary>
-/// Paralysis: being shocked rigid, over and over. Between shocks the screen is still electrified, but quietly: bolts surge along its edges, small static pops go off, short streamers flicker at the edges and
-/// the charged air twinkles. About two and a half seconds before each shock the charge builds (the streamers lengthen where the shock is about to land, crackles hop more, the static brightens); then it
-/// lands. A dozen arcs hung between anchors at four depths are struck, each with a dim leader, a blinding return stroke and quick re-strikes; the view flashes, goes numb and is thrown about in a
-/// stuttering spasm; the clouds light from inside; then the channels die, an afterglow lingers and the screen settles back to its idle crackle. A shock lands every 6-10 seconds (ShockMin, ShockMax).
-///
-/// No two shocks are alike. Each has a <see cref="Plan"/> rolled in advance (during the quiet before it, so the charge streamers show where it will land): a fresh layout of the cage, which arcs take part,
-/// the direction it hits from (the arcs facing it strike hardest and the view is thrown the other way), what order the arcs strike in, and how strong, how long-led and how many times re-struck it is.
-/// The arcs are the hero: made of chains, rope or tentacles they appear and discharge on the same beat, keeping the glow, and a particle in a "made of" phrase replaces the sparks and crackles.
-/// </summary>
+/// <summary>Paralysis: being shocked rigid, over and over.</summary>
 public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
 {
     public DebuffKind Kind => DebuffKind.Paralysis;
@@ -30,8 +21,7 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
         "paralysis", "paralyzed", "paralysed", "shocked", "electrified", "twitching"
     };
 
-    // The arcs are what a "made of X" phrase replaces; a particle in that phrase also replaces what crackles and sparks off them. The static in the air stays amber (it is still a swappable slot): swapped, its
-    // out-of-focus foreground specks become big blank discs.
+    // The arcs are what a "made of X" phrase replaces; a particle in that phrase also replaces what crackles and sparks off them.
     public EffectHeroSlot[] HeroSlots { get; } = new EffectHeroSlot[]
     {
         new("Stroke",   PrimitiveRole.MainStroke),
@@ -53,43 +43,42 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
         new("Region",   PrimitiveRole.MainStroke, "Strike flash", "region.flat-fill", "FlatFill"),
     };
 
-    // ---- the cycle ----
+    // the cycle
     private const float ShockMin = 6f, ShockMax = 10f;  // seconds from one shock to the next
-    private const float FirstShock = 0.08f;             // the cast itself is the first shock (a hair late, so the manager's fade-in has started)
-    private const float ChargeLead = 2.6f;              // the static builds for this long before a shock
-    private const float DefaultLeader = 0.075f;         // seconds a leader takes to run an arc's length (a shock rolls its own)
-    private const float ZapSeconds = 2.0f;              // an arc is spent this long after its strike
-    private const int MinActive = 6;                    // a shock always strikes at least this many arcs
+    private const float FirstShock = 0.08f;  // the cast itself is the first shock (a hair late, so the manager's fade-in has started)
+    private const float ChargeLead = 2.6f;  // the static builds for this long before a shock
+    private const float DefaultLeader = 0.075f;  // seconds a leader takes to run an arc's length (a shock rolls its own)
+    private const float ZapSeconds = 2.0f;  // an arc is spent this long after its strike
+    private const int MinActive = 6;  // a shock always strikes at least this many arcs
 
-    // ---- the camera ----
-    private const float CameraDistance = 1500f;         // px at 1080p; smaller = stronger perspective
-    private const float BaseTilt = 0.08f;               // radians the stack leans from the line of sight; it barely moves between shocks
+    // the camera
+    private const float CameraDistance = 1500f;  // px at 1080p; smaller = stronger perspective
+    private const float BaseTilt = 0.08f;  // radians the stack leans from the line of sight; it barely moves between shocks
     private const float TiltSway = 0.020f;
     private const float PrecessionRate = 0.10f;
-    private const float PunchTilt = 0.06f;              // lean kicked by a shock
-    private const float PunchDepth = 0.10f;             // fraction the camera is yanked toward the layers on a shock: near arcs surge at the lens, far ones recoil
-    private const float ShakeAmp = 13f;                 // px at 1080p the first spasm throws the view
-    private const float Tremor = 2.2f;                  // px of per-frame shiver that rides the spasm
+    private const float PunchTilt = 0.06f;  // lean kicked by a shock
+    private const float PunchDepth = 0.10f;  // fraction the camera is yanked toward the layers on a shock: near arcs surge at the lens
+    private const float ShakeAmp = 13f;  // px at 1080p the first spasm throws the view
+    private const float Tremor = 2.2f;  // px of per-frame shiver that rides the spasm
 
-    // ---- the arcs ----
+    // the arcs
     private const int ArcSegments = 40;
-    private const float HalfLinks = 26f;                // a chain gets 2x this many links however long the arc is (see the width in EmitArcs)
+    private const float HalfLinks = 26f;  // a chain gets 2x this many links however long the arc is (see the width in EmitArcs)
     private const float HaloWidthOverArc = 1.8f;
-    private const float AnchorOverhang = 0.05f;         // of the short side: anchors start just off the screen, and are pushed further out if the camera drags them in
-    private const float AnchorMargin = 40f;             // px at 1080p an anchor must sit beyond the screen's edge, whatever the tilt, aspect or shake
-    private const float TwitchAmp = 30f;                // px at 1080p a shock bends an arc sideways, at first
+    private const float AnchorOverhang = 0.05f;  // of the short side: anchors start just off the screen
+    private const float AnchorMargin = 40f;  // px at 1080p an anchor must sit beyond the screen's edge, whatever the tilt
+    private const float TwitchAmp = 30f;  // px at 1080p a shock bends an arc sideways, at first
 
     private readonly record struct LayerSpec(int Count, float Height, float Depth, float SpanMin, float SpanMax,
                                              float BulgeMin, float BulgeMax, float Bright, float Width, float Stagger);
 
-    // Heights are px toward the viewer (negative = behind the screen plane); span is in screen perimeters (1 = one edge), bulge a fraction of the short side.
-    // Stagger is how long after the shock this layer's arcs strike in the by-layer order: the screen plane first, then the lens, then back into the distance.
+    // Heights are px toward the viewer (negative = behind the screen plane); span is in screen perimeters (1 = one edge)
     private static readonly LayerSpec[] Layers =
     {
-        new(3, -360f, 0.70f, 0.75f, 1.05f, 0.06f, 0.12f, 0.42f, 0.62f, 0.080f),   // far: hazy, thin, wide sweeps
-        new(3, -170f, 0.38f, 0.50f, 0.80f, 0.05f, 0.10f, 0.70f, 0.80f, 0.050f),   // back
-        new(4,    0f, 0.06f, 0.36f, 0.60f, 0.04f, 0.08f, 1.00f, 1.00f, 0.000f),   // the screen plane: the cage proper
-        new(2,  150f, 0.00f, 0.28f, 0.46f, 0.03f, 0.06f, 1.15f, 1.25f, 0.020f),   // near: big, bright, crisp
+        new(3, -360f, 0.70f, 0.75f, 1.05f, 0.06f, 0.12f, 0.42f, 0.62f, 0.080f),  // far: hazy, thin, wide sweeps
+        new(3, -170f, 0.38f, 0.50f, 0.80f, 0.05f, 0.10f, 0.70f, 0.80f, 0.050f),  // back
+        new(4,    0f, 0.06f, 0.36f, 0.60f, 0.04f, 0.08f, 1.00f, 1.00f, 0.000f),  // the screen plane: the cage proper
+        new(2,  150f, 0.00f, 0.28f, 0.46f, 0.03f, 0.06f, 1.15f, 1.25f, 0.020f),  // near: big, bright, crisp
     };
     private const int ArcCount = 12;
 
@@ -97,12 +86,10 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
     private static readonly float[] RestrikeGain = { 0.70f, 0.45f, 0.30f };
     private static readonly float[] RestrikeSurge = { 1.5f, 1.0f, 0.8f };
 
-    // ---- sprinkled on top ----
+    // sprinkled on top
     private const int CrawlSlots = 16;
-    private const int EdgeSlots = 4, EdgePoints = 28;    // bolts that surge along the screen's edges
-    private const int PopSlots = 6;                      // static pops at the edges
-    private const int MoteCount = 34;
-    private const float MoteNear = 650f, MoteFar = -420f;
+    private const int EdgeSlots = 4, EdgePoints = 28;  // bolts that surge along the screen's edges
+    private const int PopSlots = 6;  // static pops at the edges
     private const int HazeCount = 8;
     private const float HazeHeightA = -430f, HazeHeightB = -260f;
 
@@ -110,26 +97,26 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
     private static readonly uint NumbTint = DrawHelpers.Pack(0.050f, 0.025f, 0.004f);
     private static readonly uint StormLight = DrawHelpers.Pack(1.00f, 0.66f, 0.14f);
 
-    // A shock's spasm: the view snaps to a new offset at each of these times (seconds) with these gains, then rings out. Stepped, not swung: a muscle, not a pendulum. Each shock jitters both.
+    // A shock's spasm: the view snaps to a new offset at each of these times (seconds) with these gains, then rings out.
     private static readonly float[] SpasmAt = { 0.000f, 0.032f, 0.080f, 0.135f, 0.205f, 0.290f };
     private static readonly float[] SpasmGain = { 1.00f, -0.85f, 0.65f, -0.50f, 0.32f, -0.18f };
 
-    /// <summary>One shock, decided in advance. Rolled when the previous one is spent, so the arcs are already laid out for it (and the charge streamers already point at where it will land).</summary>
+    /// <summary>One shock, decided in advance.</summary>
     private struct Plan
     {
         public int Seed;
-        public float Power;           // overall strength
-        public float HitAngle;        // the direction it comes from (screen radians)
-        public float Bias;            // how much the arcs facing HitAngle are favoured over those facing away
-        public float Participation;   // roughly what share of the arcs it strikes
-        public int Order;             // 0 by layer, 1 a sweep round the perimeter, 2 a wave from the hit, 3 all at once
-        public float Sweep;           // seconds the sweep or wave takes to cross the screen
+        public float Power;  // overall strength
+        public float HitAngle;  // the direction it comes from (screen radians)
+        public float Bias;  // how much the arcs facing HitAngle are favoured over those facing away
+        public float Participation;  // roughly what share of the arcs it strikes
+        public int Order;  // 0 by layer, 1 a sweep round the perimeter, 2 a wave from the hit, 3 all at once
+        public float Sweep;  // seconds the sweep or wave takes to cross the screen
         public float SweepStart, SweepDir;
-        public float Leader;          // seconds a leader takes to cross an arc
-        public int Restrikes;         // re-strikes after the return stroke (1-3)
-        public float FlashScale;      // 0..1 of the full-screen flash
-        public bool ReFlash;          // whether the weaker second flash follows
-        public float Violence;        // how thrashing the arcs are (a multiplier)
+        public float Leader;  // seconds a leader takes to cross an arc
+        public int Restrikes;  // re-strikes after the return stroke (1-3)
+        public float FlashScale;  // 0..1 of the full-screen flash
+        public bool ReFlash;  // whether the weaker second flash follows
+        public float Violence;  // how thrashing the arcs are (a multiplier)
     }
 
     private struct Arc
@@ -139,27 +126,21 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
         public bool Active, StreamerOn;
     }
 
-    private struct Mote
-    {
-        public float Fx, Fy, Z, Speed, Sway, Phase, Size;
-        public int Seed;
-    }
-
     private readonly Arc[] _arcs = new Arc[ArcCount];
     private readonly StrandPath[] _paths = new StrandPath[ArcCount];
     private readonly float[] _arcScale = new float[ArcCount], _arcLevel = new float[ArcCount], _arcReveal = new float[ArcCount];
-    private readonly float[] _visA = new float[ArcCount], _visB = new float[ArcCount];     // the span of each arc that is on screen, as fractions of its length (-1 if none)
+    private readonly float[] _visA = new float[ArcCount], _visB = new float[ArcCount];  // the span of each arc that is on screen, as fractions of its length (-1 if none)
     private readonly float[] _layerStart = new float[Layers.Length];
     private readonly float[] _spT = new float[SpasmAt.Length], _spG = new float[SpasmGain.Length];
     private readonly StrandPath[] _edgePaths = new StrandPath[EdgeSlots];
-    private readonly Mote[] _motes = new Mote[MoteCount];
+    private readonly MoteField _motes = new(34, 650f, -420f, (8f, 26f), (10f, 40f), (1.6f, 3.8f));
 
     private readonly CastTracker _cast = new();
-    private Plan _plan, _fired;               // _plan: the next shock (the arcs are laid out for it); _fired: the one in progress or just spent
-    private bool _dirty;                      // the arcs need laying out again for _plan, as soon as they are all spent
+    private readonly CastEnvelope _env = new();
+    private Plan _plan, _fired;  // _plan: the next shock (the arcs are laid out for it)
+    private bool _dirty;  // the arcs need laying out again for _plan, as soon as they are all spent
     private int _seed, _shockCount;
-    private float _azimuth, _azimuthDir, _shockAt, _nextShock, _nextStray, _spasmAngle, _rampLead, _lastAlpha, _peakAlpha;
-    private bool _leaving;
+    private float _azimuth, _azimuthDir, _shockAt, _nextShock, _nextStray, _spasmAngle;
     private float _px = 1f;
 
     public ParalysisEffect()
@@ -170,8 +151,6 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
 
     public void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride)
     {
-        if (screenSize.X < 64f || screenSize.Y < 64f) return;
-
         if (_cast.Begin(time))
             BeginCast(unchecked((int)(_cast.Start * 1000f)), dt, screenSize);
 
@@ -180,26 +159,12 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
         _px = shortSide / 1080f;
         Vector2 center = screenSize * 0.5f;
 
-        // Alpha only falls while the status is lifting; the cage then discharges instead of simply dimming.
-        if (alpha > _lastAlpha + 1e-4f) _leaving = false;
-        else if (alpha < _lastAlpha - 1e-4f) _leaving = true;
-        _lastAlpha = alpha;
-        if (!_leaving) _peakAlpha = MathF.Max(_peakAlpha, alpha);
-        float leave = _leaving && _peakAlpha > 0.01f ? DrawHelpers.Saturate(1f - alpha / _peakAlpha) : 0f;
+        _env.Update(alpha, age);
+        alpha = _env.Alpha;
+        float gate = _env.Gate, leave = _env.Leave;
 
-        // The manager fades alpha in from nothing over FadeInSeconds, which would dim the first strike. The fade is linear, so alpha * FadeInSeconds / rampAge is the full strength:
-        // ride the ramp up to three times faster (punch), and let the flash ignore it (gate). The fade-out is left alone.
-        float gate = alpha;
-        if (!_leaving && age + _rampLead < EffectManager.FadeInSeconds)
-        {
-            float toFull = EffectManager.FadeInSeconds / MathF.Max(age + _rampLead, 0.001f);
-            gate = MathF.Min(alpha * toFull, 1f);
-            alpha *= MathF.Min(3f, toFull);
-        }
-
-        // The schedule: a shock every ShockMin..ShockMax seconds, and between them an occasional stray arc, never in the build-up to a shock and never while discharging.
-        // Once every arc is spent the cage is laid out afresh for the shock after.
-        if (!_leaving)
+        // The schedule: a shock every ShockMin..ShockMax seconds, and between them an occasional stray arc
+        if (!_env.Leaving)
         {
             if (_dirty && AllSpent(age)) RollAll(screenSize);
             if (age >= _nextShock) Shock(age);
@@ -210,15 +175,15 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
             }
         }
 
-        float tau = age - _shockAt;                                  // seconds since the latest shock
+        float tau = age - _shockAt;  // seconds since the latest shock
         float charge = Charge(age);
-        float quiet = tau < 0f ? 1f : DrawHelpers.Smooth((tau - 0.8f) / 0.9f);        // the idle crackle gives way to a shock, then returns
+        float quiet = tau < 0f ? 1f : DrawHelpers.Smooth((tau - 0.8f) / 0.9f);  // the idle crackle gives way to a shock, then returns
         float light = Saturate(ShockLight(tau, out float flash) * _fired.Power * 0.9f + 0.12f * charge * charge);
 
         // The camera: nearly still between shocks; a shock yanks it toward the layers and throws it about.
         Vector2 spasm = Spasm(tau, out float punch);
         float aspect = screenSize.X / screenSize.Y;
-        float tiltK = MathF.Min(1f, 1.78f / aspect);                // a wide screen reaches further from its centre: the same lean would drag its edges far inside
+        float tiltK = MathF.Min(1f, 1.78f / aspect);
         float tilt = (BaseTilt + TiltSway * MathF.Sin(age * 0.27f + 1.1f) + PunchTilt * punch * _fired.Power * (Bolt.Lattice(_seed, _shockCount, 5) < 0f ? -1f : 1f)) * tiltK + 0.06f * leave;
         float azimuth = _azimuth + _azimuthDir * PrecessionRate * age;
         var cam = new LayerCamera(center + spasm, CameraDistance * _px * (1f - PunchDepth * punch * _fired.Power), tilt, azimuth);
@@ -226,24 +191,21 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
         EmitAtmosphere(scene, screenSize, shortSide, alpha, gate, age, tau, flash, light, charge, colorOverride);
         EmitHaze(scene, in cam, screenSize, alpha, age, leave, light, charge, colorOverride);
         EmitArcs(scene, in cam, screenSize, shortSide, alpha, age, tau, leave, charge, quiet, colorOverride);
-        EmitCrawlers(scene, alpha, age, screenSize, tau, leave, charge, quiet, colorOverride);
+        EmitCrawlers(scene, alpha, age, tau, leave, charge, quiet, colorOverride);
         EmitEdgeArcs(scene, alpha, age, screenSize, leave, charge, quiet, colorOverride);
         EmitPops(scene, alpha, age, screenSize, leave, charge, quiet, colorOverride);
         EmitMotes(scene, in cam, screenSize, alpha, age, leave, light, charge, colorOverride);
     }
 
-    // ---- the cycle ----
+    // the cycle
 
     private void BeginCast(int seed, float dt, Vector2 size)
     {
         _seed = seed;
-        _rampLead = dt;
+        _env.Begin(dt);
         _azimuth = DrawHelpers.Hash01(seed + 1) * MathF.Tau;
         _azimuthDir = DrawHelpers.Hash01(seed + 2) < 0.5f ? -1f : 1f;
         _shockCount = 0;
-        _leaving = false;
-        _peakAlpha = 0f;
-        _lastAlpha = 0f;
 
         int n = 0;
         for (int l = 0; l < Layers.Length; l++)
@@ -253,32 +215,17 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
                 _arcs[n] = new Arc { Layer = l, LayerIdx = i, Height = L.Height, Depth = L.Depth, Bright = L.Bright, Width = L.Width, ZapStart = -100f };
         }
 
-        // Charge in the air fills the view frustum at each depth (Fx, Fy are -1..1 across the screen there).
-        for (int i = 0; i < MoteCount; i++)
-        {
-            int s = seed + i * 6151 + 11;
-            _motes[i] = new Mote
-            {
-                Fx = DrawHelpers.HashRange(s + 2, -1.12f, 1.12f),
-                Fy = DrawHelpers.HashRange(s + 3, -1.12f, 1.12f),
-                Z = MoteFar + (MoteNear - MoteFar) * MathF.Pow(DrawHelpers.Hash01(s + 1), 1.5f),
-                Speed = DrawHelpers.HashRange(s + 4, 8f, 26f),
-                Sway = DrawHelpers.HashRange(s + 5, 10f, 40f),
-                Phase = DrawHelpers.Hash01(s + 6) * MathF.Tau,
-                Size = DrawHelpers.HashRange(s + 7, 1.6f, 3.8f),
-                Seed = s,
-            };
-        }
+        _motes.Seed(seed);
 
         _shockAt = -100f;
         _nextShock = FirstShock;
         _nextStray = 0f;
         _plan = RollPlan(0, true);
         RollAll(size);
-        Shock(FirstShock);                                          // the cast is the first shock, and a bigger one
+        Shock(FirstShock);  // the cast is the first shock, and a bigger one
     }
 
-    /// <summary>Decides one shock: how strong, where from, how many arcs, in what order, how many times re-struck. The cast (intro) is always a full, strong strike by layer.</summary>
+    /// <summary>Decides one shock: how strong, where from, how many arcs, in what order, how many times re-struck.</summary>
     private Plan RollPlan(int index, bool intro)
     {
         int s = _seed + index * 8191 + 101;
@@ -308,10 +255,7 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
         return true;
     }
 
-    /// <summary>
-    /// Lays the whole cage out afresh for <see cref="_plan"/>: each layer's arcs are spread round the perimeter from a new random start (so the screen is always covered evenly, never the same way twice),
-    /// each is given a new span, bow and crackle seed, the plan decides which take part (favouring those facing its hit), their strength, and the order they will strike in.
-    /// </summary>
+    /// <summary>Lays the whole cage out afresh for _plan: each layer's arcs are spread round the perimeter from a new random start (so the screen is</summary>
     private void RollAll(Vector2 size)
     {
         Plan p = _plan;
@@ -344,10 +288,10 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
             float jitter = DrawHelpers.Hash01(s + 4);
             a.Stagger = p.Order switch
             {
-                1 => ((((a.P0 + a.Span * 0.5f - p.SweepStart) * p.SweepDir / 4f) % 1f + 1f) % 1f) * p.Sweep + jitter * 0.015f,   // round the perimeter
-                2 => (1f - a.Facing) * p.Sweep + jitter * 0.015f,                                                                  // a wave from the hit
-                3 => jitter * 0.02f,                                                                                               // all at once
-                _ => L.Stagger + 0.012f * a.LayerIdx + jitter * 0.02f,                                                             // by layer
+                1 => ((((a.P0 + a.Span * 0.5f - p.SweepStart) * p.SweepDir / 4f) % 1f + 1f) % 1f) * p.Sweep + jitter * 0.015f,  // round the perimeter
+                2 => (1f - a.Facing) * p.Sweep + jitter * 0.015f,  // a wave from the hit
+                3 => jitter * 0.02f,  // all at once
+                _ => L.Stagger + 0.012f * a.LayerIdx + jitter * 0.02f,  // by layer
             };
             if (a.Active) active++;
         }
@@ -365,13 +309,13 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
         _dirty = false;
     }
 
-    /// <summary>A shock: the planned arcs are struck (a hair apart, in the plan's order), the view is thrown away from the hit, the next shock is scheduled and the next plan rolled.</summary>
+    /// <summary>A shock: the planned arcs are struck (a hair apart, in the plan's order), the view is thrown away from the hit</summary>
     private void Shock(float at)
     {
         _fired = _plan;
         _shockAt = at;
         _shockCount++;
-        _spasmAngle = _fired.HitAngle + MathF.PI;                    // thrown away from where it came from
+        _spasmAngle = _fired.HitAngle + MathF.PI;  // thrown away from where it came from
         for (int k = 0; k < SpasmAt.Length; k++)
         {
             _spT[k] = SpasmAt[k] * DrawHelpers.HashRange(_fired.Seed + 70 + k, 0.85f, 1.15f);
@@ -394,17 +338,14 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
         _dirty = true;
     }
 
-    /// <summary>
-    /// A stray: one arc (not from the faint far layer) arcs on its own, at about half strength. No flash, no spasm. Only an arc with a decent length actually on the screen is chosen
-    /// (some hug an edge from outside and barely show), judged by where its path was last frame.
-    /// </summary>
+    /// <summary>A stray: one arc (not from the faint far layer) arcs on its own, at about half strength. No flash, no spasm.</summary>
     private void Stray(float age, Vector2 size)
     {
         float shortSide = MathF.Min(size.X, size.Y);
         int first = (int)(DrawHelpers.Hash01(_seed + _shockCount * 331 + (int)(age * 10f)) * 9f) % 9;
         for (int k = 0; k < 9; k++)
         {
-            int pick = 3 + (first + k) % 9;                          // arcs 3-11: everything but the faint far layer
+            int pick = 3 + (first + k) % 9;  // arcs 3-11: everything but the faint far layer
             if (VisibleLength(_paths[pick], size, out float reach) < 0.40f * shortSide || reach < 0.05f * shortSide) continue;
             _arcs[pick].ZapStart = age;
             _arcs[pick].ZapPower = 0.55f;
@@ -454,7 +395,7 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
         return flash + 0.35f * MathF.Exp(-tau / 0.60f);
     }
 
-    /// <summary>The spasm: the view snaps to a new offset at each of this shock's spasm times, ringing out after the last, with a shiver riding it; punch is a 0..1 jolt that fades in about a tenth of a second.</summary>
+    /// <summary>The spasm: the view snaps to a new offset at each of this shock's spasm times, ringing out after the last, with a shiver riding it</summary>
     private Vector2 Spasm(float tau, out float punch)
     {
         punch = 0f;
@@ -478,14 +419,11 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
 
     private Vector2 Offset(int k, float amp)
     {
-        float a = _spasmAngle + k * 2.4f;                            // each snap goes somewhere new, not back and forth
+        float a = _spasmAngle + k * 2.4f;  // each snap goes somewhere new, not back and forth
         return new Vector2(MathF.Cos(a), MathF.Sin(a)) * (_spG[k] * amp);
     }
 
-    /// <summary>
-    /// One arc's strike, as a function of the seconds since it fired: a dim leader runs the channel; the return stroke slams back along it (a blinding run of current) and the channel blows out; the shock's
-    /// re-strikes follow; the channel cools and dies, leaving an afterglow that outlasts it. Level is the bolt's brightness, glow the afterglow's, width a multiplier on the channel.
-    /// </summary>
+    /// <summary>One arc's strike, as a function of the seconds since it fired: a dim leader runs the channel</summary>
     private static void Envelope(float tau, float power, float leader, int restrikes, out float reveal, out float level, out float glow, out float agit, out float width, out float surgeAt, out float surgeGain)
     {
         reveal = level = glow = agit = 0f;
@@ -510,7 +448,7 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
             if (since >= t && since < t + 0.04f)
             {
                 float u = (since - t) / 0.04f;
-                surgeAt = (k & 1) == 0 ? u : 1f - u;                 // each re-strike runs the other way
+                surgeAt = (k & 1) == 0 ? u : 1f - u;  // each re-strike runs the other way
                 surgeGain = RestrikeSurge[k] * power;
             }
         }
@@ -520,10 +458,10 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
         agit = DrawHelpers.Saturate(power * (0.25f + 0.75f * MathF.Exp(-since / 0.30f)));
         width = 0.60f + 0.40f * DrawHelpers.Saturate(level);
 
-        if (since < 0.05f) { surgeAt = 1f - since / 0.05f; surgeGain = 2.4f * power; }        // the return stroke: far end back to the start
+        if (since < 0.05f) { surgeAt = 1f - since / 0.05f; surgeGain = 2.4f * power; }  // the return stroke: far end back to the start
     }
 
-    // ---- atmosphere ----
+    // atmosphere
 
     private void EmitAtmosphere(EffectScene scene, Vector2 size, float shortSide, float alpha, float gate, float age, float tau,
                                 float flash, float light, float charge, Vector4? color)
@@ -532,26 +470,19 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
 
         scene.RequestVignette(StormColor.Vignette, 0.14f, alpha * (0.14f + 0.20f * light + 0.10f * charge) * castIn, priority: 12, color);
 
-        // Light from the arcs spills onto the screen's edges. It follows the smoothed lighting of the whole view (the shock, then its wash, then the charge), never an individual flicker.
-        float depth = shortSide * 0.12f;
-        float a = 0.10f * alpha * castIn * (0.32f + 1.7f * light + 0.6f * charge * charge);
-        scene.AddRegion(new RegionPrimitive { Min = Vector2.Zero, Max = new Vector2(size.X, depth), Tint = StormLight, Alpha = a, Top = true, ColorOverride = color });
-        scene.AddRegion(new RegionPrimitive { Min = new Vector2(0f, size.Y - depth), Max = size, Tint = StormLight, Alpha = a, Bottom = true, ColorOverride = color });
-        scene.AddRegion(new RegionPrimitive { Min = Vector2.Zero, Max = new Vector2(depth, size.Y), Tint = StormLight, Alpha = a, Left = true, ColorOverride = color });
-        scene.AddRegion(new RegionPrimitive { Min = new Vector2(size.X - depth, 0f), Max = size, Tint = StormLight, Alpha = a, Right = true, ColorOverride = color });
+        // Edge light follows the smoothed lighting of the whole view, never an individual flicker.
+        scene.EdgeSpill(size, shortSide * 0.12f, StormLight, 0.10f * alpha * castIn * (0.32f + 1.7f * light + 0.6f * charge * charge), color);
 
         if (tau < 0f) return;
 
-        // The shock: a flash and (usually) a weaker re-flash, then the world going numb for a beat. (Gate rather than alpha: on the cast the manager's fade-in would swallow the flash.)
-        if (flash > 0.01f)
-            scene.AddRegion(new RegionPrimitive { Min = Vector2.Zero, Max = size, Tint = FlashTint, Alpha = 0.26f * _fired.Power * flash * gate, ColorOverride = color });
+        // The shock: a flash and (usually) a weaker re-flash, then the world going numb for a beat.
+        scene.Wash(size, FlashTint, 0.26f * _fired.Power * flash * gate, color);
 
         float numb = DrawHelpers.Smooth(tau / 0.12f) * (1f - DrawHelpers.Smooth((tau - 0.20f) / 1.0f));
-        if (numb > 0.01f)
-            scene.AddRegion(new RegionPrimitive { Min = Vector2.Zero, Max = size, Tint = NumbTint, Alpha = 0.18f * _fired.Power * numb * gate, ColorOverride = color });
+        scene.Wash(size, NumbTint, 0.18f * _fired.Power * numb * gate, color);
     }
 
-    /// <summary>The far layer: a deck of dark cloud that only shows when the shock lights it from inside. Puffs hang behind the screen at different depths, so they slide against the arcs as the stack tilts.</summary>
+    /// <summary>The far layer: a deck of dark cloud that only shows when the shock lights it from inside.</summary>
     private void EmitHaze(EffectScene scene, in LayerCamera cam, Vector2 size, float alpha, float age, float leave, float light, float charge, Vector4? color)
     {
         float px = _px, dist = CameraDistance * px;
@@ -582,7 +513,7 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
         }
     }
 
-    // ---- the arcs ----
+    // the arcs
 
     private void EmitArcs(EffectScene scene, in LayerCamera cam, Vector2 size, float shortSide, float alpha, float age, float tau,
                           float leave, float charge, float quiet, Vector4? color)
@@ -593,7 +524,7 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
         float margin = AnchorMargin * px;
         float shockEnv = tau >= 0f ? MathF.Exp(-tau / 0.25f) * _fired.Power : 0f;
         int thrash = (int)(MathF.Max(tau, 0f) * 30f);
-        // Idle streamers flicker at the edges even when nothing is about to happen; the charge lengthens and brightens them where the next shock will land.
+        // Idle streamers flicker at the edges even when nothing is about to happen
         float stream = (0.22f + 0.78f * DrawHelpers.Smooth(charge)) * quiet;
 
         for (int i = 0; i < ArcCount; i++)
@@ -601,8 +532,7 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
             ref Arc a = ref _arcs[i];
             StrandPath path = _paths[i];
 
-            // Layout is written as what the viewer sees; the plane coordinates that land it there are screen offsets scaled by the layer's perspective.
-            // The anchors are then pushed out until they really are off-screen, however the camera has tilted, shaken or punched.
+            // Layout is written as what the viewer sees
             float h = a.Height * px;
             float pf = MathF.Max(0.12f, 1f - h / dist);
             Vector2 A = KeepOffscreen((ScreenEdges.FromPerimeter(size, a.P0, overhang, out _) - c) * pf, h, in cam, size, margin);
@@ -612,7 +542,7 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
             Vector2 inward = tcl > 1e-3f ? toCentre / tcl : Vector2.UnitY;
             Vector2 bow = inward * (a.Bulge * shortSide * pf * (1f + 0.10f * MathF.Sin(age * 0.9f + a.WobblePhase)));
 
-            // The shock bends an arc hard and every which way for a moment (random each thirtieth of a second, not a sine); the rest of the time it only sways.
+            // The shock bends an arc hard and every which way for a moment (random each thirtieth of a second, not a sine)
             float tw = Bolt.Lattice(a.Seed, 0, thrash) * TwitchAmp * px * pf * shockEnv;
             var wobble = new RingWobble(5f * px * pf + tw, 1, a.WobblePhase + 0.9f * age, 2f * px * pf + 0.4f * tw, 2, a.WobblePhase * 1.7f - 1.3f * age);
             SigilGeometry.Span(path, ArcSegments, in cam, A, B, bow, h, in wobble);
@@ -632,7 +562,7 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
             }
             else
             {
-                // Between shocks: short dim streamers from the anchors of the arcs the next shock will strike, which come and go and lengthen as the charge climbs.
+                // Between shocks: short dim streamers from the anchors of the arcs the next shock will strike
                 reveal = level = glow = agit = surgeAt = surgeGain = 0f;
                 widthMul = 0.6f;
                 if (a.Active && a.StreamerOn && stream > 0.04f)
@@ -664,7 +594,7 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
                     TipFlare = reveal < 0.999f ? 1f : 0f, SurgeAt = surgeAt, SurgeGain = surgeGain, ColorOverride = color,
                 });
 
-            // The afterglow: the channel's heat, which outlasts the bolt. (Never on a partial strand: a glow cut off mid-screen shows its end.)
+            // The afterglow: the channel's heat, which outlasts the bolt.
             if (reveal >= 0.999f && glow > 0.02f && leave <= 0f)
                 scene.AddStroke(new StrokePrimitive
                 {
@@ -694,7 +624,7 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
         }
     }
 
-    /// <summary>Records which stretch of an arc is on the screen (as fractions of its length, so crackles can be placed where they will be seen), or -1 if none of it is.</summary>
+    /// <summary>Records which stretch of an arc is on the screen (as fractions of its length, so crackles can be placed where they will be seen)</summary>
     private void MeasureVisible(int i, StrandPath path, Vector2 size)
     {
         int first = -1, last = -1;
@@ -711,17 +641,14 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
         _visB[i] = last * inv;
     }
 
-    /// <summary>
-    /// Pushes a plane point outward (away from the centre) until, as the camera projects it, it sits at least <paramref name="margin"/> px beyond the nearest edge of the screen.
-    /// The layout puts anchors just off-screen, but a tilted camera swings a point by its distance from the centre times the tilt, which on a wide screen (or in a shake) is enough to drag it far inside.
-    /// </summary>
+    /// <summary>Pushes a plane point outward (away from the centre) until, as the camera projects it</summary>
     private static Vector2 KeepOffscreen(Vector2 plane, float h, in LayerCamera cam, Vector2 size, float margin)
     {
         for (int it = 0; it < 5; it++)
         {
             Vector2 s = cam.Project(plane.X, plane.Y, h, out float scale);
-            float inside = MathF.Min(MathF.Min(s.X, size.X - s.X), MathF.Min(s.Y, size.Y - s.Y));        // above 0 = on screen
-            float need = inside + margin;                                                               // px still to travel outward
+            float inside = MathF.Min(MathF.Min(s.X, size.X - s.X), MathF.Min(s.Y, size.Y - s.Y));  // above 0 = on screen
+            float need = inside + margin;  // px still to travel outward
             if (need <= 0f) break;
             float len = plane.Length();
             if (len < 1e-3f) break;
@@ -744,13 +671,10 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
             Brightness = alpha, Seed = seed, ColorOverride = color,
         });
 
-    // ---- the idle crackle ----
+    // the idle crackle
 
-    /// <summary>
-    /// Short crackles that hop off the arcs and die, placed on the part of each arc that is actually on screen: stateless, each slot re-rolls where it is every few hundred milliseconds.
-    /// A few while the screen idles (near the edges, where the arcs come in), more as the charge builds, a swarm after a shock.
-    /// </summary>
-    private void EmitCrawlers(EffectScene scene, float alpha, float age, Vector2 size, float tau, float leave, float charge, float quiet, Vector4? color)
+    /// <summary>Short crackles that hop off the arcs and die, placed on the part of each arc that is actually on screen: stateless</summary>
+    private void EmitCrawlers(EffectScene scene, float alpha, float age, float tau, float leave, float charge, float quiet, Vector4? color)
     {
         float ramp = DrawHelpers.Smooth((age - 0.20f) / 0.5f) * (1f - DrawHelpers.Smooth(leave));
         if (ramp <= 0.002f) return;
@@ -794,11 +718,7 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
         }
     }
 
-    /// <summary>
-    /// Bolts that surge along the edges of the screen: real lightning strands (the same material, forks, glow and white-hot core as the shock's arcs, only smaller and dimmer) lying along the border,
-    /// anchored to it at both ends and bowed a little inward. Each strikes with a quick leader, then crackles and pulses as surges of current run along it, then dies; they come and go in a few places at a time.
-    /// Stateless: each slot re-rolls where and when every cycle.
-    /// </summary>
+    /// <summary>Bolts that surge along the edges of the screen: real lightning strands (the same material, forks, glow and white-hot core as the</summary>
     private void EmitEdgeArcs(EffectScene scene, float alpha, float age, Vector2 size, float leave, float charge, float quiet, Vector4? color)
     {
         float ramp = DrawHelpers.Smooth((age - 0.6f) / 0.8f) * (1f - DrawHelpers.Smooth(leave)) * quiet;
@@ -813,14 +733,14 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
             float x = age / period + DrawHelpers.Hash01(slot * 29 + 5);
             int epoch = (int)MathF.Floor(x);
             float f = x - epoch;
-            const float liveFrac = 0.50f;                        // each cycle a bolt is up for this share of it
+            const float liveFrac = 0.50f;  // each cycle a bolt is up for this share of it
             if (f > liveFrac) continue;
 
             int hs = _seed + slot * 7717 + epoch * 104729;
             if (DrawHelpers.Hash01(hs + 1) > 0.70f + 0.25f * charge) continue;
 
-            float t = f * period;                                // seconds since it struck
-            float life = liveFrac * period;                      // seconds it lasts
+            float t = f * period;  // seconds since it struck
+            float life = liveFrac * period;  // seconds it lasts
 
             // Where: an edge (more often a long one), a stretch of it clear of the corners, and how far it bows into the screen.
             float pick = DrawHelpers.Hash01(hs + 2) * perimeter;
@@ -830,7 +750,7 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
             float len = MathF.Min((280f + 340f * DrawHelpers.Hash01(hs + 3)) * px, edgeLen - 2f * margin - 1f);
             if (len < 60f * px) continue;
             float along0 = margin + DrawHelpers.Hash01(hs + 4) * (edgeLen - 2f * margin - len);
-            bool flip = DrawHelpers.Hash01(hs + 5) < 0.5f;       // which end the leader sets out from
+            bool flip = DrawHelpers.Hash01(hs + 5) < 0.5f;  // which end the leader sets out from
             float bow = (28f + 55f * DrawHelpers.Hash01(hs + 6)) * px;
 
             StrandPath path = _edgePaths[slot];
@@ -838,7 +758,7 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
             {
                 float u = i / (float)(EdgePoints - 1);
                 float along = along0 + len * (flip ? 1f - u : u);
-                float depth = -3f * px + bow * MathF.Pow(MathF.Max(0f, MathF.Sin(MathF.PI * u)), 0.8f);       // both ends touch the border (sin(pi) is a hair negative, and a negative base to 0.8 is NaN)
+                float depth = -3f * px + bow * MathF.Pow(MathF.Max(0f, MathF.Sin(MathF.PI * u)), 0.8f);  // both ends touch the border (sin(pi) is a hair negative, and a negative base to 0.8 is NaN)
                 path.Points[i] = EdgePoint(size, edge, along, depth);
             }
             path.Count = EdgePoints;
@@ -877,7 +797,7 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
         }
     }
 
-    /// <summary>A point on the screen's border: edge 0 is the top (left to right), 1 the right (top to bottom), 2 the bottom (right to left), 3 the left (bottom to top); <paramref name="along"/> px from its start, <paramref name="depth"/> px into the screen.</summary>
+    /// <summary>A point on the screen's border: edge 0 is the top (left to right), 1 the right (top to bottom), 2 the bottom (right to left), 3 the</summary>
     private static Vector2 EdgePoint(Vector2 size, int edge, float along, float depth) => edge switch
     {
         0 => new Vector2(along, depth),
@@ -886,7 +806,7 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
         _ => new Vector2(depth, size.Y - along),
     };
 
-    /// <summary>Static pops at the edges: a small crackle and a flash of light that lasts a fifth of a second, somewhere along the border, now and then.</summary>
+    /// <summary>Static pops at the edges: a small crackle and a flash of light that lasts a fifth of a second, somewhere along the border</summary>
     private void EmitPops(EffectScene scene, float alpha, float age, Vector2 size, float leave, float charge, float quiet, Vector4? color)
     {
         float ramp = DrawHelpers.Smooth((age - 0.6f) / 0.8f) * (1f - DrawHelpers.Smooth(leave)) * quiet;
@@ -905,7 +825,7 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
             if (DrawHelpers.Hash01(hs + 1) > 0.55f + 0.40f * charge) continue;
 
             float inset = (8f + 40f * DrawHelpers.Hash01(hs + 3)) * px;
-            Vector2 p = PerimeterPoint(size, DrawHelpers.Hash01(hs + 2) * perimeter, inset, out Vector2 tangent);
+            Vector2 p = PerimeterPoint(size, DrawHelpers.Hash01(hs + 2) * perimeter, inset, out _);
             float ar = f / 0.25f;
             float k = alpha * ramp * (0.55f + 0.45f * charge);
             float ang = DrawHelpers.Hash01(hs + 4) * MathF.Tau;
@@ -923,7 +843,7 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
         }
     }
 
-    /// <summary>A point <paramref name="inset"/> px inside the screen's border, a distance s round it (clockwise from the top-left corner), and the border's direction there.</summary>
+    /// <summary>A point inset px inside the screen's border, a distance s round it (clockwise from the top-left corner)</summary>
     private static Vector2 PerimeterPoint(Vector2 size, float s, float inset, out Vector2 tangent)
     {
         float w = size.X, h = size.Y, perimeter = 2f * (w + h);
@@ -939,37 +859,11 @@ public sealed class ParalysisEffect : ISceneEffect, IHasHeroSlots, IHasSwappable
         return new Vector2(inset, h - s);
     }
 
-    /// <summary>Static charge hanging in the air at every depth: tiny sharp specks far off, big out-of-focus discs close to the lens. They twinkle, brighten as the charge builds and flare with a shock.</summary>
+    // Static charge hanging at every depth: it twinkles, builds with the charge and flares with a shock.
     private void EmitMotes(EffectScene scene, in LayerCamera cam, Vector2 size, float alpha, float age, float leave, float light, float charge, Vector4? color)
     {
-        float px = _px, dist = CameraDistance * px;
         float ramp = DrawHelpers.Smooth((age - 0.20f) / 1.0f) * (1f - DrawHelpers.Smooth(leave));
-        if (ramp <= 0.002f) return;
         float energy = MathF.Min(1.3f, 0.26f + 0.60f * charge + 0.80f * light);
-
-        for (int i = 0; i < MoteCount; i++)
-        {
-            ref readonly Mote m = ref _motes[i];
-            float z = m.Z * px;
-            float s = dist / MathF.Max(dist * 0.12f, dist - z);
-
-            // Motes rise at a world speed, so what is near crosses the screen faster; the frustum is wrapped in screen fractions.
-            float halfH = size.Y * 0.5f;
-            float fy = m.Fy - m.Speed * px * s * age / halfH;
-            fy = ((fy + 1.12f) % 2.24f + 2.24f) % 2.24f - 1.12f;
-            float fx = m.Fx + (m.Sway * px * s / (size.X * 0.5f)) * 0.5f * MathF.Sin(age * 0.43f + m.Phase);
-
-            Vector2 at = cam.Project(fx * size.X * 0.5f / s, fy * halfH / s, z, out float scale);
-            if (at.X < -80f || at.Y < -80f || at.X > size.X + 80f || at.Y > size.Y + 80f) continue;
-
-            float blur = DrawHelpers.Smooth(150f, MoteNear, m.Z);
-            float far = DrawHelpers.Smooth(MoteFar, 0f, m.Z);
-            float twinkle = 0.65f + 0.35f * DrawHelpers.Hash01(m.Seed * 13 + (int)(age * 11f + m.Phase * 3f));
-            scene.AddParticle(new ParticlePrimitive
-            {
-                Position = at, Size = m.Size * px * scale * (1f + 3.4f * blur), AgeRatio = 0.5f,
-                Brightness = alpha * ramp * energy * twinkle * (0.35f + 0.65f * far) * (1f - 0.65f * blur), Seed = m.Seed, Role = PrimitiveRole.Mote, ColorOverride = color,
-            });
-        }
+        _motes.Emit(scene, in cam, CameraDistance * _px, size, _px, age, alpha * ramp * energy, blurDim: 0.65f, twinkle: 0.35f, color);
     }
 }

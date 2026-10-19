@@ -47,8 +47,7 @@ public static class EffectSceneRenderer
             finally { DrawHelpers.PopColorOverride(); }
         }
 
-        // 3. Strokes, each followed by the particles that belong to it (see IParticleMaterial.DrawsWithHost), so a nearer stroke
-        //    drawn later covers a farther one's slime. 4. Then every other particle, over everything.
+        // 3.
         int pc = scene.Particles.Count;
         if (_host.Length < pc) { int n = Math.Max(pc, _host.Length * 2); _host = new int[n]; _hostMat = new IParticleMaterial?[n]; }
         bool anyHosted = false;

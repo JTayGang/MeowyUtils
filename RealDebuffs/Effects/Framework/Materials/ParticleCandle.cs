@@ -3,15 +3,7 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>
-/// A candle: a wax pillar lit by the shared key light and by its own flame, a pool of molten wax glowing at the top, a few runs of wax set hard down the side, a wick, and a flame
-/// (a blue base, a pale core, an orange skirt) that flickers and leans. Position is the middle of the base and Size the pillar's half-width in px; it stands up the screen, or leans by Rotation
-/// (radians clockwise from up), so a candle can float and rock.
-///
-/// AgeRatio is how far the wick has caught: 0 = a dark wick, 1 = burning steadily; the flame flares as it takes, so a row of candles lit one after another reads as lighting.
-/// Sway leans the flame sideways (px), the draught. Variant is the flame's vigour: 0 or 255 = full, less = guttering (smaller, lower, leaning); lit candles brighten the wax and throw a pool of warm light round them.
-/// As a stroke emitter it sheds candles that light as they drift up.
-/// </summary>
+/// <summary>A candle: a wax pillar lit by the shared key light and by its own flame, a pool of molten wax glowing at the top</summary>
 public sealed class ParticleCandle : IParticleMaterial
 {
     public string Name => "particle.candle";
@@ -41,15 +33,15 @@ public sealed class ParticleCandle : IParticleMaterial
 
         float lit = DrawHelpers.Saturate(p.AgeRatio);
         float vigor = p.Variant == 0 ? 1f : DrawHelpers.Saturate((p.Variant & 0xFF) / 255f);
-        float burn = DrawHelpers.Smooth(lit) * vigor;                                       // how much flame there is
+        float burn = DrawHelpers.Smooth(lit) * vigor;  // how much flame there is
 
         float ph = DrawHelpers.Hash01(seed + 2) * 40f;
-        float flick = 0.5f + 0.5f * Noise.Value(time * 7.3f + ph, 1.3f);                    // 0..1, quick
-        float slow = Noise.Value(time * 1.9f + ph, 4.1f);                                   // -1..1, slow lean
+        float flick = 0.5f + 0.5f * Noise.Value(time * 7.3f + ph, 1.3f);  // 0..1, quick
+        float slow = Noise.Value(time * 1.9f + ph, 4.1f);  // -1..1, slow lean
         float glow = burn * (0.80f + 0.20f * flick);
 
         Vector2 up = new(MathF.Sin(p.Rotation), -MathF.Cos(p.Rotation));
-        Vector2 right = new(-up.Y, up.X);                                                   // screen-right when upright
+        Vector2 right = new(-up.Y, up.X);  // screen-right when upright
         Vector2 b = p.DrawPos;
         Vector2 top = b + up * H;
 
@@ -78,14 +70,14 @@ public sealed class ParticleCandle : IParticleMaterial
             MeshDraw.Radial(dl, b + up * (R * 0.1f), uv, DrawHelpers.Tint(0x00000000u, 0.42f * k, overridden), 10, rr, rc, 0f, 0.32f, 0, 0f);
         }
 
-        // ---- the pillar ----
+        // the pillar
         int vi = 0;
         for (int row = 0; row <= Rows - 1; row++)
         {
-            float v = row / (float)(Rows - 1);                                              // 0 at the foot, 1 at the top
+            float v = row / (float)(Rows - 1);  // 0 at the foot, 1 at the top
             Vector2 centre = b + up * (H * v);
-            float flameLight = glow * MathF.Exp(-(1f - v) * H / (R * 5.5f));               // the flame lights the top of its own candle most
-            float ao = 0.55f + 0.45f * MathF.Pow(v, 0.7f);                                  // darker toward the foot, where it is shadowed
+            float flameLight = glow * MathF.Exp(-(1f - v) * H / (R * 5.5f));  // the flame lights the top of its own candle most
+            float ao = 0.55f + 0.45f * MathF.Pow(v, 0.7f);  // darker toward the foot, where it is shadowed
 
             for (int c = 0; c < Cols; c++)
             {
@@ -96,7 +88,7 @@ public sealed class ParticleCandle : IParticleMaterial
 
                 // A cylinder facing the viewer: its normal runs across, a little up (the candle is seen from slightly above).
                 Vector3 col = Wax.Sample(uc * 0.96f, -0.10f - 0.05f * (1f - v));
-                // The room is on fire: the wax is not studio-white. Pull it down and warm it, deepen the contrast, and let the fire below throw its colour up the foot.
+                // The room is on fire: the wax is not studio-white.
                 col = col * col * 1.05f * new Vector3(1.00f, 0.86f, 0.70f);
                 col *= ao;
                 col += new Vector3(1.00f, 0.30f, 0.05f) * (0.26f * MathF.Pow(1f - v, 1.6f));
@@ -133,7 +125,7 @@ public sealed class ParticleCandle : IParticleMaterial
             dl.AddCircleFilled(s1, MathF.Max(1.0f * px, R * 0.17f), wcol);
         }
 
-        // ---- the top: a pool of melt, bright where the flame sits on it ----
+        // the top: a pool of melt, bright where the flame sits on it
         {
             Span<float> rr = stackalloc float[2] { R * 0.70f, R * 1.02f };
             Vector3 rim = Wax.Sample(0f, -0.35f) * 1.05f;
@@ -161,7 +153,7 @@ public sealed class ParticleCandle : IParticleMaterial
         DrawFlame(dl, uv, wickTop, up, right, R, burn, lit, flick, slow, p.Sway, k, overridden);
     }
 
-    /// <summary>The flame: a teardrop whose temperature falls from a pale core out to an orange skirt, with a blue cone at its foot. Takes with a flare.</summary>
+    /// <summary>The flame: a teardrop whose temperature falls from a pale core out to an orange skirt, with a blue cone at its foot.</summary>
     private static void DrawFlame(ImDrawListPtr dl, Vector2 uv, Vector2 foot, Vector2 up, Vector2 right, float R,
                                   float burn, float lit, float flick, float slow, float sway, float k, bool overridden)
     {
@@ -170,7 +162,7 @@ public sealed class ParticleCandle : IParticleMaterial
         float size = burn * pop;
         float Hf = R * (4.6f + 0.8f * flick) * size;
         float Wf = R * 1.05f * (0.92f + 0.10f * flick) * MathF.Sqrt(size);
-        float push = (sway + slow * R * 0.30f) * burn;                                   // how far the tip is blown sideways
+        float push = (sway + slow * R * 0.30f) * burn;  // how far the tip is blown sideways
 
         int i = 0;
         for (int row = 0; row <= FlameRows; row++)
@@ -224,7 +216,7 @@ public sealed class ParticleCandle : IParticleMaterial
         MeshDraw.C[i] = col;
     }
 
-    // ---- as a stroke emitter: candles that light as they drift up ----
+    // as a stroke emitter: candles that light as they drift up
 
     public ReadOnlySpan<StrokeEmission> Emissions => Shed;
 

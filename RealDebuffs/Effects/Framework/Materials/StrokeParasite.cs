@@ -3,16 +3,16 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>A living tentacle as lit 3D geometry: tapered tube, pale belly, dark back, mottled skin, flowing slime, and two rows of real 3D suckers placed in material coordinates so they ride the skin steadily. Honours the full stroke contract, so anything that can be a rope or chain can be a tentacle. Drips come from GoopEmitter via RadiusAt.</summary>
+/// <summary>A living tentacle as lit 3D geometry: tapered tube, pale belly, dark back, mottled skin, flowing slime</summary>
 public sealed class StrokeParasite : IStrokeMaterial
 {
     public string Name => "stroke.parasite";
     public string[] NaturalLanguageWords { get; } = { "tentacle", "tentacles", "tendril", "tendrils", "parasite", "parasites" };
 
-    // ---- size ---- wide enough for a limb a sixth of the screen thick, narrow enough to be a thread
+    // size ---- wide enough for a limb a sixth of the screen thick, narrow enough to be a thread
     private const float MinDiameterFrac = 0.012f;
     private const float MaxDiameterFrac = 0.180f;
-    private const float TipFrac = 0.075f;               // diameter at the very tip, as a fraction of the base's
+    private const float TipFrac = 0.075f;  // diameter at the very tip, as a fraction of the base's
     private const int   MaxRows = 1000;
     private const int   MaxPathPoints = 512;
 
@@ -28,20 +28,20 @@ public sealed class StrokeParasite : IStrokeMaterial
     private static readonly Vector3 FillHalf = Vector3.Normalize(StudioLighting.Fill + Vector3.UnitZ);
 
     // Skin relief: warts (height as a fraction of the arm's radius, and how strongly their slope tilts the shading) and folds.
-    private const float CupSegPerPx   = 0.90f;       // segments round a cup per px of its radius (a segment is then ~7 px of rim: the sagitta stays under 0.6 px)
+    private const float CupSegPerPx   = 0.90f;
     private const float BumpHeightFrac = 0.16f;
     private const float BumpTilt       = 1.00f;
-    private const float FoldDepth      = 0.02f;       // radius modulation of the folds
-    private const float FoldTilt       = 0.17f;        // and the tilt they give the shading
-    private const float CavityDark     = 0.26f;        // how dark the hollows between warts go
-    private const float CrestLift      = 0.11f;        // and how much the crests brighten
+    private const float FoldDepth      = 0.02f;  // radius modulation of the folds
+    private const float FoldTilt       = 0.17f;  // and the tilt they give the shading
+    private const float CavityDark     = 0.26f;  // how dark the hollows between warts go
+    private const float CrestLift      = 0.11f;  // and how much the crests brighten
 
-    /// <summary>Level of detail: columns across the visible half (evenly spaced in ANGLE, putting vertices at the silhouette), rows along the length, and the finest a cup is cut (a smaller cup is cut coarser).</summary>
+    /// <summary>Level of detail: columns across the visible half (evenly spaced in ANGLE, putting vertices at the silhouette), rows along the length</summary>
     private sealed class Tier
     {
         public readonly int Cols;
-        public readonly float StepFrac;      // row spacing, in diameters
-        public readonly int SuckerSegs;      // 0 = no suckers at this size
+        public readonly float StepFrac;  // row spacing, in diameters
+        public readonly int SuckerSegs;  // 0 = no suckers at this size
         public readonly float[] Sin, Cos, Theta;
 
         public Tier(int cols, float stepFrac, int suckerSegs)
@@ -58,7 +58,7 @@ public sealed class StrokeParasite : IStrokeMaterial
         }
     }
 
-    private static readonly Tier Thick  = new(17, 0.20f, 24);          // a limb thick enough that 11 columns would show as blocks
+    private static readonly Tier Thick  = new(17, 0.20f, 24);  // a limb thick enough that 11 columns would show as blocks
     private static readonly Tier Full   = new(11, 0.20f, 16);
     private static readonly Tier Fine   = new(9,  0.24f, 12);
     private static readonly Tier Medium = new(7,  0.32f, 0);
@@ -73,9 +73,9 @@ public sealed class StrokeParasite : IStrokeMaterial
         public uint  AlphaBits;
         public bool  Overridden;
         public float Dye;
-        public float Detail;                    // 0..1: how much of the fine skin work is worth doing at this size
-        public float MottleFreq;                // 1/px along the strand
-        public float MottleOffset;              // per tentacle, so no two share a pattern
+        public float Detail;  // 0..1: how much of the fine skin work is worth doing at this size
+        public float MottleFreq;  // 1/px along the strand
+        public float MottleOffset;  // per tentacle, so no two share a pattern
     }
 
     /// <summary>One cross-section of the tentacle: everything a vertex needs that does not depend on which column it is.</summary>
@@ -83,40 +83,40 @@ public sealed class StrokeParasite : IStrokeMaterial
     {
         public Vector2 P, T;
         public float Arc;
-        public float CapW, CapAxial;            // end-cap shaping, as in Rope: width factor and axial normal
-        public float Radius;                    // half-width in px, all effects included
-        public float Psi;                       // angle of the belly line from the view axis
-        public float SinA, CosA;                // pitch toward (+) or away (-) from the viewer
-        public float Tone;                      // slow brightness drift along the strand
-        public float Wet;                       // 0..1 slime coverage
-        public float LumpTilt;                  // axial normal tilt from the slime lumps
+        public float CapW, CapAxial;  // end-cap shaping, as in Rope: width factor and axial normal
+        public float Radius;  // half-width in px, all effects included
+        public float Psi;  // angle of the belly line from the view axis
+        public float SinA, CosA;  // pitch toward (+) or away (-) from the viewer
+        public float Tone;  // slow brightness drift along the strand
+        public float Wet;  // 0..1 slime coverage
+        public float LumpTilt;  // axial normal tilt from the slime lumps
         public float Feather;
-        public float Glint, GlintX;             // key-light highlight strip on this row: strength, and where across the tube (px from the centre line)
-        public float Glint2, GlintX2;           // the same for the cooler fill light
-        public float MX, MY;                    // skin-pattern coordinates
-        public float WX, WRing, BumpAmp;        // wart field: along-strand coordinate, ring radius in noise cells, and bump height in px (0 = smooth skin)
-        public bool  On;                        // on screen: only these rows are shaded
+        public float Glint, GlintX;  // key-light highlight strip on this row: strength
+        public float Glint2, GlintX2;  // the same for the cooler fill light
+        public float MX, MY;  // skin-pattern coordinates
+        public float WX, WRing, BumpAmp;  // wart field: along-strand coordinate, ring radius in noise cells
+        public bool  On;  // on screen: only these rows are shaded
     }
 
-    /// <summary>Per-tentacle, per-frame constants a cross-section needs. Kept apart from the rows so one can be evaluated at ANY arc length: a sucker sits exactly where it belongs, not on the nearest row.</summary>
+    /// <summary>Per-tentacle, per-frame constants a cross-section needs.</summary>
     private struct RowParams
     {
         public float Total, VisibleLen, Reveal, Growing;
         public bool Closed;
         public float Diameter, Radius, Px, Depth, Time, Twist, Margin, ScreenW, ScreenH;
-        public float FieldScale;                              // size of the slime patches and highlight breakup, capped in pixels
+        public float FieldScale;  // size of the slime patches and highlight breakup, capped in pixels
         public float Ph1, Ph2, Ph3, Psi0, OffA, OffB, OffC, Scroll;
         public float WobbleRate, ToneRateA, ToneRateB, PitchRate, TwistRate;
-        public float BumpWave, BumpOff, FoldWave;             // wart wavelength and field offset; skin-fold wavelength (px). BumpWave 0 = smooth skin
+        public float BumpWave, BumpOff, FoldWave;  // wart wavelength and field offset; skin-fold wavelength (px). BumpWave 0 = smooth skin
     }
 
     private RowParams _rp;
     private readonly Row[] _rows = new Row[MaxRows];
-    private readonly float[] _hgt = new float[MaxRows * 17];            // wart height (noise, ~[-1,1]) per row and column
+    private readonly float[] _hgt = new float[MaxRows * 17];  // wart height (noise, ~[-1,1]) per row and column
     private readonly Vector2[] _pointTan = new Vector2[MaxPathPoints];
     private float _screenW, _screenH;
 
-    // ---- The strand's profile: shared by the drawing and by RadiusAt ----
+    // The strand's profile: shared by the drawing and by RadiusAt
 
     private static float BaseDiameter(float widthHint, float depth, float shortSide) =>
         Math.Clamp(widthHint, shortSide * MinDiameterFrac, shortSide * MaxDiameterFrac) * (1f - 0.18f * depth);
@@ -133,18 +133,14 @@ public sealed class StrokeParasite : IStrokeMaterial
         return MathF.Max(0.5f, 0.5f * diameter * Taper(arc / total, s.Closed));
     }
 
-    // ---- Draw ----
+    // Draw
 
-    // ---- Frame budget ----
-    //
-    // Building a tentacle's mesh is the whole cost of drawing it, and a tentacle moves slowly. So when building them all every frame would cost more than BudgetMs,
-    // each is built every second (or third) frame instead and the finished triangles are replayed in between, staggered so the cost is level from frame to frame.
-    // Under budget nothing is cached or skipped: this changes nothing on a fast machine.
+    // Frame budget: Building a tentacle's mesh is the whole cost of drawing it, and a tentacle moves slowly.
 
-    /// <summary>Milliseconds per frame this material may spend building all its tentacles, on this machine. 0 = build every tentacle every frame, whatever it costs.</summary>
+    /// <summary>Milliseconds per frame this material may spend building all its tentacles, on this machine. 0 = build every tentacle every frame</summary>
     public static float BudgetMs = 1.5f;
 
-    /// <summary>The longest a tentacle's picture may be left as it was, in seconds. Skipping is only ever done while the frame rate keeps this short: at low fps nothing is skipped.</summary>
+    /// <summary>The longest a tentacle's picture may be left as it was, in seconds.</summary>
     public static float MaxStaleSeconds = 0.034f;
 
     private const int MaxInterval = 3, MaxStaleFrames = 3;
@@ -152,8 +148,8 @@ public sealed class StrokeParasite : IStrokeMaterial
     private sealed class Cached
     {
         public readonly MeshDraw.MeshCache Mesh = new();
-        public float Seen, CostMs = 0.2f;                  // CostMs: what building this tentacle takes, smoothed
-        public int BuiltFrame, Phase;                      // Phase: which of the _interval frames this one is rebuilt on
+        public float Seen, CostMs = 0.2f;  // CostMs: what building this tentacle takes, smoothed
+        public int BuiltFrame, Phase;  // Phase: which of the _interval frames this one is rebuilt on
     }
 
     private readonly Dictionary<int, Cached> _cache = new();
@@ -161,8 +157,8 @@ public sealed class StrokeParasite : IStrokeMaterial
     private readonly List<Cached> _planned = new();
     private float _frameTime = float.NaN, _cacheSweep;
     private int _frameNo, _slot, _slotsLastFrame, _interval = 1;
-    private double _buildMsEma = 0.2;                           // per tentacle, smoothed
-    private float _frameDt = 1f / 60f;                          // smoothed time between frames
+    private double _buildMsEma = 0.2;  // per tentacle, smoothed
+    private float _frameDt = 1f / 60f;  // smoothed time between frames
 
     public void Draw(ImDrawListPtr dl, in StrokePrimitive s, in MaterialContext ctx)
     {
@@ -179,9 +175,7 @@ public sealed class StrokeParasite : IStrokeMaterial
         bool due = !c.Mesh.Valid || _interval <= 1 || (_frameNo + c.Phase) % _interval == 0 || _frameNo - c.BuiltFrame >= MaxStaleFrames;
         if (!due)
         {
-            long r0 = PerfProbe.Start();
             MeshDraw.Replay(dl, c.Mesh);
-            PerfProbe.Stop(PerfProbe.Slot.Replay, r0);
             return;
         }
 
@@ -197,7 +191,7 @@ public sealed class StrokeParasite : IStrokeMaterial
 
     private void NewFrame(float time, float budget)
     {
-        float step = time - _frameTime;                                        // NaN on the first frame
+        float step = time - _frameTime;  // NaN on the first frame
         if (step > 0f && step < 0.25f) _frameDt += (step - _frameDt) * 0.1f;
         _slotsLastFrame = _slot;
         _slot = 0;
@@ -206,16 +200,16 @@ public sealed class StrokeParasite : IStrokeMaterial
 
         if (_slotsLastFrame > 0)
         {
-            double full = _buildMsEma * _slotsLastFrame;                       // what building every tentacle this frame would cost
-            int cap = Math.Clamp((int)(MaxStaleSeconds / MathF.Max(_frameDt, 1e-3f)), 1, MaxInterval);   // fps-aware: a picture held for N frames must not be held too long
+            double full = _buildMsEma * _slotsLastFrame;  // what building every tentacle this frame would cost
+            int cap = Math.Clamp((int)(MaxStaleSeconds / MathF.Max(_frameDt, 1e-3f)), 1, MaxInterval);  // fps-aware: a picture held for N frames must not be held too long
             int want = Math.Clamp((int)Math.Ceiling(full / budget), 1, cap);
             if (want > _interval) _interval = want;
-            else if (want < _interval && (_interval > cap || full / (_interval - 1) < budget * 0.85)) _interval--;   // relax once the cheaper plan still sits comfortably under budget, or the frame rate no longer allows this one   // only relax once the cheaper plan would still sit comfortably under budget
+            else if (want < _interval && (_interval > cap || full / (_interval - 1) < budget * 0.85)) _interval--;  // relax once the cheaper plan still sits comfortably under budget
         }
 
         if (_interval > 1 && (_frameNo % 8 == 0 || _planInterval != _interval)) Plan();
 
-        if (time - _cacheSweep > 1f)                                           // forget tentacles that have gone
+        if (time - _cacheSweep > 1f)  // forget tentacles that have gone
         {
             _cacheSweep = time;
             _cacheStale.Clear();
@@ -226,7 +220,7 @@ public sealed class StrokeParasite : IStrokeMaterial
 
     private int _planInterval;
 
-    /// <summary>Gives each live tentacle a rebuild phase so the cost is level from frame to frame: the dearest first, each to whichever phase is lightest so far.</summary>
+    /// <summary>Gives each live tentacle a rebuild phase so the cost is level from frame to frame: the dearest first</summary>
     private void Plan()
     {
         _planInterval = _interval;
@@ -278,44 +272,30 @@ public sealed class StrokeParasite : IStrokeMaterial
             Overridden = DrawHelpers.ColorOverrideActive,
             Dye = DrawHelpers.ColorOverrideChroma,
             Detail = Math.Clamp(diameter / (22f * px), 0.4f, 1f),
-            MottleFreq = 1f / MathF.Min(diameter * 2.3f, 100f * px),   // skin detail is a size in pixels, not a fraction of the limb: a thicker arm has more skin, not bigger pores
+            MottleFreq = 1f / MathF.Min(diameter * 2.3f, 100f * px),  // skin detail is a size in pixels, not a fraction of the limb: a thicker arm has more skin
             MottleOffset = DrawHelpers.HashRange(seed + 71, 0f, 300f),
         };
 
         _screenW = ctx.ScreenW;
         _screenH = ctx.ScreenH;
 
-        long t0 = PerfProbe.Start();
         int n = BuildRows(path, total, visibleLen, closed, s.FlushStart, reveal, tier, seed, s.Phase,
                           s.Twist, ctx.Time, px, depth, in look);
-        PerfProbe.Stop(PerfProbe.Slot.Rows, t0);
         if (n < 2) return;
         _rowCount = n;
 
         _obstN = 0;
-        t0 = PerfProbe.Start();
         int cups = tier.SuckerSegs > 0 ? BuildSuckers(path, tier, in look, px) : 0;
-        PerfProbe.Stop(PerfProbe.Slot.Suckers, t0);
-        t0 = PerfProbe.Start();
         int beads = closed ? 0 : BuildFilm(unchecked(seed * 31 + (int)s.Owner), in look, ctx.Time);
-        PerfProbe.Stop(PerfProbe.Slot.Film, t0);
         Vector2 cupUv = MeshDraw.WhiteUv(ctx.Time);
 
-        t0 = PerfProbe.Start(); DrawShadow(dl, n, depth, alpha, in ctx); PerfProbe.Stop(PerfProbe.Slot.Shadow, t0);
-        t0 = PerfProbe.Start();
-        if (cups + beads > 0) FlushCups(dl, behind: true, cupUv);       // cups round the far side: the body hides them, except where they stick out past its edge
-        PerfProbe.Stop(PerfProbe.Slot.CupsBack, t0);
-        t0 = PerfProbe.Start(); DrawBody(dl, n, tier, in look, in ctx); PerfProbe.Stop(PerfProbe.Slot.Body, t0);
-        t0 = PerfProbe.Start(); DrawGlints(dl, n, in look, in ctx); PerfProbe.Stop(PerfProbe.Slot.Glints, t0);
-        t0 = PerfProbe.Start();
+        DrawShadow(dl, n, depth, alpha, in ctx);
+        if (cups + beads > 0) FlushCups(dl, behind: true, cupUv);  // cups round the far side: the body hides them, except where they stick out past its edge
+        DrawBody(dl, n, tier, in look, in ctx);
+        DrawGlints(dl, n, in look, in ctx);
         if (!closed && _rp.BumpWave > 0f) DrawSparkles(dl, n, cupUv, in look);
-        PerfProbe.Stop(PerfProbe.Slot.Sparkles, t0);
-        t0 = PerfProbe.Start();
-        if (cups + beads > 0) FlushCups(dl, behind: false, cupUv);      // cups and slime on this side, over the body and its highlights
-        PerfProbe.Stop(PerfProbe.Slot.CupsFront, t0);
-        t0 = PerfProbe.Start();
+        if (cups + beads > 0) FlushCups(dl, behind: false, cupUv);  // cups and slime on this side, over the body and its highlights
         if (beads > 0) DrawBeadGlints(dl, cupUv, in look);
-        PerfProbe.Stop(PerfProbe.Slot.BeadGlints, t0);
 
         if (s.TipFlare > 0.001f && !closed)
         {
@@ -324,7 +304,7 @@ public sealed class StrokeParasite : IStrokeMaterial
         }
     }
 
-    // ---- Cross-sections ----
+    // Cross-sections
 
     private int BuildRows(StrandPath path, float total, float visibleLen, bool closed, bool flushStart, float reveal,
                           Tier tier, int seed, float phase, float twist, float time, float px, float depth, in Look look)
@@ -333,14 +313,13 @@ public sealed class StrokeParasite : IStrokeMaterial
         PreparePointTangents(path, pn, closed);
 
         float diameter = look.Diameter, radius = look.Radius;
-        // Rows are cut finely enough to carry the highlight breakup and the skin pattern, however thick the limb:
-        // a fraction of the diameter alone would leave a 150 px arm with a row every 30 px.
+        // Rows are cut finely enough to carry the highlight breakup and the skin pattern
         float step = Math.Clamp(diameter * tier.StepFrac, 4.5f * px, 11f * px);
 
-        // ---- how this tentacle moves and looks, reseeded from its seed ----
+        // how this tentacle moves and looks, reseeded from its seed
         path.SampleAtArc(0f, out Vector2 basePos, out _);
         path.SampleAtArc(total, out Vector2 tipPos, out _);
-        float flowSign = closed || tipPos.Y >= basePos.Y ? 1f : -1f;      // slime runs down the screen: toward whichever end is lower
+        float flowSign = closed || tipPos.Y >= basePos.Y ? 1f : -1f;  // slime runs down the screen: toward whichever end is lower
 
         // Closed loops keep every periodic term to a whole number of cycles, so the seam cannot be found.
         float Rate(float wavelength) => closed ? MathF.Max(1f, MathF.Round(total / wavelength)) / total : 1f / wavelength;
@@ -348,7 +327,7 @@ public sealed class StrokeParasite : IStrokeMaterial
         _rp = new RowParams
         {
             Total = total, VisibleLen = visibleLen, Reveal = reveal, Closed = closed,
-            Growing = 1f - DrawHelpers.Smooth((reveal - 0.90f) / 0.10f),              // the front of a growing tentacle is drawn out to a point
+            Growing = 1f - DrawHelpers.Smooth((reveal - 0.90f) / 0.10f),  // the front of a growing tentacle is drawn out to a point
             Diameter = diameter, Radius = radius, Px = px, Depth = depth, Time = time, Twist = twist,
             Margin = diameter * 1.6f, ScreenW = _screenW, ScreenH = _screenH,
             FieldScale = MathF.Min(diameter, 70f * px),
@@ -362,7 +341,7 @@ public sealed class StrokeParasite : IStrokeMaterial
             Scroll = flowSign * (time + phase * 3.1f) * 24f * px,
             WobbleRate = Rate(diameter * 6.4f), ToneRateA = Rate(diameter * 4.3f), ToneRateB = Rate(diameter * 9.1f),
             PitchRate = Rate(diameter * 13f), TwistRate = Rate(diameter * 40f),
-            // Skin relief. Rows are `step` apart and Gouraud shading turns anything under ~4 samples a wavelength into blocky smudges, so the warts are ~4.6 rows a wavelength. Only on limbs cut finely enough to carry it (not the coarse tiers, not loops).
+            // Skin relief.
             BumpWave = (!closed && tier.Cols >= 11) ? MathF.Max(3.9f * step, 0.25f * diameter) : 0f,
             BumpOff = DrawHelpers.HashRange(seed + 91, 0f, 200f),
             FoldWave = diameter * 0.30f,
@@ -395,12 +374,12 @@ public sealed class StrokeParasite : IStrokeMaterial
         return count;
     }
 
-    /// <summary>Everything about one cross-section that depends on where and when: width, belly line, wetness, highlights, skin coordinates. Arc, P, T and the cap fields must be set first. Shared by the body rows and every sucker, so a cup sees exactly the skin the body is drawn with.</summary>
+    /// <summary>Everything about one cross-section that depends on where and when: width, belly line, wetness, highlights, skin coordinates.</summary>
     private static void FillRow(ref Row r, in RowParams p, in Look look)
     {
         float sArc = r.Arc;
         bool closed = p.Closed;
-        float total = p.Total, diameter = p.Diameter, time = p.Time, fs = p.FieldScale;
+        float total = p.Total, time = p.Time, fs = p.FieldScale;
 
         Vector2 c = r.P;
         // The margin is on every side: a tube whose centre line is past the bottom or right border still reaches back onto the screen.
@@ -408,8 +387,7 @@ public sealed class StrokeParasite : IStrokeMaterial
         float u = total > 1f ? sArc / total : 0f;
         if (!r.On)
         {
-            // Nothing here is seen, but the body is shaded in whole chunks and this row can sit beside one that is. The row array is
-            // shared by every tentacle drawn with this material, so leave plain values, not whatever the last tentacle put in this slot.
+            // Nothing here is seen, but the body is shaded in whole chunks and this row can sit beside one that is.
             r.Radius = p.Radius * Taper(u, closed) * r.CapW;
             r.SinA = 0f; r.CosA = 1f; r.Psi = 0f; r.Tone = 1f; r.Wet = 0f; r.LumpTilt = 0f; r.Feather = 0f;
             r.Glint = r.GlintX = r.Glint2 = r.GlintX2 = 0f;
@@ -417,9 +395,7 @@ public sealed class StrokeParasite : IStrokeMaterial
             return;
         }
 
-        // ---- width: taper, a slow muscular swell, slime lumps, and perspective ----
-        // Agitation adds a second, faster wave of its own amplitude. It must not scale the RATE: phase is time * rate, so a rate that
-        // follows Agitation turns every change in Agitation into a phase leap of (time * change), thousands of radians an hour in.
+        // width: taper, a slow muscular swell, slime lumps, and perspective: Agitation adds a second, faster wave of its own amplitude.
         float swellPhase = MathF.Tau * sArc * p.WobbleRate + p.Ph1;
         float swell = 1f + 0.045f * MathF.Sin(swellPhase - time * 1.7f)
                          + 0.030f * look.Agit * MathF.Sin(swellPhase - time * 4.7f);
@@ -448,7 +424,7 @@ public sealed class StrokeParasite : IStrokeMaterial
         float lumpBehind = DrawHelpers.Smooth((Field(sArc - h, total, closed, fs * 2.4f, p.OffA, p.Scroll * 0.8f) - 0.46f) / 0.28f);
         r.LumpTilt = -(lumpAhead - lumpBehind) * 0.85f * wetField;
 
-        // ---- the belly line: turns slowly down the strand, drifts with time, and follows Twist ----
+        // the belly line: turns slowly down the strand, drifts with time, and follows Twist
         float psi = p.Psi0 + MathF.Tau * sArc * p.TwistRate + 0.45f * MathF.Sin(0.31f * time + p.Ph3);
         if (p.Twist != 0f) psi += p.Twist * (closed ? 1f : MathF.Sin(MathF.PI * u));
         if (look.Agit > 0.01f) psi += look.Agit * 0.05f * MathF.Sin(time * 17f + MathF.Tau * sArc * p.ToneRateA * 0.5f);
@@ -457,17 +433,17 @@ public sealed class StrokeParasite : IStrokeMaterial
         r.Tone = 1f + 0.07f * MathF.Sin(MathF.Tau * sArc * p.ToneRateA + p.Ph3) + 0.04f * MathF.Sin(MathF.Tau * sArc * p.ToneRateB + p.Ph1);
         r.Feather = (1.0f + 2.2f * p.Depth) * p.Px * (1f + 0.4f * MathF.Sin(MathF.Tau * sArc * p.ToneRateB + p.Ph2));
 
-        // ---- highlight strips: where each light's reflection falls on this stretch of tube ----
+        // highlight strips: where each light's reflection falls on this stretch of tube
         float breakup = DrawHelpers.Smooth((Field(sArc, total, closed, fs * 1.7f, p.OffC, p.Scroll * 1.2f) - 0.30f) / 0.30f);
         Glint(KeyHalf, r.T, r.SinA, r.CosA, r.Radius, breakup, wetField, 9f, out r.Glint, out r.GlintX);
         float breakup2 = DrawHelpers.Smooth((Field(sArc, total, closed, fs * 2.1f, p.OffC + 91f, p.Scroll * 0.9f) - 0.34f) / 0.30f);
         Glint(FillHalf, r.T, r.SinA, r.CosA, r.Radius, breakup2, wetField, 7f, out r.Glint2, out r.GlintX2);
 
-        // ---- skin relief ----
+        // skin relief
         if (p.BumpWave > 0f && look.Detail > 0.45f)
         {
             float gate = r.CapW * r.CapW;
-            // Transverse folds: irregular rings round the arm, as a contracting limb's skin gathers. The phase is warped by noise so they do not stack like a coil.
+            // Transverse folds: irregular rings round the arm, as a contracting limb's skin gathers.
             float fph = MathF.Tau * sArc / p.FoldWave + 1.6f * Noise.Value(sArc / (p.FoldWave * 2.7f) + p.BumpOff, 3.1f);
             (float fs0, float fc0) = MathF.SinCos(fph);
             float fold = FoldDepth * gate;
@@ -475,12 +451,12 @@ public sealed class StrokeParasite : IStrokeMaterial
             r.LumpTilt -= fold * FoldTilt * fc0;
 
             r.WX = sArc / p.BumpWave + p.BumpOff;
-            r.WRing = 0.5f * p.Diameter * Taper(u, false) / p.BumpWave;      // the static radius, so the pattern does not breathe with the swell
+            r.WRing = 0.5f * p.Diameter * Taper(u, false) / p.BumpWave;  // the static radius, so the pattern does not breathe with the swell
             r.BumpAmp = BumpHeightFrac * r.Radius * gate;
         }
         else { r.WX = r.WRing = r.BumpAmp = 0f; }
 
-        // ---- skin pattern coordinates (periodic on a closed loop) ----
+        // skin pattern coordinates (periodic on a closed loop)
         if (closed)
         {
             float a = MathF.Tau * sArc / total;
@@ -495,7 +471,7 @@ public sealed class StrokeParasite : IStrokeMaterial
         }
     }
 
-    /// <summary>Where a light's reflection falls on a tube, and how strongly: a cylinder reflects along a line (brightest square to the light) that breaks up as the tube curves. Returns strength and offset across the tube.</summary>
+    /// <summary>Where a light's reflection falls on a tube</summary>
     private static void Glint(Vector3 half, Vector2 t, float sinA, float cosA, float radius, float breakup, float wet,
                               float sharpness, out float strength, out float across)
     {
@@ -509,7 +485,7 @@ public sealed class StrokeParasite : IStrokeMaterial
         strength = MathF.Pow(hPerp, sharpness) * (0.25f + 0.75f * breakup) * wet;
     }
 
-    /// <summary>A slow 0..1 field along the strand, scrolling at scroll px (slime creeping downhill); sampled round a circle on a closed loop, so there is no seam.</summary>
+    /// <summary>A slow 0..1 field along the strand, scrolling at scroll px (slime creeping downhill); sampled round a circle on a closed loop</summary>
     private static float Field(float sArc, float total, bool closed, float scale, float offset, float scroll)
     {
         float s = sArc - scroll;
@@ -584,7 +560,7 @@ public sealed class StrokeParasite : IStrokeMaterial
         t = len > 1e-4f ? d / len : _pointTan[seg];
     }
 
-    // ---- Shadow: a soft band under the tentacle, narrowing with it ----
+    // Shadow: a soft band under the tentacle, narrowing with it
 
     private static readonly float[] ShadowAcross = { -1f, -0.55f, 0f, 0.55f, 1f };
     private static readonly float[] ShadowProfile = { 0f, 0.62f, 1f, 0.62f, 0f };
@@ -634,11 +610,11 @@ public sealed class StrokeParasite : IStrokeMaterial
         }
     }
 
-    // ---- Body ----
+    // Body
 
     private void DrawBody(ImDrawListPtr dl, int rowCount, Tier tier, in Look look, in MaterialContext ctx)
     {
-        int stride = tier.Cols + 2;                      // plus the two soft-edge columns
+        int stride = tier.Cols + 2;  // plus the two soft-edge columns
         int chunkRows = MeshDraw.MaxVerts / stride;
         Vector2 uv = MeshDraw.WhiteUv(ctx.Time);
 
@@ -667,11 +643,11 @@ public sealed class StrokeParasite : IStrokeMaterial
             }
 
             if (r1 == r0) break;
-            r0 = r1;                                     // the seam row is shared, so chunks join exactly
+            r0 = r1;  // the seam row is shared, so chunks join exactly
         }
     }
 
-    /// <summary>The wart field at every vertex of the body: one noise sample each. Positions are the same ring-and-twist coordinates the mottling uses, so the bumps ride round with the belly line.</summary>
+    /// <summary>The wart field at every vertex of the body: one noise sample each.</summary>
     private bool BuildBumps(int rowCount, Tier tier, in Look look)
     {
         if (_rp.BumpWave <= 0f || look.Detail <= 0.45f) return false;
@@ -709,7 +685,7 @@ public sealed class StrokeParasite : IStrokeMaterial
         float detail = look.Detail;
         (float sPsi, float cPsi) = MathF.SinCos(row.Psi);
 
-        // The mottling is smooth (blotches a hundred pixels across; a column is ~14 px), so sample it at every second column and average between: half the noise lookups.
+        // The mottling is smooth (blotches a hundred pixels across; a column is ~14 px)
         Span<float> mott = stackalloc float[nc];
         bool mottle = detail > 0.45f;
         if (mottle)
@@ -736,9 +712,9 @@ public sealed class StrokeParasite : IStrokeMaterial
                 int cl = c > 0 ? c - 1 : 0, cr = c < nc - 1 ? c + 1 : nc - 1;
                 float dTheta = (cr - cl) * (MathF.PI / (nc - 1f)) * rad;
                 tiltT = dTheta > 1e-3f ? Math.Clamp(amp * (hgt[ho + cr] - hgt[ho + cl]) / dTheta, -0.6f, 0.6f) * BumpTilt : 0f;
-                hw = hw * amp;                                  // now in px
+                hw = hw * amp;  // now in px
             }
-            outP[vb + 1 + c] = row.P + perp * (u * (rad + hw * 0.45f));          // the silhouette is lumpy too
+            outP[vb + 1 + c] = row.P + perp * (u * (rad + hw * 0.45f));  // the silhouette is lumpy too
 
             // Normal: the cross-section's own (round the tube), tilted along it by pitch, the end cap and the slime lumps.
             float across = u * capW;
@@ -758,8 +734,7 @@ public sealed class StrokeParasite : IStrokeMaterial
 
             Matcap.SamplePair(Flesh, Coat, nx, ny, out Vector3 col, out Vector3 gloss);
 
-            // Position on the tentacle's own surface, measured from its belly line. This turns with Twist.
-            // phi = theta[c] + Psi: its sine and cosine are the column's (tabulated) plus the row's (worked out once per row), by angle addition.
+            // Position on the tentacle's own surface, measured from its belly line.
             float cosPhi = co * cPsi - u * sPsi;
             float belly = cosPhi;
             Vector3 tint = Vector3.Lerp(DorsalTint, VentralTint, DrawHelpers.Smooth((belly + 0.2f) / 1.0f));
@@ -768,12 +743,11 @@ public sealed class StrokeParasite : IStrokeMaterial
             // Mottling: broad blotches and a few dark freckles, painted on the skin (so they ride round with the twist).
             if (mottle)
             {
-                // Round the tube, not along an unwrapped angle: noise is not periodic in phi, so a belly line that has
-                // turned a whole number of times (a closed loop's seam) would otherwise jump to a different pattern.
+                // Round the tube, not along an unwrapped angle: noise is not periodic in phi
                 float m = mott[c];
                 if (hgt != null && row.BumpAmp > 0f)
                 {
-                    // The hollows between warts are darker (they are shaded and holding dirt), the crests a little paler: the cue that makes the tilt read as bumps, not blotches.
+                    // The hollows between warts are darker (they are shaded and holding dirt)
                     float hn0 = hgt[ho + c];
                     float cavity = DrawHelpers.Smooth((-hn0 - 0.10f) / 0.70f);
                     float crest = DrawHelpers.Smooth((hn0 - 0.30f) / 0.70f);
@@ -790,7 +764,7 @@ public sealed class StrokeParasite : IStrokeMaterial
             // The slime coat: a clear gloss over the flesh, thicker and shinier on the underside.
             float wet = row.Wet * (0.80f + 0.20f * ny);
             col = col * (1f - 0.10f * wet);
-            col = col + gloss * wet - col * gloss * wet;     // screen: gloss lightens without clipping
+            col = col + gloss * wet - col * gloss * wet;  // screen: gloss lightens without clipping
 
             if (look.Dye > 0f) col = DrawHelpers.BoostSaturation(col, look.Dye, DrawHelpers.SoftDye);
             if (look.Agit > 0.01f) col += col * (col * (0.45f * look.Agit));
@@ -806,48 +780,39 @@ public sealed class StrokeParasite : IStrokeMaterial
         outC[vb + nc + 1] = outC[vb + nc] & 0x00FFFFFFu;
     }
 
-    // ---- Suckers: real geometry, placed in material coordinates ----
+    // Suckers: real geometry, placed in material coordinates
 
-    // Spacing and size go together: pitch 4% wider than the original 0.85 and cups 2% bigger than the original 0.50, so a cup's share of the arm (size squared over spacing)
-    // is unchanged, and there are 4% fewer of them.
-    private const float SuckerRadiusFrac = 0.51f;       // cup radius, in tube radii (of the static profile)
-    private const float SuckerRowAngle   = 0.72f;       // each row sits this far (rad) either side of the belly line
-    private const float SuckerPitch      = 0.884f;      // spacing along a row, in tube diameters
+    // Spacing and size go together: pitch 4% wider than the original 0.85 and cups 2% bigger than the original 0.50
+    private const float SuckerRadiusFrac = 0.51f;  // cup radius, in tube radii (of the static profile)
+    private const float SuckerRowAngle   = 0.72f;  // each row sits this far (rad) either side of the belly line
+    private const float SuckerPitch      = 0.884f;  // spacing along a row, in tube diameters
 
-    // Toward the tip the cups are tiny and a tentacle's point reads as a point whatever is on it, yet spacing in local diameters would keep them packing in as the arm
-    // thins (28% of all cups sat in the last tenth, at about 5 px). So the spacing opens up smoothly from the original at TipThinStart to (1 + TipThinExtra) times it at the tip.
-    private const float TipThinStart = 0.50f;           // fraction of the arm at which cups start to thin out
-    private const float TipThinExtra = 1.00f;           // extra spacing at the very tip: 1.0 means twice the spacing there (0 turns it off). Measured: 0.6 = 25% fewer cups, 1.0 = 33%, 1.5 = 40% (and bare-looking)
-    private const float SuckerFirst      = 1.35f;       // the first cup, in pitches from the root
-    private const float SuckerLift       = 1.20f;       // how tall a cup stands, in cup radii
+    // Toward the tip the cups are tiny and a tentacle's point reads as a point whatever is on it
+    private const float TipThinStart = 0.50f;  // fraction of the arm at which cups start to thin out
+    private const float TipThinExtra = 1.00f;  // extra spacing at the very tip: 1.0 means twice the spacing there (0 turns it off).
+    private const float SuckerFirst      = 1.35f;  // the first cup, in pitches from the root
+    private const float SuckerLift       = 1.20f;  // how tall a cup stands, in cup radii
     private const int   MaxCups          = 96;
-    private const int   ProfileSteps     = 96;          // resolution of the table that places cups along the taper
+    private const int   ProfileSteps     = 96;  // resolution of the table that places cups along the taper
 
-    // The cup is a surface of revolution about the skin's normal. Its profile, from outside in: a soft
-    // contact shadow on the skin; a skirt rising off it; the outer wall; a rounded rim; the steep inner wall;
-    // and a floor with a slight dome. rho is the distance from the cup's axis and z the height above the skin,
-    // both in cup radii. These are the full 15-ring profile; CupRings below says which of them are actually built.
+    // The cup is a surface of revolution about the skin's normal.
     private static readonly float[] CupRhoFull    = { 1.64f, 1.40f, 1.20f, 1.10f, 1.00f, 0.94f, 0.88f, 0.80f, 0.72f, 0.65f, 0.60f, 0.52f, 0.40f, 0.24f, 0.00f };
     private static readonly float[] CupZFull      = { 0.00f, 0.00f, 0.02f, 0.14f, 0.34f, 0.54f, 0.70f, 0.80f, 0.78f, 0.66f, 0.48f, 0.30f, 0.19f, 0.15f, 0.20f };
     private static readonly float[] CupAlphaFull  = { 0.00f, 0.42f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f };
     // How open to the sky each ring is: the skirt sits in its own contact shadow and the cavity is deep in the cup.
     private static readonly float[] CupOpenFull   = { 1.00f, 1.00f, 0.90f, 0.95f, 0.98f, 1.00f, 1.00f, 1.06f, 1.00f, 0.92f, 0.76f, 0.58f, 0.46f, 0.42f, 0.50f };
-    private const int FirstFleshRing = 2;               // rings before this (in the FULL profile) are the contact shadow
+    private const int FirstFleshRing = 2;  // rings before this (in the FULL profile) are the contact shadow
 
-    /// <summary>
-    /// Which of the full profile's rings are built. Cost is per ring: every ring is a row of vertices to shade and a row of quads to sort and draw, on
-    /// every cup, every frame. The smooth stretches (the skirt, the rim's shoulder, the inner wall, the cavity) lose a ring each; the shadow ramp,
-    /// the rim's crest (7) and the floor stay. Normals come from the full profile, so what is built shades as it did. All 15 (0..14) restores the full cup.
-    /// </summary>
+    /// <summary>Which of the full profile's rings are built.</summary>
     private static readonly int[] CupRings = { 0, 1, 2, 4, 5, 7, 8, 10, 11, 14 };
-    private static readonly int FirstFlesh = Array.IndexOf(CupRings, FirstFleshRing);        // the same boundary, as an index into the rings actually built
+    private static readonly int FirstFlesh = Array.IndexOf(CupRings, FirstFleshRing);  // the same boundary, as an index into the rings actually built
 
     private static float[] PickRings(float[] full) { var t = new float[CupRings.Length]; for (int i = 0; i < t.Length; i++) t[i] = full[CupRings[i]]; return t; }
     private static readonly float[] CupRho = PickRings(CupRhoFull), CupZ = PickRings(CupZFull), CupAlpha = PickRings(CupAlphaFull), CupOpen = PickRings(CupOpenFull);
-    private static readonly int FirstCavity = Array.IndexOf(CupRings, 10);              // rings from here on are inside the cup (ring 10 of the full profile on)
-    private static readonly Vector3 CupTint = new(1.00f, 0.78f, 0.84f);          // inside a cup the flesh is pinker and softer
+    private static readonly int FirstCavity = Array.IndexOf(CupRings, 10);  // rings from here on are inside the cup (ring 10 of the full profile on)
+    private static readonly Vector3 CupTint = new(1.00f, 0.78f, 0.84f);  // inside a cup the flesh is pinker and softer
 
-    /// <summary>The profile's outward normal at each ring, as (along rho, along z). Derived from the profile itself so shape and shading cannot disagree.</summary>
+    /// <summary>The profile's outward normal at each ring, as (along rho, along z).</summary>
     private static readonly (float Rho, float Z)[] CupNormal = ProfileNormals();
 
     private static (float, float)[] NormalsOf(float[] rho, float[] z)
@@ -862,7 +827,7 @@ public sealed class StrokeParasite : IStrokeMaterial
             // The profile runs inward over the top of the solid, so its outward normal is (dz, -drho).
             normals[j] = len > 1e-6f ? (dZ / len, -dRho / len) : (0f, 1f);
         }
-        normals[n - 1] = (0f, 1f);                       // the axis: straight out
+        normals[n - 1] = (0f, 1f);  // the axis: straight out
         return normals;
     }
 
@@ -874,11 +839,10 @@ public sealed class StrokeParasite : IStrokeMaterial
         return picked;
     }
 
-    // A cup's angular resolution follows its size on screen: most cups are small (they shrink along the taper) and a
-    // 6 px cup does not need 24 segments. Unit-circle tables by segment count; a quad stores its stride in its index.
+    // A cup's angular resolution follows its size on screen: most cups are small (they shrink along the taper) and a 6 px cup does not need 24 segments.
     private static readonly float[][] CupSinBy = CircleTables(false), CupCosBy = CircleTables(true);
-    private static readonly int[] StrideOf = { 9, 11, 13, 15, 17, 19, 21, 23, 25 };      // segments 8, 10, ... 24, plus one
-    private const int StrideShift = 20;                                                  // quad = (stride code << 20) | first vertex
+    private static readonly int[] StrideOf = { 9, 11, 13, 15, 17, 19, 21, 23, 25 };  // segments 8, 10, ... 24, plus one
+    private const int StrideShift = 20;  // quad = (stride code << 20) | first vertex
 
     private static float[][] CircleTables(bool cos)
     {
@@ -891,20 +855,19 @@ public sealed class StrokeParasite : IStrokeMaterial
         return tables;
     }
 
-    private const int MaxBeads = 32;                                               // slime beads per tentacle (see the film below)
-    private const int MaxCupVerts = MaxCups * 15 * 25 + MaxBeads * 5 * 11;         // cups and beads share one vertex pool and one painter's pool
+    private const int MaxBeads = 32;  // slime beads per tentacle (see the film below)
+    private const int MaxCupVerts = MaxCups * 15 * 25 + MaxBeads * 5 * 11;  // cups and beads share one vertex pool and one painter's pool
     private const int MaxCupQuads = MaxCups * 14 * 24 + MaxBeads * 4 * 10;
 
     private readonly Vector2[] _cupPos = new Vector2[MaxCupVerts];
     private readonly uint[]    _cupCol = new uint[MaxCupVerts];
-    private readonly float[]   _cupZ   = new float[MaxCupVerts];        // depth toward the viewer
-    private readonly float[]   _cupNz  = new float[MaxCupVerts];        // the normal's component toward the viewer
-    private readonly float[]   _cupSide = new float[MaxCupVerts];       // cosine of the point's angle round the tube: > 0 on the half facing the viewer
+    private readonly float[]   _cupZ   = new float[MaxCupVerts];  // depth toward the viewer
+    private readonly float[]   _cupNz  = new float[MaxCupVerts];  // the normal's component toward the viewer
+    private readonly float[]   _cupSide = new float[MaxCupVerts];  // cosine of the point's angle round the tube: > 0 on the half facing the viewer
     private int _cupVerts;
     private int[] _remap = new int[MaxCupVerts];
 
-    // Quads that face the viewer, split by whether they lie behind the tube's silhouette plane (drawn before the
-    // body, so the body hides what it should and what sticks out past its edge shows) or in front of it (drawn after).
+    // Quads that face the viewer, split by whether they lie behind the tube's silhouette plane (drawn before the body, so the body
     private readonly float[] _keyBack = new float[MaxCupQuads], _keyFront = new float[MaxCupQuads];
     private readonly int[]   _quadBack = new int[MaxCupQuads],  _quadFront = new int[MaxCupQuads];
     private int _nBack, _nFront;
@@ -912,17 +875,15 @@ public sealed class StrokeParasite : IStrokeMaterial
     private readonly float[] _profileN = new float[ProfileSteps + 1];
     private readonly MeshBuilder _cupMeshBack = new(), _cupMeshFront = new();
 
-    /// <summary>Builds every sucker. A cup's place is a function of material coordinates alone (fraction along the arm, angle from the belly line), evaluated exactly rather than on the nearest row, so it rides the skin steadily as the strand moves, stretches and grows; growth only scales it up.</summary>
+    /// <summary>Builds every sucker.</summary>
     private int BuildSuckers(StrandPath path, Tier tier, in Look look, float px)
     {
         _cupVerts = 0; _nBack = 0; _nFront = 0;
-        int segs = tier.SuckerSegs;
-
         ref readonly RowParams p = ref _rp;
         int pn = Math.Min(path.Count, MaxPathPoints);
         float total = p.Total, diameter = p.Diameter;
         bool closed = p.Closed;
-        float scaleN = total / (SuckerPitch * diameter);          // cups per row along the whole arm, if it did not taper
+        float scaleN = total / (SuckerPitch * diameter);  // cups per row along the whole arm, if it did not taper
 
         int cups = 0;
         if (closed)
@@ -949,10 +910,10 @@ public sealed class StrokeParasite : IStrokeMaterial
         {
             for (int r = 0; r < 2; r++)
             {
-                float n = SuckerFirst + m + 0.5f * r;                  // the second row sits half a pitch behind the first
+                float n = SuckerFirst + m + 0.5f * r;  // the second row sits half a pitch behind the first
                 if (n >= nTotal - 0.6f) return cups;
                 float u = UFromN(n);
-                if (u * total > p.VisibleLen) return cups;             // beyond the growing tip; later ones are further still
+                if (u * total > p.VisibleLen) return cups;  // beyond the growing tip; later ones are further still
                 cups += AddSucker(u, r, path, pn, tier, in look, px) ? 1 : 0;
             }
         }
@@ -972,7 +933,7 @@ public sealed class StrokeParasite : IStrokeMaterial
         return (lo + f) / ProfileSteps;
     }
 
-    /// <summary>Builds one cup at fraction u of the way along the arm, in belt <paramref name="rowIndex"/> (0 or 1).</summary>
+    /// <summary>Builds one cup at fraction u of the way along the arm, in belt rowIndex (0 or 1).</summary>
     private bool AddSucker(float u, int rowIndex, StrandPath path, int pn, Tier tier, in Look look, float px)
     {
         ref readonly RowParams p = ref _rp;
@@ -981,7 +942,7 @@ public sealed class StrokeParasite : IStrokeMaterial
         // Size comes from the static profile (not the breathing, lumpy live radius), so a cup does not pulse with the swell.
         float refR = 0.5f * p.Diameter * Taper(u, p.Closed);
         float grow = p.Closed ? 1f : DrawHelpers.Smooth((p.VisibleLen - sArc) / (1.7f * refR + 1f));
-        float small = DrawHelpers.Smooth((2f * refR - 6f * px) / (7f * px));       // fades out smoothly as the arm thins to nothing
+        float small = DrawHelpers.Smooth((2f * refR - 6f * px) / (7f * px));  // fades out smoothly as the arm thins to nothing
         float k = grow * small;
         if (k < 0.02f) return false;
         float rc = SuckerRadiusFrac * refR * k;
@@ -1000,7 +961,7 @@ public sealed class StrokeParasite : IStrokeMaterial
         if (MathF.Cos(theta) < -0.72f) return false;
 
         BuildCup(in row, theta, rc, k, tier, in look);
-        if (_obstN < _obst.Length) _obst[_obstN++] = (sArc, belt, rc);              // the film flows round it
+        if (_obstN < _obst.Length) _obst[_obstN++] = (sArc, belt, rc);  // the film flows round it
         return true;
     }
 
@@ -1017,13 +978,12 @@ public sealed class StrokeParasite : IStrokeMaterial
         float sa = row.SinA, ca = row.CosA;
         float skin = row.Radius;
         float lift = SuckerLift * rc;
-        Vector3 axial = new(T.X * ca, T.Y * ca, sa);                    // the tube's axis direction in view space
+        Vector3 axial = new(T.X * ca, T.Y * ca, sa);  // the tube's axis direction in view space
         float alphaK = visible * look.Alpha;
         float wet = MathF.Max(0.65f, row.Wet);
         Vector2 shadowShift = StudioLighting.ShadowDirection * (rc * 0.30f);
 
-        // Every vertex of the cup sits at the cup's own angle plus a small offset d = y / skin, so its sine and cosine come from the cup's
-        // (worked out once here) by angle addition. The belly term wants cos(angle + Psi), which is the same addition again. No trig per vertex.
+        // Every vertex of the cup sits at the cup's own angle plus a small offset d = y / skin
         (float sTh, float cTh) = MathF.SinCos(theta);
         (float sTp, float cTp) = MathF.SinCos(theta + row.Psi);
         float invSkin = 1f / skin;
@@ -1033,20 +993,20 @@ public sealed class StrokeParasite : IStrokeMaterial
             float rho = CupRho[j] * rc;
             float z = CupZ[j] * lift;
             (float nR, float nZ) = CupNormal[j];
-            RingShade shade = new(j, in row, wet, alphaK, in look);
+            RingShade shade = new(j, in row, wet, alphaK);
 
             // The last ring is the cup's axis: rho = 0, so every vertex on it is the same vertex. Work it out once.
             int count = j == rings - 1 ? 1 : stride;
             for (int i = 0; i < count; i++)
             {
                 float cs = cupCos[i], sn = cupSin[i];
-                float x = rho * cs, y = rho * sn;                       // along the tube, and round it, in px
+                float x = rho * cs, y = rho * sn;  // along the tube, and round it, in px
 
                 // The cup lies on the tube's surface, not on a flat plane: moving round it by y turns the radial direction by y/R.
                 float d = y * invSkin, sD, cD;
                 if (MathF.Abs(d) <= 1.2f)
                 {
-                    // Taylor series to d^9 and d^10: good to ~2e-7 over |d| <= 1.2, which every cup on a tube stays inside. Anything wider uses the library.
+                    // Taylor series to d^9 and d^10: good to ~2e-7 over |d| <= 1.2, which every cup on a tube stays inside.
                     float d2 = d * d;
                     sD = d * (1f + d2 * (-1f / 6f + d2 * (1f / 120f + d2 * (-1f / 5040f + d2 * (1f / 362880f)))));
                     cD = 1f + d2 * (-0.5f + d2 * (1f / 24f + d2 * (-1f / 720f + d2 * (1f / 40320f + d2 * (-1f / 3628800f)))));
@@ -1057,8 +1017,8 @@ public sealed class StrokeParasite : IStrokeMaterial
                 Vector3 round = new(perp.X * cT + T.X * sa * sT, perp.Y * cT + T.Y * sa * sT, -ca * sT);
 
                 Vector3 pos = new Vector3(row.P.X, row.P.Y, 0f) + axial * x + ncyl * (skin + z);
-                Vector3 radial = axial * cs + round * sn;               // the cup's own outward direction at this angle
-                // axial, ncyl and round are an orthonormal frame, so radial is a unit vector at right angles to ncyl, and the profile normal (nR, nZ) is unit: no normalising needed.
+                Vector3 radial = axial * cs + round * sn;  // the cup's own outward direction at this angle
+                // axial, ncyl and round are an orthonormal frame, so radial is a unit vector at right angles to ncyl
                 Vector3 n3 = radial * nR + ncyl * nZ;
 
                 int v = vb + j * stride + i;
@@ -1081,13 +1041,11 @@ public sealed class StrokeParasite : IStrokeMaterial
         PushQuads(vb, rings, segs, stride, strideCode, CupZ, lift, theta, FirstFlesh);
     }
 
-    /// <summary>Sorts the quads of one just-built surface blob (cup or bead) into the painter's pools. <paramref name="zTab"/> is the profile's height per ring, scaled by <paramref name="lift"/>; rings before <paramref name="firstFlesh"/> are contact shadow, which never goes behind the arm.</summary>
+    /// <summary>Sorts the quads of one just-built surface blob (cup or bead) into the painter's pools. zTab is the profile's height per ring</summary>
     private void PushQuads(int vb, int rings, int segs, int stride, int strideCode, float[] zTab, float lift, float theta, int firstFlesh)
     {
-        // Quads that can be seen. Only strongly back-facing ones are dropped: an edge-on sliver is harmless, while culling it
-        // can leave a hole right beside the silhouette where nothing else covers it (the black crescents beside a cup in profile).
-        // Painter's order (far first) lets whatever is nearer cover the rest.
-        float near = DrawHelpers.Smooth((MathF.Cos(theta) + 0.72f) / 0.87f);       // 0: cup well behind the arm; 1: at or in front of its edge
+        // Quads that can be seen.
+        float near = DrawHelpers.Smooth((MathF.Cos(theta) + 0.72f) / 0.87f);  // 0: cup well behind the arm; 1: at or in front of its edge
         float frontFrom = -0.55f * near;
 
         for (int j = 0; j < rings - 1; j++)
@@ -1098,39 +1056,35 @@ public sealed class StrokeParasite : IStrokeMaterial
             if (nz < -0.35f) continue;
             float z = 0.25f * (_cupZ[v0] + _cupZ[v1] + _cupZ[v2] + _cupZ[v3]);
             float height = 0.5f * (zTab[j] + zTab[j + 1]) * lift;
-            float key = z + 0.35f * height;                              // taller parts win a tie where the depths barely differ
+            float key = z + 0.35f * height;  // taller parts win a tie where the depths barely differ
 
-            // Which side of the body a quad is on is a question about the tube's cross-section, not about its depth (on a pitched
-            // tube, moving along the axis shifts z): split on the angle round the tube. The body is drawn between the two groups,
-            // so the back group is what the arm hides. Strictly that is everything past the silhouette plane, but a cup AT the
-            // edge then reads as sliced off flat along it; so near the edge the plane is moved back, letting the cup's base
-            // overlap the arm's outline, and it returns to the true plane as the cup goes round behind the arm.
+            // Which side of the body a quad is on is a question about the tube's cross-section
             float side = 0.25f * (_cupSide[v0] + _cupSide[v1] + _cupSide[v2] + _cupSide[v3]);
             int code = (strideCode << StrideShift) | v0;
 
             if (side >= frontFrom) { if (_nFront < MaxCupQuads) { _keyFront[_nFront] = key; _quadFront[_nFront++] = code; } }
-            else if (j >= firstFlesh)                                       // the contact shadow lies on skin the arm hides: never behind it
+            else if (j >= firstFlesh)  // the contact shadow lies on skin the arm hides: never behind it
             {
                 if (_nBack < MaxCupQuads) { _keyBack[_nBack] = key; _quadBack[_nBack++] = code; }
             }
         }
     }
 
-    /// <summary>What colouring one ring of a cup needs that does not change from vertex to vertex round it: worked out once per ring, not once per vertex.</summary>
+    /// <summary>What colouring one ring of a cup needs that does not change from vertex to vertex round it: worked out once per ring</summary>
     private readonly struct RingShade
     {
         public readonly bool Shadow, Cavity, Fixed;
         public readonly float Alpha, Blend, ToneOpen, Wet, Keep;
-        public readonly Vector3 FixedTone;                // the whole tint, once the skirt has finished blending into the cup's own flesh
+        public readonly Vector3 FixedTone;  // the whole tint, once the skirt has finished blending into the cup's own flesh
 
-        public RingShade(int ring, in Row row, float wet, float alphaK, in Look look)
+        public RingShade(int ring, in Row row, float wet, float alphaK)
         {
             Alpha = CupAlpha[ring] * alphaK;
             Shadow = ring < FirstFlesh;
             Cavity = ring >= FirstCavity;
-            Blend = DrawHelpers.Smooth((CupRings[ring] - FirstFleshRing) / 3f);          // by the full profile's ring, so the skirt fades over the same distance
+            Blend = DrawHelpers.Smooth((CupRings[ring] - FirstFleshRing) / 3f);  // by the full profile's ring, so the skirt fades over the same distance
             ToneOpen = row.Tone * CupOpen[ring];
-            Wet = wet * (Cavity ? 0.8f : 1f);                 // the same clear gloss as the body, so the cups and the skin around them agree
+            Wet = wet * (Cavity ? 0.8f : 1f);  // the same clear gloss as the body, so the cups and the skin around them agree
             Keep = 1f - 0.10f * Wet;
             Fixed = Blend >= 0.999f;
             FixedTone = Fixed ? VentralTint * 1.04f * ToneOpen * (Cavity ? CupTint : Vector3.One) : Vector3.Zero;
@@ -1141,22 +1095,20 @@ public sealed class StrokeParasite : IStrokeMaterial
     {
         if (r.Shadow)
         {
-            // The contact shadow: the same tint as the tentacle's cast shadow, a little darker. It lies on the skin, so
-            // it fades as the skin turns edge-on (n.Z is the skin's own normal here); left alone it ends in a hard dark wedge at the silhouette.
+            // The contact shadow: the same tint as the tentacle's cast shadow, a little darker.
             return DrawHelpers.WithAlpha(StrandShading.ShadowTint, r.Alpha * 0.9f * DrawHelpers.Smooth(n.Z / 0.45f));
         }
 
-        // The skirt is a fillet: at its foot it takes the colour of the skin it grows from (the same belly-to-back tint the body uses at
-        // that angle), and shades into the cup's own pale flesh over its first few rings. Pale all the way down it reads as a patch on the skin.
+        // The skirt is a fillet: at its foot it takes the colour of the skin it grows from (the same belly-to-back tint the body uses
         Matcap.SamplePair(Flesh, Coat, n.X, n.Y, out Vector3 flesh, out Vector3 gloss);
         Vector3 col;
-        if (r.Fixed) col = flesh * r.FixedTone;                 // most rings: nothing left of the skin's tint to blend
+        if (r.Fixed) col = flesh * r.FixedTone;  // most rings: nothing left of the skin's tint to blend
         else
         {
             Vector3 skinTint = Vector3.Lerp(DorsalTint, VentralTint, DrawHelpers.Smooth(belly + 0.2f));
             Vector3 tint = Vector3.Lerp(skinTint, VentralTint * 1.04f, r.Blend);
             col = flesh * (tint * r.ToneOpen);
-            if (r.Cavity) col *= CupTint;                       // inside a cup the flesh is pinker and softer
+            if (r.Cavity) col *= CupTint;  // inside a cup the flesh is pinker and softer
         }
 
         col = col * r.Keep;
@@ -1178,13 +1130,13 @@ public sealed class StrokeParasite : IStrokeMaterial
         int[] quads = behind ? _quadBack : _quadFront;
         MeshBuilder mesh = behind ? _cupMeshBack : _cupMeshFront;
 
-        SortByKey(keys, quads, n);                                       // far first: the painter's algorithm
+        SortByKey(keys, quads, n);  // far first: the painter's algorithm
 
         mesh.Clear();
-        mesh.Reserve(_cupVerts, 6 * n);                                  // the most this group can need: no capacity test per vertex or triangle below
+        mesh.Reserve(_cupVerts, 6 * n);  // the most this group can need: no capacity test per vertex or triangle below
         if (n * 3 >= _cupVerts)
         {
-            // Most of the pool is in use (the group facing the viewer): copy it whole and index it directly. Cheaper than finding each quad's four vertices in a remap table.
+            // Most of the pool is in use (the group facing the viewer): copy it whole and index it directly.
             mesh.AddBlockReserved(_cupPos, _cupCol, _cupVerts);
             for (int q = 0; q < n; q++)
             {
@@ -1212,11 +1164,7 @@ public sealed class StrokeParasite : IStrokeMaterial
     private readonly int[]  _sortValB = new int[MaxCupQuads];
     private readonly int[]  _sortHist = new int[3 * 2048];
 
-    /// <summary>
-    /// Sorts <paramref name="quads"/>[0..n) by <paramref name="keys"/>[0..n), ascending. The order is exactly that of comparing the floats (only exact ties differ:
-    /// they keep their input order instead of an arbitrary one). A least-significant-digit radix sort on the float's order-preserving integer image,
-    /// three passes of 11 bits: linear in n, no allocation. A comparison sort over the tens of thousands of quads a tentacle's cups make was the largest single cost here.
-    /// </summary>
+    /// <summary>Sorts quads[0..n) by keys[0..n), ascending.</summary>
     private void SortByKey(float[] keys, int[] quads, int n)
     {
         uint[] ka = _sortKeyA, kb = _sortKeyB;
@@ -1225,7 +1173,7 @@ public sealed class StrokeParasite : IStrokeMaterial
         for (int i = 0; i < n; i++)
         {
             uint u = BitConverter.SingleToUInt32Bits(keys[i]);
-            u = (u & 0x80000000u) != 0 ? ~u : (u | 0x80000000u);          // negative floats sort below positive ones, and larger magnitude means smaller
+            u = (u & 0x80000000u) != 0 ? ~u : (u | 0x80000000u);  // negative floats sort below positive ones, and larger magnitude means smaller
             ka[i] = u;
             h[u & 2047]++; h[2048 + ((u >> 11) & 2047)]++; h[4096 + (u >> 22)]++;
         }
@@ -1255,34 +1203,27 @@ public sealed class StrokeParasite : IStrokeMaterial
         return a;
     }
 
-
-    // ---- The slime film: beads that live ON the skin ----
-    //
-    // The beads used to be free 2D particles that followed the arm's centre line at a fixed screen-space offset, drawn over everything: on a 3D arm covered in cups
-    // they read as stickers. Here a bead is a point in material coordinates (fraction of the arm, angle round it from the belly line), so it rides the skin as the arm
-    // stretches, bends and twists; it slides DOWNHILL by the true direction of gravity on that piece of surface (along the arm, and round it toward the underside);
-    // it is a small 3D dome in the same painter's pool as the cups, so a cup's wall hides it where it should; and the cups are obstacles: the film is shoved round a
-    // cup's skirt, and swells where it is held against the rim.
+    // The slime film: beads that live ON the skin
 
     private static readonly LiquidMatcap SlimeMatcap = new(LiquidPresets.Slime);
 
     // A sessile drop in profile, from its soft contact edge in to the crown: radius and height as fractions of the bead's radius.
-    private static readonly float[] BeadRho   = { 1.12f, 0.966f, 0.766f, 0.42f, 0.00f };    // a spherical cap: shoulder at 75 degrees, 50, 25, then the crown
+    private static readonly float[] BeadRho   = { 1.12f, 0.966f, 0.766f, 0.42f, 0.00f };  // a spherical cap: shoulder at 75 degrees, 50, 25, then the crown
     private static readonly float[] BeadZ     = { 0.00f, 0.26f,  0.64f,  0.91f, 1.00f };
     private static readonly float[] BeadAlpha = { 0.00f, 1.00f,  1.00f,  1.00f, 1.00f };
     private static readonly (float, float)[] BeadNormal = NormalsOf(BeadRho, BeadZ);
-    private const float BeadHeight   = 0.92f;                   // crown height as a fraction of the radius: a flattened drop, not a ball
-    private const float BeadDensity  = 0.48f;                   // beads spawned per 100 px of arm per second (the old flow emission used 0.34, but its beads never drained off the arm)
-    private const float RoundDrift   = 0.35f;                   // how much of its downhill speed a bead keeps going round the tube (round the tube is a short way: unchecked, the face empties in seconds)
-    private const float BeadRimGap   = 1.30f;                   // a bead keeps this many cup radii from a cup's axis (the skirt ends at 1.2)
+    private const float BeadHeight   = 0.92f;  // crown height as a fraction of the radius: a flattened drop, not a ball
+    private const float BeadDensity  = 0.48f;
+    private const float RoundDrift   = 0.35f;
+    private const float BeadRimGap   = 1.30f;  // a bead keeps this many cup radii from a cup's axis (the skirt ends at 1.2)
 
     private struct Bead
     {
-        public float U, Beta;          // material coordinates
-        public float Size;             // radius in px
-        public float Age, Life;        // seconds
-        public float Held;             // seconds spent pressed against a cup's rim: the longer, the more it gathers
-        public float Vs, Vr;           // velocity along the arm and round it, px/s
+        public float U, Beta;  // material coordinates
+        public float Size;  // radius in px
+        public float Age, Life;  // seconds
+        public float Held;  // seconds spent pressed against a cup's rim: the longer, the more it gathers
+        public float Vs, Vr;  // velocity along the arm and round it, px/s
         public int   Seed;
     }
 
@@ -1297,7 +1238,7 @@ public sealed class StrokeParasite : IStrokeMaterial
     private readonly List<int> _filmStale = new();
     private float _filmSweep;
 
-    private readonly (float S, float Beta, float R)[] _obst = new (float, float, float)[MaxCups];   // cups this frame: arc length, belt angle, radius
+    private readonly (float S, float Beta, float R)[] _obst = new (float, float, float)[MaxCups];  // cups this frame: arc length, belt angle, radius
     private int _obstN, _rowCount;
 
     private readonly Vector2[] _gPos = new Vector2[MaxBeads];
@@ -1347,14 +1288,14 @@ public sealed class StrokeParasite : IStrokeMaterial
         {
             film = new Film();
             _films[key] = film;
-            int pre = (int)(BeadDensity * p.VisibleLen / 100f * 5f);       // a tentacle that has just appeared is not bare
+            int pre = (int)(BeadDensity * p.VisibleLen / 100f * 5f);  // a tentacle that has just appeared is not bare
             for (int i = 0; i < pre; i++) SpawnBead(film, key, aged: true);
         }
 
         float dt = float.IsNaN(film.Last) ? 0f : Math.Clamp(time - film.Last, 0f, 0.05f);
         film.Last = time;
 
-        if (time - _filmSweep > 1f)                                         // forget films whose tentacle is gone
+        if (time - _filmSweep > 1f)  // forget films whose tentacle is gone
         {
             _filmSweep = time;
             _filmStale.Clear();
@@ -1388,7 +1329,7 @@ public sealed class StrokeParasite : IStrokeMaterial
         ref Bead b = ref f.B[f.N++];
         float thick = Math.Clamp(MathF.Sqrt(p.Diameter / (110f * p.Px)), 0.7f, 1.25f);
         b.U = s / p.Total;
-        b.Beta = DrawHelpers.HashRange(h + 2, -1.25f, 0.55f) + k.Psi;       // on the face turned toward the viewer, leaning to the side gravity will carry it across
+        b.Beta = DrawHelpers.HashRange(h + 2, -1.25f, 0.55f) + k.Psi;  // on the face turned toward the viewer, leaning to the side gravity will carry it across
         b.Size = DrawHelpers.HashRange(h + 3, 4.5f, 8.75f) * p.Px * thick;
         b.Life = DrawHelpers.HashRange(h + 4, 4.5f, 8f);
         b.Age = aged ? DrawHelpers.Hash01(h + 5) * b.Life * 0.8f : 0f;
@@ -1418,18 +1359,18 @@ public sealed class StrokeParasite : IStrokeMaterial
             float gu = k.T.Y * k.Ca;
             float gt = perp.Y * cT + k.T.Y * k.Sa * sT;
             float gm = MathF.Sqrt(gu * gu + gt * gt);
-            float push = DrawHelpers.Smooth((gm - 0.10f) / 0.30f);          // on a near-level patch the film is held by its own stickiness
-            float speed = (24f + 2f * b.Size / px) * px;                    // a heavier bead runs faster
+            float push = DrawHelpers.Smooth((gm - 0.10f) / 0.30f);  // on a near-level patch the film is held by its own stickiness
+            float speed = (24f + 2f * b.Size / px) * px;  // a heavier bead runs faster
             float relax = 1f - MathF.Exp(-dt / 0.35f);
             b.Vs += (speed * gu * push - b.Vs) * relax;
             b.Vr += (speed * RoundDrift * gt * push - b.Vr) * relax;
-            if (cT < 0.18f) b.Age += dt * 1.8f;                             // reached the underside edge: it runs off into the drips, so it does not pile up there
+            if (cT < 0.18f) b.Age += dt * 1.8f;  // reached the underside edge: it runs off into the drips, so it does not pile up there
 
             float sNew = s + b.Vs * dt, betaNew = b.Beta + b.Vr * dt / R;
             float rb = MathF.Min(b.Size * (1f + 0.45f * DrawHelpers.Smooth(b.Held / 1.4f)), 0.6f * R);
             bool held = false;
 
-            // Cups are obstacles, in the skin's own (arc length, round-the-tube) plane. Two passes: a bead squeezed between two cups settles.
+            // Cups are obstacles, in the skin's own (arc length, round-the-tube) plane.
             for (int pass = 0; pass < 2; pass++)
             {
                 for (int c = 0; c < _obstN; c++)
@@ -1446,14 +1387,14 @@ public sealed class StrokeParasite : IStrokeMaterial
                     if (d > 1e-3f) { nx = dx / d; ny = dy / d; }
                     else { nx = gu >= 0f ? -1f : 1f; ny = 0f; }
 
-                    sNew = o.S + nx * reach;                                // out of the cup...
+                    sNew = o.S + nx * reach;  // out of the cup...
                     betaNew = o.Beta + ny * reach / R + (betaNew - o.Beta - WrapAngle(betaNew - o.Beta));
-                    float vin = b.Vs * nx + b.Vr * ny;                      // ...and no more motion into it
+                    float vin = b.Vs * nx + b.Vr * ny;  // ...and no more motion into it
                     if (vin < 0f)
                     {
                         b.Vs -= vin * nx; b.Vr -= vin * ny;
                         if (vin < -3f * px) held = true;
-                        // Dead upstream of the cup the sideways part is zero: a bead would balance there for ever. Lean it off to a side that belongs to this bead.
+                        // Dead upstream of the cup the sideways part is zero: a bead would balance there for ever.
                         float side = (b.Seed & 1) == 0 ? 1f : -1f;
                         b.Vs += -ny * side * 9f * px * dt * 8f;
                         b.Vr +=  nx * side * 9f * px * dt * 8f;
@@ -1477,7 +1418,7 @@ public sealed class StrokeParasite : IStrokeMaterial
         if (!k.On) return false;
 
         float theta = WrapAngle(b.Beta - k.Psi);
-        if (MathF.Cos(theta) < -0.30f) return false;                       // round the back of the arm: hidden, and nothing of it shows past the edge
+        if (MathF.Cos(theta) < -0.30f) return false;  // round the back of the arm: hidden, and nothing of it shows past the edge
 
         float skin = MathF.Max(4f, k.R);
         float fade = DrawHelpers.Smooth(b.Age / 0.7f) * (1f - DrawHelpers.Smooth((b.Age - (b.Life - 1.0f)) / 1.0f));
@@ -1517,7 +1458,7 @@ public sealed class StrokeParasite : IStrokeMaterial
                 x += fx * par * stretch; y += fy * par * stretch;
 
                 float d = y * invSkin, d2 = d * d;
-                float sD = d * (1f + d2 * (-1f / 6f + d2 * (1f / 120f)));          // a bead is small against the tube: d stays well inside the series
+                float sD = d * (1f + d2 * (-1f / 6f + d2 * (1f / 120f)));  // a bead is small against the tube: d stays well inside the series
                 float cD = 1f + d2 * (-0.5f + d2 * (1f / 24f));
                 float sT = sTh * cD + cTh * sD, cT = cTh * cD - sTh * sD;
                 Vector3 ncyl = new(perp.X * sT - T.X * sa * cT, perp.Y * sT - T.Y * sa * cT, ca * cT);
@@ -1546,8 +1487,7 @@ public sealed class StrokeParasite : IStrokeMaterial
         _cupVerts = vb + rings * stride;
         PushQuads(vb, rings, segs, stride, strideCode, BeadZ, lift, theta, 0);
 
-        // The hard core of the highlight is narrower than a bead's vertex spacing, so it is placed analytically (as the old 2D beads did), and only where this
-        // piece of skin faces the key light enough for a dome on it to show one.
+        // The hard core of the highlight is narrower than a bead's vertex spacing
         if (rb >= 2.2f * p.Px && cTh > 0.1f && _gN < MaxBeads)
         {
             Vector3 nBase = new(perp.X * sTh - T.X * sa * cTh, perp.Y * sTh - T.Y * sa * cTh, ca * cTh);
@@ -1580,18 +1520,10 @@ public sealed class StrokeParasite : IStrokeMaterial
         }
     }
 
+    // Sparkles: the wet skin's speculars: The mesh cannot carry detail finer than its vertex spacing, and a wet
 
-    // ---- Sparkles: the wet skin's speculars ----
-    //
-    // The mesh cannot carry detail finer than its vertex spacing, and a wet, papillose skin is exactly that: each papilla catches the key light on its own, so the
-    // highlight breaks into scattered pinpoints that twinkle as the arm moves. These are those pinpoints. Each is anchored in material coordinates (so it rides the skin),
-    // has a random micro-facet tilt of its own, and shows only while that facet faces the key light's half vector.
-    //
-    // The candidates are a fixed table (shared by every tentacle, each starting at its own place in it) and are walked row by row, so a candidate costs a few
-    // multiplies unless it is facing the light: no hashing, no search, no trigonometry per sparkle.
-
-    private const int   SparkleBins  = 360;                   // along the arm; each bin holds at most one candidate
-    private const float SparkleShare = 0.90f;                 // how many bins do
+    private const int   SparkleBins  = 360;  // along the arm; each bin holds at most one candidate
+    private const float SparkleShare = 0.90f;  // how many bins do
     private static readonly float[] SparkJit = new float[SparkleBins], SparkSinB = new float[SparkleBins], SparkCosB = new float[SparkleBins],
                                     SparkTx = new float[SparkleBins], SparkTy = new float[SparkleBins], SparkSize = new float[SparkleBins];
     private static readonly bool[] SparkOn = new bool[SparkleBins];
@@ -1615,7 +1547,7 @@ public sealed class StrokeParasite : IStrokeMaterial
     {
         ref readonly RowParams p = ref _rp;
         float px = p.Px, total = p.Total, binsPerPx = SparkleBins / total;
-        int shift = (int)(p.BumpOff * 7.31f) % SparkleBins;                       // where in the table this tentacle starts
+        int shift = (int)(p.BumpOff * 7.31f) % SparkleBins;  // where in the table this tentacle starts
         _sparkMesh.Clear();
 
         for (int i = 0; i < rowCount - 1; i++)
@@ -1641,11 +1573,11 @@ public sealed class StrokeParasite : IStrokeMaterial
 
                 // theta = beta - Psi, by angle subtraction.
                 float cT = SparkCosB[j] * cPsi + SparkSinB[j] * sPsi;
-                if (cT < 0.12f) continue;                                           // turned away from the viewer
+                if (cT < 0.12f) continue;  // turned away from the viewer
                 float sT = SparkSinB[j] * cPsi - SparkCosB[j] * sPsi;
 
                 Vector3 ncyl = new(perp.X * sT - T.X * sa * cT, perp.Y * sT - T.Y * sa * cT, ca * cT);
-                if (Vector3.Dot(ncyl, KeyHalf) < 0.45f) continue;                   // the facet tilts at most ~0.55, so the skin has to be within reach of the light
+                if (Vector3.Dot(ncyl, KeyHalf) < 0.45f) continue;  // the facet tilts at most ~0.55, so the skin has to be within reach of the light
 
                 Vector3 axial = new(T.X * ca, T.Y * ca, sa);
                 Vector3 round = new(perp.X * cT + T.X * sa * sT, perp.Y * cT + T.Y * sa * sT, -ca * sT);
@@ -1654,14 +1586,14 @@ public sealed class StrokeParasite : IStrokeMaterial
                 if (nh < 0.86f) continue;
 
                 float x2 = nh * nh, x4 = x2 * x2, x8 = x4 * x4, x16 = x8 * x8;
-                float spec = x16 * x4 * x2;                                         // nh^22: how narrow one facet's reflection is
+                float spec = x16 * x4 * x2;  // nh^22: how narrow one facet's reflection is
                 float a = DrawHelpers.Smooth(spec * 2.4f) * DrawHelpers.Smooth(cT / 0.30f) * r.Wet * look.Alpha;
                 if (a < 0.04f) continue;
 
                 float along = Math.Clamp((b + SparkJit[j]) / binsPerPx - r.Arc, 0f, r2.Arc - r.Arc);
                 Vector2 c = r.P + T * along + new Vector2(ncyl.X, ncyl.Y) * MathF.Max(2f, r.Radius);
                 float rad = (1.0f + 1.5f * spec) * px * SparkSize[j] * 1.6f;
-                float foreshorten = 0.55f + 0.45f * cT;                             // a facet on a turned-away patch is a narrower sliver
+                float foreshorten = 0.55f + 0.45f * cT;  // a facet on a turned-away patch is a narrower sliver
 
                 // A hexagonal fan: bright at the centre, clear at the rim (six sides read as round at this size).
                 uint hot  = DrawHelpers.Tint(DrawHelpers.Pack(1.00f, 0.98f, 0.90f), a, look.Overridden);
@@ -1682,9 +1614,9 @@ public sealed class StrokeParasite : IStrokeMaterial
     private static readonly float[] SparkHexCos = { MathF.Cos(0.5f), MathF.Cos(0.5f + MathF.Tau / 6f), MathF.Cos(0.5f + 2 * MathF.Tau / 6f), MathF.Cos(0.5f + 3 * MathF.Tau / 6f), MathF.Cos(0.5f + 4 * MathF.Tau / 6f), MathF.Cos(0.5f + 5 * MathF.Tau / 6f) };
     private static readonly float[] SparkHexSin = { MathF.Sin(0.5f), MathF.Sin(0.5f + MathF.Tau / 6f), MathF.Sin(0.5f + 2 * MathF.Tau / 6f), MathF.Sin(0.5f + 3 * MathF.Tau / 6f), MathF.Sin(0.5f + 4 * MathF.Tau / 6f), MathF.Sin(0.5f + 5 * MathF.Tau / 6f) };
 
-    // ---- Glints ----
+    // Glints
 
-    /// <summary>A thin hard highlight where the key light's reflection falls: narrower than the body's vertex spacing, so its own ribbon over the body; breaks up along the strand and fades where the tube turns away.</summary>
+    /// <summary>A thin hard highlight where the key light's reflection falls: narrower than the body's vertex spacing, so its own ribbon over the body</summary>
     private void DrawGlints(ImDrawListPtr dl, int rowCount, in Look look, in MaterialContext ctx)
     {
         // The key light's reflection is the hard warm one; the fill's is dimmer, cooler and broader.
@@ -1741,7 +1673,7 @@ public sealed class StrokeParasite : IStrokeMaterial
 
     private static uint GlintColour(uint rgb, float alpha, in Look look) => DrawHelpers.Tint(rgb, alpha, look.Overridden);
 
-    // ---- Tip ----
+    // Tip
 
     private static void DrawTip(ImDrawListPtr dl, Vector2 tip, float bar, float k, in Look look, in MaterialContext ctx)
     {
@@ -1755,7 +1687,7 @@ public sealed class StrokeParasite : IStrokeMaterial
         MeshDraw.Radial(dl, tip, MeshDraw.WhiteUv(ctx.Time), pip, 10, rr, cc, 0f, 1f, 0, 0f);
     }
 
-    // ---- What a tentacle sheds, and what happens when it is hit ----
+    // What a tentacle sheds, and what happens when it is hit
 
     public ReadOnlySpan<StrokeEmission> Emissions => Shed;
 

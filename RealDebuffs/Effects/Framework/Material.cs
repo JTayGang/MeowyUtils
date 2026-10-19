@@ -36,7 +36,7 @@ public interface IStrokeMaterial : IMaterial
     /// <summary>What this material throws when hit (EffectScene.AddImpact), each entry spawned independently; empty = nothing visible.</summary>
     ReadOnlySpan<ImpactEmission> ImpactEmissions => ReadOnlySpan<ImpactEmission>.Empty;
 
-    /// <summary>Strand radius in px at arc length arc, so anything hanging off a strand (a drip) finds the surface, not the centreline; default is a plain tube of WidthHint, tapering materials override it.</summary>
+    /// <summary>Strand radius in px at arc length arc, so anything hanging off a strand (a drip) finds the surface, not the centreline</summary>
     float RadiusAt(in StrokePrimitive s, float arc, float shortSide) => MathF.Max(1f, s.WidthHint * 0.5f);
 }
 
@@ -47,7 +47,7 @@ public interface IParticleMaterial : IMaterial
     /// <summary>Emissions this material contributes as a stroke emitter; empty means it can't be one.</summary>
     ReadOnlySpan<StrokeEmission> Emissions => ReadOnlySpan<StrokeEmission>.Empty;
 
-    /// <summary>True for matter that clings to or falls from a strand (slime, blood): it is drawn right after its host stroke, so a nearer stroke drawn later covers it. Default: drawn over every stroke.</summary>
+    /// <summary>True for matter that clings to or falls from a strand (slime, blood): it is drawn right after its host stroke</summary>
     bool DrawsWithHost => false;
 }
 
@@ -76,7 +76,7 @@ public readonly record struct StrokeEmission(
     float ClusterConeRadians = 0f,
     StrokeDripOptions? Drip = null);
 
-/// <summary>One burst a stroke material throws when hit. Counts scale with Strength (never zero if Strength > 0); ConeRadians is the fan half-angle.</summary>
+/// <summary>One burst a stroke material throws when hit.</summary>
 public readonly record struct ImpactEmission(
     PrimitiveRole Role,
     int CountMin,
@@ -101,7 +101,7 @@ public readonly record struct StrokeFlowOptions(
     float ObstacleSpacingPx,
     float LateralOffsetFrac);
 
-/// <summary>Viscous half of a stroke emission: grows drops instead of scattering particles (Size = drop radius px at 1080p, Gravity = fall px/s^2, DensityPer100px ignored). SiteSpacingPx: gap between sites; CycleSeconds Min/Max: form-and-fall time (longer = thicker); MinSlope 0..1: how far the surface must face downhill to hang a drop; Stringiness 0..1: water to honey; SatelliteChance 0..1.</summary>
+/// <summary>Viscous half of a stroke emission: grows drops instead of scattering particles (Size = drop radius px at 1080p, Gravity = fall px/s^2, DensityPer100px ignored).</summary>
 public readonly record struct StrokeDripOptions(
     float SiteSpacingPx,
     float CycleSecondsMin,

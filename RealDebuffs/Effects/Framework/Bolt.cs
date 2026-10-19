@@ -2,11 +2,7 @@ using System.Numerics;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>
-/// The shape language of electricity, shared by every material drawn as a crackling bolt (stroke.lightning, particle.arc).
-/// The effect owns a smooth strand; this turns "where along it" into a lateral kink, so any strand (a chain's path, a ring) can be shown as live lightning.
-/// Pure functions of (seed, position, time): nothing is stored, so a bolt re-rolls its fine shape without ever allocating.
-/// </summary>
+/// <summary>The shape language of electricity, shared by every material drawn as a crackling bolt (stroke.lightning, particle.arc).</summary>
 internal static class Bolt
 {
     /// <summary>One random lattice value in -1..1, fixed for a given (seed, cell, tick).</summary>
@@ -18,10 +14,7 @@ internal static class Bolt
         }
     }
 
-    /// <summary>
-    /// Linear-interpolated lattice noise at sample index k, one value per m samples (linear, so the polyline kinks exactly on lattice samples, the way lightning does).
-    /// tt is time in ticks; with smooth set the lattice crossfades between ticks (a drifting shape), otherwise it snaps (a crackle).
-    /// </summary>
+    /// <summary>Linear-interpolated lattice noise at sample index k</summary>
     public static float Level(int seed, int k, int m, float tt, bool smooth)
     {
         int cell = k / m;
@@ -35,11 +28,7 @@ internal static class Bolt
         return Lerp(v0, v1, DrawHelpers.Smooth(tt - t0));
     }
 
-    /// <summary>
-    /// Lateral kink, in px along each sample's normal, for n samples spaced stepPx apart: a slow large-scale meander, a drifting wander, a mid kink and a fast crackle
-    /// (cells of 28, 12, 4 and 2 samples). <paramref name="violence"/> 1 is a calm arc, 2 a thrashing one. <paramref name="soft"/> is the meander plus the wander alone
-    /// (a smooth centreline for light to follow).
-    /// </summary>
+    /// <summary>Lateral kink, in px along each sample's normal, for n samples spaced stepPx apart: a slow large-scale meander, a drifting wander</summary>
     public static void Crackle(Span<float> hard, Span<float> soft, int n, float stepPx, int seed, float time, float violence)
     {
         float a_1 = 2.0f * stepPx * (0.7f + 0.3f * violence);
@@ -62,7 +51,7 @@ internal static class Bolt
         }
     }
 
-    /// <summary>Fills a bent twig of out.Length points leaving root along dir (unit); bend is the per-joint turn in radians (about 0.5 is a jagged fork).</summary>
+    /// <summary>Fills a bent twig of out.Length points leaving root along dir (unit)</summary>
     public static void Twig(Span<Vector2> outPts, Vector2 root, Vector2 dir, float length, int seed, int tick, float bend)
     {
         int n = outPts.Length;

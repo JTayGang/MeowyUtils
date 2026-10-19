@@ -3,7 +3,7 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>The fallback stroke: a soft glow under a solid pale core with a small growing-tip flare. If it ever shows on screen, a stroke is unconfigured.</summary>
+/// <summary>The fallback stroke: a soft glow under a solid pale core with a small growing-tip flare.</summary>
 public sealed class StrokeSimple : IStrokeMaterial
 {
     public string Name => "stroke.simple";

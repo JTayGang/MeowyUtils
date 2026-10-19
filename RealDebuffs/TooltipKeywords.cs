@@ -176,7 +176,7 @@ public static class TooltipKeywordParser
             }
         }
 
-        // A keyword inside "made of X" modifies another effect ("chains made of flames"); with nothing to modify ("a layer of frost") it activates.
+        // A keyword inside "made of X" modifies another effect ("chains made of flames")
         foreach (var (kind, index) in shadowed)
         {
             if (best.ContainsKey(kind)) continue;

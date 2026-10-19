@@ -3,28 +3,21 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>
-/// Blood painted along a path as lit, wet geometry: a thick ribbon whose cross-section is a flattened tube, shaded by the shared liquid matcap (arterial red where it is thin, near black where it is deep,
-/// a ruby caustic on the side away from the key light), with a hard wet highlight that is worked out analytically so it never flickers, an uneven hand-laid edge, runs that hang off the underside
-/// (<see cref="GoopEmitter"/>) and, when the sigil it belongs to is excited, a glow coming up from inside the paint. Honours Reveal (it is laid down by a hot pen with a bead of fresh blood at the tip),
-/// Closed, Depth and Agitation. WidthHint is the paint's whole width in px.
-/// </summary>
+/// <summary>Blood painted along a path as lit, wet geometry: a thick ribbon whose cross-section is a flattened tube</summary>
 public sealed class StrokeBlood : IStrokeMaterial
 {
     public string Name => "stroke.blood";
     public string[] NaturalLanguageWords { get; } = { "bloodpaint", "smear", "smears", "smeared", "daub", "daubed" };
 
-    // ---- the cross-section ----
-    // Columns across the ribbon: the first and last are a zero-alpha fringe just outside the edge. Spaced finer toward the rim, where the normal turns fastest.
+    // the cross-section: Columns across the ribbon: the first and last are a zero-alpha fringe just outside the edge.
     private static readonly float[] Across = { -1.16f, -1.00f, -0.84f, -0.62f, -0.38f, -0.12f, 0.12f, 0.38f, 0.62f, 0.84f, 1.00f, 1.16f };
     private const int Cols = 12;
-    private const float Crown = 0.93f;            // how round the paint's section is: 1 = a full cylinder, less = a flatter bead (a thick smear is flatter than a rod)
+    private const float Crown = 0.93f;  // how round the paint's section is: 1 = a full cylinder
 
     private static readonly Vector3 KeyHalf = Vector3.Normalize(StudioLighting.Key + Vector3.UnitZ);
     private static readonly Vector3 FillHalf = Vector3.Normalize(StudioLighting.Fill + Vector3.UnitZ);
 
-    // The paint's shading, baked by normal. Authored directly in display space: a thick opaque smear of dark blood wants a saturated red body whose green and blue stay close to zero,
-    // which the liquid matcap (made for translucent beads, authored in linear space and gamma-lifted) cannot hold. The hard highlight is not baked: see DrawGlint.
+    // The paint's shading, baked by normal.
     private static readonly PaintLut Paint = new();
 
     private sealed class PaintLut
@@ -80,15 +73,13 @@ public sealed class StrokeBlood : IStrokeMaterial
     private static readonly LightStrand Strand = new();
     private static readonly MeshBuilder Mb = new();
 
-
     // The warm light thrown up from a fire below, and the ember glow of a pulse running through the paint.
     private static readonly Vector3 Underlight = new(1.00f, 0.30f, 0.05f);
     private static readonly Vector3 InnerGlow = new(1.00f, 0.16f, 0.03f);
 
-    // ---- thickness ----
-    // Shared by the drawing and by RadiusAt, so a drip finds the real edge of the paint.
-    private const float EdgeNoiseAmp = 0.11f;     // fraction of the half-width the edge wanders
-    private const float EdgeNoiseScale = 0.0105f; // noise cycles per px of arc
+    // thickness: Shared by the drawing and by RadiusAt, so a drip finds the real edge of the paint.
+    private const float EdgeNoiseAmp = 0.11f;  // fraction of the half-width the edge wanders
+    private const float EdgeNoiseScale = 0.0105f;  // noise cycles per px of arc
 
     private static float WidthScale(float arc, int seed, float total, bool closed)
     {
@@ -124,11 +115,11 @@ public sealed class StrokeBlood : IStrokeMaterial
         float step = Math.Clamp(width * 0.42f, 7f * px, 14f * px);
         var st = Strand;
         st.Resample(path, visibleLen, step);
-        st.Light(in s, time, total, width, px, 0f);        // Lum: a shimmer and pulses of energy running along the line; here they are light coming up through the paint
+        st.Light(in s, time, total, width, px, 0f);  // Lum: a shimmer and pulses of energy running along the line
         int n = st.Count;
         if (n < 2) return;
 
-        // A soft shadow cast by the paint's thickness: it lifts the ring off whatever is behind it, and keeps pale scenes from washing it out.
+        // A soft shadow cast by the paint's thickness: it lifts the ring off whatever is behind it
         bool closedFull = s.Closed && reveal >= 0.999f;
         StrandShading.DrawShadow(dl, path, width * 1.05f, depth, alpha * 0.85f, in ctx, closedFull, visibleLen);
 
@@ -140,8 +131,8 @@ public sealed class StrokeBlood : IStrokeMaterial
         float half0 = width * 0.5f;
         float fringe = 1.1f * px;
         float soften = 1f + 0.9f * depth;
-        float near = 1f - 0.40f * depth;                    // far paint is dimmer
-        float haze = 0.50f * depth;                         // and hazier
+        float near = 1f - 0.40f * depth;  // far paint is dimmer
+        float haze = 0.50f * depth;  // and hazier
 
         bool capStart = !s.FlushStart && !closedFull;
         bool capEnd = !closedFull;
@@ -156,7 +147,7 @@ public sealed class StrokeBlood : IStrokeMaterial
             Vector2 p = pts[i];
             Vector2 nm = nrm[i];
             float nl = nm.Length();
-            Vector2 nu = nl > 1e-4f ? nm / nl : new Vector2(0f, -1f);     // the unit normal: which way the paint's surface leans
+            Vector2 nu = nl > 1e-4f ? nm / nl : new Vector2(0f, -1f);  // the unit normal: which way the paint's surface leans
 
             float a = arc[i];
             float hw = half0 * WidthScale(a, s.Seed, total, s.Closed);
@@ -166,7 +157,7 @@ public sealed class StrokeBlood : IStrokeMaterial
 
             // Local unevenness: a slow lean in the surface (paint is never flat), and thin or thick patches.
             float lean = Lean(a, s.Seed, total, s.Closed);
-            float thickness = 0.5f + 0.5f * Noise.Along(a, 0.006f, s.Seed * 0.0029f, 2.3f, total, s.Closed);     // 0 = thin smear, 1 = pooled
+            float thickness = 0.5f + 0.5f * Noise.Along(a, 0.006f, s.Seed * 0.0029f, 2.3f, total, s.Closed);  // 0 = thin smear, 1 = pooled
 
             // A pulse of energy running through the sigil lights the paint from inside.
             float pulse = MathF.Max(0f, lum[i] - 0.82f);
@@ -190,7 +181,7 @@ public sealed class StrokeBlood : IStrokeMaterial
                 col *= 1.10f - 0.30f * thickness;
                 col *= 1f - 0.22f * DrawHelpers.Smooth(0.80f, 1.0f, MathF.Abs(uc));
 
-                // Light from a fire below, on the faces that point down; and the paint's own inner glow, strongest where it is thin and at the rim.
+                // Light from a fire below, on the faces that point down; and the paint's own inner glow
                 float below = MathF.Max(0f, ny);
                 col += Underlight * (below * below * 0.34f * (0.55f + 0.45f * agit));
                 float thinK = 0.55f + 0.45f * (1f - thickness);
@@ -233,10 +224,7 @@ public sealed class StrokeBlood : IStrokeMaterial
         return MathF.Sqrt(MathF.Max(0f, 1f - k * k));
     }
 
-    /// <summary>
-    /// The wet highlights, each its own thin ribbon at the offset where it falls, instead of being baked into vertices too far apart to hold a narrow lobe (which would flicker along the line):
-    /// the key light's hard streak, and under it the smaller, cooler reflection of the fill side, which is what makes paint read wet and not merely shiny.
-    /// </summary>
+    /// <summary>The wet highlights, each its own thin ribbon at the offset where it falls</summary>
     private static void DrawGlint(ImDrawListPtr dl, in StrokePrimitive s, in MaterialContext ctx, LightStrand st, int n, float half0,
                                   float alpha, bool overridden, bool capStart, bool capEnd, float capLen, float visibleLen)
     {
@@ -246,11 +234,7 @@ public sealed class StrokeBlood : IStrokeMaterial
         Streak(dl, in s, in ctx, st, n, half0, fade * 0.85f * 0.42f, DrawHelpers.Pack(0.80f, 0.88f, 1.00f), FillHalf, overridden, capStart, capEnd, capLen, visibleLen);
     }
 
-    /// <summary>
-    /// One highlight along the strand. Across a tube the brightest line sits where the surface normal is nearest the half vector, which has a closed form; its strength is how near that gets.
-    /// A sharp highlight exists only where the strand faces the light squarely. Real paint is lit by large soft sources, so the peak is relaxed toward 1 and the exponent kept low:
-    /// the streak then runs the whole ring, brightest where it faces the light and softest edge-on.
-    /// </summary>
+    /// <summary>One highlight along the strand.</summary>
     private static void Streak(ImDrawListPtr dl, in StrokePrimitive s, in MaterialContext ctx, LightStrand st, int n, float half0,
                                float gain, uint rgb, Vector3 halfVec, bool overridden, bool capStart, bool capEnd, float capLen, float visibleLen)
     {
@@ -321,11 +305,11 @@ public sealed class StrokeBlood : IStrokeMaterial
         dl.AddCircleFilled(tip, MathF.Max(0.8f, width * 0.12f), DrawHelpers.WithAlpha(HellColor.Glow.Sample(1f), 0.95f * k));
     }
 
-    // ---- what it sheds, and what happens when it is hit ----
+    // what it sheds, and what happens when it is hit
 
     public ReadOnlySpan<StrokeEmission> Emissions => Shed;
 
-    /// <summary>Runs, hanging off the underside of the paint and letting go. The particle is whatever the owner's Goop slot says, so a swapped slot swaps what the paint bleeds.</summary>
+    /// <summary>Runs, hanging off the underside of the paint and letting go.</summary>
     private static readonly StrokeEmission[] Shed =
     {
         new(Role: PrimitiveRole.Goop,

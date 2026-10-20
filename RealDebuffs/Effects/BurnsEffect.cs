@@ -4,7 +4,7 @@ using RealDebuffs.Effects.Framework;
 namespace RealDebuffs.Effects;
 
 /// <summary>Burns: soot vignette, firelight, smoke, four flame layers and cinders; the fire catches across the bottom edge over ~2s.</summary>
-public sealed class BurnsEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
+public sealed class BurnsEffect : ISceneEffect, IHasSwappableSlots
 {
     public DebuffKind Kind => DebuffKind.Burns;
     public string DisplayName => "Burns";
@@ -18,14 +18,9 @@ public sealed class BurnsEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
 
     public IReadOnlyList<string> TriggerKeywords { get; } = new[] { "flame", "flames", "burning", "scorch", "ignite" };
 
-    public EffectHeroSlot[] HeroSlots { get; } = new EffectHeroSlot[]
-    {
-        new("Particle", PrimitiveRole.Ember),
-    };
-
     public IReadOnlyList<SwappableSlot> Slots { get; } = new SwappableSlot[]
     {
-        new("Particle", PrimitiveRole.Ember,  "Flames",     "particle.ember"),
+        new("Particle", PrimitiveRole.Ember,  "Flames",     "particle.ember", Hero: true),
         new("Particle", PrimitiveRole.Cinder, "Cinders",    "particle.cinder"),
         new("Particle", PrimitiveRole.Smoke,  "Smoke",      "particle.smoke"),
         new("Region",   PrimitiveRole.MainStroke, "Firelight", "region.firelight", "EdgeGlow"),
@@ -63,8 +58,7 @@ public sealed class BurnsEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
     private readonly Site[] _sites = new Site[BottomSites + 2 * SideSites];
     private readonly FireDrift _drift;
     private readonly CastTracker _cast = new();
-    private Vector2 _screen;
-    private float _short;
+    private CastFrame _f;
     private bool _burst;
 
     public BurnsEffect()
@@ -82,8 +76,8 @@ public sealed class BurnsEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
     private Vector2 Spawn(int seed, float liftLo, float liftHi)
     {
         Site s = _sites[(int)((uint)seed % BottomSites)];
-        float x = (s.Along + DrawHelpers.HashRange(seed + 20, -1f, 1f) * s.Spread * 1.3f) * _screen.X;
-        return new Vector2(x, _screen.Y + 2f - DrawHelpers.HashRange(seed + 22, liftLo, liftHi) * _short);
+        float x = (s.Along + DrawHelpers.HashRange(seed + 20, -1f, 1f) * s.Spread * 1.3f) * _f.Size.X;
+        return new Vector2(x, _f.Size.Y + 2f - DrawHelpers.HashRange(seed + 22, liftLo, liftHi) * _f.Short);
     }
 
     // Per cast: sites jitter inside their own cell so no gaps open; ignition spreads out from a random origin.
@@ -124,43 +118,40 @@ public sealed class BurnsEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
 
     public void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride)
     {
-        _screen = screenSize;
-        _short = MathF.Min(screenSize.X, screenSize.Y);
-        float px = _short / 1080f;
-        _drift.Px = px;
+        var f = _f = _cast.Frame(screenSize, alpha, time, dt, colorOverride);
+        _drift.Px = f.Px;
 
-        if (_cast.Begin(time))
+        if (f.Fresh)
         {
             _drift.Clear();
             _burst = false;
-            BuildLayout(unchecked((int)(_cast.Start * 1000f)));
+            BuildLayout(f.Seed);
         }
-        float age = time - _cast.Start;
 
         // Three-octave flicker drives the vignette, firelight and flame brightness together.
-        float flicker = 0.55f * DrawHelpers.Pulse(time, 0.31f)
-                      + 0.30f * DrawHelpers.Pulse(time, 0.17f, 0.35f)
-                      + 0.15f * DrawHelpers.Pulse(time, 0.53f, 0.60f);
+        float flicker = 0.55f * DrawHelpers.Pulse(f.Time, 0.31f)
+                      + 0.30f * DrawHelpers.Pulse(f.Time, 0.17f, 0.35f)
+                      + 0.15f * DrawHelpers.Pulse(f.Time, 0.53f, 0.60f);
 
-        scene.RequestVignette(Soot, 0.13f, alpha * (0.42f + 0.22f * flicker), priority: 30, colorOverride);
+        scene.RequestVignette(Soot, 0.13f, f.Alpha * (0.42f + 0.22f * flicker), priority: 30, f.Color);
 
         // Firelight grows in over ~1.2s with a bright flash at ignition.
-        float reach = _short * 0.46f * DrawHelpers.EaseOutCubic(DrawHelpers.Saturate(age / 1.2f));
-        scene.Pool(screenSize, reach, Glow, alpha * (0.30f + 0.34f * MathF.Exp(-age / 0.50f)) * (0.76f + 0.24f * flicker), colorOverride);
+        float reach = f.Short * 0.46f * DrawHelpers.EaseOutCubic(DrawHelpers.Saturate(f.Age / 1.2f));
+        scene.Pool(f.Size, reach, Glow, f.Alpha * (0.30f + 0.34f * MathF.Exp(-f.Age / 0.50f)) * (0.76f + 0.24f * flicker), f.Color);
 
-        _drift.EmitSmoke(scene, time, dt, _short, alpha, DrawHelpers.Saturate((age - 0.7f) / 1.4f), colorOverride);
+        _drift.EmitSmoke(scene, f.Time, f.Dt, f.Short, f.Alpha, DrawHelpers.Saturate((f.Age - 0.7f) / 1.4f), f.Color);
 
-        float level = alpha * (0.88f + 0.24f * flicker) * (1f + 0.25f * MathF.Exp(-age / 0.60f));
-        EmitFlames(scene, BottomLayers, true, time, age, px, level, colorOverride);
-        EmitFlames(scene, SideLayers, false, time, age, px, level, colorOverride);
+        float level = f.Alpha * (0.88f + 0.24f * flicker) * (1f + 0.25f * MathF.Exp(-f.Age / 0.60f));
+        EmitFlames(scene, in f, BottomLayers, true, level);
+        EmitFlames(scene, in f, SideLayers, false, level);
 
-        if (!_burst && age > 0.25f) { _burst = true; _drift.BurstCinders(40, time); }
-        float cinders = age > 0.18f ? 0.35f + 0.65f * DrawHelpers.EaseOutCubic(DrawHelpers.Saturate((age - 0.18f) / BuildSeconds)) : 0f;
-        _drift.EmitCinders(scene, time, dt, alpha, cinders, colorOverride);
+        if (!_burst && f.Age > 0.25f) { _burst = true; _drift.BurstCinders(40, f.Time); }
+        float cinders = f.Age > 0.18f ? 0.35f + 0.65f * DrawHelpers.EaseOutCubic(DrawHelpers.Saturate((f.Age - 0.18f) / BuildSeconds)) : 0f;
+        _drift.EmitCinders(scene, f.Time, f.Dt, f.Alpha, cinders, f.Color);
     }
 
     // Layers outer, sites inner, so every back flame is drawn before any front one.
-    private void EmitFlames(EffectScene scene, FlameLayer[] layers, bool bottom, float time, float age, float px, float level, Vector4? color)
+    private void EmitFlames(EffectScene scene, in CastFrame f, FlameLayer[] layers, bool bottom, float level)
     {
         foreach (var layer in layers)
         {
@@ -169,22 +160,22 @@ public sealed class BurnsEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
                 ref readonly Site st = ref _sites[n];
                 if (bottom != (st.Edge == 0)) continue;
 
-                float since = age - st.Ignition - layer.Delay;
+                float since = f.Age - st.Ignition - layer.Delay;
                 if (since < 0f) continue;
 
                 // Builds up from BuildFloor, flares briefly as it catches, then breathes.
                 float build = BuildFloor + (1f - BuildFloor) * DrawHelpers.EaseOutCubic(DrawHelpers.Saturate(since / BuildSeconds));
-                float breath = 0.85f + 0.30f * DrawHelpers.Pulse(time, st.OscPeriod, st.OscPhase + layer.Variant * 0.9f);
-                float sizeMul = px * st.Boost * build * breath * (1f + 0.25f * MathF.Exp(-since / 0.40f));
+                float breath = 0.85f + 0.30f * DrawHelpers.Pulse(f.Time, st.OscPeriod, st.OscPhase + layer.Variant * 0.9f);
+                float sizeMul = f.Px * st.Boost * build * breath * (1f + 0.25f * MathF.Exp(-since / 0.40f));
 
                 Vector2 at; Vector2 spread; float lean = 0f;
                 switch (st.Edge)
                 {
-                    case 0: at = new Vector2(st.Along * _screen.X, _screen.Y + 2f); spread = new Vector2(st.Spread * _screen.X, 0f); break;
-                    case 1: at = new Vector2(-2f, (1f - st.Along) * _screen.Y); spread = new Vector2(0f, st.Spread * _screen.Y); lean = 26f; break;
-                    default: at = new Vector2(_screen.X + 2f, (1f - st.Along) * _screen.Y); spread = new Vector2(0f, st.Spread * _screen.Y); lean = -26f; break;
+                    case 0: at = new Vector2(st.Along * f.Size.X, f.Size.Y + 2f); spread = new Vector2(st.Spread * f.Size.X, 0f); break;
+                    case 1: at = new Vector2(-2f, (1f - st.Along) * f.Size.Y); spread = new Vector2(0f, st.Spread * f.Size.Y); lean = 26f; break;
+                    default: at = new Vector2(f.Size.X + 2f, (1f - st.Along) * f.Size.Y); spread = new Vector2(0f, st.Spread * f.Size.Y); lean = -26f; break;
                 }
-                Flames.Tongues(scene, in layer, at, st.Seed + layer.Variant * 131, time, sizeMul, spread, lean, 0f, level, color);
+                Flames.Tongues(scene, in layer, at, st.Seed + layer.Variant * 131, f.Time, sizeMul, spread, lean, 0f, level, f.Color);
             }
         }
     }

@@ -4,7 +4,7 @@ using RealDebuffs.Effects.Framework;
 namespace RealDebuffs.Effects;
 
 /// <summary>Silence: a curse seal of layered rings, runes and triangles slams down, then burns on; the chat blocker makes it reject messages.</summary>
-public sealed class SilenceEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots, IReactsToBlockedChat
+public sealed class SilenceEffect : ISceneEffect, IHasSwappableSlots, IReactsToBlockedChat
 {
     public DebuffKind Kind => DebuffKind.Silence;
     public string DisplayName => "Silence";
@@ -21,18 +21,12 @@ public sealed class SilenceEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         "silence", "silenced", "mute", "muted", "gagged", "voiceless"
     };
 
-    public EffectHeroSlot[] HeroSlots { get; } = new EffectHeroSlot[]
-    {
-        new("Stroke",   PrimitiveRole.MainStroke),
-        new("Particle", PrimitiveRole.Rune),
-    };
-
     public IReadOnlyList<SwappableSlot> Slots { get; } = new SwappableSlot[]
     {
-        new("Stroke",   PrimitiveRole.MainStroke,  "Binding ring",  "stroke.sigil"),
+        new("Stroke",   PrimitiveRole.MainStroke,  "Binding ring",  "stroke.sigil", Hero: true),
         new("Stroke",   PrimitiveRole.Halo,        "Ring glow",     "stroke.glow"),
         new("Stroke",   PrimitiveRole.Inscription, "Inner sigil",   "stroke.sigil"),
-        new("Particle", PrimitiveRole.Rune,        "Runes",         "particle.rune"),
+        new("Particle", PrimitiveRole.Rune,        "Runes",         "particle.rune", Hero: true),
         new("Particle", PrimitiveRole.Mote,        "Motes",         "particle.mote"),
         new("Particle", PrimitiveRole.Miasma,      "Miasma",        "particle.miasma"),
         new("Region",   PrimitiveRole.MainStroke,  "Curse veil",    "region.edge-glow", "EdgeGlow"),
@@ -112,24 +106,16 @@ public sealed class SilenceEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         public int Seed;
     }
 
-    // Per-frame state shared by the Emit* methods.
-    private struct Frame
-    {
-        public LayerCamera Cam;
-        public Vector2 Size;
-        public float Short, Alpha, Age, Breath, Leave;
-        public Vector4? Color;
-    }
-
     private readonly Floating[] _floating = new Floating[MaxFloating];
     private int _floatingCount;
     private readonly MoteField _motes = new(64, 700f, -450f, (10f, 34f), (12f, 46f), (1.8f, 4.4f));
     private readonly ShockFront[] _fronts = new ShockFront[4];
     private int _frontCount;
 
-    private readonly CastTracker _cast = new();
-    private readonly CastEnvelope _env = new();
-    private Frame _f;
+    private readonly CastTracker _cast = new(envelope: true);
+    private CastFrame _f;
+    private LayerCamera _cam;
+    private float _breath;
     private int _seed, _runeSpawns;
     private float _azimuth, _azimuthDir, _hushEvery, _nextRune;
     private float _deniedAt = NeverDenied;
@@ -137,8 +123,6 @@ public sealed class SilenceEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
 
     private readonly ParticleEmitter _miasma = new(maxParticles: 12, seedSalt: 0x51A3C3);
     private readonly Func<int, Vector2> _miasmaPos, _miasmaVel;
-    private float _px = 1f;
-    private Vector2 _center;
 
     public SilenceEffect()
     {
@@ -148,15 +132,15 @@ public sealed class SilenceEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         _miasmaPos = seed =>
         {
             int i = (int)((uint)seed % (uint)Math.Max(1, _hero.Count - 1));
-            return _hero.Points[i] + new Vector2(DrawHelpers.HashRange(seed + 7, -30f, 30f), DrawHelpers.HashRange(seed + 8, -30f, 30f)) * _px;
+            return _hero.Points[i] + new Vector2(DrawHelpers.HashRange(seed + 7, -30f, 30f), DrawHelpers.HashRange(seed + 8, -30f, 30f)) * _f.Px;
         };
         _miasmaVel = seed =>
         {
             int i = (int)((uint)seed % (uint)Math.Max(1, _hero.Count - 1));
-            Vector2 from = _hero.Points[i] - _center;
+            Vector2 from = _hero.Points[i] - _f.Center;
             Vector2 dir = from.LengthSquared() > 1f ? Vector2.Normalize(from) : new Vector2(0f, -1f);
             float side = DrawHelpers.Hash01(seed + 3) < 0.5f ? -1f : 1f;
-            return (dir * side * DrawHelpers.HashRange(seed + 4, 6f, 20f) + new Vector2(0f, DrawHelpers.HashRange(seed + 5, -14f, -3f))) * _px;
+            return (dir * side * DrawHelpers.HashRange(seed + 4, 6f, 20f) + new Vector2(0f, DrawHelpers.HashRange(seed + 5, -14f, -3f))) * _f.Px;
         };
     }
 
@@ -165,50 +149,36 @@ public sealed class SilenceEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
 
     public void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride)
     {
-        if (_cast.Begin(time))
-            BeginCast(unchecked((int)(_cast.Start * 1000f)), dt);
-
-        float age = time - _cast.Start;
-        _env.Update(alpha, age);
-        alpha = _env.Alpha;
-
-        float shortSide = MathF.Min(screenSize.X, screenSize.Y);
-        _px = shortSide / 1080f;
-        _center = screenSize * 0.5f;
-        float leave = _env.Leave;
+        var f = _f = _cast.Frame(screenSize, alpha, time, dt, colorOverride);
+        if (f.Fresh) BeginCast(f.Seed);
 
         // A swallowed message: damped-sine shake, decaying flare. Not while the curse is lifting.
-        float sinceDenied = time - _deniedAt;
-        bool denied = !_env.Leaving && sinceDenied >= 0f && sinceDenied < DenySeconds;
+        float sinceDenied = f.Time - _deniedAt;
+        bool denied = !f.Leaving && sinceDenied >= 0f && sinceDenied < DenySeconds;
         float denyFlare = denied ? MathF.Exp(-sinceDenied / DenyFlareDecay) : 0f;
-        float shake = denied ? MathF.Sin(sinceDenied * DenyShakeRate) * MathF.Exp(-sinceDenied / DenyShakeDecay) * DenyShake * _px : 0f;
+        float shake = denied ? MathF.Sin(sinceDenied * DenyShakeRate) * MathF.Exp(-sinceDenied / DenyShakeDecay) * DenyShake * f.Px : 0f;
 
-        float tilt = BaseTilt + TiltSway * MathF.Sin(age * 0.23f + 1.3f)
-                   + LurchTilt * MathF.Exp(-age / LurchSeconds) + 0.10f * leave + DenyTilt * denyFlare;
-        float azimuth = _azimuth + _azimuthDir * PrecessionRate * age;
+        float tilt = BaseTilt + TiltSway * MathF.Sin(f.Age * 0.23f + 1.3f)
+                   + LurchTilt * MathF.Exp(-f.Age / LurchSeconds) + 0.10f * f.Leave + DenyTilt * denyFlare;
+        float azimuth = _azimuth + _azimuthDir * PrecessionRate * f.Age;
 
-        _f = new Frame
-        {
-            Cam = new LayerCamera(_center + new Vector2(shake, 0f), CameraDistance * _px, tilt, azimuth),
-            Size = screenSize, Short = shortSide, Alpha = alpha, Age = age, Leave = leave, Color = colorOverride,
-            Breath = 0.90f + 0.10f * MathF.Sin(age * 1.9f + 0.7f),
-        };
-        _frontCount = BuildFronts(_fronts, age, denied ? sinceDenied : -1f, shortSide);
+        _cam = new LayerCamera(f.Center + new Vector2(shake, 0f), CameraDistance * f.Px, tilt, azimuth);
+        _breath = 0.90f + 0.10f * MathF.Sin(f.Age * 1.9f + 0.7f);
+        _frontCount = BuildFronts(_fronts, f.Age, denied ? sinceDenied : -1f, f.Short);
 
-        EmitAtmosphere(scene, _env.Gate, denyFlare);
+        EmitAtmosphere(scene, f.Gate, denyFlare);
         EmitRings(scene);
         EmitFarRunes(scene);
         EmitFloatingRunes(scene);
-        EmitMiasma(scene, time, dt);
-        _motes.Emit(scene, in _f.Cam, CameraDistance * _px, screenSize, _px, age,
-                    alpha * DrawHelpers.Smooth((age - 0.35f) / 1.4f) * (1f - DrawHelpers.Smooth(leave)),
-                    blurDim: 0.45f, twinkle: 0f, colorOverride);
+        EmitMiasma(scene, f.Time, f.Dt);
+        _motes.Emit(scene, in _cam, CameraDistance * f.Px, f.Size, f.Px, f.Age,
+                    f.Alpha * DrawHelpers.Smooth((f.Age - 0.35f) / 1.4f) * (1f - DrawHelpers.Smooth(f.Leave)),
+                    blurDim: 0.45f, twinkle: 0f, f.Color);
     }
 
-    private void BeginCast(int seed, float dt)
+    private void BeginCast(int seed)
     {
         _seed = seed;
-        _env.Begin(dt);
         _deniedAt = NeverDenied;
         _azimuth = DrawHelpers.Hash01(seed + 1) * MathF.Tau;
         _azimuthDir = DrawHelpers.Hash01(seed + 2) < 0.5f ? -1f : 1f;
@@ -275,11 +245,11 @@ public sealed class SilenceEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
 
     private void EmitAtmosphere(EffectScene scene, float castGate, float denyFlare)
     {
-        ref readonly Frame f = ref _f;
+        ref readonly CastFrame f = ref _f;
         float castIn = DrawHelpers.Smooth(f.Age / 0.45f);
 
-        scene.RequestVignette(CurseColor.Vignette, 0.17f + 0.04f * denyFlare, f.Alpha * 0.62f * castIn * f.Breath, priority: 15, f.Color);
-        scene.EdgeSpill(f.Size, f.Short * 0.13f, Veil, 0.20f * f.Alpha * castIn * f.Breath * (1f + 1.2f * denyFlare), f.Color);
+        scene.RequestVignette(CurseColor.Vignette, 0.17f + 0.04f * denyFlare, f.Alpha * 0.62f * castIn * _breath, priority: 15, f.Color);
+        scene.EdgeSpill(f.Size, f.Short * 0.13f, Veil, 0.20f * f.Alpha * castIn * _breath * (1f + 1.2f * denyFlare), f.Color);
 
         // The cast's own flash and hush use the gate, so the manager's fade-in can't swallow them.
         float flash = f.Age < 0.45f ? MathF.Exp(-f.Age / 0.10f) : 0f;
@@ -293,9 +263,9 @@ public sealed class SilenceEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
 
     private void EmitRings(EffectScene scene)
     {
-        ref readonly Frame f = ref _f;
-        ref readonly LayerCamera cam = ref f.Cam;
-        float px = _px, dist = CameraDistance * px, shortSide = f.Short, age = f.Age, alpha = f.Alpha, breath = f.Breath, leave = f.Leave;
+        ref readonly CastFrame f = ref _f;
+        ref readonly LayerCamera cam = ref _cam;
+        float px = _f.Px, dist = CameraDistance * px, shortSide = f.Short, age = f.Age, alpha = f.Alpha, breath = _breath, leave = f.Leave;
 
         // Far band: two thin rings; the runes sit between them (EmitFarRunes).
         {
@@ -415,9 +385,9 @@ public sealed class SilenceEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
 
     private void EmitFarRunes(EffectScene scene)
     {
-        ref readonly Frame f = ref _f;
+        ref readonly CastFrame f = ref _f;
         Arrive(f.Age, Layer.Far, f.Leave, out float lift, out float appear, out float landed);
-        float px = _px, dist = CameraDistance * px;
+        float px = _f.Px, dist = CameraDistance * px;
         float h = FarHeight * px + lift * px;
         float ang = FarSpin * f.Age + TurnIn(landed);
         float eff = FarRunes * f.Short;
@@ -437,10 +407,10 @@ public sealed class SilenceEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
             float d = MathF.Abs(MathF.IEEERemainder(a - scan, MathF.Tau)) / 0.30f;
             float sweep = MathF.Exp(-d * d);
 
-            float k = f.Alpha * appear * ignite * (0.70f + 0.95f * sweep + 0.5f * excite) * flare * (0.80f + 0.20f * f.Breath);
+            float k = f.Alpha * appear * ignite * (0.70f + 0.95f * sweep + 0.5f * excite) * flare * (0.80f + 0.20f * _breath);
             if (k <= 0.01f) continue;
 
-            Vector2 at = SigilGeometry.PointOn(in f.Cam, planeR, h, a, out float scale, out Vector2 outward);
+            Vector2 at = SigilGeometry.PointOn(in _cam, planeR, h, a, out float scale, out Vector2 outward);
             if (at.X < -60f || at.Y < -60f || at.X > f.Size.X + 60f || at.Y > f.Size.Y + 60f) continue;
 
             // Every 11th rune is a sealed-mouth mark.
@@ -459,10 +429,10 @@ public sealed class SilenceEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
     // Runes peel off the seal and drift toward the lens, turning and growing as they come.
     private void EmitFloatingRunes(EffectScene scene)
     {
-        ref readonly Frame f = ref _f;
-        float px = _px, dist = CameraDistance * px, age = f.Age;
+        ref readonly CastFrame f = ref _f;
+        float px = _f.Px, dist = CameraDistance * px, age = f.Age;
 
-        if (age >= _nextRune && _floatingCount < MaxFloating && !_env.Leaving)
+        if (age >= _nextRune && _floatingCount < MaxFloating && !f.Leaving)
         {
             int s = _seed + _runeSpawns * 4099 + 5;
             _floating[_floatingCount++] = new Floating
@@ -493,7 +463,7 @@ public sealed class SilenceEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
 
             float h = (fl.Height + fl.Lift * t) * px;
             float planeR = SigilGeometry.PlaneRadius(fl.Radius * f.Short, 0f, dist) * (1f + 0.06f * u);
-            Vector2 at = SigilGeometry.PointOn(in f.Cam, planeR, h, fl.Angle + fl.Spin * t, out float scale, out _);
+            Vector2 at = SigilGeometry.PointOn(in _cam, planeR, h, fl.Angle + fl.Spin * t, out float scale, out _);
 
             float fade = DrawHelpers.Smooth(u / 0.18f) * (1f - DrawHelpers.Smooth((u - 0.65f) / 0.35f));
             scene.AddParticle(new ParticlePrimitive
@@ -508,12 +478,12 @@ public sealed class SilenceEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
 
     private void EmitMiasma(EffectScene scene, float time, float dt)
     {
-        ref readonly Frame f = ref _f;
-        if (f.Age > 0.9f && _hero.Count > 4 && !_env.Leaving)
+        ref readonly CastFrame f = ref _f;
+        if (f.Age > 0.9f && _hero.Count > 4 && !f.Leaving)
         {
             _miasma.Update(time, dt, spawnIntervalMin: 0.35f, spawnIntervalMax: 0.80f,
                            spawnPos: _miasmaPos, spawnVelocity: _miasmaVel,
-                           lifespanMin: 4.0f, lifespanMax: 6.5f, sizeMin: 70f * _px, sizeMax: 150f * _px);
+                           lifespanMin: 4.0f, lifespanMax: 6.5f, sizeMin: 70f * _f.Px, sizeMax: 150f * _f.Px);
         }
         _miasma.Emit(scene, time, PrimitiveRole.Miasma, brightnessMul: f.Alpha * DrawHelpers.Saturate((f.Age - 0.8f) * 0.6f), f.Color);
     }

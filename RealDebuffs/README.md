@@ -52,7 +52,7 @@ For each primitive the renderer resolves a material in this order: user override
 
 | File | Provides |
 |---|---|
-| `Cast.cs` | `CastTracker` (fresh-cast detection), `CastEnvelope` (punchier fade-in, leave signal), `ShockFront` (rings of excitement) |
+| `Cast.cs` | `CastTracker` and `CastFrame` (per-frame cast values), the optional alpha envelope, `ShockFront` (rings of excitement) |
 | `Stage.cs` | Scene helpers (`Wash`, `EdgeSpill`, `Pool`, `Ring`, `HeroRing`) and `MoteField` |
 | `Fire.cs` | `Flames` (stateless flame tongues) and `FireDrift` (cinders and smoke) |
 | `Sigil.cs` | `LayerCamera` (tilted 2.5D stack), `SigilGeometry` (rings, polygons), `RuneGlyphs` |
@@ -74,7 +74,7 @@ No `<TargetFramework>` is set on purpose; the SDK picks the one Dalamud targets.
 
 ## Adding things
 
-- **Effect**: implement `ISceneEffect` (`Kind`, `DisplayName`, `Description`, `DrawOrder`, `TriggerStatuses`). Add `IHasHeroSlots` / `IHasSwappableSlots` to expose swappable materials. For a staged cast use `CastTracker` + `CastEnvelope`; see `DoomEffect`.
+- **Effect**: implement `ISceneEffect` (`Kind`, `DisplayName`, `Description`, `DrawOrder`, `TriggerStatuses`). Call `CastTracker.Frame(...)` once per `Emit` for a `CastFrame` (size, `Px`, `Age`, `Seed`, `Fresh`, alpha, color); `new CastTracker(envelope: true)` adds a faster fade-in plus `Gate`/`Leave`/`Leaving` (see `DoomEffect`). Implement `IHasSwappableSlots` to expose materials, and mark the slots a "made of X" phrase replaces with `Hero: true`.
 - **Material**: implement a material interface and add it in `MaterialRegistry`'s static constructor. Give it `NaturalLanguageWords` to make it selectable via "made of X".
 - **Color of light**: add a `Palette` in `Palette.cs`, then register `StrokeGlow` / `ParticleMote` (and `StrokeSigil`, `ParticleRune`, `ParticleEmber`, `RegionFirelight` for a full theme) with it. Add new rune glyph sets after the existing ones; don't change `LegacyCount`.
 - **Viscous liquid**: add a `LiquidSpec` to `LiquidPresets`, subclass `ParticleGoop` (see `ParticleSlime`) and register it. Any stroke can shed it with a `Drip` emission.

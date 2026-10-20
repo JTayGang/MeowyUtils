@@ -4,7 +4,7 @@ using RealDebuffs.Effects.Framework;
 namespace RealDebuffs.Effects;
 
 /// <summary>Heavy: iron chains flung across the screen like arrows, then hanging.</summary>
-public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
+public sealed class HeavyEffect : ISceneEffect, IHasSwappableSlots
 {
     public DebuffKind Kind => DebuffKind.Heavy;
     public string DisplayName => "Heavy";
@@ -21,14 +21,9 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
         "chains", "shackle", "shackled"
     };
 
-    public EffectHeroSlot[] HeroSlots { get; } = new EffectHeroSlot[]
-    {
-        new("Stroke", PrimitiveRole.MainStroke),
-    };
-
     public IReadOnlyList<SwappableSlot> Slots { get; } = new SwappableSlot[]
     {
-        new("Stroke",   PrimitiveRole.MainStroke, "Chains", "stroke.chain"),
+        new("Stroke",   PrimitiveRole.MainStroke, "Chains", "stroke.chain", Hero: true),
         new("Particle", PrimitiveRole.Dust,       "Dust",   "particle.dust"),
         new("Region",   PrimitiveRole.MainStroke, "Gloom",  "region.edge-glow", "EdgeGlow"),
     };
@@ -94,20 +89,17 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
 
     public void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride)
     {
-        if (_cast.Begin(time))
-            BuildLayout(unchecked((int)(_cast.Start * 1000f)), screenSize);
-        float age = time - _cast.Start;
-        float shortSide = MathF.Min(screenSize.X, screenSize.Y);
-        float px = shortSide / 1080f;
+        var f = _cast.Frame(screenSize, alpha, time, dt, colorOverride);
+        if (f.Fresh) BuildLayout(f.Seed, screenSize);
 
-        EmitAtmosphere(scene, screenSize, alpha, time, age, colorOverride);
+        EmitAtmosphere(scene, in f);
 
         for (int n = 0; n < _set.Count; n++)
         {
             var rig = _set.At(n);
-            if (age < rig.Delay) continue;
+            if (f.Age < rig.Delay) continue;
 
-            Step(scene, rig, screenSize, px, alpha, time, dt, age, colorOverride);
+            Step(scene, rig, in f);
 
             if (rig.Path.Count < 2) continue;
 
@@ -116,37 +108,36 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
                 Path = rig.Path,
                 Role = PrimitiveRole.MainStroke,
                 Reveal = 1f,
-                WidthHint = shortSide * rig.LinkFrac,
-                Brightness = alpha,
+                WidthHint = f.Short * rig.LinkFrac,
+                Brightness = f.Alpha,
                 Seed = rig.Seed,
                 Phase = rig.Phase,
                 Depth = rig.Depth,
                 Agitation = rig.Agitation,
                 EmitEdgeReach = EmitEdgeReach,
                 EmitEndReach = EmitEndReach,
-                ColorOverride = colorOverride,
+                ColorOverride = f.Color,
             });
         }
     }
 
-    private static void EmitAtmosphere(EffectScene scene, Vector2 size, float alpha, float time, float age, Vector4? colorOverride)
+    private static void EmitAtmosphere(EffectScene scene, in CastFrame f)
     {
-        float castIn = DrawHelpers.Saturate(age / 0.7f);
+        float castIn = DrawHelpers.Saturate(f.Age / 0.7f);
 
-        scene.RequestVignette(Vignette, 0.12f, alpha * VignetteAlpha * castIn, priority: 20, colorOverride);
+        scene.RequestVignette(Vignette, 0.12f, f.Alpha * VignetteAlpha * castIn, priority: 20, f.Color);
 
         // Gloom pooled at the bottom edge, breathing as if the weight were shifting.
-        float depth = size.Y * GloomDepth * (1f + 0.15f * DrawHelpers.Pulse(time, 4.6f)) * castIn;
-        scene.Pool(size, depth, Gloom, GloomAlpha * alpha, colorOverride);
+        float depth = f.Size.Y * GloomDepth * (1f + 0.15f * DrawHelpers.Pulse(f.Time, 4.6f)) * castIn;
+        scene.Pool(f.Size, depth, Gloom, GloomAlpha * f.Alpha, f.Color);
     }
 
-    private static void Step(EffectScene scene, Rig rig, Vector2 size, float px,
-                             float alpha, float time, float dt, float age, Vector4? colorOverride)
+    private static void Step(EffectScene scene, Rig rig, in CastFrame f)
     {
         var strand = rig.Strand;
-        float t = age - rig.Delay;
+        float t = f.Age - rig.Delay;
 
-        if (!rig.Launched) rig.Launch(2500f * px, HangDrag);
+        if (!rig.Launched) rig.Launch(2500f * f.Px, HangDrag);
 
         // Head: an arrow. Constant speed after a short launch ramp, stopped dead by the far anchor.
         float tau = DrawHelpers.Saturate(t / rig.Flight);
@@ -158,17 +149,17 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
         {
             rig.Landed = true;
             landedNow = true;
-            rig.LandTime = time;
+            rig.LandTime = f.Time;
             rig.Agitation = 1f;
         }
 
         if (rig.Landed)
         {
             head = rig.End;
-            head.Y += 5.5f * px * MathF.Sin(time * 0.85f + rig.SwayPhase);  // the load on the far end eases and settles
+            head.Y += 5.5f * f.Px * MathF.Sin(f.Time * 0.85f + rig.SwayPhase);  // the load on the far end eases and settles
         }
 
-        bool settled = rig.Landed && (time - rig.LandTime) > SettlePhysicsSeconds;
+        bool settled = rig.Landed && (f.Time - rig.LandTime) > SettlePhysicsSeconds;
 
         if (!settled)
         {
@@ -177,7 +168,7 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
             float extra = flightExtra;
             if (rig.Landed)
             {
-                float release = DrawHelpers.Smooth((time - rig.LandTime) / ReleaseSeconds);
+                float release = DrawHelpers.Smooth((f.Time - rig.LandTime) / ReleaseSeconds);
                 extra = flightExtra + (rig.ChordLen * rig.Slack - flightExtra) * release;
             }
 
@@ -189,20 +180,20 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
 
             strand.SetEnds(rig.Start, head);
 
-            if (!rig.Landed) strand.Drive(strand.Target, dt);
-            else             strand.Step(dt);
+            if (!rig.Landed) strand.Drive(strand.Target, f.Dt);
+            else             strand.Step(f.Dt);
         }
 
         rig.Publish(PathSamples, settled);
-        if (rig.Landed) ApplySway(rig, time, px);
+        if (rig.Landed) ApplySway(rig, f.Time, f.Px);
 
         if (landedNow)
         {
-            Shock(rig, px, strength: 0.1f, time);
-            rig.ReportEnd(scene, size, fromStart: false, strength: 1f, alpha, unchecked(rig.Seed + (int)(time * 1000f)), colorOverride);
+            Shock(rig, f.Px, strength: 0.1f, f.Time);
+            rig.ReportEnd(scene, f.Size, fromStart: false, strength: 1f, f.Alpha, unchecked(rig.Seed + (int)(f.Time * 1000f)), f.Color);
         }
 
-        rig.Agitation *= MathF.Exp(-dt / 0.95f);
+        rig.Agitation *= MathF.Exp(-f.Dt / 0.95f);
     }
 
     // Wind displaces the published path sideways, delayed along its length, zero at the anchors; applied after the sim
@@ -301,7 +292,7 @@ public sealed class HeavyEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
         r.Slack = slack * (0.30f + 0.70f * horizontal);
         r.Delay = H(6, 0f, MaxThrowDelay);
         // Speed is what's chosen, not flight time, so a long span isn't faster than a short one.
-        float px = MathF.Min(size.X, size.Y) / 1080f;
+        float px = CastFrame.PxFor(size);
         r.Flight = Math.Clamp(Vector2.Distance(a, b) / (H(7, 4300f, 6200f) * px), 0.20f, 0.50f);
         r.ArcSide = H(8, -0.07f, 0.07f);
         r.SwayPhase = H(9, 0f, MathF.Tau);

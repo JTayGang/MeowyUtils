@@ -4,7 +4,7 @@ using RealDebuffs.Effects.Framework;
 namespace RealDebuffs.Effects;
 
 /// <summary>Bind: ropes flung across the screen, made fast on the far side, hauled taut around you (Heavy's inverse): throw, haul, snap, hang.</summary>
-public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
+public sealed class BindEffect : ISceneEffect, IHasSwappableSlots
 {
     public DebuffKind Kind => DebuffKind.Bind;
     public string DisplayName => "Bind";
@@ -21,14 +21,9 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
         "rope", "ropes", "bound", "tied", "tether", "tethered", "snared", "entangled"
     };
 
-    public EffectHeroSlot[] HeroSlots { get; } = new EffectHeroSlot[]
-    {
-        new("Stroke", PrimitiveRole.MainStroke),
-    };
-
     public IReadOnlyList<SwappableSlot> Slots { get; } = new SwappableSlot[]
     {
-        new("Stroke",   PrimitiveRole.MainStroke, "Ropes",  "stroke.rope"),
+        new("Stroke",   PrimitiveRole.MainStroke, "Ropes",  "stroke.rope", Hero: true),
         new("Particle", PrimitiveRole.Fibre,      "Fibres", "particle.fibre"),
         new("Particle", PrimitiveRole.Dust,       "Dust",   "particle.dust"),
     };
@@ -131,11 +126,8 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
 
     public void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride)
     {
-        if (_cast.Begin(time))
-            BuildLayout(unchecked((int)(_cast.Start * 1000f)), screenSize);
-        float age = time - _cast.Start;
-        float shortSide = MathF.Min(screenSize.X, screenSize.Y);
-        float px = shortSide / 1080f;
+        var f = _cast.Frame(screenSize, alpha, time, dt, colorOverride);
+        if (f.Fresh) BuildLayout(f.Seed, screenSize);
 
         float haul = 0f;
 
@@ -144,10 +136,10 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
             var rig = _set.At(n);
             haul += rig.Haulness;
 
-            float t = age - rig.Delay;
+            float t = f.Age - rig.Delay;
             if (t < 0f) continue;
 
-            Step(scene, rig, screenSize, px, alpha, dt, t, colorOverride);
+            Step(scene, rig, in f, t);
 
             if (rig.Path.Count < 2) continue;
 
@@ -156,31 +148,30 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
                 Path = rig.Path,
                 Role = PrimitiveRole.MainStroke,
                 Reveal = 1f,
-                WidthHint = shortSide * rig.DiameterFrac,
-                Brightness = alpha,
+                WidthHint = f.Short * rig.DiameterFrac,
+                Brightness = f.Alpha,
                 Seed = rig.Seed,
                 Phase = rig.Phase,
                 Depth = rig.Depth,
                 Agitation = rig.Agitation,
                 TipFlare = rig.Landed ? 0f : 1f,
                 Twist = rig.TwistNow,
-                ColorOverride = colorOverride,
+                ColorOverride = f.Color,
             });
         }
 
         // The vignette closes in as the ropes are hauled taut.
-        float castIn = DrawHelpers.Saturate(age / 0.7f);
+        float castIn = DrawHelpers.Saturate(f.Age / 0.7f);
         float tension = _set.Count > 0 ? haul / _set.Count : 0f;
         scene.RequestVignette(Vignette, VignetteDepth + VignetteTighten * tension,
-                              alpha * VignetteAlpha * castIn * (0.7f + 0.3f * tension), priority: 20, colorOverride);
+                              f.Alpha * VignetteAlpha * castIn * (0.7f + 0.3f * tension), priority: 20, f.Color);
     }
 
-    private static void Step(EffectScene scene, Rig rig, Vector2 size, float px,
-                             float alpha, float dt, float t, Vector4? colorOverride)
+    private static void Step(EffectScene scene, Rig rig, in CastFrame f, float t)
     {
         var strand = rig.Strand;
 
-        if (!rig.Launched) rig.Launch(Gravity * px, HangDrag);
+        if (!rig.Launched) rig.Launch(Gravity * f.Px, HangDrag);
 
         float tHaul = rig.Flight + rig.Hold;
         float tTaut = tHaul + rig.Haul;
@@ -228,7 +219,7 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
             // Through the haul: heavier damping, tighter constraints, and less visible weight (sag is weight over tension).
             float tighten = DrawHelpers.Smooth(haulK);
             strand.Drag = HangDrag + (TautDrag - HangDrag) * tighten;
-            strand.Gravity = new Vector2(0f, Gravity * px * (1f - (1f - rig.TautGravity) * tighten));
+            strand.Gravity = new Vector2(0f, Gravity * f.Px * (1f - (1f - rig.TautGravity) * tighten));
             strand.Iterations = haulK > 0f ? 24 : 8;
 
             if (!rig.Landed)
@@ -240,19 +231,19 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
 
             strand.SetEnds(rig.Start, head);
 
-            if (!rig.Landed) strand.Drive(strand.Target, dt);
-            else             strand.Step(dt);
+            if (!rig.Landed) strand.Drive(strand.Target, f.Dt);
+            else             strand.Step(f.Dt);
         }
         rig.Haulness = rig.Taut ? 1f : haulK * haulK;
 
         rig.Publish(PathSamples, frozen);
 
-        if (rig.Taut) Hang(rig, t, px);
+        if (rig.Taut) Hang(rig, t, f.Px);
 
-        if (landedNow) ReportEnd(scene, rig, size, fromStart: false, 0.55f, alpha, colorOverride);
-        if (snappedNow) Snap(scene, rig, size, alpha, colorOverride);
+        if (landedNow) ReportEnd(scene, rig, f.Size, fromStart: false, 0.55f, f.Alpha, f.Color);
+        if (snappedNow) Snap(scene, rig, f.Size, f.Alpha, f.Color);
 
-        rig.Agitation *= MathF.Exp(-dt / 0.95f);
+        rig.Agitation *= MathF.Exp(-f.Dt / 0.95f);
     }
 
     // A taut rope is a weight on a line: the snap's ring and both anchors' sway are laid over the simulated path (zero extra length); twist goes to the material.
@@ -395,7 +386,7 @@ public sealed class BindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
     private static void BuildRig(Rig r, int s, Vector2 a, Vector2 b, Vector2 size, bool far)
     {
         float H(int salt, float lo, float hi) => DrawHelpers.HashRange(s + salt, lo, hi);
-        float px = MathF.Min(size.X, size.Y) / 1080f;
+        float px = CastFrame.PxFor(size);
 
         if (DrawHelpers.Hash01(s + 3) < 0.5f) (a, b) = (b, a);
 

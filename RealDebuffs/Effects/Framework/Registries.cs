@@ -3,32 +3,25 @@ using RealDebuffs.Effects.Framework.Materials;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>One swappable material slot an effect exposes to the Effect generator UI.</summary>
+/// <summary>One swappable material slot an effect exposes to the Effect generator UI; Hero marks what a "made of X" phrase replaces.</summary>
 public readonly record struct SwappableSlot(
     string PrimitiveType,
     PrimitiveRole Role,
     string Label,
     string DefaultMaterial,
-    string? RegionKind = null);
+    string? RegionKind = null,
+    bool Hero = false);
 
 public interface IHasSwappableSlots
 {
     IReadOnlyList<SwappableSlot> Slots { get; }
 }
 
-/// <summary>The "hero" primitive slot(s) of one effect - what a "made of snow" phrase replaces.</summary>
-public readonly record struct EffectHeroSlot(string PrimitiveType, PrimitiveRole Role);
-
-public interface IHasHeroSlots
-{
-    EffectHeroSlot[] HeroSlots { get; }
-}
-
 /// <summary>Every effect's declared slots and defaults, registered once by Plugin; Fallback* keeps unknown names from crashing the renderer.</summary>
 public static class EffectRegistry
 {
     private static readonly Dictionary<(DebuffKind, string, string), string> _defaults = new();
-    private static readonly Dictionary<DebuffKind, EffectHeroSlot[]> _heroSlots = new();
+    private static readonly Dictionary<DebuffKind, SwappableSlot[]> _heroSlots = new();
     private static readonly Dictionary<DebuffKind, SwappableSlot[]> _slots = new();
     private static readonly List<DebuffKind> _kindsWithSlots = new();
 
@@ -36,15 +29,13 @@ public static class EffectRegistry
 
     public static void Register(ISceneEffect effect)
     {
-        if (effect is IHasHeroSlots withHeroes)
-            _heroSlots[effect.Kind] = withHeroes.HeroSlots;
-
         if (effect is IHasSwappableSlots withSlots)
         {
             var slots = withSlots.Slots.ToArray();
             if (slots.Length == 0) return;
 
             _slots[effect.Kind] = slots;
+            _heroSlots[effect.Kind] = slots.Where(s => s.Hero).ToArray();
             if (!_kindsWithSlots.Contains(effect.Kind))
                 _kindsWithSlots.Add(effect.Kind);
             _sortedKindsWithSlots = null;
@@ -60,8 +51,9 @@ public static class EffectRegistry
     public static string? DefaultFor(DebuffKind kind, string type, string roleKey) =>
         _defaults.TryGetValue((kind, type, roleKey), out var name) ? name : null;
 
-    public static EffectHeroSlot[] HeroSlotsFor(DebuffKind kind) =>
-        _heroSlots.TryGetValue(kind, out var slots) ? slots : Array.Empty<EffectHeroSlot>();
+    /// <summary>The slots a "made of X" phrase replaces, in declaration order.</summary>
+    public static SwappableSlot[] HeroSlotsFor(DebuffKind kind) =>
+        _heroSlots.TryGetValue(kind, out var slots) ? slots : Array.Empty<SwappableSlot>();
 
     public static SwappableSlot[] SlotsFor(DebuffKind kind) =>
         _slots.TryGetValue(kind, out var slots) ? slots : Array.Empty<SwappableSlot>();

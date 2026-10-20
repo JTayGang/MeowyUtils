@@ -4,7 +4,7 @@ using RealDebuffs.Effects.Framework;
 namespace RealDebuffs.Effects;
 
 /// <summary>Blind: near-total black wash plus heavy vignette (priority 100, so it owns the vignette). No hue, so colour overrides do nothing.</summary>
-public sealed class BlindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
+public sealed class BlindEffect : ISceneEffect, IHasSwappableSlots
 {
     public DebuffKind Kind => DebuffKind.Blind;
     public string DisplayName => "Blind";
@@ -16,14 +16,9 @@ public sealed class BlindEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlot
         ["Blind"] = 1.0f,
     };
 
-    public EffectHeroSlot[] HeroSlots { get; } = new EffectHeroSlot[]
-    {
-        new("Region", PrimitiveRole.MainStroke),
-    };
-
     public IReadOnlyList<SwappableSlot> Slots { get; } = new SwappableSlot[]
     {
-        new("Region", PrimitiveRole.MainStroke, "Screen wash", "region.flat-fill", "FlatFill"),
+        new("Region", PrimitiveRole.MainStroke, "Screen wash", "region.flat-fill", "FlatFill", Hero: true),
     };
 
     private const uint Black = 0xFF000000u;

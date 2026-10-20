@@ -4,7 +4,7 @@ using RealDebuffs.Effects.Framework;
 namespace RealDebuffs.Effects;
 
 /// <summary>Disease: parasitic tentacles unfurl from the edges, feel across the frame and drip slime; one may grip a border point, haul</summary>
-public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSlots
+public sealed class DiseaseEffect : ISceneEffect, IHasSwappableSlots
 {
     public DebuffKind Kind => DebuffKind.Disease;
     public string DisplayName => "Disease";
@@ -21,14 +21,9 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         "parasite", "parasites", "infest", "infested", "tentacle", "tentacles"
     };
 
-    public EffectHeroSlot[] HeroSlots { get; } = new EffectHeroSlot[]
-    {
-        new("Stroke", PrimitiveRole.MainStroke),
-    };
-
     public IReadOnlyList<SwappableSlot> Slots { get; } = new SwappableSlot[]
     {
-        new("Stroke",   PrimitiveRole.MainStroke, "Tentacles", "stroke.parasite"),
+        new("Stroke",   PrimitiveRole.MainStroke, "Tentacles", "stroke.parasite", Hero: true),
         new("Particle", PrimitiveRole.Goop,       "Slime",     "particle.slime"),
     };
 
@@ -125,22 +120,18 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
 
     public void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride)
     {
-        dt = MathF.Min(dt, 0.05f);  // a hitch must not become a leap
+        // A hitch must not become a leap.
+        var f = _cast.Frame(screenSize, alpha, time, MathF.Min(dt, 0.05f), colorOverride);
+        if (f.Fresh) BuildLayout(f.Seed, screenSize);
 
-        if (_cast.Begin(time))
-            BuildLayout(unchecked((int)(_cast.Start * 1000f)), screenSize);
-        float age = time - _cast.Start;
-        float shortSide = MathF.Min(screenSize.X, screenSize.Y);
-        float px = shortSide / 1080f;
-
-        EmitAtmosphere(scene, screenSize, alpha, time, age, colorOverride);
+        EmitAtmosphere(scene, in f);
 
         for (int n = 0; n < _count; n++)
         {
             var rig = _rigs[_drawOrder[n]];
-            if (age < rig.Delay) continue;
+            if (f.Age < rig.Delay) continue;
 
-            Step(scene, rig, screenSize, px, alpha, time, dt, age, colorOverride);
+            Step(scene, rig, in f);
             if (rig.Path.Count < 2 || rig.Reveal <= 0.002f) continue;
 
             float growing = DrawHelpers.Saturate(1f - rig.Reveal);
@@ -150,58 +141,57 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
                 Role = PrimitiveRole.MainStroke,
                 Reveal = rig.Reveal,
                 FlushStart = true,  // its root is behind the edge; no cap to show
-                WidthHint = shortSide * rig.DiameterFrac,
-                Brightness = alpha,
+                WidthHint = f.Short * rig.DiameterFrac,
+                Brightness = f.Alpha,
                 TipFlare = growing > 0.02f ? MathF.Min(1f, growing * 1.6f) : 0f,
                 Seed = rig.Seed,
                 Phase = rig.Phase,
                 Depth = rig.Depth,
                 Agitation = rig.Agitation,
-                Twist = rig.TwistAmp * MathF.Sin(0.27f * time + rig.TwistPhase) + 0.5f * rig.Tension * DrawHelpers.Smooth((rig.Tension - 0.6f) / 0.4f),
-                ColorOverride = colorOverride,
+                Twist = rig.TwistAmp * MathF.Sin(0.27f * f.Time + rig.TwistPhase) + 0.5f * rig.Tension * DrawHelpers.Smooth((rig.Tension - 0.6f) / 0.4f),
+                ColorOverride = f.Color,
             });
         }
     }
 
     // Atmosphere
 
-    private static void EmitAtmosphere(EffectScene scene, Vector2 size, float alpha, float time, float age, Vector4? colorOverride)
+    private static void EmitAtmosphere(EffectScene scene, in CastFrame f)
     {
-        float castIn = DrawHelpers.Saturate(age / 0.9f);
+        float castIn = DrawHelpers.Saturate(f.Age / 0.9f);
 
-        scene.RequestVignette(Vignette, 0.12f, alpha * VignetteAlpha * castIn, priority: 20, colorOverride);
+        scene.RequestVignette(Vignette, 0.12f, f.Alpha * VignetteAlpha * castIn, priority: 20, f.Color);
 
         // Murk pooled at the bottom edge, swelling slowly.
-        float depth = size.Y * GloomDepth * (1f + 0.18f * DrawHelpers.Pulse(time, 5.3f)) * castIn;
-        scene.Pool(size, depth, Gloom, GloomAlpha * alpha, colorOverride);
+        float depth = f.Size.Y * GloomDepth * (1f + 0.18f * DrawHelpers.Pulse(f.Time, 5.3f)) * castIn;
+        scene.Pool(f.Size, depth, Gloom, GloomAlpha * f.Alpha, f.Color);
     }
 
     // One tentacle, one frame
 
-    private void Step(EffectScene scene, Rig r, Vector2 size, float px, float alpha, float time, float dt, float age,
-                      Vector4? colorOverride)
+    private void Step(EffectScene scene, Rig r, in CastFrame f)
     {
-        r.Age = age - r.Delay;
+        r.Age = f.Age - r.Delay;
         float t = r.Age;
         var strand = r.Strand;
 
-        if (!r.Started) Start(r, px, time);
+        if (!r.Started) Start(r, f.Px, f.Time);
 
         // what it wants this frame
         Vector2 goalWant;
         float headWant, curlWant, tensionWant, goalOmega;
-        Decide(r, size, px, time, t, out goalWant, out headWant, out curlWant, out tensionWant, out goalOmega);
+        Decide(r, f.Size, f.Px, f.Time, t, out goalWant, out headWant, out curlWant, out tensionWant, out goalOmega);
 
         // critically damped springs: every state change is a glide, never a jump
-        Spring(ref r.Goal, ref r.GoalVel, goalWant, goalOmega, dt);
-        SpringAngle(ref r.HeadAngle, ref r.HeadVel, headWant, 3.2f, dt);
-        Spring(ref r.Curl, ref r.CurlVel, curlWant, r.Mode == Mode.Wander && t < 3f ? UnfurlRate : 2.6f, dt);
-        Spring(ref r.Tension, ref r.TensionVel, tensionWant, 3f, dt);
+        Spring(ref r.Goal, ref r.GoalVel, goalWant, goalOmega, f.Dt);
+        SpringAngle(ref r.HeadAngle, ref r.HeadVel, headWant, 3.2f, f.Dt);
+        Spring(ref r.Curl, ref r.CurlVel, curlWant, r.Mode == Mode.Wander && t < 3f ? UnfurlRate : 2.6f, f.Dt);
+        Spring(ref r.Tension, ref r.TensionVel, tensionWant, 3f, f.Dt);
 
         // the target curve, and a strand that chases it
-        float length = BuildTarget(r, px, time, t);
+        float length = BuildTarget(r, f.Px, f.Time, t);
         strand.Length = MathF.Max(8f, length);
-        strand.Gravity = new Vector2(0f, StrandGravity * px);
+        strand.Gravity = new Vector2(0f, StrandGravity * f.Px);
         strand.Drag = StrandDrag;
         strand.Iterations = 8;
         strand.BendStiffness = 0.6f;
@@ -215,14 +205,14 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         if (pinned)
         {
             // Settle onto the point along a curve from the tip's own velocity to rest, so the pin takes over without a dead stop.
-            float k = DrawHelpers.Saturate((time - r.GripStart) / PinSeconds);
+            float k = DrawHelpers.Saturate((f.Time - r.GripStart) / PinSeconds);
             end = Hermite(r.PinFrom, r.PinVel * PinSeconds, r.GripPoint, k);
         }
         strand.SetEnds(r.Root, end);  // unpinned, the end argument tracks the tip so a later pin starts from it
-        r.TipVelocity = dt > 1e-4f ? (tip - r.LastTip) / dt : default;
+        r.TipVelocity = f.Dt > 1e-4f ? (tip - r.LastTip) / f.Dt : default;
         r.LastTip = tip;
 
-        strand.Step(dt);
+        strand.Step(f.Dt);
         strand.FillPath(r.Path, PathSamples);
 
         // reveal: it surges out of the edge, fast at first and settling
@@ -234,13 +224,13 @@ public sealed class DiseaseEffect : ISceneEffect, IHasHeroSlots, IHasSwappableSl
         {
             r.Entered = true;
             r.AgitTarget = 1f;
-            if (ScreenEdges.TryFindEntry(r.Path, size, out Vector2 at, out Vector2 inward))
-                Splat(scene, at, inward, 1f - 0.4f * r.Depth, alpha, time, r.Seed, colorOverride);
+            if (ScreenEdges.TryFindEntry(r.Path, f.Size, out Vector2 at, out Vector2 inward))
+                Splat(scene, at, inward, 1f - 0.4f * r.Depth, f.Alpha, f.Time, r.Seed, f.Color);
         }
 
-        float floor = r.Mode switch { Mode.Reach => 0.30f, Mode.Grip => 0.22f + 0.14f * MathF.Sin(time * 2.6f + r.Phase), _ => 0.04f };
-        r.AgitTarget = MathF.Max(r.AgitTarget * MathF.Exp(-dt / 0.9f), floor);
-        r.Agitation += (r.AgitTarget - r.Agitation) * (1f - MathF.Exp(-dt / AgitationAttack));
+        float floor = r.Mode switch { Mode.Reach => 0.30f, Mode.Grip => 0.22f + 0.14f * MathF.Sin(f.Time * 2.6f + r.Phase), _ => 0.04f };
+        r.AgitTarget = MathF.Max(r.AgitTarget * MathF.Exp(-f.Dt / 0.9f), floor);
+        r.Agitation += (r.AgitTarget - r.Agitation) * (1f - MathF.Exp(-f.Dt / AgitationAttack));
     }
 
     /// <summary>Places a tentacle that has just begun: its strand lies exactly on its first target, so nothing has to settle.</summary>

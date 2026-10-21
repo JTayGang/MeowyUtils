@@ -83,6 +83,7 @@ public static class EffectRegistry
         PrimitiveRole.Haze      => "particle.thunderhead",
         PrimitiveRole.Flash     => "particle.flare",
         PrimitiveRole.Candle    => "particle.candle",
+        PrimitiveRole.Bubble    => "particle.bubble",
         _                       => "particle.spark",
     };
 
@@ -113,10 +114,13 @@ public static class MaterialRegistry
         Add(Regions, new RegionFirelight());
         Add(Regions, new RegionFirelight("region.hellglow", HellColor.Flame));
         Add(Regions, new RegionFrost());
+        Add(Regions, new RegionLiquid("region.acid-slime", LiquidPresets.Acid, LiquidMasses.Acid));
 
         Add(Strokes, new StrokeSimple());
         Add(Strokes, new StrokeChain());
         Add(Strokes, new StrokeParasite());
+        Add(Strokes, new StrokeThread("stroke.acid-thread", LiquidPresets.Acid, ThreadSprays.Acid, "thread", "threads", "strand", "strands", "string", "strings", "web", "webs"));
+        Add(Strokes, new StrokeDripLine("stroke.drip-line", ParticleAcid.LipSpec));
         Add(Strokes, new StrokeRope());
         Add(Strokes, new StrokeSigil());
         Add(Strokes, new StrokeLightning());
@@ -138,6 +142,8 @@ public static class MaterialRegistry
         Add(Particles, new ParticleFlake());
         Add(Particles, new ParticleFibre());
         Add(Particles, new ParticleSlime());
+        Add(Particles, new ParticleAcid());
+        Add(Particles, new ParticleBubble());
         Add(Particles, new ParticleRune());
         Add(Particles, new ParticleArc());
         Add(Particles, new ParticleFlare());

@@ -91,7 +91,22 @@ public sealed class ParticlePuff : IParticleMaterial
             BiasVelocity: new Vector2(0f, -12f),
             PrimaryDirection: new Vector2(0f, -1f)));
 
-    public static readonly ParticlePuff[] All = { Smoke, Mist, Dust, Miasma, Thunderhead, Brimstone };
+    /// <summary>Toxic vapour: a pale acid yellow-green where it is fresh, thinning to a dark olive murk as it drifts and spreads. Poison's fumes, and any "made of fumes".</summary>
+    public static readonly ParticlePuff Fume = new("particle.fume", new[] { "fume", "fumes", "gas" },
+        new Look(Warm: DrawHelpers.Pack(0.40f, 0.72f, 0.10f), Cool: DrawHelpers.Pack(0.055f, 0.100f, 0.012f), CoolSpan: 0.80f,
+                 GrowFrom: 0.55f, GrowBy: 1.05f, FadeIn: 0.22f, FadeOutAt: 0.50f,
+                 Alpha: 0.30f, Squash: 0.78f, Irregular: 0.60f, MinSize: 2f,
+                 Highlight: DrawHelpers.Pack(0.70f, 1.00f, 0.30f), Thin: 0.45f),
+        new StrokeEmission(Role: PrimitiveRole.Miasma,
+            DensityPer100px: 0.4f,
+            SpeedMin: 5f, SpeedMax: 14f,
+            LifespanMin: 2.4f, LifespanMax: 4.2f,
+            SizeMin: 14f, SizeMax: 28f,
+            SpreadRadians: 1.4f,
+            BiasVelocity: new Vector2(0f, -10f),
+            PrimaryDirection: new Vector2(0f, -1f)));
+
+    public static readonly ParticlePuff[] All = { Smoke, Mist, Dust, Miasma, Thunderhead, Brimstone, Fume };
 
     private const int Segs = 12;
 

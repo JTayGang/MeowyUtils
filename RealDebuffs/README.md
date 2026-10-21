@@ -2,7 +2,7 @@
 
 A Dalamud plugin for Final Fantasy XIV that turns your debuffs into screen effects: Blind darkens the view, Burns licks fire up from the bottom edge, Bind throws ropes that pull taut. Effects layer and fade in and out smoothly.
 
-Effects so far: Bind, Blind, Burns, Disease, Doom, Frost, Heavy, Paralysis, Silence, Vulnerability.
+Effects so far: Bind, Blind, Burns, Disease, Doom, Frost, Heavy, Paralysis, Poison, Silence, Vulnerability.
 
 Commands:
 - `/realdebuffs` opens settings.
@@ -57,7 +57,8 @@ For each primitive the renderer resolves a material in this order: user override
 | `Fire.cs` | `Flames` (stateless flame tongues) and `FireDrift` (cinders and smoke) |
 | `Sigil.cs` | `LayerCamera` (tilted 2.5D stack), `SigilSway` (how a stack leans and breathes), `SigilGeometry` (rings, polygons), `RuneGlyphs` |
 | `VerletStrand.cs` | Strand physics, `StrandRig`, `RigSet` |
-| `Goop.cs` | Viscous liquids (slime, blood): `GoopEmitter`, `GoopDraw` |
+| `Goop.cs` | Viscous liquids (slime, blood, acid): `GoopEmitter`, `GoopDraw` |
+| `LiquidField.cs`, `Materials/RegionLiquid.cs`, `Materials/StrokeThread.cs` | Poison’s pooled acid field, etched-glass liquid mass, threads, and drip lines |
 | `Mesh.cs`, `Shading.cs` | Triangle-mesh drawing (`MeshBuilder`, `PathRows` for tube materials) and lighting |
 | `Screen.cs` | Screen-edge anchors, growth, wind |
 | `Bolt.cs`, `Dendrite.cs`, `FrostField.cs`, `Noise.cs` | Lightning, branching growth, frost, noise |

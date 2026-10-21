@@ -232,3 +232,39 @@ public sealed class ParticleBlood : ParticleGoop
                 SatelliteChance: 0.30f)),
     };
 }
+
+/// <summary>Corrosive acid: thinner than slime, so it forms and lets go quickly, runs in short necks and falls fast, with plenty of satellites. Poison's drips; also "made of acid".</summary>
+public sealed class ParticleAcid : ParticleGoop
+{
+    public ParticleAcid() : base(LiquidPresets.Acid, Spec) { }
+
+    public override string Name => "particle.acid";
+    public override string[] NaturalLanguageWords { get; } =
+        { "acid", "acidic", "venom", "venomous", "vitriol", "bile", "caustic" };
+
+    /// <summary>The drip an acid-hosting stroke (the thread, the drip line) declares: public so every host hangs the same liquid the same way.</summary>
+    public static readonly StrokeEmission[] Spec =
+    {
+        new(
+            Role: PrimitiveRole.Goop,
+            DensityPer100px: 0f,
+            SpeedMin: 90f, SpeedMax: 190f,
+            LifespanMin: 1.8f, LifespanMax: 2.6f,
+            SizeMin: 2.8f, SizeMax: 4.8f,
+            SpreadRadians: 0f,
+            BiasVelocity: Vector2.Zero,
+            Gravity: new Vector2(0f, 1950f),
+            Drip: new StrokeDripOptions(
+                SiteSpacingPx: 120f,
+                CycleSecondsMin: 1.7f, CycleSecondsMax: 3.4f,
+                MinSlope: 0.36f,
+                Stringiness: 0.58f,
+                SatelliteChance: 0.70f)),
+    };
+
+    /// <summary>The same drip for a path laid along the underside of a mass (stroke.drip-line): sites close enough that even a narrow lip hangs a drop.</summary>
+    public static readonly StrokeEmission[] LipSpec =
+    {
+        Spec[0] with { Drip = Spec[0].Drip!.Value with { SiteSpacingPx = 46f, CycleSecondsMin = 2.0f, CycleSecondsMax = 4.4f, TipSite = false } },
+    };
+}

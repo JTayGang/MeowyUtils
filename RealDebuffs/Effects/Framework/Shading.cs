@@ -333,7 +333,8 @@ public readonly record struct LiquidSpec(
     float Caustic,
     float Env,
     float Sheen = 0.20f,
-    float Window = 0.30f);
+    float Window = 0.30f,
+    Vector3 Glow = default);   // light the liquid gives off itself (a luminous acid, a radioactive ooze), strongest where it is thick; zero = none
 
 /// <summary>Ready-made liquids.</summary>
 public static class LiquidPresets
@@ -342,6 +343,13 @@ public static class LiquidPresets
     public static readonly LiquidSpec Slime = new(
         Thin: new(0.62f, 0.72f, 0.16f), Deep: new(0.045f, 0.105f, 0.012f),
         Opacity: 0.90f, EdgeOpacity: 0.55f, Gloss: 0.88f, Caustic: 1.15f, Env: 1.0f);
+
+
+    /// <summary>Corrosive acid: a vivid chartreuse that is paler and clearer than slime (it is thin, it runs), very glossy, with a hot caustic and a faint inner glow so it reads as luminous in a dark scene. A deep, saturated liquid: little sheen, so no white veil washes it out.</summary>
+    public static readonly LiquidSpec Acid = new(
+        Thin: new(0.58f, 1.00f, 0.060f), Deep: new(0.010f, 0.105f, 0.006f),
+        Opacity: 0.88f, EdgeOpacity: 0.52f, Gloss: 0.97f, Caustic: 1.55f, Env: 0.78f, Sheen: 0.08f, Window: 0.05f,
+        Glow: new(0.010f, 0.075f, 0.0012f));
 
     /// <summary>Blood: arterial red where thin, nearly black where deep, almost opaque, with a hard wet highlight.</summary>
     public static readonly LiquidSpec Blood = new(
@@ -430,6 +438,9 @@ public sealed class LiquidMatcap
             float crescent = MathF.Pow(facing, 2.6f) * DrawHelpers.Smooth(0.28f, 0.92f, rimness) * (1f - 0.35f * DrawHelpers.Smooth(0.92f, 1f, rimness));
             add += (s.Thin * 1.9f + new Vector3(0.10f)) * (crescent * s.Caustic);
         }
+
+        // Emission: acid or ooze gives off its own light, strongest in the thick middle.
+        if (s.Glow != Vector3.Zero) add += s.Glow * (0.30f + 0.70f * thick);
 
         // composite: overlay light also raises opacity, so highlights stay solid over a dark scene
         float lum = add.X * 0.30f + add.Y * 0.59f + add.Z * 0.11f;

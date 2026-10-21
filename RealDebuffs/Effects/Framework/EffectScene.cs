@@ -30,6 +30,10 @@ public enum PrimitiveRole
     Edge = 34,
     Candle = 35,
     Horn = 36,
+    Bubble = 37,
+
+    /// <summary>A stroke role: the edge of a surface that drawn-elsewhere liquid hangs from (see stroke.drip-line). Never drawn by the stroke itself.</summary>
+    Lip = 38,
 }
 
 public struct StrokePrimitive

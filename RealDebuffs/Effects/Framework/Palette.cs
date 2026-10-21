@@ -131,6 +131,30 @@ internal static class StormColor
     public static readonly uint Flash = DrawHelpers.Pack(1.00f, 0.96f, 0.80f);
 }
 
+/// <summary>Corrosive toxins: black-green char through venom green and acid lime to a pale yellow-white fizz. The counterpart of FireColor, IceColor, CurseColor and StormColor for any poison, acid or venom effect.</summary>
+internal static class ToxinColor
+{
+    /// <summary>Light, dim to hot: 0 = deep bottle green, 0.35 = venom green, 0.65 = acid lime, 1 = pale yellow-white.</summary>
+    public static readonly Palette Glow = new(
+        (0.00f, 0.020f, 0.150f, 0.020f),
+        (0.35f, 0.150f, 0.620f, 0.030f),
+        (0.65f, 0.560f, 0.960f, 0.080f),
+        (0.88f, 0.880f, 1.000f, 0.300f),
+        (1.00f, 0.980f, 1.000f, 0.760f));
+
+    /// <summary>What acid leaves behind: near-black olive char to a dull, sickly brown-green. For the etched glass round a mass, fume and the shade beneath glowing things.</summary>
+    public static readonly Palette Char = new(
+        (0.00f, 0.018f, 0.016f, 0.006f),
+        (0.50f, 0.075f, 0.085f, 0.016f),
+        (1.00f, 0.210f, 0.250f, 0.030f));
+
+    /// <summary>Edge tint for the screen's vignette: very dark bottle green.</summary>
+    public static readonly uint Vignette = DrawHelpers.Pack(0.008f, 0.026f, 0.006f);
+
+    /// <summary>What a spit of acid lights the glass with as it lands (green-tinged, so it stays chromatic under a colour override).</summary>
+    public static readonly uint Flash = DrawHelpers.Pack(0.68f, 1.00f, 0.30f);
+}
+
 /// <summary>Hellfire and blood: dried-blood black through crimson and arterial red to ember orange and a pale gold core.</summary>
 internal static class HellColor
 {

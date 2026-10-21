@@ -38,7 +38,6 @@ public sealed class FrostEffect : ISceneEffect, IHasSwappableSlots
     // state
     private readonly CastTracker _cast = new();
     private readonly FrostField _field = new();
-    private Vector2 _builtFor;
 
     // Mist is the only emitter-driven particle; spawn callbacks are built once, so nothing allocates per frame.
     private readonly ParticleEmitter _mist = new(maxParticles: 18, seedSalt: 0xF05701);
@@ -71,9 +70,8 @@ public sealed class FrostEffect : ISceneEffect, IHasSwappableSlots
         var f = _f = _cast.Frame(screenSize, alpha, time, dt, colorOverride);
 
         // Fresh application (or a resized screen): lay out a new freeze.
-        if (f.Fresh || f.Size != _builtFor)
+        if (f.Fresh || f.Resized)
         {
-            _builtFor = f.Size;
             _field.Build(f.Seed, f.Size);
             _mist.Clear();
 

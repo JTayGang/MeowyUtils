@@ -122,7 +122,7 @@ public sealed class DiseaseEffect : ISceneEffect, IHasSwappableSlots
     {
         // A hitch must not become a leap.
         var f = _cast.Frame(screenSize, alpha, time, MathF.Min(dt, 0.05f), colorOverride);
-        if (f.Fresh) BuildLayout(f.Seed, screenSize);
+        if (f.Fresh || f.Resized) BuildLayout(f.Seed, screenSize);
 
         EmitAtmosphere(scene, in f);
 

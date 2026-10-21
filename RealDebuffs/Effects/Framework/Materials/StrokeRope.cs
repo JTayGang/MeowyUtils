@@ -88,7 +88,7 @@ public sealed class StrokeRope : IStrokeMaterial
     }
 
     private readonly Row[] _rows = new Row[MaxRows];
-    private readonly Vector2[] _pointTan = new Vector2[MaxPathPoints];
+    private readonly PathRows _path = new(MaxPathPoints);
 
     /// <summary>Per-rope constants, so the vertex loop has one thing to be handed.</summary>
     private struct Look
@@ -261,7 +261,7 @@ public sealed class StrokeRope : IStrokeMaterial
                           float psi0, float ph1, float ph2, float ph3, float agit, float time, float px, float depth, float twistTurns, in Look look)
     {
         int pn = Math.Min(path.Count, MaxPathPoints);
-        PreparePointTangents(path, pn, closed);
+        _path.Prepare(path, pn, closed);
 
         float step = MathF.Max(diameter * tier.StepFrac, 1.5f * px);
         float margin = diameter * 1.6f;
@@ -289,8 +289,8 @@ public sealed class StrokeRope : IStrokeMaterial
         if (domeStart)
         {
             // Tip first. t is how far up the dome: 1 at the very end, 0 where it meets the body.
-            for (int i = 0; i < DomeT.Length - 1; i++)
-                AddRow(path, pn, ref seg, ref count, cap * (1f - DomeT[i]), -1f, DomeT[i]);
+            for (int i = 0; i < PathRows.DomeT.Length - 1; i++)
+                AddRow(path, pn, ref seg, ref count, cap * (1f - PathRows.DomeT[i]), -1f, PathRows.DomeT[i]);
         }
 
         // The body; a closed loop's last row lands on its first (same position and lay) so the seam closes.
@@ -300,8 +300,8 @@ public sealed class StrokeRope : IStrokeMaterial
 
         if (domeEnd)
         {
-            for (int i = DomeT.Length - 2; i >= 0; i--)
-                AddRow(path, pn, ref seg, ref count, visibleLen - cap * (1f - DomeT[i]), +1f, DomeT[i]);
+            for (int i = PathRows.DomeT.Length - 2; i >= 0; i--)
+                AddRow(path, pn, ref seg, ref count, visibleLen - cap * (1f - PathRows.DomeT[i]), +1f, PathRows.DomeT[i]);
         }
 
         // per-row shading inputs
@@ -343,61 +343,19 @@ public sealed class StrokeRope : IStrokeMaterial
     private static float Grain(in Look look, int strand, float along)
         => 1f + look.Grain * 2f * (Noise.Value(strand * 11.7f + look.GrainOffset, along) - 0.5f);
 
-    // Fraction up the dome for each end-cap row, tip last. 0 is where the cap meets the body.
-    private static readonly float[] DomeT = { 1.0f, 0.95f, 0.80f, 0.50f, 0.0f };
 
     private float _screenW, _screenH;
 
     private void AddRow(StrandPath path, int pn, ref int seg, ref int count, float s, float endSign, float domeT)
     {
         if (count >= MaxRows) return;
-        SampleAt(path, pn, ref seg, s, out Vector2 p, out Vector2 t);
+        _path.SampleAt(path, pn, ref seg, s, out Vector2 p, out Vector2 t);
 
         ref Row r = ref _rows[count];
         r.Arc = s;
         r.P = p; r.T = t;
-        if (endSign == 0f)
-        {
-            r.CapW = 1f; r.CapAxial = 0f;
-        }
-        else
-        {
-            r.CapW = MathF.Sqrt(MathF.Max(0f, 1f - domeT * domeT));
-            r.CapAxial = endSign * domeT;
-        }
+        PathRows.Cap(endSign, domeT, out r.CapW, out r.CapAxial);
         count++;
-    }
-
-    /// <summary>Smooth tangents at every path point; rows interpolate them so a coarse path (56 points over 1700 px) shades without facets.</summary>
-    private void PreparePointTangents(StrandPath path, int pn, bool closed)
-    {
-        var pts = path.Points;
-        Vector2 last = new(0f, -1f);
-        for (int i = 0; i < pn; i++)
-        {
-            Vector2 a = pts[i > 0 ? i - 1 : (closed ? pn - 2 : 0)];
-            Vector2 b = pts[i < pn - 1 ? i + 1 : (closed ? 1 : pn - 1)];
-            Vector2 d = b - a;
-            float len = d.Length();
-            if (len > 1e-4f) last = d / len;
-            _pointTan[i] = last;
-        }
-    }
-
-    /// <summary>Position and direction at arc length s, advancing a cursor (s only ever increases).</summary>
-    private void SampleAt(StrandPath path, int pn, ref int seg, float s, out Vector2 p, out Vector2 t)
-    {
-        var arc = path.Arc;
-        var pts = path.Points;
-        while (seg < pn - 2 && arc[seg + 1] < s) seg++;
-
-        float span = arc[seg + 1] - arc[seg];
-        float f = span > 1e-5f ? Math.Clamp((s - arc[seg]) / span, 0f, 1f) : 0f;
-        p = Vector2.Lerp(pts[seg], pts[seg + 1], f);
-
-        Vector2 d = Vector2.Lerp(_pointTan[seg], _pointTan[seg + 1], f);
-        float len = d.Length();
-        t = len > 1e-4f ? d / len : _pointTan[seg];
     }
 
     // the mesh

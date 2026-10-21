@@ -33,45 +33,17 @@ internal sealed class Palette
     }
 }
 
-/// <summary>Black-body fire ramp: 0 = dull ember red, 1 = near-white. Baked once into a 256-entry table of opaque colours.</summary>
+/// <summary>Black-body fire ramp: 0 = dull ember red, 1 = near-white.</summary>
 internal static class FireColor
 {
-    private static readonly float[] StopT = { 0.00f, 0.16f, 0.36f, 0.56f, 0.76f, 0.91f, 1.00f };
-
-    private static readonly Vector3[] StopC =
-    {
-        new(0.30f, 0.040f, 0.010f),  // dull ember
-        new(0.70f, 0.110f, 0.020f),  // deep red
-        new(0.96f, 0.290f, 0.040f),  // red-orange
-        new(1.00f, 0.520f, 0.090f),  // orange
-        new(1.00f, 0.760f, 0.260f),  // yellow-orange
-        new(1.00f, 0.920f, 0.620f),  // pale yellow
-        new(1.00f, 0.985f, 0.880f),  // near-white
-    };
-
-    private const int N = 256;
-    private static readonly uint[] Lut = Build();
-
-    public static uint Heat(float t)
-    {
-        t = t > 0f ? (t < 1f ? t : 1f) : 0f;  // NaN lands on 0
-        return Lut[(int)(t * (N - 1) + 0.5f)];
-    }
-
-    private static uint[] Build()
-    {
-        var lut = new uint[N];
-        for (int i = 0; i < N; i++)
-        {
-            float t = i / (float)(N - 1);
-            int s = 0;
-            while (s < StopT.Length - 2 && t > StopT[s + 1]) s++;
-            float k = (t - StopT[s]) / (StopT[s + 1] - StopT[s]);
-            var c = Vector3.Lerp(StopC[s], StopC[s + 1], Math.Clamp(k, 0f, 1f));
-            lut[i] = DrawHelpers.Pack(c.X, c.Y, c.Z);
-        }
-        return lut;
-    }
+    public static readonly Palette Flame = new(
+        (0.00f, 0.30f, 0.040f, 0.010f),  // dull ember
+        (0.16f, 0.70f, 0.110f, 0.020f),  // deep red
+        (0.36f, 0.96f, 0.290f, 0.040f),  // red-orange
+        (0.56f, 1.00f, 0.520f, 0.090f),  // orange
+        (0.76f, 1.00f, 0.760f, 0.260f),  // yellow-orange
+        (0.91f, 1.00f, 0.920f, 0.620f),  // pale yellow
+        (1.00f, 1.00f, 0.985f, 0.880f));  // near-white
 }
 
 /// <summary>Cold palettes and colour helpers: the ice counterpart of FireColor.</summary>

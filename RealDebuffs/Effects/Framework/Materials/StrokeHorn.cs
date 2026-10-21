@@ -118,12 +118,7 @@ public sealed class StrokeHorn : IStrokeMaterial
             }
         }
 
-        for (int i = 0; i + 1 < n; i++)
-        {
-            int a0 = first + i * Cols, b0 = a0 + Cols;
-            for (int c = 0; c + 1 < Cols; c++)
-                Mb.QuadReserved(a0 + c, a0 + c + 1, b0 + c, b0 + c + 1);
-        }
+        Mb.StitchGrid(first, n, Cols);
         Mb.Flush(dl, MeshDraw.WhiteUv(ctx.Time));
     }
 

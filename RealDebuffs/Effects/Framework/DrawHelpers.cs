@@ -272,9 +272,9 @@ internal static class DrawHelpers
     public static float Pulse(float time, float periodSeconds, float phase = 0f) =>
         (MathF.Sin((time / periodSeconds + phase) * MathF.PI * 2f) + 1f) * 0.5f;
 
-    /// <summary>Pixel scale for a screen: short side over 1080, clamped to a sane range.</summary>
+    /// <summary>The one pixel scale: 1 at a 1080px short side. Effects and materials both use it.</summary>
     public static float PixelScale(Vector2 size) =>
-        size.X > 0f ? Math.Clamp(MathF.Min(size.X, size.Y) / 1080f, 0.75f, 2.4f) : 1f;
+        size.X > 0f ? MathF.Min(size.X, size.Y) / 1080f : 1f;
 
     /// <summary>Soft edge vignette.</summary>
     public static void DrawVignette(ImDrawListPtr dl, Vector2 size, uint color, float thicknessFrac, float alpha)

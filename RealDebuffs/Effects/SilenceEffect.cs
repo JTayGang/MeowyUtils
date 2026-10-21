@@ -35,11 +35,7 @@ public sealed class SilenceEffect : ISceneEffect, IHasSwappableSlots, IReactsToB
 
     // camera
     private const float CameraDistance = 1500f;
-    private const float BaseTilt = 0.15f;
-    private const float TiltSway = 0.035f;
-    private const float PrecessionRate = 0.21f;
-    private const float LurchTilt = 0.20f;
-    private const float LurchSeconds = 0.9f;
+    private static readonly SigilSway Sway = new(BaseTilt: 0.15f, TiltSway: 0.035f, Precession: 0.21f, LurchTilt: 0.20f, LurchSeconds: 0.9f, BreathBase: 0.90f, BreathAmp: 0.10f);
 
     // layout: radii are short-side fractions, heights px toward the viewer
     private const float FarHeight = -330f,  HeroHeight = -150f, SealHeight = 0f, NodeHeight = 240f;
@@ -158,12 +154,11 @@ public sealed class SilenceEffect : ISceneEffect, IHasSwappableSlots, IReactsToB
         float denyFlare = denied ? MathF.Exp(-sinceDenied / DenyFlareDecay) : 0f;
         float shake = denied ? MathF.Sin(sinceDenied * DenyShakeRate) * MathF.Exp(-sinceDenied / DenyShakeDecay) * DenyShake * f.Px : 0f;
 
-        float tilt = BaseTilt + TiltSway * MathF.Sin(f.Age * 0.23f + 1.3f)
-                   + LurchTilt * MathF.Exp(-f.Age / LurchSeconds) + 0.10f * f.Leave + DenyTilt * denyFlare;
-        float azimuth = _azimuth + _azimuthDir * PrecessionRate * f.Age;
+        float tilt = Sway.Tilt(f.Age, f.Leave) + DenyTilt * denyFlare;
+        float azimuth = Sway.Azimuth(_azimuth, _azimuthDir, f.Age);
 
         _cam = new LayerCamera(f.Center + new Vector2(shake, 0f), CameraDistance * f.Px, tilt, azimuth);
-        _breath = 0.90f + 0.10f * MathF.Sin(f.Age * 1.9f + 0.7f);
+        _breath = Sway.Breath(f.Age);
         _frontCount = BuildFronts(_fronts, f.Age, denied ? sinceDenied : -1f, f.Short);
 
         EmitAtmosphere(scene, f.Gate, denyFlare);

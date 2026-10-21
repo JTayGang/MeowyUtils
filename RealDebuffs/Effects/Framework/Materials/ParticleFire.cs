@@ -11,13 +11,13 @@ public sealed class ParticleEmber : IParticleMaterial
     private const float TempFloor = 0.20f;
 
     private readonly string _name;
-    private readonly Palette? _ramp;  // null = FireColor.Heat, the black-body fire every existing effect uses
+    private readonly Palette _ramp;
 
     /// <summary>The orange black-body flame (particle.ember).</summary>
-    public ParticleEmber() : this("particle.ember", null, "fire", "flame", "flames", "ember", "embers") { }
+    public ParticleEmber() : this("particle.ember", FireColor.Flame, "fire", "flame", "flames", "ember", "embers") { }
 
     /// <summary>The same flame tongue on another temperature ramp: register one per theme (see particle.hellfire in MaterialRegistry).</summary>
-    internal ParticleEmber(string name, Palette? ramp, params string[] words)
+    internal ParticleEmber(string name, Palette ramp, params string[] words)
     {
         _name = name;
         _ramp = ramp;
@@ -126,7 +126,7 @@ public sealed class ParticleEmber : IParticleMaterial
                 float a = DrawHelpers.Smooth((d - RimLo) / (RimHi - RimLo));
 
                 MeshDraw.P[i] = new Vector2(cx + u * half, cy);
-                MeshDraw.C[i] = DrawHelpers.WithAlpha(_ramp is null ? FireColor.Heat(temp) : _ramp.Sample(temp), a * k * alphaK);
+                MeshDraw.C[i] = DrawHelpers.WithAlpha(_ramp.Sample(temp), a * k * alphaK);
                 i++;
             }
         }
@@ -174,7 +174,7 @@ public sealed class ParticleCinder : IParticleMaterial
         float age = p.AgeRatio;
 
         float flick = 0.62f + 0.38f * Noise.Perlin(p.Seed * 0.0131f, t * 10.5f);
-        uint hot = FireColor.Heat(0.88f - 0.72f * DrawHelpers.Smooth(age * 1.05f));
+        uint hot = FireColor.Flame.Sample(0.88f - 0.72f * DrawHelpers.Smooth(age * 1.05f));
 
         float r = p.Size * (1f - 0.35f * age);
         Vector2 pos = p.DrawPos;

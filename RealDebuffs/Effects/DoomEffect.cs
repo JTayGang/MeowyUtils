@@ -42,11 +42,7 @@ public sealed class DoomEffect : ISceneEffect, IHasSwappableSlots
 
     // the camera
     private const float CameraDistance = 1500f;  // px at 1080p; smaller = stronger perspective
-    private const float BaseTilt = 0.17f;  // radians the stack leans from the line of sight
-    private const float TiltSway = 0.030f;
-    private const float PrecessionRate = 0.17f;  // rad/s the lean swings round
-    private const float LurchTilt = 0.22f;  // extra lean as the cast lands, settling over LurchSeconds
-    private const float LurchSeconds = 1.0f;
+    private static readonly SigilSway Sway = new(BaseTilt: 0.17f, TiltSway: 0.030f, Precession: 0.17f, LurchTilt: 0.22f, LurchSeconds: 1.0f, BreathBase: 0.92f, BreathAmp: 0.08f);
 
     // layout: what the viewer sees: Radii are fractions of the short side as they land on screen
     private const float FarHeight = -360f, BloodHeight = -150f, BandHeight = -55f, CircleHeight = 40f;
@@ -167,11 +163,11 @@ public sealed class DoomEffect : ISceneEffect, IHasSwappableSlots
         _drift.Px = f.Px;
 
         _toll = UpdateToll(f.Age);
-        float tilt = BaseTilt + TiltSway * MathF.Sin(f.Age * 0.23f + 1.3f) + LurchTilt * MathF.Exp(-f.Age / LurchSeconds) + 0.10f * f.Leave
+        float tilt = Sway.Tilt(f.Age, f.Leave)
                    + 0.11f * _toll.Power * _toll.Hit + 0.04f * _toll.Echo;  // the toll thumps the whole stack
-        float azimuth = _azimuth + _azimuthDir * PrecessionRate * f.Age;
+        float azimuth = Sway.Azimuth(_azimuth, _azimuthDir, f.Age);
         _cam = new LayerCamera(f.Center, CameraDistance * f.Px, tilt, azimuth);
-        _breath = 0.92f + 0.08f * MathF.Sin(f.Age * 1.9f + 0.7f);
+        _breath = Sway.Breath(f.Age);
 
         Span<ShockFront> fronts = stackalloc ShockFront[5];
         int frontCount = BuildFronts(fronts, f.Age, f.Short);

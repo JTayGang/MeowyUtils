@@ -20,21 +20,18 @@ public readonly struct CastFrame
     /// <summary>Stable per cast: derived from its start time.</summary>
     public readonly int Seed;
 
-    /// <summary>True on the first frame of a cast, and true from the first frame alpha falls for Leaving.</summary>
-    public readonly bool Fresh, Leaving;
+    /// <summary>Fresh: first frame of a cast. Resized: the screen size changed mid-cast (re-lay anything anchored to it). Leaving: alpha has started to fall.</summary>
+    public readonly bool Fresh, Resized, Leaving;
 
     public readonly Vector4? Color;
 
     public Vector2 Center => Size * 0.5f;
 
-    /// <summary>The effects' pixel scale: 1 at a 1080px short side. Layout code that has only a size uses this.</summary>
-    public static float PxFor(Vector2 size) => MathF.Min(size.X, size.Y) / 1080f;
-
-    public CastFrame(Vector2 size, float alpha, float gate, float leave, bool leaving, float age, float time, float dt, int seed, bool fresh, Vector4? color)
+    public CastFrame(Vector2 size, float alpha, float gate, float leave, bool leaving, float age, float time, float dt, int seed, bool fresh, bool resized, Vector4? color)
     {
-        Size = size; Short = MathF.Min(size.X, size.Y); Px = PxFor(size);
+        Size = size; Short = MathF.Min(size.X, size.Y); Px = DrawHelpers.PixelScale(size);
         Alpha = alpha; Gate = gate; Leave = leave; Leaving = leaving;
-        Age = age; Time = time; Dt = dt; Seed = seed; Fresh = fresh; Color = color;
+        Age = age; Time = time; Dt = dt; Seed = seed; Fresh = fresh; Resized = resized; Color = color;
     }
 }
 
@@ -44,6 +41,7 @@ public sealed class CastTracker
     private const float NewCastGapSeconds = 1.0f;
     private readonly CastEnvelope? _env;
     private float _last = -100f, _start;
+    private Vector2 _lastSize;
 
     /// <summary>With an envelope, Alpha fades in faster and Gate/Leave/Leaving are reported (see CastEnvelope).</summary>
     public CastTracker(bool envelope = false) => _env = envelope ? new CastEnvelope() : null;
@@ -58,6 +56,8 @@ public sealed class CastTracker
             _env?.Begin(dt);
         }
         _last = time;
+        bool resized = !fresh && size != _lastSize;
+        _lastSize = size;
         float age = time - _start;
 
         float gate = alpha, leave = 0f;
@@ -67,7 +67,7 @@ public sealed class CastTracker
             _env.Update(alpha, age);
             alpha = _env.Alpha; gate = _env.Gate; leave = _env.Leave; leaving = _env.Leaving;
         }
-        return new CastFrame(size, alpha, gate, leave, leaving, age, time, dt, unchecked((int)(_start * 1000f)), fresh, color);
+        return new CastFrame(size, alpha, gate, leave, leaving, age, time, dt, unchecked((int)(_start * 1000f)), fresh, resized, color);
     }
 }
 

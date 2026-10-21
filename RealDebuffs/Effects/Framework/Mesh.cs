@@ -55,6 +55,17 @@ internal sealed class MeshBuilder
         _in += 3;
     }
 
+    /// <summary>Stitches rows x cols of reserved vertices (row-major from first) into quads. Reserve first.</summary>
+    public void StitchGrid(int first, int rows, int cols)
+    {
+        for (int i = 0; i + 1 < rows; i++)
+        {
+            int a0 = first + i * cols, b0 = a0 + cols;
+            for (int c = 0; c + 1 < cols; c++)
+                QuadReserved(a0 + c, a0 + c + 1, b0 + c, b0 + c + 1);
+        }
+    }
+
     /// <summary>The quad a b / c d as the two triangles (a, b, d) and (a, d, c). No capacity test: Reserve first.</summary>
     public void QuadReserved(int a, int b, int c, int d)
     {
@@ -621,5 +632,56 @@ internal static unsafe partial class MeshDraw
         }
 
         End(dl, v, ix, vtxCount, idxCount, b);
+    }
+}
+
+/// <summary>Smooth tangents and a forward-only sampler along a path, for tube materials that lay rows of vertices.</summary>
+internal sealed class PathRows
+{
+    /// <summary>Fraction up the dome for each end-cap row, tip last. 0 is where the cap meets the body.</summary>
+    public static readonly float[] DomeT = { 1.0f, 0.95f, 0.80f, 0.50f, 0.0f };
+
+    private readonly Vector2[] _tan;
+
+    public PathRows(int maxPoints) => _tan = new Vector2[maxPoints];
+
+    /// <summary>Smooth tangent at every path point; rows interpolate them so a coarse path shades without facets.</summary>
+    public void Prepare(StrandPath path, int pn, bool closed)
+    {
+        var pts = path.Points;
+        Vector2 last = new(0f, -1f);
+        for (int i = 0; i < pn; i++)
+        {
+            Vector2 a = pts[i > 0 ? i - 1 : (closed ? pn - 2 : 0)];
+            Vector2 b = pts[i < pn - 1 ? i + 1 : (closed ? 1 : pn - 1)];
+            Vector2 d = b - a;
+            float len = d.Length();
+            if (len > 1e-4f) last = d / len;
+            _tan[i] = last;
+        }
+    }
+
+    /// <summary>Position and direction at arc length s, advancing a cursor (s only ever increases).</summary>
+    public void SampleAt(StrandPath path, int pn, ref int seg, float s, out Vector2 p, out Vector2 t)
+    {
+        var arc = path.Arc;
+        var pts = path.Points;
+        while (seg < pn - 2 && arc[seg + 1] < s) seg++;
+
+        float span = arc[seg + 1] - arc[seg];
+        float f = span > 1e-5f ? Math.Clamp((s - arc[seg]) / span, 0f, 1f) : 0f;
+        p = Vector2.Lerp(pts[seg], pts[seg + 1], f);
+
+        Vector2 d = Vector2.Lerp(_tan[seg], _tan[seg + 1], f);
+        float len = d.Length();
+        t = len > 1e-4f ? d / len : _tan[seg];
+    }
+
+    /// <summary>Shaping of a row on a rounded end: width factor and how far the normal leans along the strand.</summary>
+    public static void Cap(float endSign, float domeT, out float capW, out float capAxial)
+    {
+        if (endSign == 0f) { capW = 1f; capAxial = 0f; return; }
+        capW = MathF.Sqrt(MathF.Max(0f, 1f - domeT * domeT));
+        capAxial = endSign * domeT;
     }
 }

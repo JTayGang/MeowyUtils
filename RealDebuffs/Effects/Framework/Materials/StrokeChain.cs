@@ -341,6 +341,10 @@ public sealed class StrokeChain : IStrokeMaterial
         return p;
     }
 
+    /// <summary>A link's lateral half-extent: the ellipse's half-width plus half the bar, so flowing particles ride the surface.</summary>
+    public float RadiusAt(in StrokePrimitive s, float arc, float shortSide)
+        => (HalfLateral + BarDiameter * 0.5f) * Math.Clamp(s.WidthHint, shortSide * MinLinkFrac, shortSide * MaxLinkFrac);
+
     public ReadOnlySpan<StrokeEmission> Emissions => Shed;
 
     /// <summary>Rust flakes dropping; dust sifting more slowly. Sparse on purpose.</summary>

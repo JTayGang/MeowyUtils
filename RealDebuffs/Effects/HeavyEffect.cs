@@ -90,7 +90,7 @@ public sealed class HeavyEffect : ISceneEffect, IHasSwappableSlots
     public void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride)
     {
         var f = _cast.Frame(screenSize, alpha, time, dt, colorOverride);
-        if (f.Fresh) BuildLayout(f.Seed, screenSize);
+        if (f.Fresh || f.Resized) BuildLayout(f.Seed, screenSize);
 
         EmitAtmosphere(scene, in f);
 
@@ -292,7 +292,7 @@ public sealed class HeavyEffect : ISceneEffect, IHasSwappableSlots
         r.Slack = slack * (0.30f + 0.70f * horizontal);
         r.Delay = H(6, 0f, MaxThrowDelay);
         // Speed is what's chosen, not flight time, so a long span isn't faster than a short one.
-        float px = CastFrame.PxFor(size);
+        float px = DrawHelpers.PixelScale(size);
         r.Flight = Math.Clamp(Vector2.Distance(a, b) / (H(7, 4300f, 6200f) * px), 0.20f, 0.50f);
         r.ArcSide = H(8, -0.07f, 0.07f);
         r.SwayPhase = H(9, 0f, MathF.Tau);

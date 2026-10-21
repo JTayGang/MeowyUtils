@@ -127,7 +127,7 @@ public sealed class BindEffect : ISceneEffect, IHasSwappableSlots
     public void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride)
     {
         var f = _cast.Frame(screenSize, alpha, time, dt, colorOverride);
-        if (f.Fresh) BuildLayout(f.Seed, screenSize);
+        if (f.Fresh || f.Resized) BuildLayout(f.Seed, screenSize);
 
         float haul = 0f;
 
@@ -386,7 +386,7 @@ public sealed class BindEffect : ISceneEffect, IHasSwappableSlots
     private static void BuildRig(Rig r, int s, Vector2 a, Vector2 b, Vector2 size, bool far)
     {
         float H(int salt, float lo, float hi) => DrawHelpers.HashRange(s + salt, lo, hi);
-        float px = CastFrame.PxFor(size);
+        float px = DrawHelpers.PixelScale(size);
 
         if (DrawHelpers.Hash01(s + 3) < 0.5f) (a, b) = (b, a);
 

@@ -117,12 +117,7 @@ public sealed class StrokeMagma : IStrokeMaterial
                 if (first < 0) first = v;
             }
         }
-        for (int i = 0; i + 1 < heat.Length; i++)
-        {
-            int a0 = first + i * Cols, b0 = a0 + Cols;
-            for (int c = 0; c + 1 < Cols; c++)
-                Mb.QuadReserved(a0 + c, a0 + c + 1, b0 + c, b0 + c + 1);
-        }
+        Mb.StitchGrid(first, heat.Length, Cols);
         Mb.Flush(dl, MeshDraw.WhiteUv(time));
 
         // The pen: where it is still being laid, the metal is white-hot.

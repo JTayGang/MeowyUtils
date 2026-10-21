@@ -201,12 +201,7 @@ public sealed class StrokeBlood : IStrokeMaterial
             }
         }
 
-        for (int i = 0; i + 1 < n; i++)
-        {
-            int a0 = first + i * Cols, b0 = a0 + Cols;
-            for (int c = 0; c + 1 < Cols; c++)
-                Mb.QuadReserved(a0 + c, a0 + c + 1, b0 + c, b0 + c + 1);
-        }
+        Mb.StitchGrid(first, n, Cols);
         Mb.Flush(dl, MeshDraw.WhiteUv(time));
 
         DrawGlint(dl, in s, in ctx, st, n, half0, alpha * near, overridden, capStart, capEnd, capLen, visibleLen);
@@ -281,11 +276,7 @@ public sealed class StrokeBlood : IStrokeMaterial
         }
 
         if (!any) { Mb.Clear(); return; }
-        for (int i = 0; i + 1 < n; i++)
-        {
-            int a0 = first + i * StreakCols, b0 = a0 + StreakCols;
-            for (int c = 0; c + 1 < StreakCols; c++) Mb.QuadReserved(a0 + c, a0 + c + 1, b0 + c, b0 + c + 1);
-        }
+        Mb.StitchGrid(first, n, StreakCols);
         Mb.Flush(dl, MeshDraw.WhiteUv(ctx.Time));
     }
 

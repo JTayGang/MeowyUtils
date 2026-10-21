@@ -113,7 +113,7 @@ public sealed class StrokeParasite : IStrokeMaterial
     private RowParams _rp;
     private readonly Row[] _rows = new Row[MaxRows];
     private readonly float[] _hgt = new float[MaxRows * 17];  // wart height (noise, ~[-1,1]) per row and column
-    private readonly Vector2[] _pointTan = new Vector2[MaxPathPoints];
+    private readonly PathRows _path = new(MaxPathPoints);
     private float _screenW, _screenH;
 
     // The strand's profile: shared by the drawing and by RadiusAt
@@ -310,7 +310,7 @@ public sealed class StrokeParasite : IStrokeMaterial
                           Tier tier, int seed, float phase, float twist, float time, float px, float depth, in Look look)
     {
         int pn = Math.Min(path.Count, MaxPathPoints);
-        PreparePointTangents(path, pn, closed);
+        _path.Prepare(path, pn, closed);
 
         float diameter = look.Diameter, radius = look.Radius;
         // Rows are cut finely enough to carry the highlight breakup and the skin pattern
@@ -359,16 +359,16 @@ public sealed class StrokeParasite : IStrokeMaterial
 
         int count = 0, seg = 0;
         if (domeStart)
-            for (int i = 0; i < DomeT.Length - 1; i++)
-                AddRow(path, pn, ref seg, ref count, capStart * (1f - DomeT[i]), -1f, DomeT[i]);
+            for (int i = 0; i < PathRows.DomeT.Length - 1; i++)
+                AddRow(path, pn, ref seg, ref count, capStart * (1f - PathRows.DomeT[i]), -1f, PathRows.DomeT[i]);
 
         int bodyRows = Math.Max(1, (int)MathF.Ceiling((bodyEnd - bodyStart) / step));
         for (int i = 0; i <= bodyRows; i++)
             AddRow(path, pn, ref seg, ref count, bodyStart + (bodyEnd - bodyStart) * i / bodyRows, 0f, 0f);
 
         if (domeEnd)
-            for (int i = DomeT.Length - 2; i >= 0; i--)
-                AddRow(path, pn, ref seg, ref count, visibleLen - capEnd * (1f - DomeT[i]), +1f, DomeT[i]);
+            for (int i = PathRows.DomeT.Length - 2; i >= 0; i--)
+                AddRow(path, pn, ref seg, ref count, visibleLen - capEnd * (1f - PathRows.DomeT[i]), +1f, PathRows.DomeT[i]);
 
         for (int i = 0; i < count; i++) FillRow(ref _rows[i], in _rp, in look);
         return count;
@@ -495,40 +495,17 @@ public sealed class StrokeParasite : IStrokeMaterial
         return Noise.Value(rr * MathF.Cos(a) + offset, rr * MathF.Sin(a) + offset * 0.37f);
     }
 
-    // Fraction up the dome for each end-cap row, tip last. 0 is where the cap meets the body.
-    private static readonly float[] DomeT = { 1.0f, 0.95f, 0.80f, 0.50f, 0.0f };
 
     private void AddRow(StrandPath path, int pn, ref int seg, ref int count, float s, float endSign, float domeT)
     {
         if (count >= MaxRows) return;
-        SampleAt(path, pn, ref seg, s, out Vector2 p, out Vector2 t);
+        _path.SampleAt(path, pn, ref seg, s, out Vector2 p, out Vector2 t);
 
         ref Row r = ref _rows[count];
         r.Arc = s;
         r.P = p; r.T = t;
-        if (endSign == 0f) { r.CapW = 1f; r.CapAxial = 0f; }
-        else
-        {
-            r.CapW = MathF.Sqrt(MathF.Max(0f, 1f - domeT * domeT));
-            r.CapAxial = endSign * domeT;
-        }
+        PathRows.Cap(endSign, domeT, out r.CapW, out r.CapAxial);
         count++;
-    }
-
-    /// <summary>Smooth tangents at every path point, interpolated per row, so a coarse path shades without facets (as in Rope).</summary>
-    private void PreparePointTangents(StrandPath path, int pn, bool closed)
-    {
-        var pts = path.Points;
-        Vector2 last = new(0f, -1f);
-        for (int i = 0; i < pn; i++)
-        {
-            Vector2 a = pts[i > 0 ? i - 1 : (closed ? pn - 2 : 0)];
-            Vector2 b = pts[i < pn - 1 ? i + 1 : (closed ? 1 : pn - 1)];
-            Vector2 d = b - a;
-            float len = d.Length();
-            if (len > 1e-4f) last = d / len;
-            _pointTan[i] = last;
-        }
     }
 
     /// <summary>Samples the strand at any arc length, by search rather than by walking: a sucker is evaluated exactly where it belongs.</summary>
@@ -542,22 +519,7 @@ public sealed class StrokeParasite : IStrokeMaterial
             if (arc[mid] <= s) lo = mid; else hi = mid - 1;
         }
         int seg = lo;
-        SampleAt(path, pn, ref seg, s, out p, out t);
-    }
-
-    private void SampleAt(StrandPath path, int pn, ref int seg, float s, out Vector2 p, out Vector2 t)
-    {
-        var arc = path.Arc;
-        var pts = path.Points;
-        while (seg < pn - 2 && arc[seg + 1] < s) seg++;
-
-        float span = arc[seg + 1] - arc[seg];
-        float f = span > 1e-5f ? Math.Clamp((s - arc[seg]) / span, 0f, 1f) : 0f;
-        p = Vector2.Lerp(pts[seg], pts[seg + 1], f);
-
-        Vector2 d = Vector2.Lerp(_pointTan[seg], _pointTan[seg + 1], f);
-        float len = d.Length();
-        t = len > 1e-4f ? d / len : _pointTan[seg];
+        _path.SampleAt(path, pn, ref seg, s, out p, out t);
     }
 
     // Shadow: a soft band under the tentacle, narrowing with it

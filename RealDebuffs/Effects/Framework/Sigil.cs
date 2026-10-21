@@ -278,3 +278,15 @@ internal static class RuneGlyphs
         new[] { L(-0.7f, -0.9f, -0.1f, 0.0f, -0.5f, 0.95f), L(0f, -0.96f, 0.14f, 0.1f, -0.06f, 0.96f), L(0.7f, -0.9f, 0.34f, 0.0f, 0.4f, 0.95f) },
     };
 }
+
+/// <summary>How a sigil stack moves: the lean wanders, lurches when the cast lands and swings slowly round, and the whole thing breathes.</summary>
+internal readonly record struct SigilSway(float BaseTilt, float TiltSway, float Precession, float LurchTilt, float LurchSeconds, float BreathBase, float BreathAmp)
+{
+    /// <summary>The lean in radians; it tips further as the status lifts. Effects add their own extras after.</summary>
+    public float Tilt(float age, float leave)
+        => BaseTilt + TiltSway * MathF.Sin(age * 0.23f + 1.3f) + LurchTilt * MathF.Exp(-age / LurchSeconds) + 0.10f * leave;
+
+    public float Azimuth(float start, float dir, float age) => start + dir * Precession * age;
+
+    public float Breath(float age) => BreathBase + BreathAmp * MathF.Sin(age * 1.9f + 0.7f);
+}

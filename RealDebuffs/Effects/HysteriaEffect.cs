@@ -43,8 +43,14 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
     // The tunnel. Heights are px toward the viewer at 1080p (LayerCamera's, so the perspective is its own); things come in at the far end,
     // swell and sweep outward as they near, and leave past the lens. Radii are the lane a thing flies in, measured at the focal plane.
     private const float CameraDistance = 1500f;
-    private const float FarHeight = -3600f, NearHeight = 1050f, CruiseSpeed = 650f;
+    private const float FarHeight = -3600f, NearHeight = 1050f;
     private static readonly SigilSway Sway = new(BaseTilt: 0.08f, TiltSway: 0.05f, Precession: 0.10f, LurchTilt: 0.20f, LurchSeconds: 0.7f, BreathBase: 0.92f, BreathAmp: 0.08f);
+
+    // Pacing: how fast it all feels. These are the knobs.
+    private const float CruiseSpeed = 300f;                          // px/s down the tunnel at 1080p; a lap of the tunnel takes about 16 s
+    private const float VisionStretch = 1.75f;                       // how much longer than its base length each hallucination lasts
+    private const float FirstVisionMin = 5.0f, FirstVisionMax = 7.5f;    // when the first one comes, seconds into the cast
+    private const float VisionGapMin = 8.0f, VisionGapMax = 15.0f;       // the quiet between one ending and the next
 
     // What flies down it
     private const int HeroStreamers = 10, FineStreamers = 22, StreamerCount = HeroStreamers + FineStreamers, StreamerPts = 16;
@@ -52,11 +58,11 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
     private const int EyeLanes = 22, OrbLanes = 6, ClusterLanes = 3, ClusterEyes = 5, SpeckCount = 64, GloomCount = 7;
 
     // The cast: a flash, the dark, the tunnel rushing at you at 18 fps like a bad signal and slowing to a fall, the eyes waking, one blink together
-    private const float StopMotionUntil = 1.6f, StopMotionRate = 18f;
-    private const float BlinkAt = 1.50f, IntroEyes = 1.9f, ShockSeconds = 0.9f;
+    private const float StopMotionUntil = 0f, StopMotionRate = 18f;
+    private const float BlinkAt = 2.0f, IntroEyes = 2.5f, ShockSeconds = 1.2f;
 
     // Hallucinations
-    private const float FirstVisionMin = 3.6f, FirstVisionMax = 5.0f, VisionGapMin = 3.2f, VisionGapMax = 7.0f;
+    private const float QuietShake = 0f;    // the tremor, tilt twitch and heartbeat lurch left between hallucinations (0 = a steady view, 1 = all of it); an apparition always has all of it
     private const float StareClear = 0.34f;     // short-side fraction round the middle of the screen that a crowd of eyes keeps out of
     private const int MaxStare = 12;
 
@@ -161,17 +167,19 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
         _tqPrev = tq;
 
         // After the flash and the dark, the tunnel materializes out of nothing.
-        _appear = DrawHelpers.Smooth((tq - 0.15f) / 0.45f);
+        _appear = DrawHelpers.Smooth((tq - 0.15f) / 0.70f);
         float speed = SpeedNow(in f);
         _tunnel.Advance(MathF.Max(0f, step), CruiseSpeed * _cruise * speed);
         _roll = _baseAngle + _spin * f.Age + _jump * _kick;
         float lenMul = Math.Clamp(0.55f + 0.45f * MathF.Pow(MathF.Max(speed, 0.01f), 0.6f), 0.5f, 3f);
 
-        // Whatever is shown jolts the whole view: a lurch of tilt, a shake, and a tremor that never quite stops.
-        float tremor = (0.3f + _stress) * f.Px;
+        // Whatever is shown jolts the whole view: a lurch of tilt, a shake, and under it a tremor, a twitch of tilt and a lurch with each
+        // heartbeat. Those three belong to the apparition (QuietShake leaves some of them in the quiet); the view is steady between.
+        float nerves = DrawHelpers.Lerp(QuietShake, 1f, _env);
+        float tremor = (0.3f + _stress) * f.Px * nerves;
         Vector2 shake = new Vector2(Flicker.Tic(time, _seed + 31, 33f), Flicker.Tic(time, _seed + 32, 33f)) * 12f * f.Px * _kick
                       + new Vector2(Flicker.Tic(time, _seed + 33), Flicker.Tic(time, _seed + 34)) * 1.4f * tremor;
-        float tilt = Sway.Tilt(f.Age, f.Leave) + _kickTilt * _kick + 0.008f * beat + 0.004f * Flicker.Tic(time, _seed + 35);
+        float tilt = Sway.Tilt(f.Age, f.Leave) + _kickTilt * _kick + (0.008f * beat + 0.004f * Flicker.Tic(time, _seed + 35)) * nerves;
         _cam = new LayerCamera(f.Center + shake, CameraDistance * f.Px, tilt, Sway.Azimuth(_azimuth, _azimuthDir, f.Age));
         _breath = Sway.Breath(f.Age);
 
@@ -199,7 +207,7 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
         _hand = DrawHelpers.Hash01(seed + 5) < 0.5f ? -1f : 1f;
         _swirl = _hand * DrawHelpers.HashRange(seed + 7, 0.00030f, 0.00060f);
         _baseAngle = DrawHelpers.Hash01(seed + 8) * MathF.Tau;
-        _spin = DrawHelpers.HashRange(seed + 9, 0.03f, 0.08f) * (DrawHelpers.Hash01(seed + 10) < 0.5f ? -1f : 1f);
+        _spin = DrawHelpers.HashRange(seed + 9, 0.015f, 0.04f) * (DrawHelpers.Hash01(seed + 10) < 0.5f ? -1f : 1f);
         _cruise = DrawHelpers.HashRange(seed + 11, 0.85f, 1.15f);
 
         // Where each thing starts along the tunnel, evenly spread so it is never empty and never bunched; laps then re-roll their lanes.
@@ -225,12 +233,12 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
     /// <summary>The fall, in multiples of cruising speed: the cast rushes in and slows; an apparition can stop it dead or tear it forward.</summary>
     private float SpeedNow(in CastFrame f)
     {
-        float intro = 1f + 9f * MathF.Exp(-f.Age / 0.55f);
+        float intro = 1f + 11f * MathF.Exp(-f.Age / 0.70f);
         float v = _v.Kind switch
         {
             VisionKind.Stare or VisionKind.GreatEye => 1f - 0.97f * _env,
             VisionKind.Gate => 1f - 0.80f * _env,
-            VisionKind.Surge => 1f + 8f * _env,
+            VisionKind.Surge => 1f + 6f * _env,
             _ => 1f,
         };
         return intro * (v + 3f * MathF.Exp(-(f.Age - _resumeAt) / 0.45f));
@@ -254,7 +262,7 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
         bool on = _v.Kind != VisionKind.None;
         float t = f.Age - _v.Start;
         _level = on ? Flicker.Level(t, _v.Life, _v.Seed) : 0f;
-        _env = on ? DrawHelpers.Smooth(t / 0.07f) * (1f - DrawHelpers.Smooth((t - (_v.Life - 0.18f)) / 0.18f)) : 0f;
+        _env = on ? DrawHelpers.Smooth(t / 0.07f) * (1f - DrawHelpers.Smooth((t - (_v.Life - 0.30f)) / 0.30f)) : 0f;
         _kick = on ? MathF.Exp(-t / 0.20f) : 0f;
 
         // The gate hits you as it passes through, late in its life.
@@ -290,21 +298,21 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
         switch (kind)
         {
             case VisionKind.Stare:
-                _v.Life = DrawHelpers.HashRange(seed + 6, 1.1f, 1.7f);
+                _v.Life = DrawHelpers.HashRange(seed + 6, 1.1f, 1.7f) * VisionStretch;
                 PlaceStare(in f, seed);
                 break;
             case VisionKind.GreatEye:
-                _v.Life = DrawHelpers.HashRange(seed + 6, 0.80f, 1.20f);
+                _v.Life = DrawHelpers.HashRange(seed + 6, 0.80f, 1.20f) * VisionStretch;
                 _v.At = new Vector2(DrawHelpers.HashRange(seed + 7, 0.36f, 0.64f), DrawHelpers.HashRange(seed + 8, 0.16f, 0.34f));
                 _v.Size = DrawHelpers.HashRange(seed + 9, 190f, 250f);
                 _v.Roll = DrawHelpers.HashRange(seed + 10, -0.12f, 0.12f);
                 _v.Style = PickBigStyle(seed + 11);
                 break;
             case VisionKind.Gate:
-                _v.Life = DrawHelpers.HashRange(seed + 6, 0.70f, 0.95f);
+                _v.Life = DrawHelpers.HashRange(seed + 6, 0.70f, 0.95f) * VisionStretch;
                 break;
             default:
-                _v.Life = DrawHelpers.HashRange(seed + 6, 0.50f, 0.85f);
+                _v.Life = DrawHelpers.HashRange(seed + 6, 0.50f, 0.85f) * VisionStretch;
                 break;
         }
     }
@@ -334,7 +342,7 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
             roll = Math.Clamp(roll, -0.8f, 0.8f);
 
             float size = DrawHelpers.HashRange(seed + 200 + n, 22f, 48f) * (0.8f + 0.5f * MathF.Min(d, 1f));
-            float delay = DrawHelpers.HashRange(seed + 300 + n, 0.02f, 0.55f);
+            float delay = DrawHelpers.HashRange(seed + 300 + n, 0.02f, 0.55f) * VisionStretch;
             bool single = DrawHelpers.Hash01(seed + 400 + n) < 0.12f;
             EyeStyle style = PickStyle(seed + 450 + n);
             Vector2 half = new Vector2(MathF.Cos(axis), MathF.Sin(axis)) * size * 1.3f * f.Px / f.Size;
@@ -390,7 +398,7 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
     {
         ref readonly CastFrame f = ref _f;
         float px = f.Px;
-        float agitation = DrawHelpers.Saturate(0.9f * _kick + 0.35f * _env + 0.25f * beat);
+        float agitation = DrawHelpers.Saturate(0.9f * _kick + 0.35f * _env + 0.25f * beat * DrawHelpers.Lerp(QuietShake, 1f, _env));
 
         for (int i = 0; i < StreamerCount; i++)
         {
@@ -400,7 +408,7 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
             int s = _seed + 1000 + i * 7919 + lap * 104729;
 
             float fade = DepthFade(near, 0.14f, 0.80f);
-            float appear = DrawHelpers.Smooth((tq - 0.04f - 0.30f * DrawHelpers.Hash01(_seed + i * 13)) / 0.30f);
+            float appear = DrawHelpers.Smooth((tq - 0.05f - 0.45f * DrawHelpers.Hash01(_seed + i * 13)) / 0.45f);
             float gain = DrawHelpers.HashRange(s + 6, 0.45f, 0.85f) * (hero ? 1f : 0.55f);
             float k = f.Alpha * fade * appear * gain * _breath * (1f + 0.25f * beat) * Flicker.Gutter(f.Time, s, 0.01f + 0.05f * _stress);
             if (k < 0.01f) continue;
@@ -448,7 +456,7 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
             float hu = _tunnel.HeightOf(_ringAt[r], out int lap);
             float near = _tunnel.Near(hu);
             int s = _seed + 2000 + r * 7919 + lap * 104729;
-            float appear = DrawHelpers.Smooth((tq - 0.25f - 0.12f * r) / 0.45f);
+            float appear = DrawHelpers.Smooth((tq - 0.30f - 0.18f * r) / 0.70f);
             float fade = DepthFade(near, 0.18f, 0.80f) * appear;
             if (fade < 0.02f) continue;
 
@@ -457,13 +465,13 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
             float radius = DrawHelpers.HashRange(s + 1, 0.60f, 0.82f) * f.Short;
             var wobble = new RingWobble(DrawHelpers.HashRange(s + 2, 0.008f, 0.022f), 2 + (s & 1), DrawHelpers.Hash01(s + 3) * MathF.Tau,
                                         DrawHelpers.HashRange(s + 4, 0.002f, 0.005f), 5 + (s & 3), DrawHelpers.Hash01(s + 5) * MathF.Tau);
-            float angle = DrawHelpers.Hash01(s + 6) * MathF.Tau + DrawHelpers.HashRange(s + 7, -0.5f, 0.5f) * f.Age + _roll;
+            float angle = DrawHelpers.Hash01(s + 6) * MathF.Tau + DrawHelpers.HashRange(s + 7, -0.25f, 0.25f) * f.Age + _roll;
             SigilGeometry.Ring(_ring[r], RingSegments, in _cam, radius, h, angle, in wobble);
 
             bool scripted = r == 0 && (lap & 1) == 0;
             float dash = !scripted && DrawHelpers.Hash01(s + 8) < 0.5f ? DrawHelpers.HashRange(s + 9, 50f, 140f) : 0f;
             float k = f.Alpha * fade * 0.55f * _breath * Flicker.Gutter(f.Time, s, 0.008f + 0.04f * _stress);
-            scene.Ring(_ring[r], PrimitiveRole.Inscription, _seed, 40 + r, Math.Clamp(9f * px * scale, 6f * px, 30f * px), k, (1f - near) * 0.6f, 0.2f * _stress, 1f, dash, f.Color);
+            scene.Ring(_ring[r], PrimitiveRole.Inscription, _seed, 40 + r, Math.Clamp(9f * px * scale, 6f * px, 30f * px), k, (1f - near) * 0.6f, 0.2f * DrawHelpers.Lerp(QuietShake, 1f, _env), 1f, dash, f.Color);
 
             if (_ghost > 0.02f) EmitGhostRing(scene, r, Math.Clamp(9f * px * scale, 6f * px, 30f * px), k, 90 + r * 2);
             if (scripted) EmitScript(scene, radius, h, angle, 17f * px * scale, f.Alpha * fade * 0.75f * _breath, ScriptRunes, s);
@@ -656,7 +664,7 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
     {
         float awakeFrom = DrawHelpers.HashRange(seed + 12, 0.22f, 0.50f);
         float natural = DrawHelpers.Smooth((near - awakeFrom) / 0.08f) * (1f - DrawHelpers.Smooth((near - 0.93f) / 0.05f)) * (1f - Blink(age, seed));
-        float intro = DrawHelpers.Smooth((tq - (0.5f + 0.9f * DrawHelpers.Hash01(_seed + lane * 53))) / 0.12f);
+        float intro = DrawHelpers.Smooth((tq - (0.7f + 1.1f * DrawHelpers.Hash01(_seed + lane * 53))) / 0.20f);
 
         float open = DrawHelpers.Lerp(intro, natural, DrawHelpers.Smooth((age - IntroEyes) / 0.4f)) * (1f - SyncBlink(age));
         return MathF.Max(open, 0.95f * _staring);
@@ -664,18 +672,18 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
 
     /// <summary>In the cast each eye comes out of the dark in its own time, a scatter between 0.15 s and 0.9 s.</summary>
     private float IntroIn(float tq, int salt)
-        => DrawHelpers.Smooth((tq - 0.15f - 0.75f * DrawHelpers.Hash01(_seed + salt)) / 0.25f);
+        => DrawHelpers.Smooth((tq - 0.20f - 1.00f * DrawHelpers.Hash01(_seed + salt)) / 0.35f);
 
     /// <summary>A quick blink every few seconds, each eye on its own beat.</summary>
     private static float Blink(float age, int seed)
     {
-        float phase = (age * 0.31f + DrawHelpers.Hash01(seed + 10) * 7f) % 1f;
+        float phase = (age * 0.20f + DrawHelpers.Hash01(seed + 10) * 7f) % 1f;
         return phase < 0.045f ? MathF.Sin(MathF.PI * phase / 0.045f) : 0f;
     }
 
     /// <summary>The blink every eye in the tunnel makes together, once, as the cast settles.</summary>
     private static float SyncBlink(float age)
-        => DrawHelpers.Smooth((age - BlinkAt) / 0.05f) * (1f - DrawHelpers.Smooth((age - BlinkAt - 0.30f) / 0.12f));
+        => DrawHelpers.Smooth((age - BlinkAt) / 0.07f) * (1f - DrawHelpers.Smooth((age - BlinkAt - 0.40f) / 0.20f));
 
     private void AddThing(float height, in ParticlePrimitive p) => _things.Add(new Thing { Height = height, Particle = p });
 
@@ -696,7 +704,7 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
         // The cast: a cold flash, then the lights go out for a moment and the tunnel is seen by its own light.
         float flash = f.Age < 0.40f ? MathF.Exp(-f.Age / 0.08f) : 0f;
         scene.Wash(f.Size, Flash, 0.50f * flash * f.Gate, f.Color);
-        float dark = DrawHelpers.Smooth(f.Age / 0.12f) * (1f - DrawHelpers.Smooth((f.Age - 0.40f) / 1.0f));
+        float dark = DrawHelpers.Smooth(f.Age / 0.12f) * (1f - DrawHelpers.Smooth((f.Age - 0.50f) / 1.4f));
         scene.Wash(f.Size, Ink, 0.36f * dark * f.Gate, f.Color);
 
         // An apparition: the world dims so it can be seen, and it lands with a cold flash.
@@ -724,15 +732,15 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
 
                 // Each opens on its own stutter, then they all slam shut together as it ends.
                 float lit = Flicker.Level(te, _v.Life - e.Delay, e.Seed);
-                float open = DrawHelpers.Smooth(te / 0.10f) * DrawHelpers.Smooth((_v.Life - t) / 0.07f);
+                float open = DrawHelpers.Smooth(te / 0.18f) * DrawHelpers.Smooth((_v.Life - t) / 0.07f);
                 AddVisionEye(scene, e.At * f.Size, e.Size * f.Px, e.Roll, open, lit, e.Style, e.Seed);
             }
         }
         else if (_v.Kind == VisionKind.GreatEye)
         {
             // One enormous eye that looks at you, blinks once, and is gone.
-            float blink = MathF.Exp(-MathF.Pow((t - 0.55f * _v.Life) / 0.045f, 2f));
-            float open = DrawHelpers.Smooth(t / 0.08f) * (1f - blink) * DrawHelpers.Smooth((_v.Life - t) / 0.06f);
+            float blink = MathF.Exp(-MathF.Pow((t - 0.55f * _v.Life) / 0.07f, 2f));
+            float open = DrawHelpers.Smooth(t / 0.14f) * (1f - blink) * DrawHelpers.Smooth((_v.Life - t) / 0.06f);
             AddVisionEye(scene, _v.At * f.Size, _v.Size * f.Px, _v.Roll, open, _level, _v.Style, _v.Seed);
         }
     }
@@ -760,7 +768,7 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
 
         for (int g = 0; g < GateRings; g++)
         {
-            float tg = t - g * 0.09f;
+            float tg = t - g * 0.15f;
             if (tg < 0f) continue;
             float lit = Flicker.Level(tg, _v.Life, _v.Seed + g) * (g == 0 ? 1f : 0.7f);
             if (lit <= 0.01f) continue;
@@ -770,7 +778,7 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
             float h = DrawHelpers.Lerp(FarHeight * 0.75f, NearHeight * 0.9f, u * u * (0.4f + 0.6f * u)) * px;
             float scale = _cam.ScaleAt(h);
             float radius = f.Short * (0.74f - 0.07f * g);
-            float angle = _v.Seed * 0.001f + g * 0.9f + t * 1.2f;
+            float angle = _v.Seed * 0.001f + g * 0.9f + t * 0.8f;
             SigilGeometry.Ring(_gate[g], GateSegments, in _cam, radius, h, angle, RingWobble.None);
 
             float width = Math.Clamp(14f * px * scale, 8f * px, 44f * px), k = f.Alpha * lit;

@@ -48,9 +48,9 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
 
     // Pacing: how fast it all feels. These are the knobs.
     private const float CruiseSpeed = 300f;                          // px/s down the tunnel at 1080p; a lap of the tunnel takes about 16 s
-    private const float VisionStretch = 1.75f;                       // how much longer than its base length each hallucination lasts
+    private const float VisionStretch = 2.75f;                       // how much longer than its base length each hallucination lasts
     private const float FirstVisionMin = 5.0f, FirstVisionMax = 7.5f;    // when the first one comes, seconds into the cast
-    private const float VisionGapMin = 8.0f, VisionGapMax = 15.0f;       // the quiet between one ending and the next
+    private const float VisionGapMin = 10.0f, VisionGapMax = 20.0f;       // the quiet between one ending and the next
 
     // What flies down it
     private const int HeroStreamers = 10, FineStreamers = 22, StreamerCount = HeroStreamers + FineStreamers, StreamerPts = 16;

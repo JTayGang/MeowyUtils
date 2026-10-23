@@ -83,7 +83,7 @@ public static class EffectRegistry
         PrimitiveRole.Haze      => "particle.thunderhead",
         PrimitiveRole.Flash     => "particle.flare",
         PrimitiveRole.Candle    => "particle.candle",
-        PrimitiveRole.Bubble    => "particle.bubble",
+        PrimitiveRole.Eye       => "particle.eye",
         _                       => "particle.spark",
     };
 
@@ -114,13 +114,10 @@ public static class MaterialRegistry
         Add(Regions, new RegionFirelight());
         Add(Regions, new RegionFirelight("region.hellglow", HellColor.Flame));
         Add(Regions, new RegionFrost());
-        Add(Regions, new RegionLiquid("region.acid-slime", LiquidPresets.Acid, LiquidMasses.Acid));
 
         Add(Strokes, new StrokeSimple());
         Add(Strokes, new StrokeChain());
         Add(Strokes, new StrokeParasite());
-        Add(Strokes, new StrokeThread("stroke.acid-thread", LiquidPresets.Acid, ThreadSprays.Acid, "thread", "threads", "strand", "strands", "string", "strings", "web", "webs"));
-        Add(Strokes, new StrokeDripLine("stroke.drip-line", ParticleAcid.LipSpec));
         Add(Strokes, new StrokeRope());
         Add(Strokes, new StrokeSigil());
         Add(Strokes, new StrokeLightning());
@@ -131,6 +128,9 @@ public static class MaterialRegistry
         Add(Strokes, new StrokeHorn());
         Add(Strokes, new StrokeGlow("stroke.hellglow", HellColor.Glow, "hellglow", "hellglare", "brimglow"));
         Add(Strokes, new StrokeBlood());
+        Add(Strokes, new StrokeSigil("stroke.haunt", HauntColor.Glow, "particle.spirit", "ghostlight", "spectral", "specter", "wraithlight"));
+        Add(Strokes, new StrokeGlow("stroke.hauntglow", HauntColor.Glow, "hauntglow", "ghostglow", "pallor"));
+        Add(Strokes, new StrokeWisp());
 
         Add(Particles, new ParticleEmber());
         Add(Particles, new ParticleCinder());
@@ -142,8 +142,6 @@ public static class MaterialRegistry
         Add(Particles, new ParticleFlake());
         Add(Particles, new ParticleFibre());
         Add(Particles, new ParticleSlime());
-        Add(Particles, new ParticleAcid());
-        Add(Particles, new ParticleBubble());
         Add(Particles, new ParticleRune());
         Add(Particles, new ParticleArc());
         Add(Particles, new ParticleFlare());
@@ -154,6 +152,9 @@ public static class MaterialRegistry
         Add(Particles, new ParticleEmber("particle.hellfire", HellColor.Flame, "hellfire", "hellflame", "hellflames", "inferno", "infernal"));
         Add(Particles, new ParticleRune("particle.hellrune", HellColor.Glow, RuneGlyphs.FirstInfernal, RuneGlyphs.InfernalCount, "occult", "hex", "hexes", "hexglyph"));
         Add(Particles, new ParticleMote("particle.hellmote", HellColor.Glow, false, "emberlight", "fireflies", "firefly"));
+        Add(Particles, new ParticleEye());
+        Add(Particles, new ParticleRune("particle.omen", HauntColor.Glow, 0, RuneGlyphs.FirstSilence, "omen", "omens", "hallucination", "hallucinations"));
+        Add(Particles, new ParticleMote("particle.spirit", HauntColor.Glow, false, "spirit", "spirits", "soul", "souls", "wraith", "wraiths"));
 
         var vocabulary = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var material in All)

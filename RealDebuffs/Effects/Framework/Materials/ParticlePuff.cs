@@ -91,22 +91,22 @@ public sealed class ParticlePuff : IParticleMaterial
             BiasVelocity: new Vector2(0f, -12f),
             PrimaryDirection: new Vector2(0f, -1f)));
 
-    /// <summary>Toxic vapour: a pale acid yellow-green where it is fresh, thinning to a dark olive murk as it drifts and spreads. Poison's fumes, and any "made of fumes".</summary>
-    public static readonly ParticlePuff Fume = new("particle.fume", new[] { "fume", "fumes", "gas" },
-        new Look(Warm: DrawHelpers.Pack(0.40f, 0.72f, 0.10f), Cool: DrawHelpers.Pack(0.055f, 0.100f, 0.012f), CoolSpan: 0.80f,
-                 GrowFrom: 0.55f, GrowBy: 1.05f, FadeIn: 0.22f, FadeOutAt: 0.50f,
-                 Alpha: 0.30f, Squash: 0.78f, Irregular: 0.60f, MinSize: 2f,
-                 Highlight: DrawHelpers.Pack(0.70f, 1.00f, 0.30f), Thin: 0.45f),
+    // The dark that comes with a haunting: ink with a cold sheen where something pale catches it
+    public static readonly ParticlePuff Gloom = new("particle.gloom", new[] { "gloom", "gloaming", "umbra" },
+        new Look(Warm: DrawHelpers.Pack(0.16f, 0.24f, 0.26f), Cool: DrawHelpers.Pack(0.012f, 0.018f, 0.024f), CoolSpan: 0.80f,
+                 GrowFrom: 0.60f, GrowBy: 0.60f, FadeIn: 0.25f, FadeOutAt: 0.55f,
+                 Alpha: 0.42f, Squash: 0.80f, Irregular: 0.55f, MinSize: 2f,
+                 Highlight: DrawHelpers.Pack(0.55f, 0.72f, 0.70f), Thin: 0.30f),
         new StrokeEmission(Role: PrimitiveRole.Miasma,
-            DensityPer100px: 0.4f,
-            SpeedMin: 5f, SpeedMax: 14f,
-            LifespanMin: 2.4f, LifespanMax: 4.2f,
-            SizeMin: 14f, SizeMax: 28f,
+            DensityPer100px: 0.30f,
+            SpeedMin: 4f, SpeedMax: 12f,
+            LifespanMin: 2.6f, LifespanMax: 4.4f,
+            SizeMin: 16f, SizeMax: 30f,
             SpreadRadians: 1.4f,
-            BiasVelocity: new Vector2(0f, -10f),
+            BiasVelocity: new Vector2(0f, -6f),
             PrimaryDirection: new Vector2(0f, -1f)));
 
-    public static readonly ParticlePuff[] All = { Smoke, Mist, Dust, Miasma, Thunderhead, Brimstone, Fume };
+    public static readonly ParticlePuff[] All = { Smoke, Mist, Dust, Miasma, Thunderhead, Brimstone, Gloom };
 
     private const int Segs = 12;
 

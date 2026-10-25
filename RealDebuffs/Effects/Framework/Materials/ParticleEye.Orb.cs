@@ -18,7 +18,7 @@ public sealed partial class ParticleEye
     /// <summary>The light on the orb, as a direction in 3D: from the middle of the screen (the lit end of the tunnel), and a little toward you.</summary>
     private static Vector3 OrbLight(Vector2 toLight) => Vector3.Normalize(new Vector3(toLight.X, toLight.Y, 0.45f));
 
-    private void DrawOrb(ImDrawListPtr dl, in ParticlePrimitive p, in Pose e, Vector2 uv, float time, int screenW, int screenH)
+    private void DrawOrb(ImDrawListPtr dl, in ParticlePrimitive p, in Pose e, Vector2 uv, float time, int screenW, int screenH, float forward)
     {
         float w = e.W;
         Vector2 toMid = new Vector2(screenW * 0.5f, screenH * 0.5f) - e.Pos;
@@ -28,7 +28,8 @@ public sealed partial class ParticleEye
         // It faces you, its iris leaning a little toward the middle of the screen; its nerve trails back the way it has come.
         int glance = (int)(time * 1.3f);
         Vector2 jitter = new Vector2(DrawHelpers.Hash01(p.Seed * 3 + glance * 17) - 0.5f, DrawHelpers.Hash01(p.Seed * 5 + glance * 29) - 0.5f) * 0.10f * w;
-        Vector2 ic = e.FromScreenDir(toward) * 0.30f * w + jitter;
+        // (When something is being shown the iris comes round to face straight out at you.)
+        Vector2 ic = (e.FromScreenDir(toward) * 0.30f * w + jitter) * (1f - forward);
 
         // A dark pool round it, so it reads on a bright scene too, and a little light of its own.
         Span<float> rr = stackalloc float[2] { w * 0.95f, w * 2.0f };
@@ -105,6 +106,7 @@ public sealed partial class ParticleEye
         float w = e.W, R = e.IrisRadius;
         int count = Math.Min(14, e.Look.VeinCount * 2 + 2);
         int pts = e.Huge ? FinePts : e.Large ? 7 : 5;
+        float huge = e.Grow(60f, 80f);
         float reachIn = MathF.Max(0.30f * w, ic.Length() + R * 1.12f);
         for (int v = 0; v < count; v++)
         {
@@ -124,7 +126,7 @@ public sealed partial class ParticleEye
             MeshBuilder.MiterNormals(FineP.AsSpan(0, pts), FineN.AsSpan(0, pts));
             Mb.Ribbon(FineP.AsSpan(0, pts), FineN.AsSpan(0, pts), FineHalf.AsSpan(0, pts), FineCol.AsSpan(0, pts), e.Soft(0.5f * e.Px));
 
-            if (!e.Huge || DrawHelpers.Hash01(h + 3) < 0.4f) continue;
+            if (huge < 0.02f || DrawHelpers.Hash01(h + 3) < 0.4f) continue;
             // A fork part of the way in.
             float u0 = 0.25f + 0.30f * DrawHelpers.Hash01(h + 4);
             float a0 = a + bend * u0 * (1f - u0) * 2.2f, r0 = DrawHelpers.Lerp(0.985f * w, reachIn, MathF.Pow(u0, 0.9f));
@@ -136,7 +138,7 @@ public sealed partial class ParticleEye
                 float rad = r0 - u * 0.22f * w;
                 FineP[i] = e.ToScreen(new Vector2(MathF.Cos(ang), MathF.Sin(ang)) * rad);
                 FineHalf[i] = MathF.Max(0.10f * e.Px, 0.34f * e.Px * (1f - 0.8f * u));
-                FineCol[i] = e.Tint(VeinCol, e.Look.VeinAlpha * 0.8f * lit * (1f - 0.85f * u));
+                FineCol[i] = e.Tint(VeinCol, e.Look.VeinAlpha * 0.8f * lit * huge * (1f - 0.85f * u));
             }
             MeshBuilder.MiterNormals(FineP.AsSpan(0, 5), FineN.AsSpan(0, 5));
             Mb.Ribbon(FineP.AsSpan(0, 5), FineN.AsSpan(0, 5), FineHalf.AsSpan(0, 5), FineCol.AsSpan(0, 5), e.Soft(0.4f * e.Px));

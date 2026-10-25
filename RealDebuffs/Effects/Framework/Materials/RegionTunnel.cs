@@ -108,7 +108,16 @@ public sealed class RegionTunnel : IRegionMaterial
         return Turns[segs] = (c, s);
     }
 
-    private static int SegmentsFor(float scale) => scale > 1.15f ? 80 : scale > 0.62f ? 60 : 40;
+    // One tessellation for every strip and lip. It used to change with the ring's size on screen (40, 60, then 80 segments), but a ring that
+    // changes how many vertices it has changes how the grime is sampled round it, and the wall visibly shifts as each rib goes by.
+    private const int WallSegments = 64;
+    private static int SegmentsFor(float scale) => WallSegments;
+
+    /// <summary>
+    /// Fades a detail in as a rib comes near enough to show it (0 below lo, 1 above hi), where it used to switch on at a threshold:
+    /// with a rib sweeping out every couple of seconds, each switch was a pop, and together they read as a pulse.
+    /// </summary>
+    private static float Near(float scale, float lo, float hi) => DrawHelpers.Smooth((scale - lo) / (hi - lo));
 
     private static readonly Vector3 FarLight = new(0.62f, 0.90f, 1.00f);
     private static readonly Vector3 Ambient = new(0.40f, 0.52f, 0.64f);
@@ -179,9 +188,11 @@ public sealed class RegionTunnel : IRegionMaterial
             // The rib: its inner face (a narrow band seen almost edge on), then its front face (an annulus square to the view).
             ref Rib rib = ref Ribs[i];
             float back = MathF.Max(reach, rib.H - rib.W);
-            if (f.Cam.ScaleAt(rib.H * f.Px) > 0.7f)       // the inner face is a sliver seen edge-on: only worth drawing once the rib is close
+            // The inner face is a sliver seen edge-on: it only shows once the rib is close, and fades up as it comes.
+            float bandShow = Near(f.Cam.ScaleAt(rib.H * f.Px), 0.62f, 0.95f);
+            if (bandShow > 0.02f)
             {
-                rows[0] = new Row(TunnelField.RibRadius, back, 1f); rows[1] = new Row(TunnelField.RibRadius, rib.H, 1f);
+                rows[0] = new Row(TunnelField.RibRadius, back, bandShow); rows[1] = new Row(TunnelField.RibRadius, rib.H, bandShow);
                 Strip(f, in e, rows[..2], BandKind, rib.Seed);
             }
             rows[0] = new Row(TunnelField.RibRadius, rib.H, 1f); rows[1] = new Row(TunnelField.WallRadius, rib.H, 1f);
@@ -282,7 +293,8 @@ public sealed class RegionTunnel : IRegionMaterial
         if (n < 2 || n > MaxSeamRows) return;
         float px = f.Px, midH = 0.5f * (rows[0].Hu + rows[n - 1].Hu);
         float sc = f.Cam.ScaleAt(midH * px);
-        if (sc < 0.55f) return;
+        float seen = Near(sc, 0.50f, 0.85f);       // fades in with the rib rather than appearing all at once
+        if (seen < 0.02f) return;
 
         float radius = rows[0].Radius * f.Short * f.Breath;
         float halfDiag = 0.5f * MathF.Sqrt(f.Size.X * f.Size.X + f.Size.Y * f.Size.Y);
@@ -301,7 +313,7 @@ public sealed class RegionTunnel : IRegionMaterial
                 float fade = DrawHelpers.Smooth(t / 0.24f) * (1f - DrawHelpers.Smooth((t - 0.90f) / 0.10f));
                 float radial = DrawHelpers.Smooth((Vector2.Distance(at, f.Center) / f.Short - 0.26f) / 0.45f);
                 float body = DrawHelpers.Lerp(0.04f, 0.56f, DrawHelpers.Smooth(t / 0.80f));
-                float alpha = 0.95f * body * fade * radial * e.A;
+                float alpha = 0.95f * body * fade * radial * e.A * seen;
                 SeamP[r] = at;
                 SeamHalf[r] = Math.Clamp(1.7f * px * s2, 1.1f * px, 4.5f * px);
                 SeamCol[r] = Col(new Vector3(0.01f, 0.014f, 0.02f), alpha, e.Override);
@@ -434,12 +446,14 @@ public sealed class RegionTunnel : IRegionMaterial
         float width = Math.Clamp(1.6f * px * sc, 1.2f * px, 6f * px);
 
         // A lens only splits colours visibly toward the edges of the frame, which is where the near ribs are.
-        int firstPass = sc > 0.85f || f.Fringe > 2f ? 0 : 2;
+        // (and it fades in with how near the rib is, or with the lens being shaken, instead of switching on)
+        float fringe = MathF.Max(Near(sc, 0.65f, 1.05f), DrawHelpers.Smooth((f.Fringe - 1.8f) / 1.2f));
+        int firstPass = fringe > 0.02f ? 0 : 2;
         for (int pass = firstPass; pass < 3; pass++)
         {
             // pass 0 = red outward, 1 = cyan inward, 2 = the lip itself
             Vector3 rgb = pass == 0 ? new Vector3(1.00f, 0.30f, 0.30f) : pass == 1 ? new Vector3(0.25f, 0.85f, 1.00f) : new Vector3(0.78f, 0.95f, 0.98f);
-            float gain = pass == 2 ? 0.40f : 0.14f;
+            float gain = pass == 2 ? 0.40f : 0.14f * fringe;
             for (int j = 0; j <= segs; j++)
             {
                 float cx = cosT[j] * ct - sinT[j] * st, cy = sinT[j] * ct + cosT[j] * st;
@@ -515,6 +529,8 @@ public sealed class RegionTunnel : IRegionMaterial
     private static void DrawHaze(ImDrawListPtr dl, TunnelField f, in Env e)
     {
         float s = f.Short;
+        Span<float> rr = stackalloc float[2];      // allocated once, outside the loop (a stackalloc in a loop grows the stack every pass)
+        Span<uint> rc = stackalloc uint[2];
         for (int i = 0; i < TunnelField.BillowCount; i++)
         {
             float hu = f.Flight.HeightOf(f.BillowAt[i], out int lap);
@@ -530,8 +546,8 @@ public sealed class RegionTunnel : IRegionMaterial
             float radius = DrawHelpers.HashRange(sd + 4, 220f, 420f) * f.Px * sc * (1f + 0.45f * e.Dusty);
             if (k < 0.004f || radius < 8f) continue;
 
-            Span<float> rr = stackalloc float[2] { radius * 0.5f, radius };
-            Span<uint> rc = stackalloc uint[2] { Col(DustTint * 0.62f, 0.060f * k, e.Override), Col(DustTint * 0.5f, 0f, e.Override) };
+            rr[0] = radius * 0.5f; rr[1] = radius;
+            rc[0] = Col(DustTint * 0.62f, 0.060f * k, e.Override); rc[1] = Col(DustTint * 0.5f, 0f, e.Override);
             MeshDraw.Radial(dl, at, e.Uv, Col(DustTint * 0.70f, 0.085f * k, e.Override), 14, rr, rc, DrawHelpers.Hash01(sd + 5) * MathF.Tau, 0.82f, sd, 0.5f);
         }
     }

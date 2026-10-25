@@ -121,9 +121,16 @@ public sealed class StrokeWisp : IStrokeMaterial
 
     /// <summary>Width along the streamer: a hair at the tail, full toward the head, and drawn in again at the very end so it has no blunt tip.</summary>
     private static float Width(float u, float width)
-        => width * (0.08f + 0.92f * MathF.Pow(u, 0.9f)) * (1f - 0.65f * DrawHelpers.Smooth((u - 0.88f) / 0.12f));
+    {
+        // Fattening from the tail to a rounded head: over the last fifth the width closes to nothing along an ellipse, so the head is
+        // a soft tip. (It used to stop at a third of its width, which was a flat cut, and wide soft smoke makes that cut plain.)
+        float cap = u > HeadStart ? MathF.Sqrt(MathF.Max(0f, 1f - MathF.Pow((u - HeadStart) / (1f - HeadStart), 2f))) : 1f;
+        return width * (0.08f + 0.92f * MathF.Pow(u, 0.9f)) * cap;
+    }
 
-    /// <summary>Brightness along the streamer: rising to the head, with a slow shimmer running down it.</summary>
+    private const float HeadStart = 0.80f;
+
+    /// <summary>Brightness along the streamer: rising from the tail, then fading out over the last fifth into the tip, with a slow shimmer running down it.</summary>
     private static float Profile(float u, float arc, float shimmer)
-        => MathF.Pow(u, 1.4f) * (1f - 0.6f * DrawHelpers.Smooth((u - 0.93f) / 0.07f)) * (0.82f + 0.18f * MathF.Sin(arc * 0.021f + shimmer));
+        => MathF.Pow(u, 1.4f) * (1f - DrawHelpers.Smooth((u - HeadStart) / (1f - HeadStart))) * (0.82f + 0.18f * MathF.Sin(arc * 0.021f + shimmer));
 }

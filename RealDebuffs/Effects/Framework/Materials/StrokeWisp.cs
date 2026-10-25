@@ -58,7 +58,7 @@ public sealed class StrokeWisp : IStrokeMaterial
         float slow = ctx.Time * 0.8f + s.Phase * 2.3f;
 
         // Smoke does not hold a line: the tail wanders, more when the strand is agitated. Then the normals again, for the new line.
-        float wander = width * (0.55f + 0.8f * Math.Clamp(s.Agitation, 0f, 1f));
+        float wander = width * (0.75f + 0.9f * Math.Clamp(s.Agitation, 0f, 1f));
         for (int i = 0; i < n; i++)
         {
             float u = st.Arc[i] / total;
@@ -82,33 +82,33 @@ public sealed class StrokeWisp : IStrokeMaterial
         for (int i = 0; i < n; i++)
         {
             float u = st.Arc[i] / total;
-            half[i] = Width(u, width) * 3.2f;
-            col[i] = DrawHelpers.Tint(_palette.Sample(0.22f), alpha * 0.12f * haze * Profile(u, st.Arc[i], shimmer), overridden);
+            half[i] = Width(u, width) * 4.4f;
+            col[i] = DrawHelpers.Tint(_palette.Sample(0.24f), alpha * 0.17f * haze * Profile(u, st.Arc[i], shimmer), overridden);
         }
         Mb.Tent(pts, nrm, half, col);
 
         // 2. Body: the two strands, soft-edged and translucent.
-        float feather = MathF.Max(1.5f * px, width * 0.45f);
+        float feather = MathF.Max(2f * px, width * 0.85f);
         for (int strand = 0; strand < 2; strand++)
         {
             for (int i = 0; i < n; i++)
             {
                 float u = st.Arc[i] / total;
-                half[i] = Width(u, width) * (strand == 0 ? 0.30f : 0.20f);
-                col[i] = DrawHelpers.Tint(_palette.Sample(0.50f + 0.28f * u), alpha * (strand == 0 ? 0.42f : 0.28f) * haze * Profile(u, st.Arc[i], shimmer), overridden);
+                half[i] = Width(u, width) * (strand == 0 ? 0.62f : 0.44f);
+                col[i] = DrawHelpers.Tint(_palette.Sample(0.46f + 0.24f * u), alpha * (strand == 0 ? 0.34f : 0.22f) * haze * Profile(u, st.Arc[i], shimmer), overridden);
             }
             if (strand == 0) Mb.Ribbon(pts, nrm, half, col, feather);
             else Mb.Ribbon(twin, twinN, half, col, feather);
         }
 
-        // 3. Core: a hot hair of light along the main strand, only where it is bright.
-        if (alpha * haze > 0.22f)
+        // 3. Core: a hot hair of light along the main strand, only where it is very bright (a surge or a flash); in the steady fall it is smoke.
+        if (alpha * haze > 0.50f)
         {
             for (int i = 0; i < n; i++)
             {
                 float u = st.Arc[i] / total;
                 half[i] = MathF.Max(0.45f * px, Width(u, width) * 0.07f);
-                col[i] = DrawHelpers.Tint(_palette.Sample(0.92f), alpha * 0.85f * haze * MathF.Pow(Profile(u, st.Arc[i], shimmer), 1.4f), overridden);
+                col[i] = DrawHelpers.Tint(_palette.Sample(0.92f), alpha * 0.55f * haze * MathF.Pow(Profile(u, st.Arc[i], shimmer), 1.4f), overridden);
             }
             Mb.Ribbon(pts, nrm, half, col, 0.8f * px);
         }

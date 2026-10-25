@@ -114,6 +114,7 @@ public static class MaterialRegistry
         Add(Regions, new RegionFirelight());
         Add(Regions, new RegionFirelight("region.hellglow", HellColor.Flame));
         Add(Regions, new RegionFrost());
+    	Add(Regions, new RegionTunnel());
 
         Add(Strokes, new StrokeSimple());
         Add(Strokes, new StrokeChain());

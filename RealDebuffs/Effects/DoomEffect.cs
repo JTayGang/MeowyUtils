@@ -4,23 +4,8 @@ using RealDebuffs.Effects.Framework;
 namespace RealDebuffs.Effects;
 
 /// <summary>Doom: a summoning.</summary>
-public sealed class DoomEffect : ISceneEffect, IHasSwappableSlots
+public sealed class DoomEffect : SceneEffect, IHasSwappableSlots
 {
-    public DebuffKind Kind => DebuffKind.Doom;
-    public string DisplayName => "Doom";
-    public string Description => "A blood-ritual summoning circle is drawn over the screen and ignited: hellfire, candles, drifting embers and smoke, and a slow toll that shakes it every few seconds.";
-    public int DrawOrder => 8;
-
-    public IReadOnlyDictionary<string, float> TriggerStatuses { get; } = new Dictionary<string, float>
-    {
-        ["Doom"] = 1.0f,
-    };
-
-    public IReadOnlyList<string> TriggerKeywords { get; } = new[]
-    {
-        "doom", "doomed", "demonic", "damned", "condemned"
-    };
-
     // The blood ring is what a "made of X" phrase replaces; a particle in that phrase also replaces the hellfire.
     public IReadOnlyList<SwappableSlot> Slots { get; } = new SwappableSlot[]
     {
@@ -42,7 +27,7 @@ public sealed class DoomEffect : ISceneEffect, IHasSwappableSlots
 
     // the camera
     private const float CameraDistance = 1500f;  // px at 1080p; smaller = stronger perspective
-    private static readonly SigilSway Sway = new(BaseTilt: 0.17f, TiltSway: 0.030f, Precession: 0.17f, LurchTilt: 0.22f, LurchSeconds: 1.0f, BreathBase: 0.92f, BreathAmp: 0.08f);
+    private readonly SigilView _view = new(new SigilSway(BaseTilt: 0.17f, TiltSway: 0.030f, Precession: 0.17f, LurchTilt: 0.22f, LurchSeconds: 1.0f, BreathBase: 0.92f, BreathAmp: 0.08f), CameraDistance);
 
     // layout: what the viewer sees: Radii are fractions of the short side as they land on screen
     private const float FarHeight = -360f, BloodHeight = -150f, BandHeight = -55f, CircleHeight = 40f;
@@ -104,14 +89,11 @@ public sealed class DoomEffect : ISceneEffect, IHasSwappableSlots
 
     private readonly CastTracker _cast = new(envelope: true);
     private CastFrame _f;
-    private LayerCamera _cam;
-    private float _breath;
 
     private readonly FireDrift _drift;
     private readonly Func<int, Vector2> _ringPos;
 
-    private struct Mote { public float X, Phase, Speed, Sway, Size, Z; public int Seed; }
-    private readonly Mote[] _motes = new Mote[MoteCount];
+    private readonly MoteField _motes = new(MoteCount, 650f, -420f, (14f, 46f), (10f, 38f), (1.8f, 4.6f));
 
     // The toll in progress (see UpdateToll): when it lands, how hard, which corner of the star it shakes from
     private struct Toll { public float Charge, Hit, Echo, Power; public int Vertex; }
@@ -131,10 +113,12 @@ public sealed class DoomEffect : ISceneEffect, IHasSwappableSlots
     // per-cast layout
     private int _seed;
     private int _starN, _starK, _runeCount;
-    private float _azimuth, _azimuthDir;
     private float _farAng, _bloodSeam, _bandAng, _circleAng;
 
-    public DoomEffect()
+    public DoomEffect() : base(DebuffKind.Doom, "Doom",
+        "A blood-ritual summoning circle is drawn over the screen and ignited: hellfire, candles, drifting embers and smoke, and a slow toll that shakes it every few seconds.",
+        8, "Doom",
+        keywords: ["doom", "doomed", "demonic", "damned", "condemned"])
     {
         _sparks.Gravity = new Vector2(0f, 900f);
         _sparks.Drag = 0.9f;
@@ -156,18 +140,14 @@ public sealed class DoomEffect : ISceneEffect, IHasSwappableSlots
         };
     }
 
-    public void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride)
+    public override void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride)
     {
         var f = _f = _cast.Frame(screenSize, alpha, time, dt, colorOverride);
         if (f.Fresh) BeginCast(f.Seed);
         _drift.Px = f.Px;
 
         _toll = UpdateToll(f.Age);
-        float tilt = Sway.Tilt(f.Age, f.Leave)
-                   + 0.11f * _toll.Power * _toll.Hit + 0.04f * _toll.Echo;  // the toll thumps the whole stack
-        float azimuth = Sway.Azimuth(_azimuth, _azimuthDir, f.Age);
-        _cam = new LayerCamera(f.Center, CameraDistance * f.Px, tilt, azimuth);
-        _breath = Sway.Breath(f.Age);
+        _view.Update(in f, extraTilt: 0.11f * _toll.Power * _toll.Hit + 0.04f * _toll.Echo);  // the toll thumps the whole stack
 
         Span<ShockFront> fronts = stackalloc ShockFront[5];
         int frontCount = BuildFronts(fronts, f.Age, f.Short);
@@ -195,8 +175,7 @@ public sealed class DoomEffect : ISceneEffect, IHasSwappableSlots
     {
         _seed = seed;
 
-        _azimuth = DrawHelpers.Hash01(seed + 1) * MathF.Tau;
-        _azimuthDir = DrawHelpers.Hash01(seed + 2) < 0.5f ? -1f : 1f;
+        _view.Begin(seed);
 
         // The star: usually the classic pentagram, now and then a heptagram or an octagram.
         float r = DrawHelpers.Hash01(seed + 3);
@@ -225,24 +204,10 @@ public sealed class DoomEffect : ISceneEffect, IHasSwappableSlots
         _sparkNext = 0f;
         _drift.Clear();
 
-        // Floating embers: a fixed set, each with its own depth, drift and sway, so no two casts fill the screen the same way.
-        for (int i = 0; i < MoteCount; i++)
-        {
-            int ms = seed + i * 6151 + 11;
-            _motes[i] = new Mote
-            {
-                X = DrawHelpers.HashRange(ms + 2, -0.06f, 1.06f),
-                Phase = DrawHelpers.Hash01(ms + 3),
-                Z = DrawHelpers.Hash01(ms + 4),
-                Speed = DrawHelpers.HashRange(ms + 5, 14f, 46f),
-                Sway = DrawHelpers.HashRange(ms + 6, 10f, 38f),
-                Size = DrawHelpers.HashRange(ms + 7, 1.8f, 4.6f),
-                Seed = ms,
-            };
-        }
+        _motes.Seed(seed);
     }
 
-    /// <summary>The shocks running through the stack: the circle igniting (outward); a toll charging (drawn in toward the middle)</summary>
+    /// <summary>The shocks through the stack: the circle igniting (outward) and a toll charging (drawn inward).</summary>
     private int BuildFronts(Span<ShockFront> into, float age, float shortSide)
     {
         int n = 0;
@@ -264,7 +229,7 @@ public sealed class DoomEffect : ISceneEffect, IHasSwappableSlots
 
     // the toll
 
-    /// <summary>Where the circle is in its cycle: charging (0 to 1 over the second before it lands), just struck (decaying), or at rest.</summary>
+    /// <summary>The circle's cycle: charging (0..1 over the second before it lands), just struck (decaying), or at rest.</summary>
     private Toll UpdateToll(float age)
     {
         if (age > _tollAt + TollSpan) RollToll(age);
@@ -303,18 +268,18 @@ public sealed class DoomEffect : ISceneEffect, IHasSwappableSlots
         float lit = DrawHelpers.Smooth((f.Age - IgniteAt + 0.2f) / 1.0f);
 
         // The vignette closes in as a toll charges and pumps as it lands.
-        scene.RequestVignette(HellColor.Vignette, 0.20f + 0.05f * _toll.Charge, MathF.Min(1f, f.Alpha * 0.80f * castIn * (_breath + 0.30f * _toll.Charge + 0.30f * _toll.Hit)), priority: 22, f.Color);
+        scene.RequestVignette(HellColor.Vignette, 0.20f + 0.05f * _toll.Charge, MathF.Min(1f, f.Alpha * 0.80f * castIn * (_view.Breath + 0.30f * _toll.Charge + 0.30f * _toll.Hit)), priority: 22, f.Color);
 
         // A flat wash keeps the glow readable on a bright scene.
         scene.Wash(f.Size, Wash, 0.22f * f.Alpha * castIn, f.Color);
 
-        // The cast's flash uses the f.Gate so the fade-in can't swallow it; the toll lights the screen for an instant.
+        // The cast flash uses f.Gate so the fade-in can't swallow it.
         float flash = f.Age < 0.5f ? MathF.Exp(-f.Age / 0.10f) : 0f;
         scene.Wash(f.Size, HellColor.Flash, 0.46f * flash * f.Gate, f.Color);
         scene.Wash(f.Size, HellColor.Flash, (0.18f * _toll.Power * _toll.Hit + 0.07f * _toll.Echo) * f.Alpha, f.Color);
 
         // Firelight thrown up from below once the circle has caught.
-        scene.Pool(f.Size, f.Short * 0.36f, 0u, MathF.Min(1f, 0.55f * f.Alpha * lit * (_breath + 0.45f * _toll.Hit)), f.Color);
+        scene.Pool(f.Size, f.Short * 0.36f, 0u, MathF.Min(1f, 0.55f * f.Alpha * lit * (_view.Breath + 0.45f * _toll.Hit)), f.Color);
     }
 
     // the circle
@@ -322,7 +287,7 @@ public sealed class DoomEffect : ISceneEffect, IHasSwappableSlots
     private void EmitCircle(EffectScene scene, ReadOnlySpan<ShockFront> fronts)
     {
         ref readonly CastFrame f = ref _f;
-        ref readonly LayerCamera cam = ref _cam;
+        ref readonly LayerCamera cam = ref _view.Cam;
         float px = _f.Px, dist = CameraDistance * px;
         Array.Clear(_penOn);
 
@@ -333,7 +298,7 @@ public sealed class DoomEffect : ISceneEffect, IHasSwappableSlots
             float reveal = Prog(f.Age, FarStart, FarSecs);
             float excite = ShockFront.Excite(fronts, rs);
             SigilGeometry.Ring(_far, RingSegments, in cam, SigilGeometry.PlaneRadius(rs, h, dist), h, _farAng + FarSpin * f.Age, RingWobble.None);
-            scene.Ring(_far, PrimitiveRole.Inscription, _seed, 1, FarWidth * px * scale, f.Alpha * _breath * 0.55f * (1f + 0.5f * excite), 0.65f, excite, reveal, 0f, f.Color);
+            scene.Ring(_far, PrimitiveRole.Inscription, _seed, 1, FarWidth * px * scale, f.Alpha * _view.Breath * 0.55f * (1f + 0.5f * excite), 0.65f, excite, reveal, 0f, f.Color);
         }
 
         // Blood: the hero ring, under a halo of its own so any material keeps the hell-light.
@@ -342,7 +307,7 @@ public sealed class DoomEffect : ISceneEffect, IHasSwappableSlots
             float rs = BloodRadius * f.Short;
             float reveal = Prog(f.Age, BloodStart, BloodSecs);
             float excite = ShockFront.Excite(fronts, rs);
-            float bright = f.Alpha * _breath;
+            float bright = f.Alpha * _view.Breath;
 
             var wobble = new RingWobble(0.008f + 0.014f * excite, 3, _seed * 0.0007f - 0.30f * f.Age, 0.005f, 5, _seed * 0.0011f + 0.42f * f.Age);
             // The ring is round, so turning it shows only in its wobble, which already moves
@@ -358,7 +323,7 @@ public sealed class DoomEffect : ISceneEffect, IHasSwappableSlots
             float eo = BandOuter * f.Short, ei = BandInner * f.Short;
             float ro = Prog(f.Age, BandStart, BandSecs), ri = Prog(f.Age, BandStart + 0.10f, BandSecs);
             float xo = ShockFront.Excite(fronts, eo), xi = ShockFront.Excite(fronts, ei);
-            float bright = f.Alpha * _breath;
+            float bright = f.Alpha * _view.Breath;
             SigilGeometry.Ring(_bandOuter, RingSegments, in cam, SigilGeometry.PlaneRadius(eo, h, dist), h, _bandAng + BandSpin * f.Age, RingWobble.None);
             SigilGeometry.Ring(_bandInner, RingSegments, in cam, SigilGeometry.PlaneRadius(ei, h, dist), h, _bandAng + BandSpin * f.Age, RingWobble.None);
             scene.Ring(_bandOuter, PrimitiveRole.Inscription, _seed, 3, BandWidth * px * scale, bright * 0.80f * (1f + 0.5f * xo), 0.10f, xo, ro, 0f, f.Color);
@@ -374,7 +339,7 @@ public sealed class DoomEffect : ISceneEffect, IHasSwappableSlots
             float planeR = SigilGeometry.PlaneRadius(rs, h, dist);
             float rc = Prog(f.Age, CircleStart, CircleSecs), rst = Prog(f.Age, StarStart, StarSecs);
             float excite = ShockFront.Excite(fronts, rs * 0.8f);
-            float bright = f.Alpha * _breath;
+            float bright = f.Alpha * _view.Breath;
             float ang = _circleAng + CircleSpin * f.Age;
 
             SigilGeometry.Ring(_circle, RingSegments, in cam, planeR, h, ang, RingWobble.None);
@@ -409,7 +374,7 @@ public sealed class DoomEffect : ISceneEffect, IHasSwappableSlots
     private void EmitRunes(EffectScene scene)
     {
         ref readonly CastFrame f = ref _f;
-        ref readonly LayerCamera cam = ref _cam;
+        ref readonly LayerCamera cam = ref _view.Cam;
         float px = _f.Px, dist = CameraDistance * px;
         float h = BandHeight * px;
         float shortSide = px * 1080f;
@@ -436,7 +401,7 @@ public sealed class DoomEffect : ISceneEffect, IHasSwappableSlots
             scene.AddParticle(new ParticlePrimitive
             {
                 Position = at, AgeRatio = 0.14f + 0.36f * lit, Size = size,
-                Brightness = MathF.Min(1f, f.Alpha * _breath * 0.92f * lit * boost), Seed = seed, Role = PrimitiveRole.Rune, ColorOverride = f.Color,
+                Brightness = MathF.Min(1f, f.Alpha * _view.Breath * 0.92f * lit * boost), Seed = seed, Role = PrimitiveRole.Rune, ColorOverride = f.Color,
                 Variant = 1, Rotation = MathF.Atan2(outward.X, -outward.Y),
             });
         }
@@ -464,7 +429,7 @@ public sealed class DoomEffect : ISceneEffect, IHasSwappableSlots
 
     // horns
 
-    /// <summary>Two horns rising out of the bottom corners and curling in over the circle, as if what is being summoned were climbing up into view.</summary>
+    /// <summary>Two horns rise from the bottom corners and curl in over the circle.</summary>
     private void EmitHorns(EffectScene scene, float fire)
     {
         ref readonly CastFrame f = ref _f;
@@ -505,7 +470,7 @@ public sealed class DoomEffect : ISceneEffect, IHasSwappableSlots
 
     // hellfire, candles, smoke, cinders, embers
 
-    /// <summary>How much fire there is: none until the circle ignites, a roar as it takes, then a steady burn that gutters out as the curse lifts.</summary>
+    /// <summary>How much fire: none until ignition, a roar as it takes, a steady burn, guttering out as the curse lifts.</summary>
     private float FireLevel()
     {
         ref readonly CastFrame f = ref _f;
@@ -518,7 +483,7 @@ public sealed class DoomEffect : ISceneEffect, IHasSwappableSlots
         return (ramp + roar + toll) * (1f - DrawHelpers.Smooth(f.Leave * 1.6f));
     }
 
-    /// <summary>Where the inner circle is right now: the plane radius, height and turning angle every piece standing on it shares.</summary>
+    /// <summary>The inner circle's plane radius, height and turn angle, shared by everything standing on it.</summary>
     private void CircleFrame(out float planeR, out float h, out float ang)
     {
         float px = _f.Px;
@@ -531,7 +496,7 @@ public sealed class DoomEffect : ISceneEffect, IHasSwappableSlots
     private void EmitFlames(EffectScene scene, float fire, bool back)
     {
         ref readonly CastFrame f = ref _f;
-        ref readonly LayerCamera cam = ref _cam;
+        ref readonly LayerCamera cam = ref _view.Cam;
         if (fire <= 0.01f) return;
         CircleFrame(out float planeR, out float h, out float ang);
         float bright = MathF.Min(1f, f.Alpha * fire * 1.1f);
@@ -546,7 +511,7 @@ public sealed class DoomEffect : ISceneEffect, IHasSwappableSlots
                 float a0 = ang + MathF.Tau * (site + DrawHelpers.HashRange(ss + 1, -0.30f, 0.30f)) / FireSites;
                 Vector2 at = cam.Project(planeR * MathF.Cos(a0), planeR * MathF.Sin(a0), h, out float scale);
 
-                // Tongues from the top of the screen leave it at once; those from the bottom climb into view, so the bottom burns taller.
+                // Top tongues leave at once; bottom tongues climb into view, so the bottom burns taller.
                 float low = DrawHelpers.Saturate((at.Y - _f.Center.Y) / (0.5f * f.Short) * 0.5f + 0.5f);
                 float weight = 0.55f + 0.65f * low;
                 float site01 = 0.78f + 0.44f * DrawHelpers.Hash01(ss + 2);
@@ -560,7 +525,7 @@ public sealed class DoomEffect : ISceneEffect, IHasSwappableSlots
     private void EmitCandles(EffectScene scene)
     {
         ref readonly CastFrame f = ref _f;
-        ref readonly LayerCamera cam = ref _cam;
+        ref readonly LayerCamera cam = ref _view.Cam;
         CircleFrame(out float planeR, out float h, out float ang);
         float px = _f.Px;
         float pen = Prog(f.Age, StarStart, StarSecs);
@@ -605,28 +570,11 @@ public sealed class DoomEffect : ISceneEffect, IHasSwappableSlots
         _drift.EmitCinders(scene, f.Time, f.Dt, f.Alpha, fire, f.Color);
     }
 
-    /// <summary>Embers drifting up the whole depth of the view: far ones small and bright, near ones large soft discs (out of focus)</summary>
+    /// <summary>Embers drifting up through the whole depth: far ones small and bright, near ones large soft discs.</summary>
     private void EmitMotes(EffectScene scene)
     {
         ref readonly CastFrame f = ref _f;
         float fire = DrawHelpers.Smooth((f.Age - IgniteAt + 0.4f) / 1.2f);
-        if (fire <= 0.01f) return;
-        float px = _f.Px;
-
-        for (int i = 0; i < MoteCount; i++)
-        {
-            ref readonly var m = ref _motes[i];
-            float z = m.Z;  // 0 = far, 1 = at the lens
-            float rise = (m.Phase * (f.Size.Y + 160f * px) + f.Time * m.Speed * (0.5f + 1.0f * z) * px) % (f.Size.Y + 160f * px);
-            float y = f.Size.Y + 80f * px - rise;
-            float x = f.Size.X * m.X + MathF.Sin(f.Time * 0.7f + m.Phase * 31f) * m.Sway * px * (0.6f + z);
-            float fade = DrawHelpers.Saturate(MathF.Min(rise / (f.Size.Y * 0.12f), (f.Size.Y + 160f * px - rise) / (f.Size.Y * 0.3f)));
-
-            scene.AddParticle(new ParticlePrimitive
-            {
-                Position = new Vector2(x, y), AgeRatio = 0.5f, Size = m.Size * px * (0.7f + 2.6f * z * z),
-                Brightness = f.Alpha * fire * fade * (0.85f - 0.40f * z), Seed = m.Seed, Role = PrimitiveRole.Mote, ColorOverride = f.Color,
-            });
-        }
+        _motes.Emit(scene, in _view.Cam, CameraDistance * f.Px, f.Size, f.Px, f.Age, f.Alpha * fire * 0.85f, blurDim: 0.5f, twinkle: 0.4f, f.Color);
     }
 }

@@ -4,23 +4,8 @@ using RealDebuffs.Effects.Framework;
 namespace RealDebuffs.Effects;
 
 /// <summary>Heavy: iron chains flung across the screen like arrows, then hanging.</summary>
-public sealed class HeavyEffect : ISceneEffect, IHasSwappableSlots
+public sealed class HeavyEffect : SceneEffect, IHasSwappableSlots
 {
-    public DebuffKind Kind => DebuffKind.Heavy;
-    public string DisplayName => "Heavy";
-    public string Description => "Iron chains are flung across the screen and snap taut, then strain under their own weight.";
-    public int DrawOrder => 2;
-
-    public IReadOnlyDictionary<string, float> TriggerStatuses { get; } = new Dictionary<string, float>
-    {
-        ["Heavy"] = 1.0f,
-    };
-
-    public IReadOnlyList<string> TriggerKeywords { get; } = new[]
-    {
-        "chains", "shackle", "shackled"
-    };
-
     public IReadOnlyList<SwappableSlot> Slots { get; } = new SwappableSlot[]
     {
         new("Stroke",   PrimitiveRole.MainStroke, "Chains", "stroke.chain", Hero: true),
@@ -32,9 +17,6 @@ public sealed class HeavyEffect : ISceneEffect, IHasSwappableSlots
     private const int StrandNodes = 12;
     private const int PathSamples = 56;
 
-    private const float VignetteAlpha = 0.12f;
-    private const float GloomAlpha = 0.28f;
-    private const float GloomDepth = 0.12f;
 
     private const float MaxThrowDelay = 0.3f;
     private const float FlightBow = 0.25f;
@@ -53,8 +35,7 @@ public sealed class HeavyEffect : ISceneEffect, IHasSwappableSlots
     private const float SwayAmp = 15f;
     private const float SwayGustHz = 0.30f;
 
-    private static readonly uint Gloom = DrawHelpers.Pack(0.012f, 0.016f, 0.024f);
-    private static readonly uint Vignette = DrawHelpers.Pack(0.010f, 0.014f, 0.022f);
+    private static readonly MurkStyle Mood = new(DrawHelpers.Pack(0.010f, 0.014f, 0.022f), 0.12f, DrawHelpers.Pack(0.012f, 0.016f, 0.024f), 0.28f, 0.12f, 0.7f, 0.15f, 4.6f);
 
     private static readonly float[] SwayShape = BuildSwayShape();
 
@@ -87,12 +68,17 @@ public sealed class HeavyEffect : ISceneEffect, IHasSwappableSlots
 
     private readonly CastTracker _cast = new();
 
-    public void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride)
+    public HeavyEffect() : base(DebuffKind.Heavy, "Heavy",
+        "Iron chains are flung across the screen and snap taut, then strain under their own weight.",
+        2, "Heavy",
+        keywords: ["chains", "shackle", "shackled"]) { }
+
+    public override void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride)
     {
         var f = _cast.Frame(screenSize, alpha, time, dt, colorOverride);
         if (f.Fresh || f.Resized) BuildLayout(f.Seed, screenSize);
 
-        EmitAtmosphere(scene, in f);
+        scene.Murk(in f, in Mood);
 
         for (int n = 0; n < _set.Count; n++)
         {
@@ -121,16 +107,6 @@ public sealed class HeavyEffect : ISceneEffect, IHasSwappableSlots
         }
     }
 
-    private static void EmitAtmosphere(EffectScene scene, in CastFrame f)
-    {
-        float castIn = DrawHelpers.Saturate(f.Age / 0.7f);
-
-        scene.RequestVignette(Vignette, 0.12f, f.Alpha * VignetteAlpha * castIn, priority: 20, f.Color);
-
-        // Gloom pooled at the bottom edge, breathing as if the weight were shifting.
-        float depth = f.Size.Y * GloomDepth * (1f + 0.15f * DrawHelpers.Pulse(f.Time, 4.6f)) * castIn;
-        scene.Pool(f.Size, depth, Gloom, GloomAlpha * f.Alpha, f.Color);
-    }
 
     private static void Step(EffectScene scene, Rig rig, in CastFrame f)
     {
@@ -234,7 +210,7 @@ public sealed class HeavyEffect : ISceneEffect, IHasSwappableSlots
         Vector2 along = Vector2.Normalize(strand.Pos[StrandNodes - 1] - strand.Pos[StrandNodes - 4]);
         if (float.IsNaN(along.X)) along = new Vector2(1f, 0f);
         Vector2 side = new(-along.Y, along.X);
-        float sign = DrawHelpers.Hash01(rig.Seed + 710 + (int)(time * 10f)) < 0.5f ? -1f : 1f;
+        float sign = DrawHelpers.Sign(rig.Seed + 710 + (int)(time * 10f));
         float v = 520f * px * strength * (1f - 0.35f * rig.Depth);
 
         // One smooth bump of sideways velocity (alternating signs on neighbours would fold the end into a zigzag).
@@ -246,7 +222,7 @@ public sealed class HeavyEffect : ISceneEffect, IHasSwappableSlots
         }
     }
 
-    // 4 or 5 chains per cast (the fifth is a wildcard); one random chain is the far one: smaller, hazier, painted first.
+    // 4 or 5 chains per cast (the fifth is a wildcard); one is the far chain: smaller, hazier, painted first.
     private void BuildLayout(int castSeed, Vector2 size)
     {
         float overhang = MathF.Min(size.X, size.Y) * 0.07f;

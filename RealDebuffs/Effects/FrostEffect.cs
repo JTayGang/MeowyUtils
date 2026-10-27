@@ -3,25 +3,9 @@ using RealDebuffs.Effects.Framework;
 
 namespace RealDebuffs.Effects;
 
-/// <summary>Frost: condensation, then ice creeping in as a fractal front; ferns, glints and mist are placed from one growth field; wind-blown snow.</summary>
-public sealed class FrostEffect : ISceneEffect, IHasSwappableSlots
+/// <summary>Frost: condensation, then creeping ice (ferns, glints, mist from one growth field) and wind-blown snow.</summary>
+public sealed class FrostEffect : SceneEffect, IHasSwappableSlots
 {
-    public DebuffKind Kind => DebuffKind.Frost;
-    public string DisplayName => "Frostbite / Deep Freeze";
-    public string Description => "Icy blue creeps in from the edges.";
-    public int DrawOrder => 3;
-
-    public IReadOnlyDictionary<string, float> TriggerStatuses { get; } = new Dictionary<string, float>
-    {
-        ["Frostbite"] = 0.55f,
-        ["Deep Freeze"] = 1.0f,
-    };
-
-    public IReadOnlyList<string> TriggerKeywords { get; } = new[]
-    {
-        "frost", "frozen", "freezing", "chill", "icy", "ice"
-    };
-
     public IReadOnlyList<SwappableSlot> Slots { get; } = new SwappableSlot[]
     {
         new("Particle", PrimitiveRole.Snowflake, "Frost flowers", "particle.snowflake", Hero: true),
@@ -43,7 +27,7 @@ public sealed class FrostEffect : ISceneEffect, IHasSwappableSlots
     private readonly ParticleEmitter _mist = new(maxParticles: 18, seedSalt: 0xF05701);
     private readonly Func<int, Vector2> _mistPos, _mistVel;
 
-    // The wind: a fixed direction per cast (it can blow either way), a strength that gusts, and the snow it carries.
+    // The wind: a fixed direction per cast (either way), a gusting strength, and the snow it carries.
     private readonly WindField _snow = new();
     private Vector2 _windDir = new(1f, 0.18f);
     private float _gustSeed;
@@ -51,7 +35,10 @@ public sealed class FrostEffect : ISceneEffect, IHasSwappableSlots
 
     private CastFrame _f;
 
-    public FrostEffect()
+    public FrostEffect() : base(DebuffKind.Frost, "Frostbite / Deep Freeze",
+        "Icy blue creeps in from the edges.",
+        3, new Dictionary<string, float> { ["Frostbite"] = 0.55f, ["Deep Freeze"] = 1.0f },
+        keywords: ["frost", "frozen", "freezing", "chill", "icy", "ice"])
     {
         _mistPos = seed =>
         {
@@ -65,7 +52,7 @@ public sealed class FrostEffect : ISceneEffect, IHasSwappableSlots
                             + _windDir * DrawHelpers.HashRange(seed + 9, 22f, 52f)) * _f.Px;
     }
 
-    public void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride)
+    public override void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride)
     {
         var f = _f = _cast.Frame(screenSize, alpha, time, dt, colorOverride);
 
@@ -76,7 +63,7 @@ public sealed class FrostEffect : ISceneEffect, IHasSwappableSlots
             _mist.Clear();
 
             int seed = f.Seed;
-            _windDir = Vector2.Normalize(new Vector2(DrawHelpers.Hash01(seed + 21) < 0.5f ? -1f : 1f, 0.18f));
+            _windDir = Vector2.Normalize(new Vector2(DrawHelpers.Sign(seed + 21), 0.18f));
             _gustSeed = DrawHelpers.Hash01(seed + 22) * MathF.Tau;
             int flakes = Math.Clamp((int)(380f * MathF.Sqrt(f.Size.X * f.Size.Y / (1920f * 1080f))), 200, 560);
             _snow.Build(flakes, seed + 23, f.Size);

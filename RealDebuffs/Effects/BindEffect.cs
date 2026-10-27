@@ -3,24 +3,9 @@ using RealDebuffs.Effects.Framework;
 
 namespace RealDebuffs.Effects;
 
-/// <summary>Bind: ropes flung across the screen, made fast on the far side, hauled taut around you (Heavy's inverse): throw, haul, snap, hang.</summary>
-public sealed class BindEffect : ISceneEffect, IHasSwappableSlots
+/// <summary>Bind: ropes thrown across the screen, hauled taut around you (Heavy's inverse): throw, haul, snap, hang.</summary>
+public sealed class BindEffect : SceneEffect, IHasSwappableSlots
 {
-    public DebuffKind Kind => DebuffKind.Bind;
-    public string DisplayName => "Bind";
-    public string Description => "Ropes are thrown across the screen, then hauled taut around you.";
-    public int DrawOrder => 2;
-
-    public IReadOnlyDictionary<string, float> TriggerStatuses { get; } = new Dictionary<string, float>
-    {
-        ["Bind"] = 1.0f,
-    };
-
-    public IReadOnlyList<string> TriggerKeywords { get; } = new[]
-    {
-        "rope", "ropes", "bound", "tied", "tether", "tethered", "snared", "entangled"
-    };
-
     public IReadOnlyList<SwappableSlot> Slots { get; } = new SwappableSlot[]
     {
         new("Stroke",   PrimitiveRole.MainStroke, "Ropes",  "stroke.rope", Hero: true),
@@ -77,7 +62,7 @@ public sealed class BindEffect : ISceneEffect, IHasSwappableSlots
 
     private static readonly uint Vignette = DrawHelpers.Pack(0.022f, 0.015f, 0.010f);
 
-    // Standing-wave shapes per path sample (u = i / (PathSamples - 1) is fixed), so Hang needs no per-sample sines.
+    // Standing-wave shapes per path sample (u is fixed), so Hang needs no per-sample sines.
     private static readonly float[] RingMode1 = new float[PathSamples];
     private static readonly float[] RingMode2 = new float[PathSamples];
     private static readonly float[] RingMode3 = new float[PathSamples];
@@ -124,7 +109,12 @@ public sealed class BindEffect : ISceneEffect, IHasSwappableSlots
 
     private readonly CastTracker _cast = new();
 
-    public void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride)
+    public BindEffect() : base(DebuffKind.Bind, "Bind",
+        "Ropes are thrown across the screen, then hauled taut around you.",
+        2, "Bind",
+        keywords: ["rope", "ropes", "bound", "tied", "tether", "tethered", "snared", "entangled"]) { }
+
+    public override void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride)
     {
         var f = _cast.Frame(screenSize, alpha, time, dt, colorOverride);
         if (f.Fresh || f.Resized) BuildLayout(f.Seed, screenSize);
@@ -176,7 +166,7 @@ public sealed class BindEffect : ISceneEffect, IHasSwappableSlots
         float tHaul = rig.Flight + rig.Hold;
         float tTaut = tHaul + rig.Haul;
 
-        // Head: constant speed after a short launch ramp, stopped dead by the far anchor. The loose line behind it keeps going.
+        // Head: constant speed after a short launch ramp, stopped by the far anchor; the loose line keeps going.
         float tau = DrawHelpers.Saturate(t / rig.Flight);
         float arc = ThrowArc * rig.ChordLen * MathF.Sin(MathF.PI * tau);
         Vector2 head = rig.Start + (rig.End - rig.Start) * StrandRig.Travel(tau) - rig.SagDir * arc;
@@ -216,7 +206,7 @@ public sealed class BindEffect : ISceneEffect, IHasSwappableSlots
             }
             strand.Length = MathF.Max(2f, length);
 
-            // Through the haul: heavier damping, tighter constraints, and less visible weight (sag is weight over tension).
+            // Through the haul: heavier damping, tighter constraints, less visible weight.
             float tighten = DrawHelpers.Smooth(haulK);
             strand.Drag = HangDrag + (TautDrag - HangDrag) * tighten;
             strand.Gravity = new Vector2(0f, Gravity * f.Px * (1f - (1f - rig.TautGravity) * tighten));
@@ -246,7 +236,7 @@ public sealed class BindEffect : ISceneEffect, IHasSwappableSlots
         rig.Agitation *= MathF.Exp(-f.Dt / 0.95f);
     }
 
-    // A taut rope is a weight on a line: the snap's ring and both anchors' sway are laid over the simulated path (zero extra length); twist goes to the material.
+    // The snap ring and anchor sway are laid over the simulated path (zero extra length); twist goes to the material.
     private static void Hang(Rig rig, float t, float px)
     {
         float since = t - rig.TautAt;
@@ -315,7 +305,7 @@ public sealed class BindEffect : ISceneEffect, IHasSwappableSlots
         rig.ReportEnd(scene, size, fromStart, strength, alpha,
                       unchecked(rig.Seed + (fromStart ? 31 : 17) + (int)(rig.TautAt * 1000f)), colorOverride);
 
-    // One rope cutting each corner, plus one or two partners crossing a corner rope in an X; anchors, throw end, depth
+    // One rope per corner plus one or two crossing partners; all seeded per cast.
     private void BuildLayout(int castSeed, Vector2 size)
     {
         float overhang = MathF.Min(size.X, size.Y) * 0.07f;
@@ -347,7 +337,7 @@ public sealed class BindEffect : ISceneEffect, IHasSwappableSlots
             }
             else
             {
-                // Shorter along the horizontal edge, longer down the vertical than the rope it crosses, so the two cross at a clear angle.
+                // Shorter on the horizontal edge, longer on the vertical than the rope it crosses, so they cross at an angle.
                 a = MathF.Max(0.08f, legA[corner] * H(1, 0.30f, 0.55f));
                 b = MathF.Min(0.66f, MathF.Max(legB[corner] * H(2, 1.50f, 1.90f), legB[corner] + 0.10f));
             }
@@ -414,7 +404,7 @@ public sealed class BindEffect : ISceneEffect, IHasSwappableSlots
         r.RippleHz = H(13, 0.9f, 1.4f);
         r.RipplePhase = H(14, 0f, MathF.Tau);
         r.RingHz = H(15, RingHzMin, RingHzMax);
-        r.RingSign = -side;  // the rope comes up from the side it hung on, so it overshoots to the other
+        r.RingSign = -side;  // rises from its hanging side, so it overshoots the other
 
         // The hang: every period, phase and size is this rope's own.
         r.SwayOmegaA = MathF.Tau / H(20, SwayPeriodMin, SwayPeriodMax);

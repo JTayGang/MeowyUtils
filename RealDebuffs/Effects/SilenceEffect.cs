@@ -3,24 +3,9 @@ using RealDebuffs.Effects.Framework;
 
 namespace RealDebuffs.Effects;
 
-/// <summary>Silence: a curse seal of layered rings, runes and triangles slams down, then burns on; the chat blocker makes it reject messages.</summary>
-public sealed class SilenceEffect : ISceneEffect, IHasSwappableSlots, IReactsToBlockedChat
+/// <summary>Silence: a curse seal of rings, runes and triangles slams down and burns on; blocked chat makes it reject.</summary>
+public sealed class SilenceEffect : SceneEffect, IHasSwappableSlots, IReactsToBlockedChat
 {
-    public DebuffKind Kind => DebuffKind.Silence;
-    public string DisplayName => "Silence";
-    public string Description => "A curse seal slams down around the screen, then burns on: rings turning at different depths, drifting runes, violet light.";
-    public int DrawOrder => 6;
-
-    public IReadOnlyDictionary<string, float> TriggerStatuses { get; } = new Dictionary<string, float>
-    {
-        ["Silence"] = 1.0f,
-    };
-
-    public IReadOnlyList<string> TriggerKeywords { get; } = new[]
-    {
-        "silence", "silenced", "mute", "muted", "gagged", "voiceless"
-    };
-
     public IReadOnlyList<SwappableSlot> Slots { get; } = new SwappableSlot[]
     {
         new("Stroke",   PrimitiveRole.MainStroke,  "Binding ring",  "stroke.sigil", Hero: true),
@@ -35,7 +20,7 @@ public sealed class SilenceEffect : ISceneEffect, IHasSwappableSlots, IReactsToB
 
     // camera
     private const float CameraDistance = 1500f;
-    private static readonly SigilSway Sway = new(BaseTilt: 0.15f, TiltSway: 0.035f, Precession: 0.21f, LurchTilt: 0.20f, LurchSeconds: 0.9f, BreathBase: 0.90f, BreathAmp: 0.10f);
+    private readonly SigilView _view = new(new SigilSway(BaseTilt: 0.15f, TiltSway: 0.035f, Precession: 0.21f, LurchTilt: 0.20f, LurchSeconds: 0.9f, BreathBase: 0.90f, BreathAmp: 0.10f), CameraDistance);
 
     // layout: radii are short-side fractions, heights px toward the viewer
     private const float FarHeight = -330f,  HeroHeight = -150f, SealHeight = 0f, NodeHeight = 240f;
@@ -110,17 +95,18 @@ public sealed class SilenceEffect : ISceneEffect, IHasSwappableSlots, IReactsToB
 
     private readonly CastTracker _cast = new(envelope: true);
     private CastFrame _f;
-    private LayerCamera _cam;
-    private float _breath;
     private int _seed, _runeSpawns;
-    private float _azimuth, _azimuthDir, _hushEvery, _nextRune;
+    private float _hushEvery, _nextRune;
     private float _deniedAt = NeverDenied;
     private bool _stamped;
 
     private readonly ParticleEmitter _miasma = new(maxParticles: 12, seedSalt: 0x51A3C3);
     private readonly Func<int, Vector2> _miasmaPos, _miasmaVel;
 
-    public SilenceEffect()
+    public SilenceEffect() : base(DebuffKind.Silence, "Silence",
+        "A curse seal slams down around the screen, then burns on: rings turning at different depths, drifting runes, violet light.",
+        6, "Silence",
+        keywords: ["silence", "silenced", "mute", "muted", "gagged", "voiceless"])
     {
         for (int i = 0; i < NodeCount; i++) _nodes[i] = new StrandPath(NodeSegments + 1);
 
@@ -135,7 +121,7 @@ public sealed class SilenceEffect : ISceneEffect, IHasSwappableSlots, IReactsToB
             int i = (int)((uint)seed % (uint)Math.Max(1, _hero.Count - 1));
             Vector2 from = _hero.Points[i] - _f.Center;
             Vector2 dir = from.LengthSquared() > 1f ? Vector2.Normalize(from) : new Vector2(0f, -1f);
-            float side = DrawHelpers.Hash01(seed + 3) < 0.5f ? -1f : 1f;
+            float side = DrawHelpers.Sign(seed + 3);
             return (dir * side * DrawHelpers.HashRange(seed + 4, 6f, 20f) + new Vector2(0f, DrawHelpers.HashRange(seed + 5, -14f, -3f))) * _f.Px;
         };
     }
@@ -143,7 +129,7 @@ public sealed class SilenceEffect : ISceneEffect, IHasSwappableSlots, IReactsToB
     /// <summary>The chat blocker swallowed a message: the seal rejects it.</summary>
     public void OnChatBlocked(float time) => _deniedAt = time;
 
-    public void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride)
+    public override void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride)
     {
         var f = _f = _cast.Frame(screenSize, alpha, time, dt, colorOverride);
         if (f.Fresh) BeginCast(f.Seed);
@@ -154,11 +140,7 @@ public sealed class SilenceEffect : ISceneEffect, IHasSwappableSlots, IReactsToB
         float denyFlare = denied ? MathF.Exp(-sinceDenied / DenyFlareDecay) : 0f;
         float shake = denied ? MathF.Sin(sinceDenied * DenyShakeRate) * MathF.Exp(-sinceDenied / DenyShakeDecay) * DenyShake * f.Px : 0f;
 
-        float tilt = Sway.Tilt(f.Age, f.Leave) + DenyTilt * denyFlare;
-        float azimuth = Sway.Azimuth(_azimuth, _azimuthDir, f.Age);
-
-        _cam = new LayerCamera(f.Center + new Vector2(shake, 0f), CameraDistance * f.Px, tilt, azimuth);
-        _breath = Sway.Breath(f.Age);
+        _view.Update(in f, extraTilt: DenyTilt * denyFlare, shift: new Vector2(shake, 0f));
         _frontCount = BuildFronts(_fronts, f.Age, denied ? sinceDenied : -1f, f.Short);
 
         EmitAtmosphere(scene, f.Gate, denyFlare);
@@ -166,7 +148,7 @@ public sealed class SilenceEffect : ISceneEffect, IHasSwappableSlots, IReactsToB
         EmitFarRunes(scene);
         EmitFloatingRunes(scene);
         EmitMiasma(scene, f.Time, f.Dt);
-        _motes.Emit(scene, in _cam, CameraDistance * f.Px, f.Size, f.Px, f.Age,
+        _motes.Emit(scene, in _view.Cam, CameraDistance * f.Px, f.Size, f.Px, f.Age,
                     f.Alpha * DrawHelpers.Smooth((f.Age - 0.35f) / 1.4f) * (1f - DrawHelpers.Smooth(f.Leave)),
                     blurDim: 0.45f, twinkle: 0f, f.Color);
     }
@@ -175,8 +157,7 @@ public sealed class SilenceEffect : ISceneEffect, IHasSwappableSlots, IReactsToB
     {
         _seed = seed;
         _deniedAt = NeverDenied;
-        _azimuth = DrawHelpers.Hash01(seed + 1) * MathF.Tau;
-        _azimuthDir = DrawHelpers.Hash01(seed + 2) < 0.5f ? -1f : 1f;
+        _view.Begin(seed);
         _hushEvery = DrawHelpers.HashRange(seed + 3, 9f, 12f);
         _nextRune = 1.1f;
         _runeSpawns = _floatingCount = 0;
@@ -243,8 +224,8 @@ public sealed class SilenceEffect : ISceneEffect, IHasSwappableSlots, IReactsToB
         ref readonly CastFrame f = ref _f;
         float castIn = DrawHelpers.Smooth(f.Age / 0.45f);
 
-        scene.RequestVignette(CurseColor.Vignette, 0.17f + 0.04f * denyFlare, f.Alpha * 0.62f * castIn * _breath, priority: 15, f.Color);
-        scene.EdgeSpill(f.Size, f.Short * 0.13f, Veil, 0.20f * f.Alpha * castIn * _breath * (1f + 1.2f * denyFlare), f.Color);
+        scene.RequestVignette(CurseColor.Vignette, 0.17f + 0.04f * denyFlare, f.Alpha * 0.62f * castIn * _view.Breath, priority: 15, f.Color);
+        scene.EdgeSpill(f.Size, f.Short * 0.13f, Veil, 0.20f * f.Alpha * castIn * _view.Breath * (1f + 1.2f * denyFlare), f.Color);
 
         // The cast's own flash and hush use the gate, so the manager's fade-in can't swallow them.
         float flash = f.Age < 0.45f ? MathF.Exp(-f.Age / 0.10f) : 0f;
@@ -259,8 +240,8 @@ public sealed class SilenceEffect : ISceneEffect, IHasSwappableSlots, IReactsToB
     private void EmitRings(EffectScene scene)
     {
         ref readonly CastFrame f = ref _f;
-        ref readonly LayerCamera cam = ref _cam;
-        float px = _f.Px, dist = CameraDistance * px, shortSide = f.Short, age = f.Age, alpha = f.Alpha, breath = _breath, leave = f.Leave;
+        ref readonly LayerCamera cam = ref _view.Cam;
+        float px = _f.Px, dist = CameraDistance * px, shortSide = f.Short, age = f.Age, alpha = f.Alpha, breath = _view.Breath, leave = f.Leave;
 
         // Far band: two thin rings; the runes sit between them (EmitFarRunes).
         {
@@ -402,10 +383,10 @@ public sealed class SilenceEffect : ISceneEffect, IHasSwappableSlots, IReactsToB
             float d = MathF.Abs(MathF.IEEERemainder(a - scan, MathF.Tau)) / 0.30f;
             float sweep = MathF.Exp(-d * d);
 
-            float k = f.Alpha * appear * ignite * (0.70f + 0.95f * sweep + 0.5f * excite) * flare * (0.80f + 0.20f * _breath);
+            float k = f.Alpha * appear * ignite * (0.70f + 0.95f * sweep + 0.5f * excite) * flare * (0.80f + 0.20f * _view.Breath);
             if (k <= 0.01f) continue;
 
-            Vector2 at = SigilGeometry.PointOn(in _cam, planeR, h, a, out float scale, out Vector2 outward);
+            Vector2 at = SigilGeometry.PointOn(in _view.Cam, planeR, h, a, out float scale, out Vector2 outward);
             if (at.X < -60f || at.Y < -60f || at.X > f.Size.X + 60f || at.Y > f.Size.Y + 60f) continue;
 
             // Every 11th rune is a sealed-mouth mark.
@@ -458,7 +439,7 @@ public sealed class SilenceEffect : ISceneEffect, IHasSwappableSlots, IReactsToB
 
             float h = (fl.Height + fl.Lift * t) * px;
             float planeR = SigilGeometry.PlaneRadius(fl.Radius * f.Short, 0f, dist) * (1f + 0.06f * u);
-            Vector2 at = SigilGeometry.PointOn(in _cam, planeR, h, fl.Angle + fl.Spin * t, out float scale, out _);
+            Vector2 at = SigilGeometry.PointOn(in _view.Cam, planeR, h, fl.Angle + fl.Spin * t, out float scale, out _);
 
             float fade = DrawHelpers.Smooth(u / 0.18f) * (1f - DrawHelpers.Smooth((u - 0.65f) / 0.35f));
             scene.AddParticle(new ParticlePrimitive

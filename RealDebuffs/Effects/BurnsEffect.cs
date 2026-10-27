@@ -3,21 +3,9 @@ using RealDebuffs.Effects.Framework;
 
 namespace RealDebuffs.Effects;
 
-/// <summary>Burns: soot vignette, firelight, smoke, four flame layers and cinders; the fire catches across the bottom edge over ~2s.</summary>
-public sealed class BurnsEffect : ISceneEffect, IHasSwappableSlots
+/// <summary>Burns: soot vignette, firelight, smoke, four flame layers and cinders; fire catches along the bottom over ~2s.</summary>
+public sealed class BurnsEffect : SceneEffect, IHasSwappableSlots
 {
-    public DebuffKind Kind => DebuffKind.Burns;
-    public string DisplayName => "Burns";
-    public string Description => "Flames lick up from the bottom and sides of the screen, with smoke and rising cinders.";
-    public int DrawOrder => 1;
-
-    public IReadOnlyDictionary<string, float> TriggerStatuses { get; } = new Dictionary<string, float>
-    {
-        ["Burns"] = 1.0f,
-    };
-
-    public IReadOnlyList<string> TriggerKeywords { get; } = new[] { "flame", "flames", "burning", "scorch", "ignite" };
-
     public IReadOnlyList<SwappableSlot> Slots { get; } = new SwappableSlot[]
     {
         new("Particle", PrimitiveRole.Ember,  "Flames",     "particle.ember", Hero: true),
@@ -61,7 +49,10 @@ public sealed class BurnsEffect : ISceneEffect, IHasSwappableSlots
     private CastFrame _f;
     private bool _burst;
 
-    public BurnsEffect()
+    public BurnsEffect() : base(DebuffKind.Burns, "Burns",
+        "Flames lick up from the bottom and sides of the screen, with smoke and rising cinders.",
+        1, "Burns",
+        keywords: ["flame", "flames", "burning", "scorch", "ignite"])
     {
         for (int i = 0; i < _sites.Length; i++)
             _sites[i].Edge = (byte)(i < BottomSites ? 0 : i < BottomSites + SideSites ? 1 : 2);
@@ -116,7 +107,7 @@ public sealed class BurnsEffect : ISceneEffect, IHasSwappableSlots
         }
     }
 
-    public void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride)
+    public override void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride)
     {
         var f = _f = _cast.Frame(screenSize, alpha, time, dt, colorOverride);
         _drift.Px = f.Px;

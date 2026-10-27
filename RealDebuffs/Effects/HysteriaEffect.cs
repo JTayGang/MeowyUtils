@@ -4,28 +4,9 @@ using RealDebuffs.Effects.Framework.Materials;
 
 namespace RealDebuffs.Effects;
 
-/// <summary>
-/// Hysteria: a fall down a haunted tunnel. Pale streamers spiral past, broken rings with script on them rush at you, and eyes of every
-/// kind drift out of the dark, turn to watch you go by and are gone. Now and then the fall stops and the dark looks back: a crowd of
-/// eyes opens, one enormous eye, a gate that slams through you, a surge that tears the tunnel past.
-/// </summary>
-public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
+/// <summary>Hysteria: a fall down a haunted tunnel of streamers, script rings and eyes; now and then it stops and the dark looks back.</summary>
+public sealed class HysteriaEffect : SceneEffect, IHasSwappableSlots
 {
-    public DebuffKind Kind => DebuffKind.Hysteria;
-    public string DisplayName => "Hysteria";
-    public string Description => "The lights go out and you fall. Pale streamers spiral past, eyes drift out of the dark and turn to watch you go by, and now and then the fall stops and the dark looks back.";
-    public int DrawOrder => 9;
-
-    public IReadOnlyDictionary<string, float> TriggerStatuses { get; } = new Dictionary<string, float>
-    {
-        ["Hysteria"] = 1.0f,
-    };
-
-    public IReadOnlyList<string> TriggerKeywords { get; } = new[]
-    {
-        "hysteria", "hysterical", "haunted", "possessed", "insane", "madness", "hallucination", "hallucinations", "delirium", "paranoia", "terror"
-    };
-
     public IReadOnlyList<SwappableSlot> Slots { get; } = new SwappableSlot[]
     {
         new("Stroke",   PrimitiveRole.MainStroke,  "Streamers",     "stroke.wisp", Hero: true),
@@ -40,11 +21,10 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
         new("Region",   PrimitiveRole.MainStroke,  "Tunnel",        "region.haunt-tunnel", "FlatFill"),
     };
 
-    // The tunnel. Heights are px toward the viewer at 1080p (LayerCamera's, so the perspective is its own); things come in at the far end,
-    // swell and sweep outward as they near, and leave past the lens. Radii are the lane a thing flies in, measured at the focal plane.
+    // The tunnel: heights are px toward the viewer at 1080p (LayerCamera's); things enter at the far end and leave past the lens.
     private const float CameraDistance = 1500f;
     private const float FarHeight = -3600f, NearHeight = 1050f;
-    private static readonly SigilSway Sway = new(BaseTilt: 0.08f, TiltSway: 0.05f, Precession: 0.10f, LurchTilt: 0.20f, LurchSeconds: 0.7f, BreathBase: 0.92f, BreathAmp: 0.08f);
+    private readonly SigilView _view = new(new SigilSway(BaseTilt: 0.08f, TiltSway: 0.05f, Precession: 0.10f, LurchTilt: 0.20f, LurchSeconds: 0.7f, BreathBase: 0.92f, BreathAmp: 0.08f), CameraDistance);
 
     // Pacing: how fast it all feels. These are the knobs.
     private const float CruiseSpeed = 300f;                          // px/s down the tunnel at 1080p; a lap of the tunnel takes about 16 s
@@ -59,14 +39,14 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
     private const float ClusterRadius = 98f;
     private const int EyeLanes = 22, OrbLanes = 6, ClusterLanes = 3, ClusterEyes = 5, SpeckCount = 64, GloomCount = 7;
 
-    // The cast: a flash, the dark, the tunnel rushing at you at 18 fps like a bad signal and slowing to a fall, the eyes waking, one blink together
+    // The cast: a flash, the dark, the tunnel rushing at 18 fps then slowing to a fall, the eyes waking, one shared blink.
     private const float StopMotionUntil = 0f, StopMotionRate = 18f;
     private const float BlinkAt = 2.0f, IntroEyes = 2.5f, ShockSeconds = 1.2f;
 
     // Hallucinations
-    private const float QuietShake = 0f;    // the tremor, tilt twitch and heartbeat lurch left between hallucinations (0 = a steady view, 1 = all of it); an apparition always has all of it
-    private const float ScriptOnRib = 0.5f * (TunnelField.RibRadius + TunnelField.WallRadius) / (0.93f * TunnelField.RibRadius);   // the runes go on a rib's front face, which EmitScript's 0.93 would otherwise put inside the lip
-    private const float StareClear = 0.34f;     // short-side fraction round the middle of the screen that a crowd of eyes keeps out of
+    private const float QuietShake = 0f;  // tremor, tilt twitch and heartbeat lurch kept between apparitions (0 = steady, 1 = all)
+    private const float ScriptOnRib = 0.5f * (TunnelField.RibRadius + TunnelField.WallRadius) / (0.93f * TunnelField.RibRadius);  // runes sit on a rib's front face (0.93 would put them inside the lip)
+    private const float StareClear = 0.34f;  // short-side fraction round screen centre a crowd of eyes avoids
     private const int MaxStare = 12;
 
     private static readonly uint Flash = HauntColor.Flash;
@@ -80,7 +60,7 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
 
     private enum VisionKind { None, Stare, GreatEye, Gate, Surge, Shudder }
 
-    /// <summary>The apparition in progress: what it is, when it began, how long it lasts, and where its one big thing is (screen fractions).</summary>
+    /// <summary>The apparition in progress: kind, start, duration, and where its one big thing sits (screen fractions).</summary>
     private struct Vision
     {
         public VisionKind Kind;
@@ -133,23 +113,25 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
 
     private readonly CastTracker _cast = new(envelope: true);
     private CastFrame _f;
-    private LayerCamera _cam;
-    private float _breath, _roll, _tqPrev, _appear;
+    private float _roll, _tqPrev, _appear;
 
     // per cast
     private int _seed;
-    private float _hand, _swirl, _baseAngle, _spin, _cruise, _azimuth, _azimuthDir;
+    private float _hand, _swirl, _baseAngle, _spin, _cruise;
 
     // per frame, from the apparition
     private float _level, _env, _kick, _ghost, _stress, _staring, _vEnded, _resumeAt, _kickTilt, _jump;
 
-    // The strain: how far the tunnel has been wrenched round by a shudder, and the schedule of slips that does it (see BuildStrain).
+    // The strain: how far a shudder has wrenched the tunnel round, and its schedule of slips (see BuildStrain).
     private const int MaxSlips = 48;
     private readonly float[] _slipAt = new float[MaxSlips], _slipBy = new float[MaxSlips], _slipOver = new float[MaxSlips];
     private int _slips;
     private float _strainDir = 1f, _twistCarry, _twistNow, _rollKick;
 
-    public HysteriaEffect()
+    public HysteriaEffect() : base(DebuffKind.Hysteria, "Hysteria",
+        "The lights go out and you fall. Pale streamers spiral past, eyes drift out of the dark and turn to watch you go by, and now and then the fall stops and the dark looks back.",
+        9, "Hysteria",
+        keywords: ["hysteria", "hysterical", "haunted", "possessed", "insane", "madness", "hallucination", "hallucinations", "delirium", "paranoia", "terror"])
     {
         for (int i = 0; i < StreamerCount; i++) _streamer[i] = new StrandPath(StreamerPts);
         for (int i = 0; i < RingCount; i++)
@@ -164,16 +146,14 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
         }
     }
 
-    public void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride)
+    public override void Emit(EffectScene scene, Vector2 screenSize, float alpha, float time, float dt, Vector4? colorOverride)
     {
         var f = _f = _cast.Frame(screenSize, alpha, time, dt, colorOverride);
         if (f.Fresh) BeginCast(f.Seed);
 
         UpdateVision(in f);
 
-        // The heart only shows through while something is being shown. Between apparitions the view is steady (QuietShake = 0), so
-        // the pulse is gated here, once, and everything that reads it (walls, light, vignette, streamers, tilt) is calm in the quiet.
-        // The heart itself keeps running, so the first beat of an apparition lands on its own rhythm.
+        // The pulse is gated here, once, so the quiet stays calm while the heart keeps its rhythm.
         float nerves = DrawHelpers.Lerp(QuietShake, 1f, _env);
         float beat = _heart.Level(f.Age, _stress) * nerves;
 
@@ -189,14 +169,11 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
         _roll = _baseAngle + _spin * f.Age + _jump * _rollKick + _twistCarry + _twistNow;
         float lenMul = Math.Clamp(0.55f + 0.45f * MathF.Pow(MathF.Max(speed, 0.01f), 0.6f), 0.5f, 3f);
 
-        // Whatever is shown jolts the whole view: a lurch of tilt, a shake, and under it a tremor, a twitch of tilt and a lurch with each
-        // heartbeat. Those three belong to the apparition (QuietShake leaves some of them in the quiet); the view is steady between.
+        // Whatever is shown jolts the view: tilt lurch, shake, tremor, tilt twitch and a lurch per heartbeat (QuietShake keeps some).
         float tremor = (0.3f + _stress) * f.Px * nerves;
         Vector2 shake = new Vector2(Flicker.Tic(time, _seed + 31, 33f), Flicker.Tic(time, _seed + 32, 33f)) * 12f * f.Px * _kick
                       + new Vector2(Flicker.Tic(time, _seed + 33), Flicker.Tic(time, _seed + 34)) * 1.4f * tremor;
-        float tilt = Sway.Tilt(f.Age, f.Leave) + _kickTilt * _rollKick + 0.008f * beat + 0.004f * Flicker.Tic(time, _seed + 35) * nerves;
-        _cam = new LayerCamera(f.Center + shake, CameraDistance * f.Px, tilt, Sway.Azimuth(_azimuth, _azimuthDir, f.Age));
-        _breath = Sway.Breath(f.Age);
+        _view.Update(in f, extraTilt: _kickTilt * _rollKick + 0.008f * beat + 0.004f * Flicker.Tic(time, _seed + 35) * nerves, shift: shake);
 
         EmitTunnel(scene, beat, speed);
         EmitAtmosphere(scene, beat);
@@ -218,16 +195,15 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
     private void BeginCast(int seed)
     {
         _seed = seed;
-        _azimuth = DrawHelpers.Hash01(seed + 1) * MathF.Tau;
-        _azimuthDir = DrawHelpers.Hash01(seed + 2) < 0.5f ? -1f : 1f;
-        _hand = DrawHelpers.Hash01(seed + 5) < 0.5f ? -1f : 1f;
+        _view.Begin(seed);
+        _hand = DrawHelpers.Sign(seed + 5);
         _swirl = _hand * DrawHelpers.HashRange(seed + 7, 0.00030f, 0.00060f);
         _baseAngle = DrawHelpers.Hash01(seed + 8) * MathF.Tau;
-        _spin = DrawHelpers.HashRange(seed + 9, 0.015f, 0.04f) * (DrawHelpers.Hash01(seed + 10) < 0.5f ? -1f : 1f);
+        _spin = DrawHelpers.HashRange(seed + 9, 0.015f, 0.04f) * (DrawHelpers.Sign(seed + 10));
         _cruise = DrawHelpers.HashRange(seed + 11, 0.85f, 1.15f);
         _twistCarry = _twistNow = 0f; _slips = 0;
 
-        // Where each thing starts along the tunnel, evenly spread so it is never empty and never bunched; laps then re-roll their lanes.
+        // Where each thing starts along the tunnel, evenly spread; laps then re-roll their lanes.
         Spread(_streamerAt, seed + 100); Spread(_ringAt, seed + 200); Spread(_eyeAt, seed + 300);
         Spread(_orbAt, seed + 400); Spread(_clusterAt, seed + 500); Spread(_specAt, seed + 600); Spread(_gloomAt, seed + 700);
         _tunnel.Travel = DrawHelpers.Hash01(seed + 12) * _tunnel.Length;
@@ -249,7 +225,7 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
             offsets[i] = _tunnel.Length * (i + DrawHelpers.Hash01(seed + i * 17)) / offsets.Length;
     }
 
-    /// <summary>The fall, in multiples of cruising speed: the cast rushes in and slows; an apparition can stop it dead or tear it forward.</summary>
+    /// <summary>The fall in multiples of cruising speed: the cast rushes in and slows; an apparition can stop it or tear it forward.</summary>
     private float SpeedNow(in CastFrame f)
     {
         float intro = 1f + 11f * MathF.Exp(-f.Age / 0.70f);
@@ -286,9 +262,7 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
         _env = on ? DrawHelpers.Smooth(t / 0.07f) * (1f - DrawHelpers.Smooth((t - (_v.Life - 0.30f)) / 0.30f)) : 0f;
         _kick = on ? MathF.Exp(-t / 0.20f) : 0f;
 
-        // Every lurch turns the view and then it settles back, except in a shudder: there the tunnel strains against something that will not let
-        // it turn, and goes round in jerks, always the one way. The turn is a sum of slips (it can only grow); what each slip leaves behind is
-        // a burst of shake and a flinch of the walls, which is a jolt and not a rotation.
+        // Lurches turn the view and settle back, except in a shudder: a sum of slips that only grows.
         _rollKick = _kick;
         _twistNow = 0f;
         if (_v.Kind == VisionKind.Shudder)
@@ -311,7 +285,7 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
             _ => 0.22f * _level,
         };
 
-        // Fright lingers: it is full while something is shown and drains over a few seconds, quickening the pulse and the tremor.
+        // Fright lingers: full while something is shown, draining over a few seconds, quickening the pulse and the tremor.
         float target = on ? 1f : MathF.Max(0.12f, MathF.Exp(-(f.Age - _vEnded) / 3.5f));
         _stress += (target - _stress) * (1f - MathF.Exp(-f.Dt * 3f));
     }
@@ -324,7 +298,7 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
         if (kind == _lastKind) kind = (VisionKind)((int)kind % 5 + 1);
 
         _v = new Vision { Kind = kind, Start = f.Age, Seed = seed };
-        float sign = DrawHelpers.Hash01(seed + 3) < 0.5f ? -1f : 1f;
+        float sign = DrawHelpers.Sign(seed + 3);
         _kickTilt = sign * DrawHelpers.HashRange(seed + 4, 0.07f, 0.14f);
         _jump = -sign * DrawHelpers.HashRange(seed + 5, 0.15f, 0.35f);
 
@@ -354,10 +328,7 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
         }
     }
 
-    /// <summary>
-    /// Lays out a shudder's slips. The tunnel holds, shivering with a few tiny slips as the strain builds, then lets go in one larger lurch;
-    /// then holds again. It turns the way it is already slowly turning, so the strain only ever adds to the direction it is going.
-    /// </summary>
+    /// <summary>Lays out a shudder's slips: tiny shivers as strain builds, then one larger lurch, then a hold.</summary>
     private void BuildStrain(int seed, float life)
     {
         _slips = 0;
@@ -383,7 +354,7 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
         _slipAt[_slips] = at; _slipBy[_slips] = by; _slipOver[_slips] = over; _slips++;
     }
 
-    /// <summary>How far round the tunnel has been wrenched t seconds into a shudder (radians, always growing): each slip is a fast start that settles.</summary>
+    /// <summary>How far round the tunnel has been wrenched t seconds into a shudder (radians, only growing).</summary>
     private float StrainTwist(float t)
     {
         float sum = 0f;
@@ -396,7 +367,7 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
         return sum;
     }
 
-    /// <summary>The jolt left by the slips, 0..1: the big lurches hit hard and the shivers are a tremor, each dying away in a moment.</summary>
+    /// <summary>The jolt left by the slips, 0..1: big lurches hit hard, shivers are a tremor, each dying away quickly.</summary>
     private float StrainShake(float t)
     {
         float peak = 0f;
@@ -410,7 +381,7 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
         return peak;
     }
 
-    /// <summary>Eyes of every kind in the dark round the edges, in pairs and alone, turned to face the middle, none near it and none on top of another.</summary>
+    /// <summary>Eyes round the edges, in pairs and alone, turned to the middle, none near it or on top of another.</summary>
     private void PlaceStare(in CastFrame f, int seed)
     {
         int pairs = 3 + (int)(DrawHelpers.Hash01(seed + 20) * 4f);
@@ -428,8 +399,7 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
             if (d < StareClear || crowded) continue;
             sites[n] = c;
 
-            // A pair sits side by side across the line to the middle: the axis is square to it. Farther out, a little bigger.
-            // The tilt follows the same fold-free rule as the eyes in the tunnel (see WallTilt), so neighbours never lean opposite ways.
+            // A pair sits side by side across the line to the middle; tilt follows the fold-free rule (see WallTilt).
             float axis = MathF.Atan2(off.Y, off.X) + MathF.PI * 0.5f;
             float roll = WallTilt(c * f.Size, f.Center, 0.8f);
 
@@ -439,7 +409,7 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
             EyeStyle style = PickStyle(seed + 450 + n);
             Vector2 half = new Vector2(MathF.Cos(axis), MathF.Sin(axis)) * size * 1.3f * f.Px / f.Size;
 
-            // In a pair the inner corners (and caruncles) face each other, as in a face: the first eye's is toward the second, whichever way round they were turned.
+            // In a pair the inner corners (and caruncles) face each other, as in a face, whichever way round they were turned.
             bool firstMirror = single ? DrawHelpers.Hash01(seed + 410 + n) < 0.5f : Vector2.Dot(new Vector2(MathF.Cos(roll), MathF.Sin(roll)), half) < 0f;
             _stare[_stareCount++] = new Sprite { At = c - (single ? Vector2.Zero : half), Size = size, Roll = roll, Delay = delay, Seed = seed + 500 + n * 2, Style = style, Mirror = firstMirror };
             if (!single) _stare[_stareCount++] = new Sprite { At = c + half, Size = size, Roll = roll, Delay = delay + 0.03f, Seed = seed + 501 + n * 2, Style = style, Mirror = !firstMirror };
@@ -465,14 +435,14 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
 
     // The tunnel
 
-    /// <summary>The place itself: walls, ribs, glow, light shafts, haze and dust, drawn by region.haunt-tunnel under everything that flies through it.</summary>
+    /// <summary>The place itself (walls, ribs, glow, shafts, haze, dust), drawn by region.haunt-tunnel under everything else.</summary>
     private void EmitTunnel(EffectScene scene, float beat, float speed)
     {
         ref readonly CastFrame f = ref _f;
         var t = _field;
-        t.Flight = _tunnel; t.Cam = _cam; t.Size = f.Size; t.Px = f.Px; t.Short = f.Short; t.Time = f.Time; t.Age = f.Age;
+        t.Flight = _tunnel; t.Cam = _view.Cam; t.Size = f.Size; t.Px = f.Px; t.Short = f.Short; t.Time = f.Time; t.Age = f.Age;
         t.Swirl = _swirl; t.Roll = _roll; t.FlightSpeed = CruiseSpeed * _cruise * speed;
-        // The walls breathe with the pulse, flinch at a lurch, and when the fall stops they draw one long slow breath in.
+        // The walls breathe with the pulse, flinch at a lurch, and draw one long slow breath in when the fall stops.
         float inhale = _v.Kind is VisionKind.Stare or VisionKind.GreatEye ? 0.022f * _env * (0.5f + 0.5f * MathF.Sin((f.Age - _v.Start) * 2.1f - 1.57f)) : 0f;
         t.Breath = 1f - 0.014f * beat - 0.02f * _kick - inhale;
         t.Fringe = 1.2f + (_v.Kind == VisionKind.Surge ? 3.4f * _env : 0f) + 2.0f * _kick;
@@ -481,13 +451,13 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
         scene.AddRegion(new RegionPrimitive { Min = Vector2.Zero, Max = f.Size, Alpha = 1f, State = t, ColorOverride = f.Color });
     }
 
-    /// <summary>Where a thing in a lane appears at height h (px, scaled), and how much it is magnified. The whole tunnel swirls as it recedes.</summary>
+    /// <summary>Where a thing in a lane appears at height h (px, scaled) and its magnification; the tunnel swirls as it recedes.</summary>
     private Vector2 Place(float radial, float theta, float h, out float scale, float tangential = 0f)
     {
         float a = theta + _swirl * h / _f.Px + _roll;
         float c = MathF.Cos(a), s = MathF.Sin(a);
         Vector2 b = _field.Bend(h / _f.Px);
-        return _cam.Project(radial * c - tangential * s + b.X, radial * s + tangential * c + b.Y, h, out scale);
+        return _view.Cam.Project(radial * c - tangential * s + b.X, radial * s + tangential * c + b.Y, h, out scale);
     }
 
     /// <summary>Fades a thing in out of the far dark and out again before it passes the lens.</summary>
@@ -501,13 +471,10 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
     /// <summary>Distance is dimmer: the far end of the tunnel is nearly dark.</summary>
     private static float Fog(float near) => 0.45f + 0.55f * DrawHelpers.Smooth(near / 0.50f);
 
-    /// <summary>How much dusty air lies between you and something at this depth: the far end is seen through all of it, the lens end through none. It lifts and softens things rather than only dimming them.</summary>
+    /// <summary>Dusty air between you and something at this depth (none at the lens end); it softens, not just dims.</summary>
     private static float Haze(float near) => 0.9f * (1f - DrawHelpers.Smooth(near / 0.62f));
 
-    /// <summary>
-    /// Long soft streamers spiralling past: the ten brightest are the hero stroke, the rest a fainter lot. Each flies in a lane of its
-    /// own, trailing back toward the far end of the tunnel; the cast stretches them, a stop shortens them.
-    /// </summary>
+    /// <summary>Long soft streamers spiralling past (the ten brightest are the hero stroke); the cast stretches them, a stop shortens them.</summary>
     private void EmitStreamers(EffectScene scene, float tq, float beat, float lenMul)
     {
         ref readonly CastFrame f = ref _f;
@@ -524,7 +491,7 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
             float fade = DepthFade(near, 0.14f, 0.80f);
             float appear = DrawHelpers.Smooth((tq - 0.05f - 0.45f * DrawHelpers.Hash01(_seed + i * 13)) / 0.45f);
             float gain = DrawHelpers.HashRange(s + 6, 0.45f, 0.85f) * (hero ? 1f : 0.55f);
-            float k = f.Alpha * fade * appear * gain * _breath * (1f + 0.25f * beat) * Flicker.Gutter(f.Time, s, 0.01f + 0.05f * _stress);
+            float k = f.Alpha * fade * appear * gain * _view.Breath * (1f + 0.25f * beat) * Flicker.Gutter(f.Time, s, 0.01f + 0.05f * _stress);
             if (k < 0.01f) continue;
 
             float radial = DrawHelpers.HashRange(s + 1, 240f, 780f) * px;
@@ -557,15 +524,13 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
         }
     }
 
-    /// <summary>
-    /// Broken rings rushing at you, which is what gives the tunnel its walls. Every other lap, the nearest carries a band of script.
-    /// </summary>
+    /// <summary>Broken rings rushing at you, which give the tunnel its walls; every other lap the nearest carries a band of script.</summary>
     private void EmitRings(EffectScene scene, float tq)
     {
         ref readonly CastFrame f = ref _f;
         float px = f.Px;
 
-        for (int r = 0; r < RingCount; r += 2)       // the tunnel draws a lip on every rib; a glowing ring on top of every other one is plenty
+        for (int r = 0; r < RingCount; r += 2)  // the tunnel already lips every rib; glow on every other ring is plenty
         {
             float hu = _tunnel.HeightOf(_ringAt[r], out int lap);
             float near = _tunnel.Near(hu);
@@ -575,21 +540,21 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
             if (fade < 0.02f) continue;
 
             float h = hu * px;
-            float scale = _cam.ScaleAt(h);
+            float scale = _view.Cam.ScaleAt(h);
             float radius = _field.RibPx;      // on the rib the tunnel itself draws at this height, breathing with it
             var wobble = new RingWobble(DrawHelpers.HashRange(s + 2, 0.008f, 0.022f), 2 + (s & 1), DrawHelpers.Hash01(s + 3) * MathF.Tau,
                                         DrawHelpers.HashRange(s + 4, 0.002f, 0.005f), 5 + (s & 3), DrawHelpers.Hash01(s + 5) * MathF.Tau);
             bool scripted = r == 0 && (lap & 1) == 0;
             float angle = DrawHelpers.Hash01(s + 6) * MathF.Tau + DrawHelpers.HashRange(s + 7, -0.25f, 0.25f) * f.Age + _roll;
             Vector2 bend = _field.Bend(hu);
-            SigilGeometry.Ring(_ring[r], RingSegments, in _cam, radius, h, angle, in wobble, bend.X, bend.Y);
+            SigilGeometry.Ring(_ring[r], RingSegments, in _view.Cam, radius, h, angle, in wobble, bend.X, bend.Y);
 
             float dash = !scripted && DrawHelpers.Hash01(s + 8) < 0.5f ? DrawHelpers.HashRange(s + 9, 50f, 140f) : 0f;
-            float k = f.Alpha * fade * (scripted ? 0.55f : 0.26f) * _breath * Flicker.Gutter(f.Time, s, 0.008f + 0.04f * _stress);
+            float k = f.Alpha * fade * (scripted ? 0.55f : 0.26f) * _view.Breath * Flicker.Gutter(f.Time, s, 0.008f + 0.04f * _stress);
             scene.Ring(_ring[r], PrimitiveRole.Inscription, _seed, 40 + r, Math.Clamp(9f * px * scale, 6f * px, 30f * px), k, (1f - near) * 0.6f, 0.2f * DrawHelpers.Lerp(QuietShake, 1f, _env), 1f, dash, f.Color, scripted ? 0.7f : 0.22f);
 
             if (_ghost > 0.02f) EmitGhostRing(scene, r, Math.Clamp(9f * px * scale, 6f * px, 30f * px), k, 90 + r * 2);
-            if (scripted) EmitScript(scene, radius * ScriptOnRib, h, angle, 22f * px * scale, f.Alpha * fade * 0.75f * _breath, ScriptRunes, s);
+            if (scripted) EmitScript(scene, radius * ScriptOnRib, h, angle, 22f * px * scale, f.Alpha * fade * 0.75f * _view.Breath, ScriptRunes, s);
         }
     }
 
@@ -605,17 +570,17 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
                        f.Color ?? (side == 0 ? RedSplit : CyanSplit));
     }
 
-    /// <summary>A band of runes round a ring, upright to the outside, turning with it: glyphs that foreshorten and swell with the fall.</summary>
+    /// <summary>A band of runes round a ring, upright to the outside and turning with it.</summary>
     private void EmitScript(EffectScene scene, float radius, float h, float angle, float size, float brightness, int count, int seed)
     {
         ref readonly CastFrame f = ref _f;
         Vector2 bend = _field.Bend(h / f.Px);
-        Vector2 centre = _cam.Project(bend.X, bend.Y, h, out _);
+        Vector2 centre = _view.Cam.Project(bend.X, bend.Y, h, out _);
         float band = radius * 0.93f;
         for (int g = 0; g < count; g++)
         {
             float a = angle + MathF.Tau * g / count;
-            Vector2 at = _cam.Project(band * MathF.Cos(a) + bend.X, band * MathF.Sin(a) + bend.Y, h, out _);
+            Vector2 at = _view.Cam.Project(band * MathF.Cos(a) + bend.X, band * MathF.Sin(a) + bend.Y, h, out _);
             Vector2 outward = at - centre;
             if (outward.LengthSquared() < 1f) continue;
             outward = Vector2.Normalize(outward);
@@ -637,9 +602,9 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
         float u = f.Age / ShockSeconds;
         float gain = MathF.Pow(1f - u, 1.4f);
         float r = f.Short * (0.04f + 1.25f * DrawHelpers.EaseOutCubic(u));
-        SigilGeometry.Ring(_shock, ShockSegments, in _cam, MathF.Max(8f * f.Px, r), 0f, 0f, RingWobble.None);
+        SigilGeometry.Ring(_shock, ShockSegments, in _view.Cam, MathF.Max(8f * f.Px, r), 0f, 0f, RingWobble.None);
 
-        // Dark at the middle of the screen (a bright ring there reads as a crosshair), brighter as it reaches the edges.
+        // Dark at screen centre (a bright ring there reads as a crosshair), brighter toward the edges.
         float reachIn = DrawHelpers.Smooth((r - 0.08f * f.Short) / (0.22f * f.Short));
         scene.Ring(_shock, PrimitiveRole.Inscription, _seed, 30, 14f * f.Px, f.Alpha * MathF.Min(1.4f, gain * 1.2f) * reachIn, 0f, gain, 1f, 0f, f.Color);
     }
@@ -690,10 +655,7 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
         }
     }
 
-    /// <summary>
-    /// The eyes. Every lane is a different eye on each lap: lidded eyes of every kind, floating eyeballs trailing their nerves, and
-    /// clusters of small ones. Far ones are shut and dim; they open as they near, turn to watch you, and are gone past the lens.
-    /// </summary>
+    /// <summary>The eyes: a different eye each lap in each lane; far ones are shut and dim, opening as they near and gone past the lens.</summary>
     private void CollectEyes(float tq)
     {
         for (int i = 0; i < EyeLanes; i++) LaneEye(i, false, tq);
@@ -751,8 +713,7 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
             float near = _tunnel.Near(hu);
             if (near < 0.04f || near > 0.98f) continue;
 
-            // Spread across the clump evenly (a golden-angle spiral, a little jittered) rather than dropped at a random radius, which piles them
-            // up in the middle and lets them lie on top of one another. They still clump; they just do not stack.
+            // Spread across the clump evenly (a jittered golden-angle spiral) so they clump but don't stack.
             float a = spin + m * 2.39996f + (DrawHelpers.Hash01(ms + 2) - 0.5f) * 4.6f;
             float d = ClusterRadius * MathF.Sqrt((m + 0.6f) / (members + 0.2f)) * DrawHelpers.HashRange(ms + 3, 0.45f, 1.50f) * f.Px;
             Vector2 at = Place(radial + d * MathF.Cos(a), theta, hu * f.Px, out float scale, d * MathF.Sin(a));
@@ -773,10 +734,7 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
         }
     }
 
-    /// <summary>
-    /// How far a lane's eye is open: in the cast they wake in a scatter and all blink once together; after, each opens as it nears,
-    /// blinks now and then, and is shut again as it goes. An apparition with eyes in it opens every one.
-    /// </summary>
+    /// <summary>How open a lane's eye is: the cast wakes them with one shared blink; after, each opens as it nears and shuts as it goes.</summary>
     private float EyeOpen(int lane, int seed, float near, float age, float tq)
     {
         float awakeFrom = DrawHelpers.HashRange(seed + 12, 0.22f, 0.50f);
@@ -802,18 +760,11 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
     private static float SyncBlink(float age)
         => DrawHelpers.Smooth((age - BlinkAt) / 0.07f) * (1f - DrawHelpers.Smooth((age - BlinkAt - 0.40f) / 0.20f));
 
-    /// <summary>
-    /// How far an eye is rolled to follow the wall it sits on, from where it is on screen relative to the tunnel's axis at its height.
-    /// A lid line has no "other way up" (+90 degrees and -90 degrees are the same line), so the tilt has to be a function of the line's
-    /// angle with period pi. Folding the angle into (-pi/2, pi/2] and scaling it, as this once did, leaves a jump of 0.4 * pi at the
-    /// fold, and the eye flips from +36 degrees to -36 degrees as the swirl carries it across. -max * sin(2 * bearing) has no fold:
-    /// full tilt on the diagonals, none at the four cardinal points, smooth between.
-    /// </summary>
-    /// <summary>Where the middle of the tunnel is on screen at this height.</summary>
+    /// <summary>Eye roll to follow its wall: -max * sin(2 * bearing) has period pi like a lid line, so no fold to flip across.</summary>
     private Vector2 AxisAt(float hu)
     {
         Vector2 b = _field.Bend(hu);
-        return _cam.Project(b.X, b.Y, hu * _f.Px, out _);
+        return _view.Cam.Project(b.X, b.Y, hu * _f.Px, out _);
     }
 
     private static float WallTilt(Vector2 at, Vector2 axis, float max)
@@ -833,10 +784,10 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
         float slam = MathF.Exp(-f.Age / 0.45f);
         float eventDark = _v.Kind switch { VisionKind.Stare => 0.36f, VisionKind.GreatEye => 0.30f, VisionKind.Surge => 0.18f, VisionKind.Gate => 0.16f, VisionKind.Shudder => 0.22f, _ => 0f };
 
-        // The vignette slams shut on the cast, then closes a little with each beat and hard when something is shown.
+        // The vignette slams shut on the cast, closes a little with each beat, and hard when something is shown.
         scene.RequestVignette(HauntColor.Vignette, 0.19f + 0.09f * slam + 0.07f * _env + 0.03f * beat,
                               f.Alpha * (0.64f + 0.30f * slam + 0.22f * _env + 0.12f * beat), priority: 17, f.Color);
-        scene.EdgeSpill(f.Size, f.Short * 0.12f, Veil, 0.16f * f.Alpha * _breath * (1f + 0.5f * beat), f.Color);
+        scene.EdgeSpill(f.Size, f.Short * 0.12f, Veil, 0.16f * f.Alpha * _view.Breath * (1f + 0.5f * beat), f.Color);
         scene.Wash(f.Size, Drain, 0.06f * f.Alpha, f.Color);
 
         // The cast: a cold flash, then the lights go out for a moment and the tunnel is seen by its own light.
@@ -854,7 +805,7 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
 
     // Apparitions
 
-    /// <summary>A crowd of eyes in the dark at the edges, or one enormous eye: drawn in front of everything, flickering on and off.</summary>
+    /// <summary>A crowd of eyes at the edges, or one enormous eye: drawn in front of everything, flickering on and off.</summary>
     private void EmitVisionEyes(EffectScene scene)
     {
         ref readonly CastFrame f = ref _f;
@@ -894,10 +845,7 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
         });
     }
 
-    /// <summary>
-    /// A gate: three rings, one after another, rushing out of the far end of the tunnel and straight through you, ghosted red and cyan,
-    /// the nearest wearing a band of script. It hits as it passes.
-    /// </summary>
+    /// <summary>A gate: three rings rushing out of the far end and through you, ghosted red and cyan; it hits as it passes.</summary>
     private void EmitGate(EffectScene scene)
     {
         if (_v.Kind != VisionKind.Gate) return;
@@ -914,18 +862,18 @@ public sealed class HysteriaEffect : ISceneEffect, IHasSwappableSlots
             // Slow to leave the dark, then faster and faster, until it is past you.
             float u = DrawHelpers.Saturate(tg / (_v.Life * 0.85f));
             float h = DrawHelpers.Lerp(FarHeight * 0.75f, NearHeight * 0.9f, u * u * (0.4f + 0.6f * u)) * px;
-            float scale = _cam.ScaleAt(h);
+            float scale = _view.Cam.ScaleAt(h);
             float radius = f.Short * (TunnelField.RibRadius - 0.04f * g) * _field.Breath;
             float angle = _v.Seed * 0.001f + g * 0.9f + t * 0.8f;
             Vector2 gb = _field.Bend(h / px);
-            SigilGeometry.Ring(_gate[g], GateSegments, in _cam, radius, h, angle, RingWobble.None, gb.X, gb.Y);
+            SigilGeometry.Ring(_gate[g], GateSegments, in _view.Cam, radius, h, angle, RingWobble.None, gb.X, gb.Y);
 
             float width = Math.Clamp(14f * px * scale, 8f * px, 44f * px), k = f.Alpha * lit;
             scene.Ring(_gate[g], PrimitiveRole.Inscription, _v.Seed, 60 + g, width, k, 0f, _env, 1f, g == 1 ? 90f : 0f, f.Color);
 
             if (g > 0) continue;
 
-            // The leading ring is ghosted: the same ring twice more, a glow of red and of cyan, sliding apart; and it wears a band of script.
+            // The leading ring is ghosted (two more copies, red and cyan glows, sliding apart) and wears a band of script.
             float apart = (10f + 26f * _env) * px;
             Offset(_gateA, _gate[g], new Vector2(-apart, 0.22f * apart));
             Offset(_gateB, _gate[g], new Vector2(apart, -0.22f * apart));

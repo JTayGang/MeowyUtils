@@ -29,7 +29,7 @@ public class Configuration : IPluginConfiguration
         else         DisabledKinds.Add(kind);
     }
 
-    /// <summary>Material overrides. Key "{Kind}.{Stroke|Particle}.{Role}" or "{Kind}.Region.{EdgeGlow|FlatFill}" -&gt; MaterialRegistry name.</summary>
+    /// <summary>Material overrides: "{Kind}.{Stroke|Particle}.{Role}" or "{Kind}.Region.{EdgeGlow|FlatFill}" to a registry name.</summary>
     public Dictionary<string, string> MaterialOverrides { get; set; } = new();
 
     /// <summary>Per-effect color overrides, keyed by DebuffKind; value is a color word from NamedColors.</summary>
@@ -44,7 +44,7 @@ public class Configuration : IPluginConfiguration
     /// <summary>"If a status's tooltip contains this word, show this effect" links.</summary>
     public List<TooltipKeywordRule> TooltipKeywordRules { get; set; } = new();
 
-    /// <summary>Kinds whose default keyword rule was already seeded (never re-seeded, so a deleted rule stays deleted). Reset clears this.</summary>
+    /// <summary>Kinds whose default keyword rule was seeded once (so a deleted rule stays deleted); Reset clears this.</summary>
     public HashSet<DebuffKind> SeededKinds { get; set; } = new();
 
     /// <summary>OFF by default: actually stop outgoing chat while silenced. See ChatBlocker.cs.</summary>
@@ -121,7 +121,7 @@ public sealed class TooltipKeywordRule
         Kind = effect.Kind,
     };
 
-    /// <summary>Once per session: seed each unseeded effect's default rule unless the user already has one for that kind. Returns true if changed.</summary>
+    /// <summary>Once per session: seeds each effect's default rule unless the user has one. True if changed.</summary>
     public static bool SeedNewEffects(Configuration config, IReadOnlyList<ISceneEffect> effects)
     {
         bool changed = false;

@@ -23,7 +23,6 @@ public enum DebuffKind
     Bind,
     Heavy,
     Petrification,
-
     Amnesia,
     Bleeding,
     Weakness,
@@ -204,7 +203,7 @@ public sealed class CustomStatusSnapshot
 
                 if (m.MaterialSubstitution is not { } matName) continue;
 
-                // Type-check against the hero slots: a stroke can't fill a particle slot; a particle on a stroke hero goes to the emit axis.
+                // A stroke can't fill a particle slot; a particle on a stroke hero goes to the emit axis.
                 string matType = PrefixOf(matName);
                 foreach (var hero in EffectRegistry.HeroSlotsFor(m.Kind))
                 {
@@ -377,7 +376,7 @@ public sealed class CustomStatusWatcher : IDisposable
     public void Dispose() => _framework.Update -= OnUpdate;
 }
 
-/// <summary>Status title comparison: strip markup, collapse whitespace, lowercase (Key). Clean has a fast path (called per frame).</summary>
+/// <summary>Status title comparison: strip markup, collapse whitespace, lowercase (Key); Clean has a per-frame fast path.</summary>
 public static class StatusNames
 {
     private static readonly Regex Markup = new(

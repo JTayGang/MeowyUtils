@@ -70,7 +70,7 @@ public sealed class Plugin : IDalamudPlugin
         _pi.UiBuilder.Draw += OnDraw;
         _pi.UiBuilder.OpenConfigUi += OnOpenConfig;
 
-        // Materials with no NaturalLanguageWords can't be used in "made of X" phrases: fine for regions and stroke.simple
+        // No NaturalLanguageWords means no "made of X" use: fine for regions and stroke.simple.
         foreach (var material in MaterialRegistry.AllMaterials)
         {
             if (material.NaturalLanguageWords.Length == 0
@@ -116,7 +116,7 @@ public sealed class Plugin : IDalamudPlugin
 
     private void SaveConfig() => _pi.SavePluginConfig(_config);
 
-    /// <summary>Settings-window save callback: persist, then re-read statuses and settings next frame rather than at the heartbeat.</summary>
+    /// <summary>Settings-window save callback: persist, then re-read statuses and settings next frame.</summary>
     private void OnConfigEdited()
     {
         SaveConfig();
@@ -124,7 +124,7 @@ public sealed class Plugin : IDalamudPlugin
         _effects.Invalidate();
     }
 
-    /// <summary>Wipes the live-preview generator overrides (they'd silently re-skin a vanilla debuff); runs on window close and at load.</summary>
+    /// <summary>Wipes live-preview generator overrides (they'd silently re-skin a vanilla debuff) on window close and at load.</summary>
     private bool ClearGeneratorOverrides()
     {
         if (_config.MaterialOverrides.Count == 0 && _config.ColorOverrides.Count == 0)

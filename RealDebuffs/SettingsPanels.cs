@@ -610,7 +610,7 @@ internal sealed class EffectStylePanel
         return removedAny;
     }
 
-    /// <summary>Paste-in tester; Preview forces each matched kind on screen for 15s (material substitutions apply live, not in preview).</summary>
+    /// <summary>Paste-in tester; Preview forces each matched kind on screen for 15s (material substitutions only apply live).</summary>
     private void DrawTester()
     {
         ImGui.PushID("GeneratorTester");

@@ -7,14 +7,14 @@ namespace RealDebuffs;
 
 public enum TooltipColorSource { None, Tag, Clause }
 
-/// <summary>One resolved "this kind should be active, looking like this"; MaterialSubstitution is set by a "made of X" phrase.</summary>
+/// <summary>One resolved "this kind should be active, looking like this"; MaterialSubstitution comes from "made of X".</summary>
 public readonly record struct TooltipEffectMatch(
     DebuffKind Kind,
     Vector4? Color,
     TooltipColorSource ColorSource,
     string? MaterialSubstitution = null);
 
-/// <summary>Scans a tooltip for enabled rules' keywords; colour comes from a wrapping [color=] tag, else a colour word in the clause.</summary>
+/// <summary>Scans a tooltip for enabled rules' keywords; colour from a wrapping [color=] tag, else a colour word in the clause.</summary>
 public static class TooltipKeywordParser
 {
     /// <summary>The first enabled keyword for a kind, for building export phrases.</summary>
@@ -113,7 +113,7 @@ public static class TooltipKeywordParser
 
     private static Vector4 Rgb(float r, float g, float b) => new(r, g, b, 1f);
 
-    /// <summary>Parses one tooltip: one match per kind, material phrases matched per clause, keywords inside a phrase only modify.</summary>
+    /// <summary>Parses one tooltip: one match per kind, material phrases per clause; keywords inside a phrase only modify.</summary>
     public static IReadOnlyList<TooltipEffectMatch> Parse(string? tooltipText, IReadOnlyList<TooltipKeywordRule> rules)
     {
         if (string.IsNullOrWhiteSpace(tooltipText) || rules.Count == 0)
@@ -133,7 +133,7 @@ public static class TooltipKeywordParser
                 materialPhrases.Add((m.Index, m.Index + m.Length, matName));
         }
 
-        // Resolves one keyword hit into a candidate (color from a [color=] tag or its clause) and keeps the best candidate per kind.
+        // Resolves a keyword hit into a candidate (colour from a [color=] tag or its clause); keeps the best per kind.
         void Consider(DebuffKind kind, int index, string? material)
         {
             Vector4? tagColor = FindTagColor(colorRuns, index);
@@ -223,7 +223,7 @@ public static class TooltipKeywordParser
         return null;
     }
 
-    /// <summary>Resolves one colour token: hex (with or without # / 0x, or CSS shorthand), a NamedColors name, or a rainbow word.</summary>
+    /// <summary>Resolves one colour token: hex (# / 0x / CSS shorthand), a NamedColors name, or a rainbow word.</summary>
     public static bool TryResolveColorToken(string? token, out Vector4 rgb)
     {
         rgb = default;

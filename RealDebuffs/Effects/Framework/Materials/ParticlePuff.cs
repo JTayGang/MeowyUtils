@@ -3,7 +3,7 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>A soft, irregular radial puff with no rim. Smoke, mist (also fog), dust and miasma are the same mesh with a different Look.</summary>
+/// <summary>A soft radial puff with no rim: smoke, mist, dust and miasma are the same mesh with different Looks.</summary>
 public sealed class ParticlePuff : IParticleMaterial
 {
     /// <summary>Colour runs Warm to Cool over CoolSpan (0 = stays Warm); radius = Size*(GrowFrom + GrowBy*smooth(age))</summary>
@@ -61,7 +61,7 @@ public sealed class ParticlePuff : IParticleMaterial
             BiasVelocity: new Vector2(0f, -8f),
             PrimaryDirection: new Vector2(0f, -1f)));
 
-    // A charged cloud deck: dark umber that the flashes inside it light to amber. The effect drives the flashes through Brightness.
+    // A charged cloud deck: dark umber lit to amber by flashes the effect drives via Brightness.
     public static readonly ParticlePuff Thunderhead = new("particle.thunderhead", new[] { "thunderhead", "thundercloud", "stormcloud", "storm" },
         new Look(Warm: DrawHelpers.Pack(0.95f, 0.62f, 0.24f), Cool: DrawHelpers.Pack(0.075f, 0.055f, 0.045f), CoolSpan: 0.60f,
                  GrowFrom: 0.60f, GrowBy: 0.50f, FadeIn: 0.30f, FadeOutAt: 0.55f,

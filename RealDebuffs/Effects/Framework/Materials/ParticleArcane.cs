@@ -3,7 +3,7 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>A glowing rune. Size is the glyph's half-height in px, Rotation turns it, and its letter comes from Seed (stable for life).</summary>
+/// <summary>A glowing rune: Size is half-height in px; Seed picks its letter (stable for life).</summary>
 public sealed class ParticleRune : IParticleMaterial
 {
     private readonly string _name;
@@ -13,7 +13,7 @@ public sealed class ParticleRune : IParticleMaterial
     /// <summary>The curse-violet rune in the general script (particle.rune).</summary>
     public ParticleRune() : this("particle.rune", CurseColor.Glow, 0, RuneGlyphs.LegacyCount, "rune", "runes", "glyph", "glyphs") { }
 
-    /// <summary>The same glowing rune in another palette and another set of letters: register one per theme (see particle.hellrune in MaterialRegistry).</summary>
+    /// <summary>The glowing rune in another palette and letter set: one registered per theme (see particle.hellrune).</summary>
     internal ParticleRune(string name, Palette palette, int firstGlyph, int glyphCount, params string[] words)
     {
         _name = name;
@@ -76,7 +76,7 @@ public sealed class ParticleRune : IParticleMaterial
         uint bodyCol  = DrawHelpers.Tint(_palette.Sample(0.70f), k * 0.95f, overridden);
         uint coreCol  = DrawHelpers.Tint(_palette.Sample(0.95f), k * 0.90f, overridden);
 
-        // Three passes across every stroke (bloom, body, core) so one stroke's glow never sits on top of another's core.
+        // Three passes across every stroke (bloom, body, core), so one stroke's glow never sits over another's core.
         Mb.Clear();
         for (int pass = 0; pass < 3; pass++)
         {
@@ -133,7 +133,7 @@ public sealed class ParticleMote : IParticleMaterial
     /// <summary>The curse-violet mote (particle.mote).</summary>
     public ParticleMote() : this("particle.mote", CurseColor.Glow, true, "mote", "motes", "wisp", "wisps") { }
 
-    /// <summary>The same drifting speck of light in another palette: register one per theme (see particle.static in MaterialRegistry).</summary>
+    /// <summary>The drifting speck of light in another palette: one registered per theme (see particle.static).</summary>
     internal ParticleMote(string name, Palette palette, bool flares, params string[] words)
     {
         _name = name;

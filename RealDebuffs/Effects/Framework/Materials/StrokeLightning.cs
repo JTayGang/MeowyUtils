@@ -18,7 +18,7 @@ public sealed class StrokeLightning : IStrokeMaterial
 
     // Scratch, UI thread only.
     private static readonly Vector2[] Hard = new Vector2[MaxSamples];  // the visible bolt, every kink
-    private static readonly Vector2[] Soft = new Vector2[MaxSamples];  // the meander and wander alone: light follows this so it reads as light, not as a fat zigzag
+    private static readonly Vector2[] Soft = new Vector2[MaxSamples];  // meander and wander only: light follows this, not a fat zigzag
     private static readonly Vector2[] NrmHard = new Vector2[MaxSamples];
     private static readonly float[] OffHard = new float[MaxSamples];
     private static readonly float[] OffSoft = new float[MaxSamples];
@@ -136,7 +136,7 @@ public sealed class StrokeLightning : IStrokeMaterial
 
         float bodyHalf = MathF.Max(0.9f * px, width * 0.040f);
 
-        // 4. Forks: twigs thrown off the channel (and twigs off those) that flicker in and out on a faster clock than the bolt itself.
+        // 4. Forks: twigs off the channel (and twigs off those) that flicker on a faster clock than the bolt.
         DrawForks(in s, n, visible, time, agit, near, heat, alpha, px, bodyHalf, width, overridden);
 
         // 5. Body: pale yellow, going white where the light is over-exposed.
@@ -148,7 +148,7 @@ public sealed class StrokeLightning : IStrokeMaterial
         }
         Mb.Ribbon(hard, nh, half, col, 1.0f * px);
 
-        // 6. Core: the white-hot line down the middle. It is only a hairline on a quiet bolt and swells as the light blows out.
+        // 6. Core: the white-hot line down the middle, a hairline on a quiet bolt that swells as the light blows out.
         if (alpha * near > 0.12f)
         {
             float coreHalf = MathF.Max(0.55f * px, width * 0.018f);
@@ -274,10 +274,10 @@ public sealed class StrokeLightning : IStrokeMaterial
             if (dl2 < 1e-4f) continue;
             Vector2 tan = d / MathF.Sqrt(dl2);
 
-            float side = DrawHelpers.Hash01(fs + tick * 3 + 2) < 0.5f ? -1f : 1f;
+            float side = DrawHelpers.Sign(fs + tick * 3 + 2);
             float ang = 0.40f + 0.60f * DrawHelpers.Hash01(fs + tick * 7 + 3);
             float len = (40f + 150f * DrawHelpers.Hash01(fs + tick * 11 + 4)) * px * lenScale * (0.45f + 1.0f * agit);
-            Vector2 dir = Bolt.Rotate(tan, side * ang);
+            Vector2 dir = DrawHelpers.Rotate(tan, side * ang);
             float strength = MathF.Min(Lum[idx], 2f) * 0.7f;
 
             Bolt.Twig(pts, root, dir, len, fs + 17, tick, 0.75f);
@@ -290,8 +290,8 @@ public sealed class StrokeLightning : IStrokeMaterial
                 float tl = td.Length();
                 if (tl > 1e-3f)
                 {
-                    float sgn = DrawHelpers.Hash01(fs + tick * 23 + 7) < 0.5f ? -1f : 1f;
-                    Bolt.Twig(sub, pts[3], Bolt.Rotate(td / tl, sgn * (0.5f + 0.5f * DrawHelpers.Hash01(fs + tick * 29 + 8))), len * 0.45f, fs + 41, tick, 0.8f);
+                    float sgn = DrawHelpers.Sign(fs + tick * 23 + 7);
+                    Bolt.Twig(sub, pts[3], DrawHelpers.Rotate(td / tl, sgn * (0.5f + 0.5f * DrawHelpers.Hash01(fs + tick * 29 + 8))), len * 0.45f, fs + 41, tick, 0.8f);
                     DrawTwig(sub, strength * 0.7f, 0.7f, alpha, near, heat, px, bodyHalf, overridden);
                 }
             }

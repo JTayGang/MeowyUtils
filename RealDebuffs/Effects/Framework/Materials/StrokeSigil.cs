@@ -3,7 +3,7 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>Shared by the strokes drawn out of light: resamples a path evenly by arc length and works out how bright the light is at each sample</summary>
+/// <summary>Shared by the strokes drawn out of light: resamples a path evenly by arc length and computes brightness per sample.</summary>
 internal sealed class LightStrand
 {
     public const int MaxSamples = 1100;
@@ -53,7 +53,7 @@ internal sealed class LightStrand
         MeshBuilder.MiterNormals(Pts.AsSpan(0, Count), Nrm.AsSpan(0, Count));
     }
 
-    /// <summary>Fills Lum (about 0.5 to 1.7): a slow shimmer, three pulses running along the line, a flicker while the strand is agitated</summary>
+    /// <summary>Fills Lum (about 0.5 to 1.7): a slow shimmer, three pulses running along the line, a flicker while agitated.</summary>
     public void Light(in StrokePrimitive s, float time, float total, float width, float px, float dashPeriod)
     {
         bool closed = s.Closed;
@@ -99,7 +99,7 @@ internal sealed class LightStrand
         }
     }
 
-    /// <summary>The dash period that fits whole times into a closed loop (so the seam never shows a stub), or the plain period.</summary>
+    /// <summary>The dash period that fits a whole number of times into a closed loop (no stub at the seam), or the plain period.</summary>
     public static float FitDash(float period, float total, bool closed) =>
         closed && period > 1f ? total / MathF.Max(1f, MathF.Round(total / period)) : period;
 }
@@ -115,14 +115,14 @@ public sealed class StrokeSigil : IStrokeMaterial
     /// <summary>The curse-violet sigil (stroke.sigil).</summary>
     public StrokeSigil() : this("stroke.sigil", CurseColor.Glow, "particle.mote", "sigil", "sigils", "arcane", "neon") { }
 
-    /// <summary>The same line of light in another palette: register one per theme (see stroke.brand in MaterialRegistry). moteMaterial is what it</summary>
+    /// <summary>The same line of light in another palette: one per theme (see stroke.brand); moteMaterial is what it sheds.</summary>
     internal StrokeSigil(string name, Palette palette, string moteMaterial, params string[] words)
     {
         _name = name;
         _palette = palette;
         NaturalLanguageWords = words;
 
-        // A faint trickle of light drifting off the line, mostly up and a little away from it; and, when a seal slams down
+        // Sheds a faint trickle of light, mostly up and a little away from the line; a slamming seal throws a burst.
         _shed = new StrokeEmission[]
         {
             new(Role: PrimitiveRole.Mote,
@@ -191,7 +191,7 @@ public sealed class StrokeSigil : IStrokeMaterial
 
         Mb.Clear();
 
-        // 1. Bloom: a wide, faint tent, strongest where the light is. A thin line has no glow ribbon (below), so its bloom is stronger.
+        // 1. Bloom: a wide, faint tent, strongest where the light is (stronger on a thin line, which has no glow ribbon).
         bool fat = width >= 13f * px;
         float reach = MathF.Max(8f * px, width * 0.9f * soften);
         float bloom = fat ? 0.17f : 0.27f;
@@ -224,7 +224,7 @@ public sealed class StrokeSigil : IStrokeMaterial
         }
         Mb.Ribbon(pts, nrm, half, col, 1.0f * px);
 
-        // 4. Core: the hot line down the middle, only where the light is up (and not on a line too faint to show one).
+        // 4. Core: the hot line down the middle, only where the light is up (not on a line too faint to show one).
         if (alpha * near > 0.35f)
         {
             float coreHalf = MathF.Max(0.5f * px, width * 0.024f);
@@ -264,7 +264,7 @@ public sealed class StrokeSigil : IStrokeMaterial
     public ReadOnlySpan<ImpactEmission> ImpactEmissions => _hit;
 }
 
-/// <summary>A bare band of soft light along a path, with no line in it: lay it under any stroke (a chain, a rope) to wrap that stroke in glow.</summary>
+/// <summary>A bare band of soft light along a path, no line in it: lay it under any stroke (chain, rope) to wrap it in glow.</summary>
 public sealed class StrokeGlow : IStrokeMaterial
 {
     private readonly string _name;
@@ -273,7 +273,7 @@ public sealed class StrokeGlow : IStrokeMaterial
     /// <summary>The curse-violet glow (stroke.glow).</summary>
     public StrokeGlow() : this("stroke.glow", CurseColor.Glow, "glow", "halo", "aura") { }
 
-    /// <summary>The same band of light in another palette: register one of these per theme (see stroke.corona in MaterialRegistry) so any effect can</summary>
+    /// <summary>The same band of light in another palette: one registered per theme (see stroke.corona).</summary>
     internal StrokeGlow(string name, Palette palette, params string[] words)
     {
         _name = name;

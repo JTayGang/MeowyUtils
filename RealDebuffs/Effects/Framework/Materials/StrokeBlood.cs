@@ -9,7 +9,7 @@ public sealed class StrokeBlood : IStrokeMaterial
     public string Name => "stroke.blood";
     public string[] NaturalLanguageWords { get; } = { "bloodpaint", "smear", "smears", "smeared", "daub", "daubed" };
 
-    // the cross-section: Columns across the ribbon: the first and last are a zero-alpha fringe just outside the edge.
+    // Columns across the ribbon; the first and last are a zero-alpha fringe just outside the edge.
     private static readonly float[] Across = { -1.16f, -1.00f, -0.84f, -0.62f, -0.38f, -0.12f, 0.12f, 0.38f, 0.62f, 0.84f, 1.00f, 1.16f };
     private const int Cols = 12;
     private const float Crown = 0.93f;  // how round the paint's section is: 1 = a full cylinder
@@ -177,7 +177,7 @@ public sealed class StrokeBlood : IStrokeMaterial
                 Vector3 col = Paint.Sample(nx, ny);
                 float opacity = 0.99f;
 
-                // Thin patches read brighter red; pooled ones go nearly black. The very edge is a darker bead: wet paint gathers at its rim.
+                // Thin patches read brighter red, pooled ones nearly black; the edge is a darker bead.
                 col *= 1.10f - 0.30f * thickness;
                 col *= 1f - 0.22f * DrawHelpers.Smooth(0.80f, 1.0f, MathF.Abs(uc));
 
@@ -187,7 +187,7 @@ public sealed class StrokeBlood : IStrokeMaterial
                 float thinK = 0.55f + 0.45f * (1f - thickness);
                 col += InnerGlow * (glow * thinK * (0.45f + 0.55f * (1f - nz)));
 
-                // Distance haze: far paint is lifted toward the fog and loses contrast (the hero ring is near, so this is slight).
+                // Distance haze: far paint lifts toward the fog and loses contrast (slight, since the hero ring is near).
                 if (haze > 0f) col = Vector3.Lerp(col, StrandShading.DepthFog, haze);
 
                 float edge = edgeFringe ? 0f : 1f;

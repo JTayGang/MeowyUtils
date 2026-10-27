@@ -3,7 +3,7 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>The lidless eye: a shaded sphere with its iris turned toward the middle of the screen, veins over it, and the nerve it came off trailing behind.</summary>
+/// <summary>The lidless eye: a shaded sphere, iris turned toward screen centre, veins over it, its nerve trailing behind.</summary>
 public sealed partial class ParticleEye
 {
     private const int OrbRows = 7, MaxOrbSegs = 28, TailPts = 12;
@@ -15,7 +15,7 @@ public sealed partial class ParticleEye
     private static readonly float[] TailHalf = new float[TailPts];
     private static readonly uint[] TailCol = new uint[TailPts];
 
-    /// <summary>The light on the orb, as a direction in 3D: from the middle of the screen (the lit end of the tunnel), and a little toward you.</summary>
+    /// <summary>The orb's light direction: from screen centre (the tunnel's lit end), a little toward you.</summary>
     private static Vector3 OrbLight(Vector2 toLight) => Vector3.Normalize(new Vector3(toLight.X, toLight.Y, 0.45f));
 
     private void DrawOrb(ImDrawListPtr dl, in ParticlePrimitive p, in Pose e, Vector2 uv, float time, int screenW, int screenH, float forward)
@@ -25,7 +25,7 @@ public sealed partial class ParticleEye
         float len = toMid.Length();
         Vector2 toward = len > 1f ? toMid / len : new Vector2(0f, -1f);
 
-        // It faces you, its iris leaning a little toward the middle of the screen; its nerve trails back the way it has come.
+        // It faces you, iris leaning toward screen centre; its nerve trails back the way it came.
         int glance = (int)(time * 1.3f);
         Vector2 jitter = new Vector2(DrawHelpers.Hash01(p.Seed * 3 + glance * 17) - 0.5f, DrawHelpers.Hash01(p.Seed * 5 + glance * 29) - 0.5f) * 0.10f * w;
         // (When something is being shown the iris comes round to face straight out at you.)
@@ -43,7 +43,7 @@ public sealed partial class ParticleEye
         BuildIris(in e, ic, p.Seed, time, flat: MathF.Sqrt(MathF.Max(0.2f, 1f - (ic.LengthSquared() / (w * w)))));
         Mb.Flush(dl, uv);
 
-        // The wet glint sits where the surface faces halfway between you and the light; a faint answer opposite; a bright thin rim on the lit edge.
+        // Wet glint where the surface faces halfway between you and the light, a faint answer opposite, a thin rim.
         uint white = _palette.Sample(1f);
         Vector3 h3 = Vector3.Normalize(OrbLight(toward) + Vector3.UnitZ);
         Span<float> hr = stackalloc float[3];
@@ -59,11 +59,7 @@ public sealed partial class ParticleEye
         }
     }
 
-    /// <summary>
-    /// The ball, shaded as a sphere lit from the far end of the tunnel: diffuse falling off toward the side away from the light, a warm
-    /// flush where the light just reaches around the edge (flesh is translucent), a thin pale rim on the lit limb where the wet surface
-    /// catches grazing light, and the dusty air lifting it toward haze at a distance.
-    /// </summary>
+    /// <summary>The ball, shaded as a sphere lit from the tunnel's far end, with a warm edge flush, pale rim and haze.</summary>
     private void BuildSphere(in Pose e)
     {
         float w = e.W;
@@ -100,7 +96,7 @@ public sealed partial class ParticleEye
         Mb.StitchGrid(first, OrbRows, segs + 1);
     }
 
-    /// <summary>Veins crawling in from the rim toward the iris: long, wandering, thick where they leave the edge and fading as they thin, the larger ones forking.</summary>
+    /// <summary>Veins crawling in from the rim toward the iris, the larger ones forking.</summary>
     private void BuildOrbVeins(in Pose e, Vector2 ic, int seed)
     {
         float w = e.W, R = e.IrisRadius;
@@ -130,7 +126,7 @@ public sealed partial class ParticleEye
             // A fork part of the way in.
             float u0 = 0.25f + 0.30f * DrawHelpers.Hash01(h + 4);
             float a0 = a + bend * u0 * (1f - u0) * 2.2f, r0 = DrawHelpers.Lerp(0.985f * w, reachIn, MathF.Pow(u0, 0.9f));
-            float side = DrawHelpers.Hash01(h + 5) < 0.5f ? -1f : 1f;
+            float side = DrawHelpers.Sign(h + 5);
             for (int i = 0; i < 5; i++)
             {
                 float u = i / 4f;
@@ -145,7 +141,7 @@ public sealed partial class ParticleEye
         }
     }
 
-    /// <summary>The nerve it hangs from: a fleshy cord trailing toward the middle of the screen, thick where it joins and writhing as it thins, shaded as a tube.</summary>
+    /// <summary>The nerve it hangs from: a fleshy cord trailing toward screen centre, shaded as a tube.</summary>
     private void BuildNerve(in Pose e, Vector2 toward, float time, int seed)
     {
         float w = e.W;
@@ -155,7 +151,7 @@ public sealed partial class ParticleEye
         uint flesh = DrawHelpers.LerpColor(_palette.Sample(0.34f), Flesh, 0.5f);
         uint shadow = DrawHelpers.LerpColor(flesh, Ink, 0.62f);
         uint lit = DrawHelpers.LerpColor(flesh, _palette.Sample(0.80f), 0.38f);
-        // The light is at the end of the tunnel, which is where the nerve runs: the side of it facing the middle of its width catches it, the far edges fall away.
+        // The light is at the tunnel's end, where the nerve runs: the side facing the middle of its width catches it.
         for (int i = 0; i < TailPts; i++)
         {
             float s = i / (float)(TailPts - 1);

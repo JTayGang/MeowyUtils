@@ -46,7 +46,7 @@ public sealed class RegionEdgeGlow : IRegionMaterial
     }
 }
 
-/// <summary>Firelight: warm light thrown on the surroundings as a vertex grid; alpha ~(1-s)^2.2 down the rows, per-column drifting brightness.</summary>
+/// <summary>Firelight on the surroundings as a vertex grid: alpha ~(1-s)^2.2 down the rows, per-column drift.</summary>
 public sealed class RegionFirelight : IRegionMaterial
 {
     private readonly string _name;
@@ -55,7 +55,7 @@ public sealed class RegionFirelight : IRegionMaterial
     /// <summary>Orange firelight (region.firelight).</summary>
     public RegionFirelight() : this("region.firelight", FireColor.Flame) { }
 
-    /// <summary>The same thrown light on another heat ramp: register one per theme (see region.hellglow in MaterialRegistry).</summary>
+    /// <summary>The same thrown light on another heat ramp: one registered per theme (see region.hellglow).</summary>
     internal RegionFirelight(string name, Palette ramp)
     {
         _name = name;
@@ -144,7 +144,7 @@ public sealed class RegionFirelight : IRegionMaterial
     }
 }
 
-/// <summary>The frost: a milky coating creeping in from the edges as one sparse vertex mesh over a FrostField; ignores any other State.</summary>
+/// <summary>The frost: a milky coating creeping in from the edges, one sparse vertex mesh over a FrostField.</summary>
 public sealed class RegionFrost : IRegionMaterial
 {
     public string Name => "region.frost-cover";
@@ -152,8 +152,8 @@ public sealed class RegionFrost : IRegionMaterial
     // look
     private const float FilmAlpha = 0.05f;  // the thin film that coats even the middle of the glass
     private const float IceAlpha  = 0.80f;  // extra opacity of thick ice
-    private const float SettleAge = 8f;  // after this the front has all but stopped, and the haze is rebuilt only now and then
-    private const float HazeRefresh = 0.12f;  // seconds between rebuilds once settled (also how fast a color-override change shows)
+    private const float SettleAge = 8f;  // front has all but stopped; haze rebuilds only occasionally
+    private const float HazeRefresh = 0.12f;  // seconds between rebuilds once settled (also the colour-override lag)
 
     public void Draw(ImDrawListPtr dl, in RegionPrimitive r, in MaterialContext ctx)
     {
@@ -183,7 +183,7 @@ public sealed class RegionFrost : IRegionMaterial
     {
         var g = f.Growth;
 
-        // Once settled the haze barely moves, so it's rebuilt a few times a second, or at once when overall opacity changes.
+        // Once settled the haze barely moves, so it rebuilds a few times a second (or at once on an opacity change).
         bool fresh = f.Age <= SettleAge || a != f.HazeAlpha || MathF.Abs(ctx.Time - f.HazeTime) >= HazeRefresh;
         if (fresh)
         {
@@ -229,7 +229,7 @@ public sealed class RegionFrost : IRegionMaterial
                 // A front soft enough for the grid to show cleanly (a sharper one aliases into steps).
                 float edge = DrawHelpers.Smooth(lead / 0.26f);
                 float thick = Math.Clamp(lead / 0.75f, 0f, 1f);
-                // Frost is thickest at the border and thins toward the middle, which stays mostly clear: the ferns reach in, the coat doesn't.
+                // Frost is thickest at the border and thins toward the clear middle: the ferns reach in, the coat doesn't.
                 float dens = Math.Clamp(thick * cap[i] * (0.60f + 0.40f * mott) + 0.55f * rim * thick, 0f, 1f);
                 uint c = IceColor.Frost.Sample(0.15f + 0.85f * dens);
                 Over(ref cr, ref cg, ref cb, ref ca,

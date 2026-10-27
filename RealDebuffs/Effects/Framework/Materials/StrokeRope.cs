@@ -66,7 +66,7 @@ public sealed class StrokeRope : IStrokeMaterial
         }
     }
 
-    // Tier by on-screen width (the lay needs ~4 columns per strand): >= 21 px Full, >= 15 Fine, >= 8 Medium, else Coarse.
+    // Tier by on-screen width (~4 columns per strand): >= 21 px Full, >= 15 Fine, >= 8 Medium, else Coarse.
     private static readonly Tier Full   = new(9, 0.21f, 1.00f);
     private static readonly Tier Fine   = new(7, 0.21f, 1.00f);
     private static readonly Tier Medium = new(5, 0.27f, 0.85f);
@@ -102,7 +102,7 @@ public sealed class StrokeRope : IStrokeMaterial
         public uint  AlphaBits;
         public float Alpha;
         public bool  Overridden;
-        public float Dye;  // saturation to dye to under a chromatic colour override; 0 = leave the palette's own
+        public float Dye;  // dye saturation under a chromatic override; 0 = the palette's own
     }
 
     public void Draw(ImDrawListPtr dl, in StrokePrimitive s, in MaterialContext ctx)
@@ -192,7 +192,7 @@ public sealed class StrokeRope : IStrokeMaterial
     private static void DrawKnot(ImDrawListPtr dl, Vector2 centre, float radius, float k, int seed,
                                  in Look look, in MaterialContext ctx)
     {
-        // The three coil axes: any three directions that aren't parallel look right, so turn the basis by a per-rope amount.
+        // The three coil axes: any three non-parallel directions look right, so turn the basis by a per-rope amount.
         var q = Quaternion.CreateFromYawPitchRoll(DrawHelpers.HashRange(seed + 61, 0f, MathF.Tau),
                                                   DrawHelpers.HashRange(seed + 62, 0f, MathF.Tau),
                                                   DrawHelpers.HashRange(seed + 63, 0f, MathF.Tau));

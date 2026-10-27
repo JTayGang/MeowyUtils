@@ -3,7 +3,7 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>One flame tongue as a CPU-shaded mesh: density (parabolic cross-section x falloff, noise-eroded) drives alpha and temperature.</summary>
+/// <summary>One flame tongue as a CPU-shaded mesh: noise-eroded density drives alpha and temperature.</summary>
 public sealed class ParticleEmber : IParticleMaterial
 {
     // Straight alpha: a dim dark fringe would ink an outline round every tongue
@@ -16,7 +16,7 @@ public sealed class ParticleEmber : IParticleMaterial
     /// <summary>The orange black-body flame (particle.ember).</summary>
     public ParticleEmber() : this("particle.ember", FireColor.Flame, "fire", "flame", "flames", "ember", "embers") { }
 
-    /// <summary>The same flame tongue on another temperature ramp: register one per theme (see particle.hellfire in MaterialRegistry).</summary>
+    /// <summary>The same flame tongue on another temperature ramp: one registered per theme (see particle.hellfire).</summary>
     internal ParticleEmber(string name, Palette ramp, params string[] words)
     {
         _name = name;
@@ -37,7 +37,7 @@ public sealed class ParticleEmber : IParticleMaterial
         float sf = (seed & 0x3FFF) * 0.0173f;  // this tongue's private offset into the noise field
         float age = p.AgeRatio;
 
-        // Layer tuning: heat scales temperature, alphaK opacity, tall the aspect, rough how hard noise erodes the silhouette.
+        // Layer tuning: heat scales temperature, alphaK opacity, tall the aspect, rough the noise erosion.
         float heat, alphaK, tall, rough;
         switch (p.Variant)
         {
@@ -65,7 +65,7 @@ public sealed class ParticleEmber : IParticleMaterial
         if (p.Variant == 1 || p.Variant == 3) rows = Math.Max(5, rows - 3);
         int cols = w > 42f * px ? 4 : (w > 12f * px ? 3 : 2);
 
-        // Lean: per-tongue (squared hash, usually mild), a breeze varying with screen X and time, and the tongue's own motion.
+        // Lean: per-tongue (squared hash, usually mild), a breeze varying with screen X and time, plus its own motion.
         float lr = DrawHelpers.Hash01(seed + 5) * 2f - 1f;
         float hk = DrawHelpers.Hash01(seed + 6);
         float own = lr * (0.22f + 0.42f * hk * hk);
@@ -131,7 +131,7 @@ public sealed class ParticleEmber : IParticleMaterial
             }
         }
 
-        // Skirt: the base row copied lower at zero alpha, so a lifted or mid-screen flame dissolves instead of showing a flat cut.
+        // Skirt: the base row copied lower at zero alpha, so a lifted flame dissolves instead of showing a flat cut.
         float skirt = h * 0.18f;
         for (int c = 0; c <= cols; c++)
         {
@@ -157,7 +157,7 @@ public sealed class ParticleEmber : IParticleMaterial
     };
 }
 
-/// <summary>A glowing fleck thrown off a fire: cools along the heat ramp as it ages, flickers, and smears a streak sized from its velocity.</summary>
+/// <summary>A fleck thrown off a fire: cools along the heat ramp as it ages, flickers, smears a streak from its velocity.</summary>
 public sealed class ParticleCinder : IParticleMaterial
 {
     public string Name => "particle.cinder";

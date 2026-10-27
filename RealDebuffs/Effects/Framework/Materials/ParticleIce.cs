@@ -102,7 +102,7 @@ public sealed class ParticleSnowflake : IParticleMaterial
     public string Name => "particle.snowflake";
     public string[] NaturalLanguageWords { get; } = { "snowflake", "snowflakes" };
 
-    // Saturation just above 0.05, so a colour override tints it pale rather than treating it as grey and fully saturating it.
+    // Saturation just above 0.05, so a colour override tints it pale instead of treating it as grey.
     private static readonly uint Frosted = DrawHelpers.Pack(0.94f, 0.98f, 1.00f);
 
     public void Draw(ImDrawListPtr dl, in ParticlePrimitive p, in MaterialContext ctx)

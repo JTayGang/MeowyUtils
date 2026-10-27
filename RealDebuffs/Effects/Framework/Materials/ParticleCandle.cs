@@ -3,7 +3,7 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>A candle: a wax pillar lit by the shared key light and by its own flame, a pool of molten wax glowing at the top</summary>
+/// <summary>A candle: a wax pillar lit by the key light and its own flame, with molten wax glowing on top.</summary>
 public sealed class ParticleCandle : IParticleMaterial
 {
     public string Name => "particle.candle";
@@ -86,7 +86,7 @@ public sealed class ParticleCandle : IParticleMaterial
                 float uc = Math.Clamp(u, -1f, 1f);
                 float nz = MathF.Sqrt(MathF.Max(0f, 1f - uc * uc));
 
-                // A cylinder facing the viewer: its normal runs across, a little up (the candle is seen from slightly above).
+                // A cylinder facing the viewer: its normal runs across and a little up (seen from slightly above).
                 Vector3 col = Wax.Sample(uc * 0.96f, -0.10f - 0.05f * (1f - v));
                 // The room is on fire: the wax is not studio-white.
                 col = col * col * 1.05f * new Vector3(1.00f, 0.86f, 0.70f);
@@ -97,7 +97,7 @@ public sealed class ParticleCandle : IParticleMaterial
                 float streak = 0.5f + 0.5f * Noise.Value(uc * 3.1f + (seed & 255) * 0.37f, v * 1.7f + 2.3f);
                 col *= 0.94f + 0.10f * streak;
 
-                // The flame's light on the wax, warmest on the side nearest it; the top of the pillar glows through its own melt.
+                // The flame lights the wax, warmest on the nearest side; the pillar's top glows through its own melt.
                 float facing = 0.55f + 0.45f * nz;
                 col += new Vector3(1.00f, 0.50f, 0.15f) * (flameLight * 0.50f * facing);
                 float melt = glow * DrawHelpers.Smooth(0.70f, 1f, v);
@@ -113,7 +113,7 @@ public sealed class ParticleCandle : IParticleMaterial
         // Wax run down the side: a thin pale rope ending in a bead, set hard.
         for (int d = 0; d < 2; d++)
         {
-            float side = DrawHelpers.Hash01(seed + 30 + d * 5) < 0.5f ? -1f : 1f;
+            float side = DrawHelpers.Sign(seed + 30 + d * 5);
             float u0 = side * DrawHelpers.HashRange(seed + 31 + d * 5, 0.45f, 0.82f);
             float len = H * DrawHelpers.HashRange(seed + 32 + d * 5, 0.16f, 0.52f) * (d == 0 ? 1f : 0.65f);
             Vector2 s0 = top + right * (u0 * R) + up * (-R * 0.04f);
@@ -153,7 +153,7 @@ public sealed class ParticleCandle : IParticleMaterial
         DrawFlame(dl, uv, wickTop, up, right, R, burn, lit, flick, slow, p.Sway, k, overridden);
     }
 
-    /// <summary>The flame: a teardrop whose temperature falls from a pale core out to an orange skirt, with a blue cone at its foot.</summary>
+    /// <summary>The flame: a teardrop cooling from a pale core to an orange skirt, with a blue cone at its foot.</summary>
     private static void DrawFlame(ImDrawListPtr dl, Vector2 uv, Vector2 foot, Vector2 up, Vector2 right, float R,
                                   float burn, float lit, float flick, float slow, float sway, float k, bool overridden)
     {

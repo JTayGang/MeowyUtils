@@ -17,7 +17,7 @@ internal readonly struct Tumble
     }
 }
 
-/// <summary>A chip of rust, scale or paint tumbling as it falls: foreshortened pentagon that glints, with a streak when fast.</summary>
+/// <summary>A tumbling chip of rust, scale or paint: a foreshortened glinting pentagon, streaked when fast.</summary>
 public sealed class ParticleFlake : IParticleMaterial
 {
     public string Name => "particle.flake";
@@ -86,7 +86,7 @@ public sealed class ParticleFlake : IParticleMaterial
     };
 }
 
-/// <summary>A loose filament of hemp, wool or hair drifting down: a hair-thin three-segment curl that glints when it turns to the light.</summary>
+/// <summary>A loose filament of hemp, wool or hair drifting down: a hair-thin three-segment curl that glints in the light.</summary>
 public sealed class ParticleFibre : IParticleMaterial
 {
     public string Name => "particle.fibre";
@@ -108,7 +108,7 @@ public sealed class ParticleFibre : IParticleMaterial
 
         uint col = DrawHelpers.LerpColor(DrawHelpers.Hash01(seed + 5) < 0.6f ? Lit : Dull, Glint, tumble.Glint * 0.7f);
 
-        // A chromatic colour override keeps each colour's own saturation, so match the rope's dye instead of staying muted hemp.
+        // A chromatic override keeps each colour's saturation, so it matches the rope's dye instead of muted hemp.
         float dye = DrawHelpers.ColorOverrideChroma;
         if (dye > 0f) col = Dyed(col, dye);
 
@@ -150,7 +150,7 @@ public sealed class ParticleFibre : IParticleMaterial
     };
 }
 
-/// <summary>Base for viscous-liquid particles (slime, blood, sludge, venom): draws a drop with neck and string (GoopDraw), shaded by its LiquidSpec</summary>
+/// <summary>Base for viscous-liquid particles (slime, blood): a GoopDraw drop shaded by its LiquidSpec.</summary>
 public abstract class ParticleGoop : IParticleMaterial
 {
     private readonly LiquidMatcap _liquid;
@@ -173,7 +173,7 @@ public abstract class ParticleGoop : IParticleMaterial
     public bool DrawsWithHost => true;
 }
 
-/// <summary>Thick, translucent, sickly-green mucus: hangs in long stretching strings, lets go, falls as a glossy teardrop.</summary>
+/// <summary>Thick, translucent, sickly-green mucus: hangs in long strings, lets go, falls as a glossy teardrop.</summary>
 public sealed class ParticleSlime : ParticleGoop
 {
     public ParticleSlime() : base(LiquidPresets.Slime, Spec) { }
@@ -230,41 +230,5 @@ public sealed class ParticleBlood : ParticleGoop
                 MinSlope: 0.38f,
                 Stringiness: 0.50f,
                 SatelliteChance: 0.30f)),
-    };
-}
-
-/// <summary>Corrosive acid: thinner than slime, so it forms and lets go quickly, runs in short necks and falls fast, with plenty of satellites. Poison's drips; also "made of acid".</summary>
-public sealed class ParticleAcid : ParticleGoop
-{
-    public ParticleAcid() : base(LiquidPresets.Acid, Spec) { }
-
-    public override string Name => "particle.acid";
-    public override string[] NaturalLanguageWords { get; } =
-        { "acid", "acidic", "venom", "venomous", "vitriol", "bile", "caustic" };
-
-    /// <summary>The drip an acid-hosting stroke (the thread, the drip line) declares: public so every host hangs the same liquid the same way.</summary>
-    public static readonly StrokeEmission[] Spec =
-    {
-        new(
-            Role: PrimitiveRole.Goop,
-            DensityPer100px: 0f,
-            SpeedMin: 90f, SpeedMax: 190f,
-            LifespanMin: 1.8f, LifespanMax: 2.6f,
-            SizeMin: 2.8f, SizeMax: 4.8f,
-            SpreadRadians: 0f,
-            BiasVelocity: Vector2.Zero,
-            Gravity: new Vector2(0f, 1950f),
-            Drip: new StrokeDripOptions(
-                SiteSpacingPx: 120f,
-                CycleSecondsMin: 1.7f, CycleSecondsMax: 3.4f,
-                MinSlope: 0.36f,
-                Stringiness: 0.58f,
-                SatelliteChance: 0.70f)),
-    };
-
-    /// <summary>The same drip for a path laid along the underside of a mass (stroke.drip-line): sites close enough that even a narrow lip hangs a drop.</summary>
-    public static readonly StrokeEmission[] LipSpec =
-    {
-        Spec[0] with { Drip = Spec[0].Drip!.Value with { SiteSpacingPx = 46f, CycleSecondsMin = 2.0f, CycleSecondsMax = 4.4f, TipSite = false } },
     };
 }

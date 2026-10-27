@@ -3,13 +3,7 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>
-/// A dusty tunnel seen from inside, falling. Given a TunnelField it lays down, back to front: the glow at the far end, the wall (grimy
-/// panels between ribs, lit by the far light so it brightens into the distance, with stains and pitting that tile and come round
-/// again), pale light shafts fanning out of the far end, drifting dust haze, and dust in the air: specks that are bright inside a
-/// shaft and dim outside it, smeared along the direction of travel by the speed of the fall, and blurred to discs when they are close
-/// to the lens. Without a field it is a plain flat fill, so it can stand in for region.flat-fill.
-/// </summary>
+/// <summary>A dusty tunnel seen from inside; with no TunnelField it is a flat fill.</summary>
 public sealed class RegionTunnel : IRegionMaterial
 {
     public string Name => "region.haunt-tunnel";
@@ -52,7 +46,7 @@ public sealed class RegionTunnel : IRegionMaterial
             // A shudder fills the air with dust: more of it, bigger, and thicker haze.
             Dusty = f.Vision == 5 ? f.Env : 0f;
 
-            // How much pale light there is: a pulse with the heart, a flare when something is shown, less when the fall stops and the dark closes in.
+            // How much pale light there is: pulses with the heart, flares when something is shown, dims when the fall stops.
             float light = 1f + 0.30f * f.Beat;
             light += f.Vision switch
             {
@@ -72,7 +66,7 @@ public sealed class RegionTunnel : IRegionMaterial
     private static uint Col(Vector3 rgb, float alpha, bool overridden)
         => DrawHelpers.VertexColor(rgb, alpha, DrawHelpers.AlphaBits(alpha), overridden);
 
-    // The tone curve (soft shoulder, then to display) is the same for every vertex: look it up instead of exp and pow three times each.
+    // The tone curve is the same for every vertex: look it up instead of exp and pow each time.
     private const int LutSize = 512;
     private const float LutMax = 3f;
     private static readonly float[] DisplayLut = BuildDisplayLut();
@@ -97,7 +91,7 @@ public sealed class RegionTunnel : IRegionMaterial
 
     private static Vector3 Display(Vector3 lin) => new(Display(lin.X), Display(lin.Y), Display(lin.Z));
 
-    // Unit vectors round a turn, for the segment counts a ring is drawn with: rotating one by the twist is four multiplies, where cos and sin are not.
+    // Unit vectors round a turn per ring segment count: rotating one by the twist is four multiplies, not cos and sin.
     private static readonly Dictionary<int, (float[] C, float[] S)> Turns = new();
 
     private static (float[] C, float[] S) TurnTable(int segs)
@@ -108,15 +102,11 @@ public sealed class RegionTunnel : IRegionMaterial
         return Turns[segs] = (c, s);
     }
 
-    // One tessellation for every strip and lip. It used to change with the ring's size on screen (40, 60, then 80 segments), but a ring that
-    // changes how many vertices it has changes how the grime is sampled round it, and the wall visibly shifts as each rib goes by.
+    // One tessellation for every strip and lip: a changing vertex count would resample the grime and shift the wall.
     private const int WallSegments = 64;
     private static int SegmentsFor(float scale) => WallSegments;
 
-    /// <summary>
-    /// Fades a detail in as a rib comes near enough to show it (0 below lo, 1 above hi), where it used to switch on at a threshold:
-    /// with a rib sweeping out every couple of seconds, each switch was a pop, and together they read as a pulse.
-    /// </summary>
+    /// <summary>Fades a detail in as a rib comes near (0 below lo, 1 above hi); a hard threshold popped.</summary>
     private static float Near(float scale, float lo, float hi) => DrawHelpers.Smooth((scale - lo) / (hi - lo));
 
     private static readonly Vector3 FarLight = new(0.62f, 0.90f, 1.00f);
@@ -185,7 +175,7 @@ public sealed class RegionTunnel : IRegionMaterial
             }
             if (i == n) break;
 
-            // The rib: its inner face (a narrow band seen almost edge on), then its front face (an annulus square to the view).
+            // The rib: its inner face (a narrow band seen almost edge on), then its front face (an annulus).
             ref Rib rib = ref Ribs[i];
             float back = MathF.Max(reach, rib.H - rib.W);
             // The inner face is a sliver seen edge-on: it only shows once the rib is close, and fades up as it comes.
@@ -248,7 +238,7 @@ public sealed class RegionTunnel : IRegionMaterial
             float radius = row.Radius * shortSide * f.Breath;
             Vector2 bend = f.Bend(row.Hu);
 
-            // The rib before a panel shades it from the far light (and fills the corner with dark); it comes back up toward the next rib.
+            // The rib before a panel shades it from the far light and fills the corner with dark.
             float shade = kind == WallKind ? 1f - 0.85f * MathF.Exp(-(row.Hu - spanStart) / 210f) : 1f;
 
             for (int j = 0; j < cols; j++)
@@ -283,10 +273,7 @@ public sealed class RegionTunnel : IRegionMaterial
     private static readonly uint[] SeamCol = new uint[MaxSeamRows];
     private static readonly Vector2[] SeamBend = new Vector2[MaxSeamRows];
 
-    /// <summary>
-    /// The joints between the blocks of a panel: thin dark lines running the length of the wall, so they run out toward the far end
-    /// and meet there. Alternate panels are shifted half a block, as courses of masonry are. Only panels near enough to show them.
-    /// </summary>
+    /// <summary>The joints between a panel's blocks: dark lines running out toward the far end; alternate panels shift half a block.</summary>
     private static void Seams(TunnelField f, in Env e, ReadOnlySpan<Row> rows, int panel)
     {
         int n = rows.Length;
@@ -371,10 +358,7 @@ public sealed class RegionTunnel : IRegionMaterial
         }
     }
 
-    /// <summary>
-    /// Grit on the wall: dark pits and, in the light, pale flecks of mineral, pinned to the wall so they stream past as it does. It is
-    /// the finest scale of surface there is, and the one that tells the eye this was photographed and not drawn.
-    /// </summary>
+    /// <summary>Grit on the wall: dark pits and pale mineral flecks, the finest surface scale.</summary>
     private static void DrawGrit(ImDrawListPtr dl, TunnelField f, in Env e)
     {
         var fl = f.Flight;
@@ -427,7 +411,7 @@ public sealed class RegionTunnel : IRegionMaterial
         Mb.Flush(dl, e.Uv);
     }
 
-    /// <summary>The bright lip along a rib's inside edge, where the far light catches it, with the red and cyan fringes of a lens at the edges of the frame.</summary>
+    /// <summary>The bright lip along a rib's inside edge, with a lens's red and cyan fringes at the frame edges.</summary>
     private static void Lip(TunnelField f, in Env e, float hu, int seed)
     {
         float px = f.Px, shortSide = f.Short;
@@ -445,8 +429,7 @@ public sealed class RegionTunnel : IRegionMaterial
         Vector2 centre = f.Cam.Project(bend.X, bend.Y, h, out _);
         float width = Math.Clamp(1.6f * px * sc, 1.2f * px, 6f * px);
 
-        // A lens only splits colours visibly toward the edges of the frame, which is where the near ribs are.
-        // (and it fades in with how near the rib is, or with the lens being shaken, instead of switching on)
+        // A lens splits colours visibly only toward the frame edges; it fades in with rib nearness or shake.
         float fringe = MathF.Max(Near(sc, 0.65f, 1.05f), DrawHelpers.Smooth((f.Fringe - 1.8f) / 1.2f));
         int firstPass = fringe > 0.02f ? 0 : 2;
         for (int pass = firstPass; pass < 3; pass++)
@@ -477,7 +460,7 @@ public sealed class RegionTunnel : IRegionMaterial
 
     // Light shafts
 
-    /// <summary>How much light there is in the air at an angle round the far end: a few broad shafts and a lot of nothing.</summary>
+    /// <summary>Light in the air by angle round the far end: a few broad shafts and a lot of nothing.</summary>
     private static float Shaft(float angle, float time, int seed)
     {
         float c = MathF.Cos(angle), s = MathF.Sin(angle);
@@ -499,8 +482,7 @@ public sealed class RegionTunnel : IRegionMaterial
         float s = f.Short, k = e.A * e.Light;
         if (k < 0.004f) return;
 
-        // Out from the far end: nothing at the very middle (that is where you are looking), full by mid-screen, thinning past the edges.
-        // Six rings of vertices so the shafts are not solid: the dust thickens and thins along them.
+        // Out from the far end: nothing at the very middle, full by mid-screen, thinning past the edges.
         Span<float> radius = stackalloc float[Rows] { 0.10f * s, 0.26f * s, 0.46f * s, 0.74f * s, 1.05f * s, 1.45f * s };
         Span<float> profile = stackalloc float[Rows] { 0f, 0.55f, 0.90f, 1.0f, 0.85f, 0.45f };
         Mb.Clear();
@@ -529,7 +511,7 @@ public sealed class RegionTunnel : IRegionMaterial
     private static void DrawHaze(ImDrawListPtr dl, TunnelField f, in Env e)
     {
         float s = f.Short;
-        Span<float> rr = stackalloc float[2];      // allocated once, outside the loop (a stackalloc in a loop grows the stack every pass)
+        Span<float> rr = stackalloc float[2];  // outside the loop: stackalloc in a loop grows the stack
         Span<uint> rc = stackalloc uint[2];
         for (int i = 0; i < TunnelField.BillowCount; i++)
         {
@@ -556,11 +538,7 @@ public sealed class RegionTunnel : IRegionMaterial
 
     private static readonly Vector3 FallingDust = new(0.74f, 0.72f, 0.64f);
 
-    /// <summary>
-    /// The tunnel shudders and dust comes down: a warm curtain sifting from the top of the screen (screen up, whichever way the tunnel is
-    /// turned) and specks of grit falling through the light, streaked by their own speed. Everything is a function of how long the shudder
-    /// has lasted, so it needs no state of its own.
-    /// </summary>
+    /// <summary>The shudder: a warm dust curtain from the screen top and streaked grit (a pure function of shudder age).</summary>
     private static void DrawShudder(ImDrawListPtr dl, TunnelField f, in Env e)
     {
         if (f.Vision != 5 || f.Env < 0.01f) return;
@@ -570,7 +548,7 @@ public sealed class RegionTunnel : IRegionMaterial
 
         Mb.Clear();
 
-        // The curtain: dust in the air above, thickest at the top edge and thinning toward the middle, billowing a little as it goes.
+        // The curtain: dust above, thickest at the top edge and thinning toward the middle, billowing a little.
         const int Cols = 12;
         Mb.Reserve(2 * (Cols + 1), Cols * 6);
         int first = -1;
@@ -587,7 +565,7 @@ public sealed class RegionTunnel : IRegionMaterial
         }
         Mb.StitchGrid(first, 2, Cols + 1);
 
-        // Grit falling through it, each at its own speed; a streak, because that is what a falling speck is at this shutter.
+        // Grit falling through it, each at its own speed, streaked like a falling speck at this shutter.
         for (int i = 0; i < 90; i++)
         {
             int sd = f.Seed + 30000 + i * 7919;
@@ -619,14 +597,11 @@ public sealed class RegionTunnel : IRegionMaterial
 
     // Dust
 
-    private static readonly Vector2[] DustP = new Vector2[9];
-    private static readonly uint[] DustC = new uint[9];
-
     private static void DrawDust(ImDrawListPtr dl, TunnelField f, in Env e)
     {
         var fl = f.Flight;
         float px = f.Px, s = f.Short;
-        // A long exposure: how far the fall carries a speck while the shutter is open. At cruise it is a soft smear; at a surge, a streak.
+        // Exposure length: how far the fall carries a speck (a smear at cruise, a streak at a surge).
         float travel = f.FlightSpeed * 0.060f;
 
         Mb.Clear();

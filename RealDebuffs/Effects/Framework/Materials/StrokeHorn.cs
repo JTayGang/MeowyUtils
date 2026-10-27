@@ -21,7 +21,7 @@ public sealed class StrokeHorn : IStrokeMaterial
     private static readonly Vector3 Underlight = new(1.00f, 0.30f, 0.05f);
     private static readonly Vector3 RimFire = new(1.00f, 0.22f, 0.04f);
 
-    /// <summary>Half-width at fraction s of the horn's length: a gentle belly near the base, then a long taper to a point.</summary>
+    /// <summary>Half-width at fraction s of the horn's length: a gentle belly near the base, then a long taper.</summary>
     private static float Radius(float s, float r0) => r0 * MathF.Pow(MathF.Max(0f, 1f - s), 0.82f) * (1f + 0.07f * MathF.Sin(s * 3.1f));
 
     public float RadiusAt(in StrokePrimitive s, float arc, float shortSide)
@@ -70,7 +70,7 @@ public sealed class StrokeHorn : IStrokeMaterial
             Vector2 nu = nl > 1e-4f ? nm / nl : new Vector2(0f, -1f);
             Vector2 tan = new(nu.Y, -nu.X);  // along the horn, base to tip
 
-            // Growth ridges: close-set bands that crowd together toward the tip. Their slope tilts the surface along the horn.
+            // Growth ridges: close-set bands crowding toward the tip; their slope tilts the surface along the horn.
             float phase = a / (0.62f * r0) * (1f + 0.9f * f);
             float ridge = 0.5f + 0.5f * MathF.Sin(phase * MathF.Tau);
             float slope = MathF.Cos(phase * MathF.Tau);

@@ -3,7 +3,7 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>What an eye is like. Carried in ParticlePrimitive.Variant (see ParticleEye.Held and ParticleEye.Styled).</summary>
+/// <summary>What an eye is like. Carried in ParticlePrimitive.Variant (see ParticleEye.Held).</summary>
 public enum EyeStyle
 {
     /// <summary>Pale and bloodless: a cold iris on grey sclera, a round pupil.</summary>
@@ -30,12 +30,7 @@ public enum EyeStyle
     Orb = 10,
 }
 
-/// <summary>
-/// A watching eye, shaded like a real one: sclera darkening toward the lids, a ringed and fibrous iris clipped by them, lid shadow,
-/// a wet tear line and a specular window. Size is the eye's half-width in px (an Orb's radius); Rotation rolls it. It always looks
-/// toward the middle of the screen, with the odd darting glance. Openness follows AgeRatio (open, hold, close) unless Variant holds
-/// it (see Held). Small and far eyes are drawn with fewer vertices and less detail.
-/// </summary>
+/// <summary>A watching eye: Size = half-width px; looks at screen centre; opens by AgeRatio unless Variant holds it (see Held).</summary>
 public sealed partial class ParticleEye : IParticleMaterial
 {
     private readonly string _name;
@@ -55,27 +50,18 @@ public sealed partial class ParticleEye : IParticleMaterial
     public string Name => _name;
     public string[] NaturalLanguageWords { get; }
 
-    // Variant: bits 0-7 hold the openness (0..255) when HeldBit is set; bits 9-12 hold the EyeStyle; bit 13 mirrors the eye (its inner
-    // corner, with the caruncle, on the other side); bits 14-19 hold how hazy the air in front of it is (0..63); bits 20-24 how far it is looking straight out at you rather than toward the middle (0..31).
-    /// <summary>
-    /// The upper lid's outline: the dark lash line, the margin of flesh outside it, the crease and fold above, and the lashes. Off, the eye is
-    /// bounded above only by the soft shadow its lid throws on it, and the lower lid (margin, wet line, shadow, lashes) is untouched.
-    /// (A shut eye still shows its closing seam, or blinking and sewn eyes would vanish.)
-    /// </summary>
+    // Variant bits: 0-7 openness (with HeldBit), 9-12 EyeStyle, 13 mirror, 14-19 haze (0..63), 20-24 straight-out gaze (0..31).
+    /// <summary>Upper-lid outline (lash line, margin, crease, lashes); off, only the lid's soft shadow bounds the eye.</summary>
     private static readonly bool ShowUpperLid = false;
 
     private const int HeldBit = 0x100;
     private const int StyleShift = 9, StyleMask = 0xF, MirrorBit = 1 << 13, HazeShift = 14, HazeMask = 0x3F, ForwardShift = 20, ForwardMask = 0x1F;
 
-    /// <summary>Variant for an eye whose lids the effect drives itself (0 = shut, 1 = wide) instead of leaving them to its age. Haze (0..1) is how much dusty air lies between it and you.</summary>
+    /// <summary>An eye whose lids the effect drives itself (0 shut, 1 wide); haze (0..1) is the dusty air in front of it.</summary>
     public static int Held(float open, EyeStyle style = EyeStyle.Watcher, bool mirror = false, float haze = 0f, float forward = 0f)
         => (int)(255f * DrawHelpers.Saturate(open)) | HeldBit | ((int)style << StyleShift) | (mirror ? MirrorBit : 0) | ((int)(63f * DrawHelpers.Saturate(haze)) << HazeShift) | ((int)(31f * DrawHelpers.Saturate(forward)) << ForwardShift);
 
-    /// <summary>Variant for an eye that opens and closes over its own life.</summary>
-    public static int Styled(EyeStyle style, bool mirror = false, float haze = 0f, float forward = 0f)
-        => ((int)style << StyleShift) | (mirror ? MirrorBit : 0) | ((int)(63f * DrawHelpers.Saturate(haze)) << HazeShift) | ((int)(31f * DrawHelpers.Saturate(forward)) << ForwardShift);
-
-    private const int MaxCols = 16, MaxRows = 7, MaxIrisSegs = 44, IrisRows = 9;
+    private const int MaxCols = 16, MaxIrisSegs = 44, IrisRows = 9;
 
     private static readonly MeshBuilder Mb = new();
     private static readonly Vector2[] Up = new Vector2[MaxCols + 1];
@@ -84,10 +70,6 @@ public sealed partial class ParticleEye : IParticleMaterial
     private static readonly Vector2[] Nrm = new Vector2[MaxCols + 1];
     private static readonly float[] Half = new float[MaxCols + 1];
     private static readonly Vector2[] VeinCtl = new Vector2[4];
-    private const int VeinPts = 7;
-    private static readonly Vector2[] Vein = new Vector2[VeinPts];
-    private static readonly Vector2[] VeinN = new Vector2[VeinPts];
-    private static readonly float[] VeinHalf = new float[VeinPts];
     private static readonly Vector2[] IrisPos = new Vector2[IrisRows * (MaxIrisSegs + 1)];
     private static readonly uint[] IrisCol = new uint[IrisRows * (MaxIrisSegs + 1)];
 
@@ -95,7 +77,7 @@ public sealed partial class ParticleEye : IParticleMaterial
     private static readonly uint Flesh = DrawHelpers.Pack(0.60f, 0.27f, 0.27f);
     private static readonly uint VeinCol = DrawHelpers.Pack(0.52f, 0.16f, 0.19f);
 
-    // Skin, as the dark gives it up: cold and waxy where the far light reaches it, nearly black where it doesn't.
+    // Skin as the dark gives it up: cold and waxy where the far light reaches, nearly black elsewhere.
     private static readonly uint SkinLit = DrawHelpers.Pack(0.55f, 0.45f, 0.45f);
     private static readonly uint SkinShade = DrawHelpers.Pack(0.10f, 0.085f, 0.10f);
     private static readonly uint LidFlesh = DrawHelpers.Pack(0.36f, 0.25f, 0.26f);
@@ -176,7 +158,7 @@ public sealed partial class ParticleEye : IParticleMaterial
         return look;
     }
 
-    /// <summary>Everything one eye's builders share: where it is, how it is turned, how open, how bright, how detailed, and what it is like.</summary>
+    /// <summary>Everything one eye's builders share: position, turn, openness, brightness, detail and look.</summary>
     private readonly struct Pose
     {
         public readonly Vector2 Pos, Light;
@@ -186,7 +168,6 @@ public sealed partial class ParticleEye : IParticleMaterial
         public readonly Look Look;
         public readonly bool Overridden, Mirror;
 
-        /// <param name="toLight">Which way the light is, on screen: the tunnel's far end is lit, so this is toward the middle of the screen.</param>
         public Pose(Vector2 pos, float rotation, float w, float k, float open, float px, EyeStyle style, in Look look, bool overridden, bool mirror, float haze, Vector2 toLight)
         {
             Pos = pos; Cos = MathF.Cos(rotation); Sin = MathF.Sin(rotation);
@@ -201,10 +182,7 @@ public sealed partial class ParticleEye : IParticleMaterial
         public bool Detailed => W >= 20f * Px;
         public bool Large => W >= 36f * Px;
 
-        /// <summary>
-        /// A detail fading in with size (half-width in px at 1080p: 0 below lo, 1 above hi). Lashes, creases and the rest used to switch on
-        /// when an eye crossed a size on its way in, which showed as a pop; now they come up as it grows.
-        /// </summary>
+        /// <summary>A detail fading in with size (half-width px at 1080p: 0 below lo, 1 above hi), so it doesn't pop.</summary>
         public float Grow(float lo, float hi) => DrawHelpers.Smooth((W / Px - lo) / (hi - lo));
         /// <summary>Big enough on screen that lashes, veins that fork and every fold of the lids can be seen.</summary>
         public bool Huge => W >= 70f * Px;
@@ -228,7 +206,7 @@ public sealed partial class ParticleEye : IParticleMaterial
         public float Soft(float px) => px * (1f + 2.5f * Haze);
     }
 
-    /// <summary>The lids at x (-1..1 across the eye): the upper bulges more than the lower, and both sag together when shut.</summary>
+    /// <summary>The lids at x (-1..1 across the eye): the upper bulges more than the lower; both sag when shut.</summary>
     private static void Lids(float x, float open, float w, out float upper, out float lower)
     {
         float s = MathF.Max(0f, 1f - x * x);
@@ -267,7 +245,7 @@ public sealed partial class ParticleEye : IParticleMaterial
         float haze = ((p.Variant >> HazeShift) & HazeMask) / 63f;
         float forward = ((p.Variant >> ForwardShift) & ForwardMask) / 31f;
 
-        // The only light in the tunnel is at the far end, which is the middle of the screen: eyes are lit from that side and look toward it.
+        // The only light is at the tunnel's far end (screen centre): eyes are lit from that side and look toward it.
         Vector2 toMid = new Vector2(ctx.ScreenW * 0.5f, ctx.ScreenH * 0.5f) - p.DrawPos;
         float len = toMid.Length();
         Vector2 toLight = len > 1f ? toMid / len : new Vector2(0f, -1f);
@@ -289,8 +267,7 @@ public sealed partial class ParticleEye : IParticleMaterial
             Lo[i] = new Vector2(x * w, yl);
         }
 
-        // Where it is looking: toward the middle of the screen, in the eye's own frame, with a darting glance now and then.
-        // When something is being shown it looks straight out at you instead: pupil centred, no glancing.
+        // Gaze: toward screen centre with the odd glance; when something is shown, straight out at you.
         Vector2 ic = Vector2.Zero;
         if (open >= 0.06f)
         {
@@ -343,11 +320,7 @@ public sealed partial class ParticleEye : IParticleMaterial
         MeshDraw.Radial(dl, e.Pos, uv, DrawHelpers.WithAlpha(_palette.Sample(0.55f), k * glow), 14, gr, gc, 0f, 0.8f, 0, 0f);
     }
 
-    /// <summary>
-    /// The skin round the eye: a patch of cold, waxy flesh coming up out of the dark, brighter on the side the far light reaches and
-    /// shaded under the brow and in the hollow beneath. It is what makes the eye part of a face rather than a hole in the dark. The
-    /// dark sockets (feral, void) wear none.
-    /// </summary>
+    /// <summary>The skin round the eye: cold waxy flesh out of the dark; the dark sockets (feral, void) wear none.</summary>
     private void BuildSkin(in Pose e)
     {
         if (!e.Detailed || e.Look.ScleraScale < 0.5f) return;
@@ -386,7 +359,7 @@ public sealed partial class ParticleEye : IParticleMaterial
         }
     }
 
-    /// <summary>The white of the eye: a grid between the lids, dark under the upper lid and toward the corners, warm at the corners.</summary>
+    /// <summary>The sclera: a grid between the lids, darker under the upper lid and toward the corners, warm at the corners.</summary>
     private void BuildSclera(in Pose e)
     {
         int cols = e.Cols, rows = e.Rows;
@@ -398,7 +371,7 @@ public sealed partial class ParticleEye : IParticleMaterial
             for (int i = 0; i <= cols; i++)
             {
                 float x = -1f + 2f * i / cols, ax = MathF.Abs(x);
-                // A ball seen through a slit: bright across the middle, falling away to the corners, and lit more on the side the light is on.
+                // A ball seen through a slit: bright across the middle, falling away to the corners, lit more on the light's side.
                 float lit = 0.80f - 0.44f * MathF.Pow(ax, 2.2f) + 0.07f * x * e.Light.X;
                 float lid = 0.66f * MathF.Pow(1f - v, 2.2f) * (0.45f + 0.55f * e.Open);
                 float under = 0.20f * MathF.Pow(v, 3f);
@@ -416,7 +389,7 @@ public sealed partial class ParticleEye : IParticleMaterial
         Mb.StitchGrid(first, rows, cols + 1);
     }
 
-    /// <summary>The pupil's radius along a spoke at angle (cs, sn): round, a slit, a sideways slab, or a pinprick for the three that sit on it.</summary>
+    /// <summary>Pupil radius along a spoke at angle (cs, sn): round, slit, sideways slab, or pinprick.</summary>
     private static float PupilRadius(in Look look, float cs, float sn, float R, float time)
     {
         switch (look.Pupil)
@@ -439,12 +412,7 @@ public sealed partial class ParticleEye : IParticleMaterial
         }
     }
 
-    /// <summary>
-    /// The iris and pupil as a polar grid, every vertex pinned between the lids. From the pupil out: a dark ruff at its edge, a warm
-    /// ring, the bright collarette, the body of the iris, a soft limbal ring. The body is fibrous (radial streaks from smooth noise, so
-    /// they flow rather than pinwheel) with a few dark crypts; the lid shades the top of it, and the light the tunnel gives it
-    /// concentrates on the side opposite the light, as it does through a real cornea.
-    /// </summary>
+    /// <summary>The iris and pupil as a polar grid pinned between the lids.</summary>
     private void BuildIris(in Pose e, Vector2 ic, int seed, float time, float flat = 1f)
     {
         float w = e.W, R = e.IrisRadius;
@@ -461,7 +429,7 @@ public sealed partial class ParticleEye : IParticleMaterial
         {
             float th = MathF.Tau * j / segs, cs = MathF.Cos(th), sn = MathF.Sin(th);
 
-            // Ring radii along this spoke, each kept clear of the one inside it (a slit pupil is taller than the iris is wide).
+            // Ring radii along this spoke, each clear of the one inside it.
             float pupil = PupilRadius(in L, cs, sn, R, time);
             float rRuff = pupil + 0.05f * R;
             float rRing = MathF.Max(0.40f * R, rRuff + 0.06f * R);
@@ -471,7 +439,7 @@ public sealed partial class ParticleEye : IParticleMaterial
             float rEdge = MathF.Max(R, rLimb + 0.03f * R);
             float rOut = rEdge + 0.07f * R;
 
-            // Where the pupil outgrows the iris (a slit is taller than the iris is wide) there is no iris left on that spoke to draw.
+            // Where the pupil outgrows the iris, no iris is left on that spoke.
             float squeeze = DrawHelpers.Saturate((pupil - 0.70f * R) / (0.22f * R));
 
             // Light on the far side of the iris from the light, as a lens throws it.
@@ -485,7 +453,7 @@ public sealed partial class ParticleEye : IParticleMaterial
                 float under;
                 if (orb)
                 {
-                    // On a ball the iris is a circle seen at a slant: squashed along the way it is turned, and kept on the ball.
+                    // On a ball the iris is a circle seen at a slant: squashed along its turn and kept on the ball.
                     pos = ic + gaze * (Vector2.Dot(rel, gaze) * flat) + across * Vector2.Dot(rel, across);
                     float len = pos.Length();
                     if (len > 0.97f * w) pos *= 0.97f * w / len;
@@ -533,7 +501,7 @@ public sealed partial class ParticleEye : IParticleMaterial
         Mb.StitchGrid(first, IrisRows, segs + 1);
     }
 
-    /// <summary>Two dark arms winding out from the pupil, turning slowly: it is looking at you and it would like you to look back.</summary>
+    /// <summary>Two dark arms winding out from the pupil, turning slowly.</summary>
     private void BuildSpiral(in Pose e, Vector2 ic, float time)
     {
         float R = e.IrisRadius, w = e.W;
@@ -589,10 +557,7 @@ public sealed partial class ParticleEye : IParticleMaterial
         return Spline(ctl, span, t - span);
     }
 
-    /// <summary>
-    /// Veins on the white of the eye: fine red threads that run from each corner toward the iris, wandering, thinning and fading as they
-    /// go, the larger ones branching. Thicker and more of them in the eyes that have not slept.
-    /// </summary>
+    /// <summary>Veins on the sclera: fine red threads from each corner toward the iris; more on eyes that haven't slept.</summary>
     private void BuildVeins(in Pose e, Vector2 ic, int seed)
     {
         float w = e.W, R = e.IrisRadius;
@@ -631,7 +596,7 @@ public sealed partial class ParticleEye : IParticleMaterial
                 float u0 = 0.35f + 0.25f * DrawHelpers.Hash01(h + 7);
                 Vector2 root = Along(VeinCtl, u0), ahead = Along(VeinCtl, u0 + 0.06f);
                 Vector2 dir = Vector2.Normalize(ahead - root + new Vector2(1e-4f));
-                float turn = (DrawHelpers.Hash01(h + 8) < 0.5f ? -1f : 1f) * (0.45f + 0.4f * DrawHelpers.Hash01(h + 9));
+                float turn = (DrawHelpers.Sign(h + 8)) * (0.45f + 0.4f * DrawHelpers.Hash01(h + 9));
                 Vector2 bd = new(dir.X * MathF.Cos(turn) - dir.Y * MathF.Sin(turn), dir.X * MathF.Sin(turn) + dir.Y * MathF.Cos(turn));
                 for (int i = 0; i < 5; i++)
                 {
@@ -655,11 +620,7 @@ public sealed partial class ParticleEye : IParticleMaterial
         return 0.5f * (2f * p1 + (p2 - p0) * t + (2f * p0 - 5f * p1 + 4f * p2 - p3) * t2 + (3f * p1 - p0 - 3f * p2 + p3) * t3);
     }
 
-    /// <summary>
-    /// The lids. Open: the shadow the upper lid throws on the eye, its thickness (a margin of flesh outside the lash line), the dark line
-    /// the lashes grow from, the crease above with the fold that catches light over it, then the lower lid's margin and the wet line of
-    /// tears along it, and lashes. Shut: a seam of light under one dark line. Small eyes get the shadow and one line.
-    /// </summary>
+    /// <summary>The lids. Open: shadow, margin, lash line, crease, wet line, lashes. Shut: one seam of light.</summary>
     private void BuildLids(in Pose e, int seed)
     {
         float w = e.W, px = e.Px, soft = e.Soft(px);
@@ -708,7 +669,7 @@ public sealed partial class ParticleEye : IParticleMaterial
         }
     }
 
-    /// <summary>Lashes: sparse, uneven and curling up and away from the middle on the upper lid, a few short ones below. Some have fallen out.</summary>
+    /// <summary>Lashes: sparse and uneven, curling away from the middle on the upper lid, a few below.</summary>
     private void BuildLashes(in Pose e, int seed, float big, float huge)
     {
         float w = e.W, px = e.Px;
@@ -728,7 +689,7 @@ public sealed partial class ParticleEye : IParticleMaterial
                 int h = seed * 37 + side * 101 + i * 13;
                 if (DrawHelpers.Hash01(h) < (upper ? 0.12f : 0.25f)) continue;     // a gap
 
-                // Three in five of the upper lashes come with the eye being big; the rest, and the lower ones, as it gets bigger still.
+                // Three in five upper lashes appear once the eye is big; the rest, and the lower ones, as it gets bigger still.
                 float grown = upper && i % 5 < 3 ? big : MathF.Min(big, huge);
                 if (grown < 0.02f) continue;
                 float x = -span + 2f * span * (i + 0.6f * DrawHelpers.Hash01(h + 1)) / n;
@@ -849,7 +810,7 @@ public sealed partial class ParticleEye : IParticleMaterial
         for (int i = 0; i < segs; i++) Mb.TriReserved(b0, b0 + 1 + i, b0 + 1 + (i + 1) % segs);
     }
 
-    /// <summary>One ribbon (or a tent, when tent > 0) along a lid curve, optionally lifted by yShift; fattest mid-eye, thinning to hwEnds at the corners.</summary>
+    /// <summary>One ribbon (or a tent, when tent > 0) along a lid curve, fattest mid-eye, thinning to hwEnds.</summary>
     private void LidLine(in Pose e, Vector2[] lid, float yShift, float hwMid, float hwEnds, uint color, float feather = 0f, float tent = 0f)
     {
         int cols = e.Cols;
@@ -867,10 +828,7 @@ public sealed partial class ParticleEye : IParticleMaterial
         else Mb.Ribbon(pts, nrm, half, color, feather);
     }
 
-    /// <summary>
-    /// The wet glint on the cornea: a window, the shape of the lit opening at the end of the tunnel, set toward that light from the middle
-    /// of the pupil whichever way the eye is rolled, and a faint answer on the far side.
-    /// </summary>
+    /// <summary>The wet glint on the cornea: a window shaped like the tunnel's lit end, plus a faint answer opposite.</summary>
     private void DrawHighlights(ImDrawListPtr dl, Vector2 uv, in Pose e, Vector2 ic, float time)
     {
         float R = e.IrisRadius, w = e.W;
@@ -889,7 +847,7 @@ public sealed partial class ParticleEye : IParticleMaterial
             Lids(Math.Clamp(local.X / w, -0.98f, 0.98f), e.Open, w, out float yu, out float yl);
             if (local.Y < yu + 0.05f * w || local.Y > yl - 0.05f * w) continue;
 
-            // A soft-edged window: solid in the middle (eight sides, so the corners are rounded), a ring of fall-off, then nothing.
+            // A soft-edged window: solid centre (eight sides), a ring of fall-off, then nothing.
             rr[0] = size * 0.62f; rr[1] = size * 0.86f; rr[2] = size * 1.12f;
             rc[0] = e.Tint(white, 1.00f * gain * flick); rc[1] = e.Tint(white, 0.55f * gain * flick); rc[2] = e.Tint(white, 0f);
             MeshDraw.Radial(dl, e.ToScreen(local), uv, e.Tint(white, gain * flick), 8, rr, rc, g == 0 ? rot : 0f, g == 0 ? 0.86f : 1f, 0, 0f);

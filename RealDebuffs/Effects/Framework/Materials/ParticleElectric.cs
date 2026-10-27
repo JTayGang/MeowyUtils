@@ -3,7 +3,7 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>A small electric discharge: a kinked line of light that re-rolls its shape about sixteen times a second and lives only a moment.</summary>
+/// <summary>A small electric discharge: a kinked line of light that re-rolls ~16 times a second.</summary>
 public sealed class ParticleArc : IParticleMaterial
 {
     public string Name => "particle.arc";
@@ -99,7 +99,7 @@ public sealed class ParticleArc : IParticleMaterial
                 Vector2 tan = d / MathF.Sqrt(dl2);
                 float sgn = (i & 1) == 0 ? 1f : -1f;
                 float ang = 0.55f + 0.5f * DrawHelpers.Hash01(fs + tick * 9 + 2);
-                Bolt.Twig(tw, pts[at], Bolt.Rotate(tan, sgn * ang), half * (0.55f + 0.35f * DrawHelpers.Hash01(fs + 4)), fs + 29, tick, 0.5f);
+                Bolt.Twig(tw, pts[at], DrawHelpers.Rotate(tan, sgn * ang), half * (0.55f + 0.35f * DrawHelpers.Hash01(fs + 4)), fs + 29, tick, 0.5f);
                 MeshBuilder.MiterNormals(tw, tn);
                 for (int j = 0; j < 4; j++)
                 {

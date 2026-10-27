@@ -3,10 +3,7 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>
-/// A wispy streamer: a soft, tapered trail of light that fades to nothing behind its head and wanders sideways a little, like smoke.
-/// The path runs from the tail (first point) to the head (last); WidthHint is the width at the head. Meant for things in motion.
-/// </summary>
+/// <summary>A wispy streamer: a soft tapered trail of light fading behind its head; the path runs tail to head.</summary>
 public sealed class StrokeWisp : IStrokeMaterial
 {
     private readonly string _name;
@@ -57,7 +54,7 @@ public sealed class StrokeWisp : IStrokeMaterial
         float shimmer = ctx.Time * 1.7f + s.Phase;
         float slow = ctx.Time * 0.8f + s.Phase * 2.3f;
 
-        // Smoke does not hold a line: the tail wanders, more when the strand is agitated. Then the normals again, for the new line.
+        // Smoke doesn't hold a line: the tail wanders, more when agitated; then the normals again for the new line.
         float wander = width * (0.75f + 0.9f * Math.Clamp(s.Agitation, 0f, 1f));
         for (int i = 0; i < n; i++)
         {
@@ -101,7 +98,7 @@ public sealed class StrokeWisp : IStrokeMaterial
             else Mb.Ribbon(twin, twinN, half, col, feather);
         }
 
-        // 3. Core: a hot hair of light along the main strand, only where it is very bright (a surge or a flash); in the steady fall it is smoke.
+        // 3. Core: a hot hair of light along the main strand, only where very bright (a surge or flash).
         if (alpha * haze > 0.50f)
         {
             for (int i = 0; i < n; i++)
@@ -119,18 +116,17 @@ public sealed class StrokeWisp : IStrokeMaterial
     private static readonly Vector2[] TwinPts = new Vector2[LightStrand.MaxSamples];
     private static readonly Vector2[] TwinNrm = new Vector2[LightStrand.MaxSamples];
 
-    /// <summary>Width along the streamer: a hair at the tail, full toward the head, and drawn in again at the very end so it has no blunt tip.</summary>
+    /// <summary>Width along the streamer: a hair at the tail, full toward the head, drawn in at the very end (no blunt tip).</summary>
     private static float Width(float u, float width)
     {
-        // Fattening from the tail to a rounded head: over the last fifth the width closes to nothing along an ellipse, so the head is
-        // a soft tip. (It used to stop at a third of its width, which was a flat cut, and wide soft smoke makes that cut plain.)
+        // Fattening from the tail to a rounded head: over the last fifth the width closes to nothing along an ellipse.
         float cap = u > HeadStart ? MathF.Sqrt(MathF.Max(0f, 1f - MathF.Pow((u - HeadStart) / (1f - HeadStart), 2f))) : 1f;
         return width * (0.08f + 0.92f * MathF.Pow(u, 0.9f)) * cap;
     }
 
     private const float HeadStart = 0.80f;
 
-    /// <summary>Brightness along the streamer: rising from the tail, then fading out over the last fifth into the tip, with a slow shimmer running down it.</summary>
+    /// <summary>Brightness along the streamer: rising from the tail, fading out over the last fifth, with a slow shimmer.</summary>
     private static float Profile(float u, float arc, float shimmer)
         => MathF.Pow(u, 1.4f) * (1f - DrawHelpers.Smooth((u - HeadStart) / (1f - HeadStart))) * (0.82f + 0.18f * MathF.Sin(arc * 0.021f + shimmer));
 }

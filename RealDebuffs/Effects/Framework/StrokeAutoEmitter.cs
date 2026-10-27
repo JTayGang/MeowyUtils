@@ -2,7 +2,7 @@ using System.Numerics;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Spawns and advances everything a stroke material sheds (free-flying and path-following) from one emission list.</summary>
+/// <summary>Spawns and advances everything a stroke material sheds, free-flying and path-following.</summary>
 public static class StrokeAutoEmitter
 {
     private const int FreeFlyCapacity = 2000;
@@ -80,7 +80,7 @@ public static class StrokeAutoEmitter
 
             string materialName = MaterialOverrideKey.ResolveStroke(in s, overrides);
 
-            // A stroke whose material or emit axis was swapped is user-customised: drop the effect's emission windows so it sheds along the whole strand.
+            // A customised stroke (material or emit axis swapped) drops the effect's emission windows and sheds along its whole length.
             string? declaredStroke = EffectRegistry.DefaultFor(
                 s.Owner, "Stroke", MaterialOverrideKey.RoleName(s.Role));
             bool swapped = emitOverride is not null
@@ -179,7 +179,7 @@ public static class StrokeAutoEmitter
             int bucket = (int)(time / e.ClusterWindowSeconds);
             int clusterSeed = unchecked(s.Seed * 7919 + bucket * 131 + (int)e.Role * 977);
             float gustAngle = DrawHelpers.HashRange(clusterSeed, -e.SpreadRadians, e.SpreadRadians);
-            clusterBaseDir = Rotate(Vector2.Normalize(axis), gustAngle);
+            clusterBaseDir = DrawHelpers.Rotate(Vector2.Normalize(axis), gustAngle);
         }
 
         for (int i = 0; i < toSpawn; i++)
@@ -196,7 +196,7 @@ public static class StrokeAutoEmitter
         }
     }
 
-    /// <summary>Resolves and spawns what the impacted owner's stroke material throws (overrides and "made of X" apply here too).</summary>
+    /// <summary>Resolves and spawns what the impacted stroke's material throws (overrides and "made of X" apply).</summary>
     private static void SpawnImpact(in ImpactPrimitive hit, IReadOnlyDictionary<string, string>? overrides, float time)
     {
         if (hit.Strength <= 0.001f) return;
@@ -213,7 +213,7 @@ public static class StrokeAutoEmitter
             var emitter = MaterialRegistry.TryGetParticle(emitOverride);
             if (emitter is null) return;
 
-            // A particle material only declares a trickle, so derive a burst: a handful on its own speeds, lifespans and sizes
+            // A particle material declares only a trickle, so derive a burst from its own speeds, lifespans and sizes.
             var specs = emitter.Emissions;
             for (int e = 0; e < specs.Length; e++)
             {
@@ -254,7 +254,7 @@ public static class StrokeAutoEmitter
             if (_freeFlyCount >= FreeFlyCapacity) return;
 
             int seed = unchecked(seed0 + i * 131);
-            Vector2 d = Rotate(dir, DrawHelpers.HashRange(seed + 1, -e.ConeRadians, e.ConeRadians));
+            Vector2 d = DrawHelpers.Rotate(dir, DrawHelpers.HashRange(seed + 1, -e.ConeRadians, e.ConeRadians));
             float speed = DrawHelpers.HashRange(seed + 2, e.SpeedMin, e.SpeedMax) * (0.55f + 0.45f * k);
 
             Vector2 jitter = new(DrawHelpers.HashRange(seed + 5, -3f, 3f), DrawHelpers.HashRange(seed + 6, -3f, 3f));
@@ -304,7 +304,7 @@ public static class StrokeAutoEmitter
         }
 
         float spread = DrawHelpers.HashRange(seed + 1, -directionSpread, directionSpread);
-        Vector2 dir = Rotate(baseDir, spread);
+        Vector2 dir = DrawHelpers.Rotate(baseDir, spread);
 
         float speed = DrawHelpers.HashRange(seed + 2, e.SpeedMin, e.SpeedMax);
 
@@ -325,7 +325,7 @@ public static class StrokeAutoEmitter
         };
     }
 
-    /// <summary>False if debris is wanted only near a screen edge (EmitEdgeReach) and this point is further in or off-screen</summary>
+    /// <summary>False if debris is limited to the screen edge (EmitEdgeReach) and this point is further in or off-screen.</summary>
     private static bool WithinEmitReach(in StrokePrimitive s, Vector2 p)
     {
         if (s.EmitEdgeReach <= 0f || _screen.X <= 0f) return true;
@@ -351,12 +351,6 @@ public static class StrokeAutoEmitter
 
         float t = u * 2f * reach;
         return t < reach ? t : visibleLen - reach + (t - reach);
-    }
-
-    private static Vector2 Rotate(Vector2 v, float radians)
-    {
-        float c = MathF.Cos(radians), sn = MathF.Sin(radians);
-        return new Vector2(v.X * c - v.Y * sn, v.X * sn + v.Y * c);
     }
 
     private static void SpawnFlow(in StrokePrimitive s, in StrokeEmission e, in StrokeFlowOptions f,
@@ -455,7 +449,7 @@ public static class StrokeAutoEmitter
             path.SampleAtArc(d.Arc, out Vector2 pos, out Vector2 tan);
             Vector2 perp = new(-tan.Y, tan.X);
 
-            // Ride the strand's actual surface: a tapered material knows how thick it is here, a plain one falls back to its WidthHint.
+            // Ride the strand's actual surface: a tapered material knows how thick it is here, a plain one uses its WidthHint.
             float halfWidth = MaterialRegistry.TryGetStroke(MaterialOverrideKey.ResolveStroke(in s, overrides)) is { } strokeMaterial
                 ? strokeMaterial.RadiusAt(in s, d.Arc, shortSide)
                 : MathF.Max(1f, s.WidthHint * 0.5f);

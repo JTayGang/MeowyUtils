@@ -2,7 +2,7 @@ using System.Numerics;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>A small pool of short-lived particles: Update spawns on an interval each frame, Burst adds one-shot spawns; use either or both.</summary>
+/// <summary>A small pool of short-lived particles: Update spawns on an interval, Burst adds one-shot spawns.</summary>
 public sealed class ParticleEmitter
 {
     private struct Particle
@@ -57,7 +57,7 @@ public sealed class ParticleEmitter
         }
     }
 
-    /// <summary>Integrates and retires the live particles without spawning any: for an emitter fed only by Burst, which would otherwise never move.</summary>
+    /// <summary>Integrates and retires live particles without spawning: for an emitter fed only by Burst.</summary>
     public void Step(float time, float dt) => Integrate(time, dt);
 
     /// <summary>One-shot spawn. Each particle gets a hashed seed so two bursts at the same time differ.</summary>

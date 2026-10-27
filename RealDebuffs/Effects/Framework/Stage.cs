@@ -2,7 +2,7 @@ using System.Numerics;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Scene helpers shared by the effects: screen washes, edge light, ring strokes.</summary>
+/// <summary>Scene helpers shared by the effects: washes, edge light, murk, ring strokes, motes.</summary>
 internal static class Stage
 {
     /// <summary>Full-screen wash.</summary>
@@ -27,6 +27,15 @@ internal static class Stage
     {
         if (alpha <= 0.002f || depth <= 1f) return;
         scene.AddRegion(new RegionPrimitive { Min = new Vector2(0f, size.Y - depth), Max = size, Tint = tint, Alpha = alpha, Bottom = true, ColorOverride = color });
+    }
+
+    /// <summary>The dim mood under a heavy effect: an edge vignette plus gloom pooled along the bottom, swelling slowly.</summary>
+    public static void Murk(this EffectScene scene, in CastFrame f, in MurkStyle m)
+    {
+        float ramp = DrawHelpers.Saturate(f.Age / m.RampSeconds);
+        scene.RequestVignette(m.Vignette, 0.12f, f.Alpha * m.VignetteAlpha * ramp, priority: 20, f.Color);
+        float depth = f.Size.Y * m.PoolDepth * (1f + m.Swell * DrawHelpers.Pulse(f.Time, m.SwellSeconds)) * ramp;
+        scene.Pool(f.Size, depth, m.Pool, m.PoolAlpha * f.Alpha, f.Color);
     }
 
     /// <summary>A closed ring-style stroke that draws on as reveal rises; salt varies seed and phase per ring.</summary>
@@ -63,7 +72,7 @@ internal static class Stage
     }
 }
 
-/// <summary>Motes filling the camera's view frustum: far ones small and sharp, near ones big soft discs; they rise and sway.</summary>
+/// <summary>Motes filling the camera's frustum: far ones small and sharp, near ones big soft discs; they rise and sway.</summary>
 internal sealed class MoteField
 {
     private struct Mote { public float Fx, Fy, Z, Speed, Sway, Phase, Size; public int Seed; }
@@ -97,7 +106,7 @@ internal sealed class MoteField
         }
     }
 
-    /// <summary>dist is the camera distance in px; level scales brightness; blurDim dims near motes; twinkle (0..1) is how hard each one flickers.</summary>
+    /// <summary>dist = camera distance px; level scales brightness; blurDim dims near motes; twinkle (0..1) flickers.</summary>
     public void Emit(EffectScene scene, in LayerCamera cam, float dist, Vector2 size, float px, float age,
                      float level, float blurDim, float twinkle, Vector4? color)
     {
@@ -111,7 +120,7 @@ internal sealed class MoteField
 
             // Rise at a world speed (near ones cross faster), wrapped in screen fractions.
             float fy = m.Fy - m.Speed * px * s * age / halfH;
-            fy = ((fy + 1.12f) % 2.24f + 2.24f) % 2.24f - 1.12f;
+            fy = DrawHelpers.Wrap(fy + 1.12f, 2.24f) - 1.12f;
             float fx = m.Fx + (m.Sway * px * s / halfW) * 0.5f * MathF.Sin(age * 0.43f + m.Phase);
 
             Vector2 at = cam.Project(fx * halfW / s, fy * halfH / s, z, out float scale);
@@ -130,3 +139,7 @@ internal sealed class MoteField
         }
     }
 }
+
+/// <summary>Tints and timing for Stage.Murk (alphas and depth are fractions; the pool depth is of screen height).</summary>
+internal readonly record struct MurkStyle(uint Vignette, float VignetteAlpha, uint Pool, float PoolAlpha, float PoolDepth,
+                                          float RampSeconds, float Swell, float SwellSeconds);

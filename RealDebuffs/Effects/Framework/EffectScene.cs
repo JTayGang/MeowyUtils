@@ -53,28 +53,28 @@ public struct StrokePrimitive
     /// <summary>The path is a closed loop (last point == first), so repeating elements (links, beads) wrap cleanly.</summary>
     public bool  Closed;
 
-    /// <summary>0 = at the focal plane (crisp, full contrast), 1 = far away (hazier, lower contrast, softer edges, shorter shadow).</summary>
+    /// <summary>0 = at the focal plane (crisp, full contrast); 1 = far (hazier, lower contrast, softer edges, shorter shadow).</summary>
     public float Depth;
 
     /// <summary>0..1: how hard the strand is being shaken right now (decays after an impact or a tug).</summary>
     public float Agitation;
 
-    /// <summary>0 = shed along the whole strand; above 0, trickle emissions only spawn within this many px (at 1080p) of a screen edge.</summary>
+    /// <summary>0 = shed along the whole strand; above 0, trickles only spawn within this many px (at 1080p) of a screen edge.</summary>
     public float EmitEdgeReach;
 
-    /// <summary>0 = unrestricted; above 0, trickle emissions only spawn within this arc distance (px at 1080p) of either end.</summary>
+    /// <summary>0 = unrestricted; above 0, trickles only spawn within this arc distance (px at 1080p) of either end.</summary>
     public float EmitEndReach;
 
-    /// <summary>Rotation about the strand's own axis at its middle, in radians (zero at anchored ends); materials with a lay (rope, braid) slide it.</summary>
+    /// <summary>Rotation about the strand's axis at its middle, radians (zero at anchored ends).</summary>
     public float Twist;
 
-    /// <summary>0 = a solid line; above 0, the line is broken into dashes this many px (at 1080p) from the start of one to the start of the next.</summary>
+    /// <summary>0 = solid; above 0, the line is dashed, this many px (at 1080p) from the start of one dash to the next.</summary>
     public float Dash;
 
-    /// <summary>Where a bolt of current is racing along the strand right now: 0 at the start, 1 at the end. Only meaningful with SurgeGain above zero.</summary>
+    /// <summary>Where a bolt of current is racing along the strand: 0 at the start, 1 at the end (needs SurgeGain above 0).</summary>
     public float SurgeAt;
 
-    /// <summary>How brightly that surge lights the strand: 0 = no surge (neutral), about 1 = a clear bright run, 2 or more = blinding.</summary>
+    /// <summary>How brightly that surge lights the strand: 0 none, ~1 a clear run, 2+ blinding.</summary>
     public float SurgeGain;
 }
 
@@ -109,7 +109,7 @@ public struct ParticlePrimitive
     /// <summary>Filament thickness joining the particle to a point it is attached to</summary>
     public float Tether;
 
-    /// <summary>The thread's fixed end, in screen pixels: where it clings to the surface. Only read when Tether is above zero.</summary>
+    /// <summary>The thread's fixed end in screen px, where it clings to the surface (read only when Tether is above 0).</summary>
     public Vector2 Anchor;
 
     /// <summary>The thread's free end: equals Position while attached</summary>
@@ -129,7 +129,7 @@ public struct RegionPrimitive
     public float Alpha;
     public bool Top, Bottom, Left, Right;
 
-    /// <summary>Optional payload for effect-built data too large for a primitive; materials ignore state they don't recognise.</summary>
+    /// <summary>Optional effect-built data too large for a primitive; materials ignore state they don't recognise.</summary>
     public object? State;
 
     public readonly bool HasEdge => Top || Bottom || Left || Right;
@@ -138,7 +138,7 @@ public struct RegionPrimitive
     public readonly string Tag => HasEdge ? "EdgeGlow" : "FlatFill";
 }
 
-/// <summary>A one-frame "something hit something" event: the effect says where and how hard; the stroke material decides what it throws.</summary>
+/// <summary>A one-frame impact: the effect says where and how hard; the stroke material decides what it throws.</summary>
 public struct ImpactPrimitive
 {
     public DebuffKind Owner;
@@ -236,7 +236,7 @@ public sealed class StrandPath
 
     public float Length => Count > 0 ? Arc[Count - 1] : 0f;
 
-    /// <summary>Resamples a control polyline to dstCount points along a Catmull-Rom spline ending exactly on its ends; call BuildArc after.</summary>
+    /// <summary>Resamples a control polyline to dstCount points on a Catmull-Rom spline ending on its ends; call BuildArc after.</summary>
     public static void CatmullRomResample(Vector2[] src, int srcCount, Vector2[] dst, int dstCount)
     {
         float scale = (float)(srcCount - 1) / (dstCount - 1);

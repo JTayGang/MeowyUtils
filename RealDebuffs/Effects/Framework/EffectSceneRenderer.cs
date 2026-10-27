@@ -3,7 +3,7 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Renders one frame: vignette, regions, strokes, particles. Material: user override, then the effect's default, then a fallback.</summary>
+/// <summary>Renders a frame: vignette, regions, strokes, particles (material: override, effect default, fallback).</summary>
 public static class EffectSceneRenderer
 {
     // Resolved materials per (owner, role); valid for one overrides-dictionary instance (a new one clears it).
@@ -85,7 +85,7 @@ public static class EffectSceneRenderer
         finally { DrawHelpers.PopColorOverride(); }
     }
 
-    // Scratch for the pass above: which stroke each particle is drawn with (-1: none), and its resolved material.
+    // Scratch for the pass above: each particle's host stroke (-1: none) and resolved material.
     private static int[] _host = new int[2048];
     private static IParticleMaterial?[] _hostMat = new IParticleMaterial?[2048];
 
@@ -115,7 +115,7 @@ public static class EffectSceneRenderer
 
     private static IParticleMaterial? ParticleFor(in ParticlePrimitive p, IReadOnlyDictionary<string, string>? overrides)
     {
-        // A particle can carry its own material (StrokeAutoEmitter sets it when a user override names an emitter material).
+        // A particle can carry its own material (set when a user override names an emitter material).
         if (p.MaterialName is { } forced) return FindParticle(forced, p.Role);
 
         var key = (p.Owner, p.Role);

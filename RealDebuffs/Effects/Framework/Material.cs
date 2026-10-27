@@ -19,7 +19,7 @@ public readonly struct MaterialContext
     public float ShortSide => ScreenW < ScreenH ? ScreenW : ScreenH;
 }
 
-/// <summary>Base of every material. NaturalLanguageWords are what a "made of X" phrase can select; empty = none (regions, stroke.simple).</summary>
+/// <summary>Base of every material; NaturalLanguageWords are what a "made of X" phrase can select (empty = none).</summary>
 public interface IMaterial
 {
     string Name { get; }
@@ -30,13 +30,13 @@ public interface IStrokeMaterial : IMaterial
 {
     void Draw(ImDrawListPtr dl, in StrokePrimitive s, in MaterialContext ctx);
 
-    /// <summary>What this material sheds along its strokes: a steady trickle, free-flying or path-following (see StrokeEmission).</summary>
+    /// <summary>What it sheds along its strokes: a steady trickle, free-flying or path-following.</summary>
     ReadOnlySpan<StrokeEmission> Emissions => ReadOnlySpan<StrokeEmission>.Empty;
 
-    /// <summary>What this material throws when hit (EffectScene.AddImpact), each entry spawned independently; empty = nothing visible.</summary>
+    /// <summary>What it throws when hit (EffectScene.AddImpact); each entry spawns independently, empty = nothing.</summary>
     ReadOnlySpan<ImpactEmission> ImpactEmissions => ReadOnlySpan<ImpactEmission>.Empty;
 
-    /// <summary>Strand radius in px at arc length arc, so anything hanging off a strand (a drip) finds the surface, not the centreline</summary>
+    /// <summary>Strand radius in px at arc length arc, so a drip finds the surface, not the centreline.</summary>
     float RadiusAt(in StrokePrimitive s, float arc, float shortSide) => MathF.Max(1f, s.WidthHint * 0.5f);
 }
 
@@ -47,7 +47,7 @@ public interface IParticleMaterial : IMaterial
     /// <summary>Emissions this material contributes as a stroke emitter; empty means it can't be one.</summary>
     ReadOnlySpan<StrokeEmission> Emissions => ReadOnlySpan<StrokeEmission>.Empty;
 
-    /// <summary>True for matter that clings to or falls from a strand (slime, blood): it is drawn right after its host stroke</summary>
+    /// <summary>True for matter that clings to or falls from a strand (slime, blood): drawn right after its host stroke.</summary>
     bool DrawsWithHost => false;
 }
 
@@ -101,12 +101,11 @@ public readonly record struct StrokeFlowOptions(
     float ObstacleSpacingPx,
     float LateralOffsetFrac);
 
-/// <summary>Viscous half of a stroke emission: grows drops instead of scattering particles (Size = drop radius px at 1080p, Gravity = fall px/s^2, DensityPer100px ignored).</summary>
+/// <summary>Viscous emission: grows drops (Size = radius px at 1080p, Gravity = px/s^2; DensityPer100px is ignored).</summary>
 public readonly record struct StrokeDripOptions(
     float SiteSpacingPx,
     float CycleSecondsMin,
     float CycleSecondsMax,
     float MinSlope,
     float Stringiness,
-    float SatelliteChance,
-    bool  TipSite = true);
+    float SatelliteChance);

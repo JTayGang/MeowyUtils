@@ -29,7 +29,7 @@ internal readonly struct LayerCamera
     private static Vector3 Rotate(Vector3 v, Vector3 k, float c, float s) =>
         v * c + Vector3.Cross(k, v) * s + k * (Vector3.Dot(k, v) * (1f - c));
 
-    /// <summary>Projects (u, v) on the layer at height h. scale is the perspective magnification there (1 at the origin plane)</summary>
+    /// <summary>Projects (u, v) on the layer at height h; scale is the perspective magnification there (1 at the origin plane).</summary>
     public Vector2 Project(float u, float v, float h, out float scale)
     {
         Vector3 p = _u * u + _v * v + _n * h;
@@ -40,7 +40,7 @@ internal readonly struct LayerCamera
         return new Vector2(Center.X + p.X * scale, Center.Y + p.Y * scale);
     }
 
-    /// <summary>Magnification at the middle of the layer at height h (what a ring of radius r on it will roughly measure on screen, as r * this).</summary>
+    /// <summary>Magnification at the middle of the layer at height h (a ring of radius r measures about r * this on screen).</summary>
     public float ScaleAt(float h) => Distance / MathF.Max(Distance * 0.12f, Distance - _n.Z * h);
 }
 
@@ -55,7 +55,7 @@ internal readonly record struct RingWobble(float Amp1, int K1, float Phase1, flo
 /// <summary>Fills StrandPaths with rings and polygons on a layer of a LayerCamera, ready to hand to a stroke.</summary>
 internal static class SigilGeometry
 {
-    /// <summary>A circle (or wobbly ring) of radius on the layer at height, starting at angle; the start turning is how a ring rotates.</summary>
+    /// <summary>A circle (or wobbly ring) of radius on the layer at height, starting at angle (turning the start rotates it).</summary>
     public static void Ring(StrandPath path, int segments, in LayerCamera cam, float radius, float height, float angle,
                             in RingWobble wobble, float centerU = 0f, float centerV = 0f)
     {
@@ -96,7 +96,7 @@ internal static class SigilGeometry
         path.BuildArc();
     }
 
-    /// <summary>An open curve between two anchors on the layer at height (plane coordinates, as for Ring): a quadratic bow whose middle sits bow off</summary>
+    /// <summary>An open curve between two anchors on the layer at height: a quadratic bow whose middle sits bow off the chord.</summary>
     public static void Span(StrandPath path, int segments, in LayerCamera cam, Vector2 from, Vector2 to, Vector2 bow, float height, in RingWobble wobble)
     {
         Vector2 chord = to - from;
@@ -116,7 +116,7 @@ internal static class SigilGeometry
         path.BuildArc();
     }
 
-    /// <summary>A point on a ring, with the perspective scale there (what to multiply a size by) and the screen direction pointing outward from the ring's centre.</summary>
+    /// <summary>A point on a ring, with the perspective scale there (multiply sizes by it) and the outward screen direction.</summary>
     public static Vector2 PointOn(in LayerCamera cam, float radius, float height, float angle, out float scale, out Vector2 outward)
     {
         float c = MathF.Cos(angle), s = MathF.Sin(angle);
@@ -142,7 +142,7 @@ internal static class RuneGlyphs
     /// <summary>How many glyphs the general script spans.</summary>
     public const int LegacyCount = 18;
 
-    /// <summary>First glyph of the infernal set: occult marks (a leviathan cross, a horned sigil, an inverted cross, an eye in a triangle, a ram-horn</summary>
+    /// <summary>First glyph of the infernal set: occult marks such as a leviathan cross, horned sigil and eye in a triangle.</summary>
     public const int FirstInfernal = 18;
 
     /// <summary>How many glyphs the infernal set has.</summary>
@@ -279,7 +279,7 @@ internal static class RuneGlyphs
     };
 }
 
-/// <summary>How a sigil stack moves: the lean wanders, lurches when the cast lands and swings slowly round, and the whole thing breathes.</summary>
+/// <summary>How a sigil stack moves: the lean wanders and lurches when the cast lands, it swings slowly round, and breathes.</summary>
 internal readonly record struct SigilSway(float BaseTilt, float TiltSway, float Precession, float LurchTilt, float LurchSeconds, float BreathBase, float BreathAmp)
 {
     /// <summary>The lean in radians; it tips further as the status lifts. Effects add their own extras after.</summary>
@@ -289,4 +289,31 @@ internal readonly record struct SigilSway(float BaseTilt, float TiltSway, float 
     public float Azimuth(float start, float dir, float age) => start + dir * Precession * age;
 
     public float Breath(float age) => BreathBase + BreathAmp * MathF.Sin(age * 1.9f + 0.7f);
+}
+
+/// <summary>A sigil stack's camera for one cast: SigilSway plus the cast's swing direction. Update once per Emit.</summary>
+internal sealed class SigilView
+{
+    private readonly SigilSway _sway;
+    private readonly float _distance;
+    private float _azimuth, _dir = 1f;
+
+    public LayerCamera Cam;
+    public float Breath = 1f;
+
+    public SigilView(in SigilSway sway, float distance = 1500f) { _sway = sway; _distance = distance; }
+
+    public void Begin(int seed)
+    {
+        _azimuth = DrawHelpers.Hash01(seed + 1) * MathF.Tau;
+        _dir = DrawHelpers.Sign(seed + 2);
+    }
+
+    /// <summary>extraTilt adds to the lean (times tiltScale), shift moves the origin, distanceScale zooms.</summary>
+    public void Update(in CastFrame f, float extraTilt = 0f, Vector2 shift = default, float distanceScale = 1f, float tiltScale = 1f)
+    {
+        float tilt = (_sway.Tilt(f.Age, 0f) + extraTilt) * tiltScale + 0.10f * f.Leave;
+        Cam = new LayerCamera(f.Center + shift, _distance * f.Px * distanceScale, tilt, _sway.Azimuth(_azimuth, _dir, f.Age));
+        Breath = _sway.Breath(f.Age);
+    }
 }

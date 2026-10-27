@@ -3,7 +3,7 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Branching growing lines (frost fern, lightning, roots): built once with arrival times, then Draw(age) shows what has grown.</summary>
+/// <summary>Branching growing lines (frost fern, lightning, roots): built once, Draw(age) shows what has grown.</summary>
 internal sealed class Dendrite
 {
     /// <summary>Shape and pace of one fern.</summary>
@@ -179,7 +179,7 @@ internal sealed class Dendrite
         }
     }
 
-    /// <summary>Chain drawing (colours go through WithAlpha, so overrides apply): shifted shadow, wide faint Body, bright core.</summary>
+    /// <summary>Chain drawing: shifted shadow, wide faint Body, bright core (colours via WithAlpha, so overrides apply).</summary>
     public readonly record struct DrawStyle(
         Palette Core, uint Shadow, Vector2 ShadowOffset, float ShadowAlpha,
         uint Body, float BodyAlpha, float WidthScale, float Alpha, float Time);
@@ -187,7 +187,7 @@ internal sealed class Dendrite
     /// <summary>Static scratch (single-threaded UI draw), so a Dendrite allocates nothing per frame.</summary>
     private static readonly MeshBuilder Mesh = new();
 
-    // Crystal colours for this frame by [generation][shimmer step]: 4 x 17 lookups a frame instead of one per chain.
+    // Crystal colours per frame by [generation][shimmer step]: 4 x 17 lookups instead of one per chain.
     /// <summary>Deepest generation that gets a shadow underlay (0 = stems, 1 = branches); 0 saves about a fifth of the geometry.</summary>
     private const int ShadowMaxGen = 1;
 

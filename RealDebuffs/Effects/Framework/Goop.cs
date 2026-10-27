@@ -121,7 +121,7 @@ internal static class GoopDraw
     /// <summary>Radius of the pendant at distance s: the neck and the bead, blended into one fillet.</summary>
     private static float Union(float s, float len, float hb, float rb, float rn, float rTop, float fillet)
     {
-        // Neck: thin, flaring toward the surface into a shoulder above the bead (pear-shaped, not a ball on a stick)
+        // Neck: thin, flaring into a shoulder above the bead (pear-shaped, not a ball on a stick).
         float flare = rn + (rTop - rn) * MathF.Exp(-4.4f * s / MathF.Max(len, rb * 2f));
         float into = Math.Clamp((s - (len - hb * 4.6f)) / (hb * 4.6f), 0f, 1f);
         float shoulder = rb * 0.46f * into * into * into * (1f - rn / rb);
@@ -215,7 +215,7 @@ internal static class GoopDraw
     private static readonly Vector2 KeyHalfXY = HalfXY(StudioLighting.Key);
     private static readonly Vector2 FillHalfXY = HalfXY(StudioLighting.Fill);
 
-    /// <summary>Screen-plane part of the half vector between a light and the viewer: where on a ball that light's highlight sits.</summary>
+    /// <summary>Screen-plane half vector between a light and the viewer: where that light's highlight sits on a ball.</summary>
     private static Vector2 HalfXY(Vector3 light)
     {
         Vector3 h = Vector3.Normalize(light + Vector3.UnitZ);
@@ -372,7 +372,7 @@ public static class GoopEmitter
     private static int _pendantCount;
     private static float _lastPrune;
 
-    /// <summary>Called once at the start of each frame: moves what has already fallen, and forgets sites whose strand is gone.</summary>
+    /// <summary>Call once at the start of each frame: moves fallen drops and forgets sites whose strand is gone.</summary>
     public static void Advance(float time, float dt, Vector2 screen)
     {
         _pendantCount = 0;
@@ -385,7 +385,7 @@ public static class GoopEmitter
             ref Drop d = ref Drops[i];
             if (time - d.Born >= d.Life) continue;
             d.Vel += d.Gravity * dt;
-            d.Vel *= MathF.Exp(-d.Drag * dt);  // viscous drag: a drop reaches a terminal speed instead of accelerating forever
+            d.Vel *= MathF.Exp(-d.Drag * dt);  // viscous drag: drops reach a terminal speed
             d.Pos += d.Vel * dt;
             if (d.Pos.Y > floor) continue;
             Drops[w++] = d;
@@ -419,7 +419,7 @@ public static class GoopEmitter
         int count = Math.Min(MaxSitesPerStroke, (int)(visibleLen / spacing));
 
         // Index -1 is the tip; 0.. are along the strand.
-        int first = o.TipSite && !s.Closed ? -1 : 0;
+        int first = s.Closed ? 0 : -1;
         for (int index = first; index < count; index++)
         {
             float arc;
@@ -478,7 +478,7 @@ public static class GoopEmitter
 
         // the size of this cycle's drop
         int cycleSeed = unchecked(siteSeed + site.Cycles * 7331);
-        // A thicker strand carries more liquid: the drop grows with the skin it hangs from (by a fraction of the way, so a limb three
+        // A thicker strand carries more liquid: the drop grows with the skin it hangs from, by a fraction of the way.
         float thick = Math.Clamp(radius / (26f * px), 1f, 2.6f);
         float rMax = DrawHelpers.HashRange(cycleSeed + 1, e.SizeMin, e.SizeMax) * px * depthScale * (tip ? 1.25f : 1f) * (1f + 0.65f * (thick - 1f));
         float lMax = rMax * (1.2f + 5.4f * Math.Clamp(o.Stringiness, 0f, 1f));

@@ -2,7 +2,7 @@ using System.Numerics;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Everything RegionFrost draws for one cast (built by FrostEffect, passed via RegionPrimitive.State); the effect animates it</summary>
+/// <summary>Everything RegionFrost draws for one cast (built by FrostEffect, passed via RegionPrimitive.State).</summary>
 internal sealed class FrostField
 {
     public readonly ScreenGrowth Growth = new();
@@ -17,7 +17,7 @@ internal sealed class FrostField
     /// <summary>Static per-vertex thinning toward the middle of the glass (1 near the borders, 0 deep inside).</summary>
     public float[] Cap = Array.Empty<float>();
 
-    /// <summary>The haze vertex colors, same layout as Growth.Positions. Rebuilt by the material only when they would change.</summary>
+    /// <summary>Haze vertex colors, laid out like Growth.Positions; rebuilt only when they would change.</summary>
     public uint[] Haze = Array.Empty<uint>();
 
     /// <summary>Overall opacity and clock time the haze was last built at (see RegionFrost).</summary>
@@ -77,7 +77,7 @@ internal sealed class FrostField
         for (int i = 0; i < nv; i++)
         {
             var p = Growth.Positions[i];
-            // Two octaves at wavelength >= ~5 cells: finer can't be drawn by a 20 px grid and shows as blocks (the ferns carry fine detail).
+            // Two octaves at wavelength >= ~5 cells: finer shows as blocks on a 20 px grid (the ferns carry fine detail).
             float n = Noise.Fbm(p.X / ss * 7f + off, p.Y / ss * 7f - off, 2);
             Mottle[i] = Math.Clamp(0.5f + 0.5f * n * 1.1f, 0f, 1f);
             Cap[i] = 1f - DrawHelpers.Smooth((Growth.Arrival[i] - 0.25f) / 0.80f);
@@ -155,7 +155,7 @@ internal sealed class FrostField
         BorderRoots(seed + 1000, size, 520f * px, big, px, ss, 1f);
         BorderRoots(seed + 3000, size, 190f * px, mid, px, ss, 0.42f);
 
-        // Small ferns nucleate wherever the ice has reached and grow away from the border, filling gaps between the big ones.
+        // Small ferns nucleate wherever the ice has reached and grow away from the border, filling gaps.
         int placed = 0;
         for (int i = 0; i < 700 && placed < 60; i++)
         {

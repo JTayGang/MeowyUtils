@@ -59,7 +59,7 @@ internal static class DrawHelpers
         _overrideId = ++_knownCount;
     }
 
-    /// <summary>Until the matching Pop, WithAlpha re-hues colours toward rgb (chromatic: hue replaced, saturation kept; achromatic: hue stripped).</summary>
+    /// <summary>Until Pop, WithAlpha re-hues toward rgb (chromatic: hue replaced, saturation kept; achromatic: hue stripped).</summary>
     public static void PushColorOverride(Vector4? rgb)
     {
         ColorOverrideStack.Push(_colorOverride);
@@ -166,7 +166,7 @@ internal static class DrawHelpers
     /// <summary>True while an override is pushed; lets a mesh material skip WithAlpha's per-vertex remap.</summary>
     public static bool ColorOverrideActive => _colorOverride.HasValue;
 
-    /// <summary>Saturation of the active override if chromatic, else 0; muted palettes use it so "red" comes out as red as asked.</summary>
+    /// <summary>Saturation of the active override if chromatic, else 0; muted palettes use it so "red" comes out as red.</summary>
     public static float ColorOverrideChroma =>
         _colorOverride is { } ov && ov.Saturation >= 0.05f ? ov.Saturation : 0f;
 
@@ -205,7 +205,7 @@ internal static class DrawHelpers
         return (color & 0x00FFFFFF) | (a << 24);
     }
 
-    /// <summary>Opaque-RGB vertex colour from a lit colour: the override-aware WithAlpha, or a plain pack when no override is active.</summary>
+    /// <summary>Opaque-RGB vertex colour from a lit colour: override-aware WithAlpha, or a plain pack with no override.</summary>
     public static uint VertexColor(Vector3 c, float alpha, uint alphaBits, bool overridden)
     {
         uint rgb = Pack(c.X, c.Y, c.Z);
@@ -268,6 +268,23 @@ internal static class DrawHelpers
     }
 
     public static float HashRange(int seed, float min, float max) => min + Hash01(seed) * (max - min);
+
+    /// <summary>-1 or 1, stable per seed.</summary>
+    public static float Sign(int seed) => Hash01(seed) < 0.5f ? -1f : 1f;
+
+    /// <summary>v wrapped into [0, len).</summary>
+    public static float Wrap(float v, float len)
+    {
+        v %= len;
+        return v < 0f ? v + len : v;
+    }
+
+    /// <summary>v turned by angle radians.</summary>
+    public static Vector2 Rotate(Vector2 v, float angle)
+    {
+        float c = MathF.Cos(angle), s = MathF.Sin(angle);
+        return new Vector2(v.X * c - v.Y * s, v.X * s + v.Y * c);
+    }
 
     public static float Pulse(float time, float periodSeconds, float phase = 0f) =>
         (MathF.Sin((time / periodSeconds + phase) * MathF.PI * 2f) + 1f) * 0.5f;

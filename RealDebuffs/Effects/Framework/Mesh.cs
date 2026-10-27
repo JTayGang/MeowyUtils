@@ -4,7 +4,7 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Collects triangles managed-side and hands them to ImGui in one go: Clear, add, Flush when Full and at the end. Not thread-safe.</summary>
+/// <summary>Collects triangles managed-side and hands them to ImGui in one go: Clear, add, Flush when Full and at the end.</summary>
 internal sealed class MeshBuilder
 {
     /// <summary>Flush point. Well under MeshDraw.MaxMeshVerts so one primitive can always finish.</summary>
@@ -29,10 +29,10 @@ internal sealed class MeshBuilder
         if (_in + idx > _idx.Length) Array.Resize(ref _idx, Math.Max(_idx.Length * 2, _in + idx));
     }
 
-    /// <summary>Makes room for this many more vertices and indices, so the *Reserved calls below, which do no capacity test of their own</summary>
+    /// <summary>Makes room for this many more vertices and indices, so the *Reserved calls (no capacity test) are safe.</summary>
     public void Reserve(int verts, int idx) => Room(verts, idx);
 
-    /// <summary>Appends the first count entries of two parallel arrays as vertices and returns the index of the first: one block copy instead of a call per vertex.</summary>
+    /// <summary>Appends the first count entries of two parallel arrays as vertices; returns the first index.</summary>
     public int AddBlockReserved(Vector2[] pos, uint[] col, int count)
     {
         int first = _vn;
@@ -81,7 +81,7 @@ internal sealed class MeshBuilder
         Clear();
     }
 
-    /// <summary>Per-point offset direction of a polyline: normals scaled by 1/cos(half turn) at bends (clamped) so strips keep their width.</summary>
+    /// <summary>Per-point offset of a polyline: normals scaled by 1/cos(half turn) at bends (clamped).</summary>
     public static void MiterNormals(ReadOnlySpan<Vector2> pts, Span<Vector2> normals)
     {
         int n = pts.Length;
@@ -118,7 +118,7 @@ internal sealed class MeshBuilder
         }
     }
 
-    /// <summary>Soft-edged strip: a solid core (per-point half-width) fading to transparent over feather px; color is the core colour with alpha.</summary>
+    /// <summary>Soft-edged strip: a solid core (per-point half-width) fading to transparent over feather px.</summary>
     public void Ribbon(ReadOnlySpan<Vector2> pts, ReadOnlySpan<Vector2> normals, ReadOnlySpan<float> halfWidth, uint color, float feather)
     {
         int n = pts.Length;
@@ -152,7 +152,7 @@ internal sealed class MeshBuilder
         _in = w;
     }
 
-    /// <summary>Cheaper strip: three vertices per point, alpha falling linearly to px either side; for thin lines and soft underlays.</summary>
+    /// <summary>Cheaper strip: three vertices per point, alpha falling linearly to px either side.</summary>
     public void Tent(ReadOnlySpan<Vector2> pts, ReadOnlySpan<Vector2> normals, ReadOnlySpan<float> reach, uint color)
     {
         int n = pts.Length;
@@ -184,7 +184,7 @@ internal sealed class MeshBuilder
         _in = w;
     }
 
-    /// <summary>Ribbon with a colour (and so an alpha) per point, for light that varies along a strand: pulses, dashes, fades.</summary>
+    /// <summary>Ribbon with a colour (so an alpha) per point, for light that varies along a strand.</summary>
     public void Ribbon(ReadOnlySpan<Vector2> pts, ReadOnlySpan<Vector2> normals, ReadOnlySpan<float> halfWidth, ReadOnlySpan<uint> colors, float feather)
     {
         int n = pts.Length;
@@ -255,7 +255,7 @@ internal sealed class MeshBuilder
         _in = w;
     }
 
-    /// <summary>A single tapering spike from root (soft cross-section rootReach px either side) to a point tip: four vertices.</summary>
+    /// <summary>A single tapering spike: soft root (rootReach px either side) to a point tip, four vertices.</summary>
     public void Sliver(Vector2 root, Vector2 tip, float rootReach, uint rootColor, uint tipColor)
     {
         Vector2 d = tip - root;
@@ -283,7 +283,7 @@ internal sealed class MeshBuilder
     }
 }
 
-/// <summary>Mesh drawing: after PrimReserve write exactly that many vertices and indices and advance the cursors; read VtxCurrentIdx after it.</summary>
+/// <summary>After PrimReserve, write exactly that many vertices and indices and advance the cursors.</summary>
 internal static unsafe partial class MeshDraw
 {
     public const int MaxVerts = 512;
@@ -293,13 +293,13 @@ internal static unsafe partial class MeshDraw
     private static Vector2 _whiteUv;
     private static float   _whiteStamp = float.NaN;
 
-    /// <summary>UV of the font atlas' white pixel, which flat-coloured vertices use; refreshed once per frame (the atlas can be rebuilt).</summary>
+    /// <summary>UV of the font atlas' white pixel, refreshed each frame (the atlas can be rebuilt).</summary>
     public static Vector2 WhiteUv(float frameTime)
     {
         if (frameTime != _whiteStamp)
         {
             _whiteUv = ImGui.GetFontTexUvWhitePixel();
-            // Nudge half a texel in so bilinear sampling only sees the 2x2 white block (a fixed offset breaks above 1024 texels).
+            // Nudge half a texel in so bilinear sampling sees only the 2x2 white block.
             _whiteUv += ImGui.GetIO().Fonts.TexUvScale * 0.5f;
             _whiteStamp = frameTime;
         }
@@ -345,7 +345,7 @@ internal static unsafe partial class MeshDraw
         cache.Vn = 0; cache.In = 0; cache.Valid = true;
     }
 
-    /// <summary>Stops recording. False when nothing was drawn, or it did not fit 16-bit indices (the cache is then not valid for replay).</summary>
+    /// <summary>Stops recording. False if nothing was drawn or it didn't fit 16-bit indices (the cache isn't valid for replay).</summary>
     public static bool EndRecord()
     {
         MeshCache? c = _rec;
@@ -444,7 +444,7 @@ internal static unsafe partial class MeshDraw
         End(dl, v, ix, vtx, idxCount, b);
     }
 
-    /// <summary>Soft radial blob: a centre plus one ring per ringRadius (innermost first; end transparent for no edge). irregular wobbles slices</summary>
+    /// <summary>Soft radial blob: a centre plus one ring per ringRadius (innermost first); irregular wobbles slices.</summary>
     public static void Radial(ImDrawListPtr dl, Vector2 center, Vector2 uv, uint centerCol,
                               int segs, ReadOnlySpan<float> ringRadius, ReadOnlySpan<uint> ringColor,
                               float rotation, float squashY, int seed, float irregular)
@@ -589,7 +589,7 @@ internal static unsafe partial class MeshDraw
         End(dl, v, ix, used, cells * 6, b);
     }
 
-    /// <summary>A closed triangle fan: a centre vertex and a ring of rim vertices with their own colours (stars, flares, alternating radii).</summary>
+    /// <summary>A closed triangle fan: a centre vertex and a ring of rim vertices with their own colours (stars, flares).</summary>
     public static void Fan(ImDrawListPtr dl, Vector2 uv, Vector2 center, uint centerCol,
                            ReadOnlySpan<Vector2> rim, ReadOnlySpan<uint> rimCol)
     {

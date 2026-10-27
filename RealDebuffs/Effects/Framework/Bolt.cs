@@ -2,7 +2,7 @@ using System.Numerics;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>The shape language of electricity, shared by every material drawn as a crackling bolt (stroke.lightning, particle.arc).</summary>
+/// <summary>The shape language of electricity, shared by stroke.lightning and particle.arc.</summary>
 internal static class Bolt
 {
     /// <summary>One random lattice value in -1..1, fixed for a given (seed, cell, tick).</summary>
@@ -21,14 +21,14 @@ internal static class Bolt
         float f = (k - cell * m) / (float)m;
         int t0 = (int)MathF.Floor(tt);
 
-        float v0 = Lerp(Lattice(seed, cell, t0), Lattice(seed, cell + 1, t0), f);
+        float v0 = DrawHelpers.Lerp(Lattice(seed, cell, t0), Lattice(seed, cell + 1, t0), f);
         if (!smooth) return v0;
 
-        float v1 = Lerp(Lattice(seed, cell, t0 + 1), Lattice(seed, cell + 1, t0 + 1), f);
-        return Lerp(v0, v1, DrawHelpers.Smooth(tt - t0));
+        float v1 = DrawHelpers.Lerp(Lattice(seed, cell, t0 + 1), Lattice(seed, cell + 1, t0 + 1), f);
+        return DrawHelpers.Lerp(v0, v1, DrawHelpers.Smooth(tt - t0));
     }
 
-    /// <summary>Lateral kink, in px along each sample's normal, for n samples spaced stepPx apart: a slow large-scale meander, a drifting wander</summary>
+    /// <summary>Lateral kink in px along each sample's normal: a slow meander plus a drifting wander.</summary>
     public static void Crackle(Span<float> hard, Span<float> soft, int n, float stepPx, int seed, float time, float violence)
     {
         float a_1 = 2.0f * stepPx * (0.7f + 0.3f * violence);
@@ -66,13 +66,4 @@ internal static class Bolt
             outPts[j] = outPts[j - 1] + d * (seg * (0.75f + 0.5f * DrawHelpers.Hash01(seed + j * 53 + tick)));
         }
     }
-
-    /// <summary>Unit vector rotated by angle (radians).</summary>
-    public static Vector2 Rotate(Vector2 v, float angle)
-    {
-        float c = MathF.Cos(angle), s = MathF.Sin(angle);
-        return new Vector2(v.X * c - v.Y * s, v.X * s + v.Y * c);
-    }
-
-    private static float Lerp(float a, float b, float t) => a + (b - a) * t;
 }

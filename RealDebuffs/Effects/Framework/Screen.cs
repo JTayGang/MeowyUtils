@@ -2,7 +2,7 @@ using System.Numerics;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Screen edges numbered clockwise from the top. Values are pinned (effects pick edges by number; FromPerimeter maps onto it).</summary>
+/// <summary>Screen edges numbered clockwise from the top; values are pinned (effects pick edges by number).</summary>
 public enum ScreenEdge : byte
 {
     Top = 0,
@@ -14,7 +14,7 @@ public enum ScreenEdge : byte
 /// <summary>Geometry for strands anchored to screen edges, so every effect agrees on "anchor" and "inward".</summary>
 public static class ScreenEdges
 {
-    /// <summary>Point `along` (0..1) an edge, pushed `overhang` px outside the screen. Top/Bottom run left to right; Right/Left top to bottom.</summary>
+    /// <summary>Point `along` (0..1) an edge, `overhang` px outside the screen (Top/Bottom run left to right).</summary>
     public static Vector2 Anchor(Vector2 size, ScreenEdge edge, float along, float overhang) => edge switch
     {
         ScreenEdge.Top    => new Vector2(along * size.X, -overhang),
@@ -32,7 +32,7 @@ public static class ScreenEdges
         _                 => new Vector2(1f, 0f),
     };
 
-    /// <summary>Maps a perimeter position (0..4, wrapping, clockwise from top-left, one unit per edge) to an anchor with the same overhang as Anchor.</summary>
+    /// <summary>Maps a perimeter position (0..4, clockwise from top-left, one unit per edge) to an anchor.</summary>
     public static Vector2 FromPerimeter(Vector2 size, float p, float overhang, out ScreenEdge edge)
     {
         p %= 4f;
@@ -57,7 +57,7 @@ public static class ScreenEdges
         return edge;
     }
 
-    /// <summary>Where a strand last crosses the screen boundary leaving it (scanned from the far end); false if it never does.</summary>
+    /// <summary>Where a strand last leaves the screen (scanned from the far end); false if it never does.</summary>
     public static bool TryFindExit(StrandPath path, Vector2 size, out Vector2 point, out Vector2 outward)
     {
         point = default;
@@ -113,10 +113,10 @@ public static class ScreenEdges
     private static bool Inside(Vector2 p, Vector2 size) => p.X >= 0f && p.X <= size.X && p.Y >= 0f && p.Y <= size.Y;
 }
 
-/// <summary>Precomputed arrival times of a spreading front over a coarse screen grid; coverage at progress p is p - Arrival (no simulation).</summary>
+/// <summary>Precomputed arrival times of a spreading front over a coarse screen grid; coverage at progress p is p - Arrival.</summary>
 internal sealed class ScreenGrowth
 {
-    /// <summary>Depth (front reach, fraction of short side), SpreadRate (higher = slower), DepthWeight (inward share), Warp (0 smooth), Sites.</summary>
+    /// <summary>Depth (reach, fraction of short side), SpreadRate (higher = slower), DepthWeight (inward share), Warp, Sites.</summary>
     public readonly record struct Settings(float Depth, float SpreadRate, float DepthWeight, float Warp, int Sites);
 
     /// <summary>A nucleation point on the screen border.</summary>
@@ -293,12 +293,12 @@ internal sealed class WindField
 
             f.Vel = v;
             f.Pos += v * dt;
-            f.Pos.X = Wrap(f.Pos.X + margin, w) - margin;
-            f.Pos.Y = Wrap(f.Pos.Y + margin, h) - margin;
+            f.Pos.X = DrawHelpers.Wrap(f.Pos.X + margin, w) - margin;
+            f.Pos.Y = DrawHelpers.Wrap(f.Pos.Y + margin, h) - margin;
         }
     }
 
-    /// <summary>Pushes flakes into the scene; density (0..1) is the fraction out, the last fading in. Off-screen flakes are skipped.</summary>
+    /// <summary>Pushes flakes into the scene; density (0..1) is the fraction out, the last fading in.</summary>
     public void Emit(EffectScene scene, Vector2 size, float px, PrimitiveRole role, float density,
                      float brightness, Vector4? colorOverride)
     {
@@ -327,11 +327,5 @@ internal sealed class WindField
                 ColorOverride = colorOverride,
             });
         }
-    }
-
-    private static float Wrap(float v, float len)
-    {
-        v %= len;
-        return v < 0f ? v + len : v;
     }
 }

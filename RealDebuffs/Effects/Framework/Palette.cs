@@ -49,7 +49,7 @@ internal static class FireColor
 /// <summary>Cold palettes and colour helpers: the ice counterpart of FireColor.</summary>
 internal static class IceColor
 {
-    /// <summary>The override fully saturates near-grey colours (&lt; ~0.05), splitting pale-blue-to-white ramps into steps</summary>
+    /// <summary>A colour override saturates near-grey colours (&lt; ~0.05), which would split pale ramps into steps.</summary>
     public static uint Tintable(uint c)
     {
         uint r = c & 255, g = (c >> 8) & 255, b = (c >> 16) & 255;
@@ -62,7 +62,7 @@ internal static class IceColor
         return (c & 0xFF000000u) | r | (g << 8) | (b << 16);
     }
 
-    /// <summary>Override pulled toward white for white-by-nature things: keeps hue but stays pastel (orange snow would read as embers).</summary>
+    /// <summary>Override pulled toward white for white-by-nature things: keeps hue but stays pastel.</summary>
     public static Vector4? Pastel(Vector4? c, float keep = 0.45f)
     {
         if (c is not { } v) return null;
@@ -113,7 +113,7 @@ internal static class CurseColor
     public static readonly uint Flash = DrawHelpers.Pack(0.95f, 0.62f, 1.00f);
 }
 
-/// <summary>Haunting: ashen pallor. Cold slate through grey-teal and bone to a pale, faintly warm white; for what is dead, watching or not quite there.</summary>
+/// <summary>Haunting: ashen pallor, cold slate through bone to a faintly warm white.</summary>
 internal static class HauntColor
 {
     /// <summary>Light, dim to hot: 0 = cold slate, 0.3 = grey teal, 0.55 = verdigris, 0.78 = bone, 1 = pale warm white.</summary>
@@ -131,7 +131,7 @@ internal static class HauntColor
     public static readonly uint Flash = DrawHelpers.Pack(0.78f, 0.96f, 0.90f);
 }
 
-/// <summary>Electricity: rust through burnt orange and amber to a pale yellow-white core, matching the vanilla paralysis spark.</summary>
+/// <summary>Electricity: rust to burnt orange, amber and a pale yellow-white core (the vanilla paralysis spark).</summary>
 internal static class StormColor
 {
     /// <summary>Light, dim to hot: 0 = deep rust, 0.3 = burnt orange, 0.55 = vivid orange, 0.78 = amber, 1 = pale yellow-white.</summary>
@@ -152,7 +152,7 @@ internal static class StormColor
 /// <summary>Hellfire and blood: dried-blood black through crimson and arterial red to ember orange and a pale gold core.</summary>
 internal static class HellColor
 {
-    /// <summary>Light, dim to hot: 0 = dried-blood black, 0.25 = deep crimson, 0.50 = blood red, 0.72 = red-orange, 0.88 = orange, 1 = pale gold core.</summary>
+    /// <summary>Dim to hot: 0 dried-blood black, 0.25 crimson, 0.5 blood red, 0.72 red-orange, 0.88 orange, 1 pale gold.</summary>
     public static readonly Palette Glow = new(
         (0.00f, 0.170f, 0.008f, 0.010f),
         (0.25f, 0.520f, 0.024f, 0.020f),
@@ -161,7 +161,7 @@ internal static class HellColor
         (0.88f, 1.000f, 0.560f, 0.130f),
         (1.00f, 1.000f, 0.900f, 0.600f));
 
-    /// <summary>A flame's temperature ramp: smouldering maroon at the cool edge, crimson, red, orange, and a pale gold-white only at the very heart.</summary>
+    /// <summary>A flame's temperature ramp: smouldering maroon at the cool edge to pale gold-white at the heart.</summary>
     public static readonly Palette Flame = new(
         (0.00f, 0.140f, 0.006f, 0.008f),
         (0.16f, 0.440f, 0.020f, 0.014f),

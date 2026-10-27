@@ -2,15 +2,10 @@ using System.Numerics;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>
-/// Everything RegionTunnel draws for one frame of a haunted, dusty tunnel (built by HysteriaEffect, passed via RegionPrimitive.State):
-/// the camera and the flight down the tunnel, how hard the fall is being shaken, and the cast's per-seed grime. The effect owns the
-/// things that fly down it (eyes, rings, runes); this is the place they are flying through: walls, ribs, glow, light shafts, haze, dust.
-/// </summary>
+/// <summary>Everything RegionTunnel draws for one frame (built by HysteriaEffect, passed via RegionPrimitive.State).</summary>
 internal sealed class TunnelField
 {
-    // The room the effect and the material agree on, as fractions of the short side measured on the focal plane.
-    // Rings (and the runes on them) sit on the ribs, so the effect asks for these rather than choosing its own.
+    // The room the effect and material agree on, as fractions of the short side at the focal plane.
 
     /// <summary>The bare wall.</summary>
     public const float WallRadius = 0.90f;
@@ -27,12 +22,12 @@ internal sealed class TunnelField
     /// <summary>Where each speck of dust and each billow of haze starts along the tunnel (TunnelFlight offsets).</summary>
     public readonly float[] DustAt = new float[DustCount], BillowAt = new float[BillowCount], GritAt = new float[GritCount], CrackAt = new float[CrackCount];
 
-    /// <summary>A new cast: lays dust and haze out evenly along a tunnel of this length, so it is never empty and never bunched.</summary>
+    /// <summary>A new cast: lays dust and haze out evenly along a tunnel of this length, so it's never empty or bunched.</summary>
     public void Begin(int seed, float tunnelLength)
     {
         Seed = seed;
         _bendPhase = DrawHelpers.Hash01(seed + 14) * MathF.Tau;
-        _bendDir = DrawHelpers.Hash01(seed + 15) < 0.5f ? -1f : 1f;
+        _bendDir = DrawHelpers.Sign(seed + 15);
         for (int i = 0; i < DustCount; i++) DustAt[i] = tunnelLength * (i + DrawHelpers.Hash01(seed + 600 + i * 17)) / DustCount;
         for (int i = 0; i < BillowCount; i++) BillowAt[i] = tunnelLength * (i + DrawHelpers.Hash01(seed + 700 + i * 17)) / BillowCount;
         for (int i = 0; i < GritCount; i++) GritAt[i] = tunnelLength * (i + DrawHelpers.Hash01(seed + 800 + i * 17)) / GritCount;
@@ -54,7 +49,7 @@ internal sealed class TunnelField
     /// <summary>The effect's own twist per px of height and roll of the whole view, so the walls turn with everything else.</summary>
     public float Swirl, Roll;
 
-    /// <summary>The walls breathe with the heart: 1 is at rest, a little under 1 is a beat. Rings and runes follow it too.</summary>
+    /// <summary>The walls breathe with the heart: 1 is at rest, a little under 1 is a beat; rings and runes follow.</summary>
     public float Breath = 1f;
 
     /// <summary>The fall, in px/s at 1080p (0 = hanging in the air).</summary>
@@ -63,7 +58,7 @@ internal sealed class TunnelField
     /// <summary>The cast's fade in and out, and how far the tunnel has materialised out of the dark (0..1).</summary>
     public float Alpha, Appear;
 
-    /// <summary>A pulse with each heartbeat (0..1), how frightened it all is (0..1), and the apparition's envelope, kick and ghosting.</summary>
+    /// <summary>Heartbeat pulse (0..1), how frightened it all is (0..1), and the apparition's envelope, kick and ghosting.</summary>
     public float Beat, Stress, Env, Kick, Ghost;
 
     /// <summary>What is being shown: 0 none, 1 stare, 2 great eye, 3 gate, 4 surge. And how long it has been (seconds).</summary>
@@ -80,11 +75,7 @@ internal sealed class TunnelField
     /// <summary>The inside lip of a rib, in px, breathing.</summary>
     public float RibPx => RibRadius * Short * Breath;
 
-    /// <summary>
-    /// Where the middle of the tunnel is at this height (px at 1080p, as everything else): no tunnel is straight, and a falling eye is
-    /// never steady. The far end drifts off to one side, slowly changing which, with a sway on top, and the lens end stays put. Add it
-    /// to a plane position before projecting and rings nest off-centre and everything shifts as it rushes by.
-    /// </summary>
+    /// <summary>Where the tunnel's middle is at this height (px at 1080p): add it to plane positions before projecting.</summary>
     public Vector2 Bend(float hu)
     {
         if (Flight == null) return default;
@@ -96,11 +87,7 @@ internal sealed class TunnelField
         return d * reach + new Vector2(-d.Y, d.X) * sway;
     }
 
-    /// <summary>
-    /// Tileable grime for the wall: a (angle, length) texture that wraps both round the tunnel and once per lap, so a stain that goes
-    /// by comes round again unchanged. Three channels, each 0..1: mottle (broad blotches), streak (stains running down the length of the
-    /// wall) and pitting (fine breakup). Built when the seed changes.
-    /// </summary>
+    /// <summary>Tileable wall grime: an (angle, length) texture of mottle, streak and pitting (0..1); rebuilt when the seed changes.</summary>
     internal sealed class WallTexture
     {
         public const int Around = 192, Along = 128;
@@ -117,7 +104,7 @@ internal sealed class TunnelField
                 {
                     float u = x / (float)Around, v = y / (float)Along;
 
-                    // Blotches of damp and soot, three octaves; the lattice wraps round the wall (period 14) and once a lap (period 10).
+                    // Blotches of damp and soot, three octaves; the lattice wraps round the wall (14) and once a lap (10).
                     float mottle = 0.5f + 0.5f * Fbm(u * 14f, v * 10f, 14, 10, 4, seed + 1);
 
                     // Stains run down the wall: stretched along the tunnel, fine across it.
@@ -169,4 +156,35 @@ internal sealed class TunnelField
             return sum / norm;
         }
     }
+}
+
+/// <summary>Faux-3D flight down a tunnel: a thing's height (px, as in LayerCamera) is its offset plus distance flown, wrapped.</summary>
+internal sealed class TunnelFlight
+{
+    public readonly float FarHeight, NearHeight;
+
+    /// <summary>Distance flown so far, px. Advance it each frame.</summary>
+    public float Travel;
+
+    public TunnelFlight(float farHeight, float nearHeight)
+    {
+        FarHeight = farHeight;
+        NearHeight = nearHeight;
+    }
+
+    public float Length => NearHeight - FarHeight;
+
+    public void Advance(float dt, float speed) => Travel += speed * dt;
+
+    /// <summary>Where a thing at this offset is now, and which lap it is on (changes each time it comes round).</summary>
+    public float HeightOf(float offset, out int lap)
+    {
+        float p = (offset + Travel) / Length;
+        float whole = MathF.Floor(p);
+        lap = (int)whole;
+        return FarHeight + (p - whole) * Length;
+    }
+
+    /// <summary>0 at the far end of the tunnel, 1 at the lens.</summary>
+    public float Near(float height) => DrawHelpers.Saturate((height - FarHeight) / Length);
 }

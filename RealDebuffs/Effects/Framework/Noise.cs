@@ -1,6 +1,6 @@
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Cheap stateless 2D noise, roughly [-1, 1]. Value is the per-vertex hot path; Perlin is for slow, low-count uses.</summary>
+/// <summary>Cheap stateless 2D noise, ~[-1, 1]: Value for per-vertex hot paths, Perlin for slow, low-count uses.</summary>
 internal static class Noise
 {
     public static float Perlin(float x, float y)
@@ -22,7 +22,7 @@ internal static class Noise
         return (nx0 + v * (nx1 - nx0)) * 1.4f;
     }
 
-    // 256x256 lattice of random values in [-1, 1]; sampling is four reads and a few multiplies. Wraps every 256 units.
+    // 256x256 random lattice in [-1, 1]: four reads and a few multiplies per sample; wraps every 256 units.
     private const int TableSize = 256;
     private static readonly float[] Table = BuildTable();
 
@@ -66,7 +66,7 @@ internal static class Noise
         }
     }
 
-    /// <summary>Fractal sum of value noise, ~[-1, 1]. Each octave's domain is rotated so the lattice creases don't stack into a grid.</summary>
+    /// <summary>Fractal sum of value noise, ~[-1, 1]; each octave's domain is rotated so lattice creases don't stack.</summary>
     public static float Fbm(float x, float y, int octaves)
     {
         float sum = 0f, amp = 1f, norm = 0f;

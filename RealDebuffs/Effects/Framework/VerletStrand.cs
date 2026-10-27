@@ -2,10 +2,10 @@ using System.Numerics;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>A rope or chain as point masses joined by fixed-length links (Verlet); ends are pinned unless PinStart/PinEnd say otherwise.</summary>
+/// <summary>A rope or chain as Verlet point masses with fixed-length links; ends pinned unless PinStart/PinEnd say otherwise.</summary>
 public sealed class VerletStrand
 {
-    // Many small steps beat one big step with many iterations: a long strand otherwise stretches like a spring and zigzags into loops.
+    // Many small steps beat one big step with many iterations, which stretches and zigzags a long strand.
     private const float SubstepSeconds = 1f / 360f;
     private const int   MaxSubstepsPerFrame = 12;
 
@@ -13,7 +13,7 @@ public sealed class VerletStrand
     public readonly Vector2[] Pos;
     public readonly Vector2[] Prev;
 
-    /// <summary>Caller-owned guide pose: Drive follows it, and with ShapeStiffness above zero each node is also sprung toward it.</summary>
+    /// <summary>Caller-owned guide pose: Drive follows it; with ShapeStiffness above zero each node is also sprung toward it.</summary>
     public readonly Vector2[] Target;
 
     /// <summary>Spring toward Target in 1/s^2 (acceleration per px of error); 0 = off. Stable up to a few thousand.</summary>
@@ -69,7 +69,7 @@ public sealed class VerletStrand
         _anchored = false;
     }
 
-    /// <summary>Where the pinned ends should be by the end of this frame (they travel there in a line through every sub-step).</summary>
+    /// <summary>Where the pinned ends should end this frame; they travel there in a line through every sub-step.</summary>
     public void SetEnds(Vector2 start, Vector2 end)
     {
         if (!_anchored)
@@ -122,7 +122,7 @@ public sealed class VerletStrand
 
     private void Substep(float h, Vector2 start, Vector2 end)
     {
-        float dragK = MathF.Max(0f, 1f - Drag * h) * (h / _lastH);  // the rescale keeps velocity right when the substep length differs from the last one's
+        float dragK = MathF.Max(0f, 1f - Drag * h) * (h / _lastH);  // rescale keeps velocity right when the substep length changes
         float hh = h * h;
         _lastH = h;
 
@@ -215,7 +215,7 @@ public static class StrandGuide
     public static float DownhillSide(Vector2 dir, float fallback) =>
         MathF.Abs(dir.X) < 0.30f ? fallback : (dir.X >= 0f ? 1f : -1f);  // dir.X is the perpendicular's y
 
-    /// <summary>Fills target at equal arc spacing with the drape of a strand carrying extra px of spare length from start to head: a parabola</summary>
+    /// <summary>Fills target at equal arc spacing with the drape (a parabola) of a strand carrying extra px of slack.</summary>
     public static void Drape(Vector2 start, Vector2 head, Vector2 fallbackDir, float extra, in DrapeStyle style, float t, Vector2[] target)
     {
         const int Samples = 48;
@@ -339,7 +339,7 @@ public abstract class StrandRig
     /// <summary>Head position along the throw, 0..1: a short launch ramp, then constant speed (never eased to a stop).</summary>
     public static float Travel(float tau) => (tau < 0.1f ? 5f * tau * tau : tau - 0.05f) / 0.95f;
 
-    /// <summary>Publishes the strand to Path; once frozen the shape is restored from BasePath each frame so overlays land on a clean base.</summary>
+    /// <summary>Publishes the strand to Path; once frozen it's restored from BasePath each frame so overlays land clean.</summary>
     public void Publish(int samples, bool frozen)
     {
         if (!frozen)

@@ -3,7 +3,7 @@ using RealDebuffs.Effects.Framework.Materials;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>One swappable material slot an effect exposes to the Effect generator UI; Hero marks what a "made of X" phrase replaces.</summary>
+/// <summary>One swappable material slot an effect exposes to the UI; Hero marks what a "made of X" phrase replaces.</summary>
 public readonly record struct SwappableSlot(
     string PrimitiveType,
     PrimitiveRole Role,
@@ -17,7 +17,7 @@ public interface IHasSwappableSlots
     IReadOnlyList<SwappableSlot> Slots { get; }
 }
 
-/// <summary>Every effect's declared slots and defaults, registered once by Plugin; Fallback* keeps unknown names from crashing the renderer.</summary>
+/// <summary>Every effect's slots and defaults, registered once by Plugin; Fallback* keeps unknown names from crashing.</summary>
 public static class EffectRegistry
 {
     private static readonly Dictionary<(DebuffKind, string, string), string> _defaults = new();
@@ -91,7 +91,7 @@ public static class EffectRegistry
         r.HasEdge ? "region.edge-glow" : "region.flat-fill";
 }
 
-/// <summary>Name-keyed registry of every material. Vocabulary maps each NaturalLanguageWord to a material name; first registered wins.</summary>
+/// <summary>Name-keyed registry of every material; Vocabulary maps each NaturalLanguageWord to a name (first wins).</summary>
 public static class MaterialRegistry
 {
     private static readonly Dictionary<string, IStrokeMaterial>   Strokes   = new(StringComparer.OrdinalIgnoreCase);
@@ -184,10 +184,10 @@ public static class MaterialRegistry
         Regions.TryGetValue(name, out var m) ? m : null;
 }
 
-/// <summary>Override keys: "{Kind}.{Stroke|Particle}.{Role}", "{Kind}.Region.{EdgeGlow|FlatFill}", and "...{Role}.Emit" for the emitter material.</summary>
+/// <summary>Override keys: "{Kind}.{Stroke|Particle}.{Role}", "{Kind}.Region.{EdgeGlow|FlatFill}", "...{Role}.Emit".</summary>
 public static class MaterialOverrideKey
 {
-    // Keys are built once per distinct tuple: they're looked up per primitive per frame, and rebuilding the string allocated.
+    // Keys are built once per distinct tuple: they're looked up per primitive per frame.
     private static readonly ConcurrentDictionary<(DebuffKind, string, PrimitiveRole), string> ForKeys = new();
     private static readonly ConcurrentDictionary<(DebuffKind, string), string> RegionKeys = new();
     private static readonly ConcurrentDictionary<(DebuffKind, PrimitiveRole), string> EmitKeys = new();
@@ -222,7 +222,7 @@ public static class MaterialOverrideKey
     }
 }
 
-/// <summary>Finds every ISceneEffect with a public parameterless constructor, sorted by DrawOrder. Cached; call once from the Plugin constructor.</summary>
+/// <summary>Finds every ISceneEffect with a public parameterless constructor, sorted by DrawOrder; call once from Plugin.</summary>
 public static class EffectDiscovery
 {
     private static IReadOnlyList<ISceneEffect>? _cached;

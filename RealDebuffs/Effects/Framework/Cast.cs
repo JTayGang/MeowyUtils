@@ -20,7 +20,7 @@ public readonly struct CastFrame
     /// <summary>Stable per cast: derived from its start time.</summary>
     public readonly int Seed;
 
-    /// <summary>Fresh: first frame of a cast. Resized: the screen size changed mid-cast (re-lay anything anchored to it). Leaving: alpha has started to fall.</summary>
+    /// <summary>Fresh: first frame of a cast. Resized: screen size changed mid-cast. Leaving: alpha has started to fall.</summary>
     public readonly bool Fresh, Resized, Leaving;
 
     public readonly Vector4? Color;
@@ -71,7 +71,7 @@ public sealed class CastTracker
     }
 }
 
-/// <summary>Turns the manager's linear alpha into a punchier fade-in plus a leave signal. Call Begin on a new cast, Update once per Emit.</summary>
+/// <summary>Turns the manager's linear alpha into a punchier fade-in plus a leave signal; Begin per cast, Update per Emit.</summary>
 internal sealed class CastEnvelope
 {
     private float _lastAlpha, _peakAlpha, _rampLead;

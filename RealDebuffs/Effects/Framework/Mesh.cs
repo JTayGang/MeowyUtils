@@ -17,6 +17,9 @@ internal sealed class MeshBuilder
 
     public bool Full => _vn >= FlushAt;
 
+    /// <summary>Vertices so far: the index the next vertex gets.</summary>
+    public int Vertices => _vn;
+
     public void Clear() { _vn = 0; _in = 0; }
 
     private void Room(int verts, int idx)

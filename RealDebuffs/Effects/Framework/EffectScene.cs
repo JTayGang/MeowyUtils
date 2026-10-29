@@ -169,6 +169,9 @@ public sealed class EffectScene
     /// <summary>Display size in pixels, set by the host each frame. Zero means unknown.</summary>
     public Vector2 ScreenSize;
 
+    /// <summary>The material overrides in force this frame, for effects whose physics depends on what a slot resolves to.</summary>
+    public IReadOnlyDictionary<string, string>? Overrides;
+
     public VignetteRequest Vignette;
     public DebuffKind CurrentOwner;
 

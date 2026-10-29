@@ -139,6 +139,7 @@ public sealed class EffectManager
         var dl = ImGui.GetForegroundDrawList();
         _scene.Clear();
         _scene.ScreenSize = screenSize;
+        _scene.Overrides = materialOverrides;
 
         foreach (var effect in _order)
         {

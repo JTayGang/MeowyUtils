@@ -317,7 +317,7 @@ internal static class StrandShading
     }
 }
 
-/// <summary>How a viscous liquid answers light (slime, blood, sludge, venom), authored in linear space</summary>
+/// <summary>How a liquid answers light (water, blood, slime, venom), authored in linear space; Viscosity is its thickness for LiquidPhysics</summary>
 public readonly record struct LiquidSpec(
     Vector3 Thin,
     Vector3 Deep,
@@ -327,7 +327,8 @@ public readonly record struct LiquidSpec(
     float Caustic,
     float Env,
     float Sheen = 0.20f,
-    float Window = 0.30f);
+    float Window = 0.30f,
+    float Viscosity = 1f);
 
 /// <summary>Ready-made liquids.</summary>
 public static class LiquidPresets
@@ -335,12 +336,17 @@ public static class LiquidPresets
     /// <summary>Sickly yellow-green mucus: translucent, glossy, with a bright caustic.</summary>
     public static readonly LiquidSpec Slime = new(
         Thin: new(0.62f, 0.72f, 0.16f), Deep: new(0.045f, 0.105f, 0.012f),
-        Opacity: 0.90f, EdgeOpacity: 0.55f, Gloss: 0.88f, Caustic: 1.15f, Env: 1.0f);
+        Opacity: 0.90f, EdgeOpacity: 0.55f, Gloss: 0.88f, Caustic: 1.15f, Env: 1.0f, Viscosity: 1f);
 
     /// <summary>Blood: arterial red where thin, nearly black where deep, almost opaque, with a hard wet highlight.</summary>
     public static readonly LiquidSpec Blood = new(
         Thin: new(0.55f, 0.008f, 0.012f), Deep: new(0.17f, 0.000f, 0.004f),
-        Opacity: 0.97f, EdgeOpacity: 0.80f, Gloss: 0.92f, Caustic: 0.30f, Env: 0.12f, Sheen: 0.02f, Window: 0.12f);
+        Opacity: 0.97f, EdgeOpacity: 0.80f, Gloss: 0.92f, Caustic: 0.30f, Env: 0.12f, Sheen: 0.02f, Window: 0.12f, Viscosity: LiquidPhysics.BloodAt);
+
+    /// <summary>Clear water: mostly see-through, so it reads by its hard highlights, bright refracted lower edge and dark rim.</summary>
+    public static readonly LiquidSpec Water = new(
+        Thin: new(0.36f, 0.66f, 0.82f), Deep: new(0.010f, 0.075f, 0.118f),
+        Opacity: 0.32f, EdgeOpacity: 0.70f, Gloss: 0.98f, Caustic: 1.5f, Env: 1.5f, Sheen: 0.30f, Window: 0.55f, Viscosity: 0f);
 }
 
 /// <summary>A LiquidSpec baked into a lookup by view-space normal (like Matcap), with an opacity channel.</summary>

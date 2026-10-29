@@ -114,7 +114,8 @@ public static class MaterialRegistry
         Add(Regions, new RegionFirelight());
         Add(Regions, new RegionFirelight("region.hellglow", HellColor.Flame));
         Add(Regions, new RegionFrost());
-    	Add(Regions, new RegionTunnel());
+        Add(Regions, new RegionTunnel());
+        Add(Regions, new RegionLiquid());
 
         Add(Strokes, new StrokeSimple());
         Add(Strokes, new StrokeChain());
@@ -143,6 +144,7 @@ public static class MaterialRegistry
         Add(Particles, new ParticleFlake());
         Add(Particles, new ParticleFibre());
         Add(Particles, new ParticleSlime());
+        Add(Particles, new ParticleWater());
         Add(Particles, new ParticleRune());
         Add(Particles, new ParticleArc());
         Add(Particles, new ParticleFlare());
@@ -219,6 +221,17 @@ public static class MaterialOverrideKey
 
         return EffectRegistry.DefaultFor(owner, "Stroke", RoleName(role))
             ?? EffectRegistry.FallbackStroke;
+    }
+
+    /// <summary>Which particle material a role resolves to, considering overrides first.</summary>
+    public static string ResolveParticle(DebuffKind owner, PrimitiveRole role, IReadOnlyDictionary<string, string>? overrides)
+    {
+        if (overrides != null &&
+            overrides.TryGetValue(For(owner, "Particle", role), out var name))
+            return name;
+
+        return EffectRegistry.DefaultFor(owner, "Particle", RoleName(role))
+            ?? EffectRegistry.FallbackParticle(role);
     }
 }
 

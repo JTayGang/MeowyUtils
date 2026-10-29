@@ -121,12 +121,7 @@ public static class EffectSceneRenderer
         var key = (p.Owner, p.Role);
         if (!Particles.TryGetValue(key, out var mat))
         {
-            string name = overrides != null &&
-                          overrides.TryGetValue(MaterialOverrideKey.For(p.Owner, "Particle", p.Role), out var overridden)
-                ? overridden
-                : EffectRegistry.DefaultFor(p.Owner, "Particle", MaterialOverrideKey.RoleName(p.Role))
-                  ?? EffectRegistry.FallbackParticle(p.Role);
-            mat = FindParticle(name, p.Role);
+            mat = FindParticle(MaterialOverrideKey.ResolveParticle(p.Owner, p.Role, overrides), p.Role);
             Particles[key] = mat;
         }
         return mat;

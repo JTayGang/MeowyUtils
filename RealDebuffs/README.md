@@ -2,7 +2,7 @@
 
 A Dalamud plugin for Final Fantasy XIV that turns your debuffs into screen effects: Blind darkens the view, Burns licks fire up from the bottom edge, Bind throws ropes that pull taut. Effects layer and fade in and out smoothly.
 
-Effects so far: Bind, Blind, Burns, Disease, Doom, Frost, Heavy, Hysteria, Paralysis, Silence, Vulnerability.
+Effects so far: Bind, Blind, Burns, Disease, Doom, Dropsy, Frost, Heavy, Hysteria, Paralysis, Silence, Vulnerability.
 
 Commands:
 - `/realdebuffs` opens settings.
@@ -59,7 +59,9 @@ For each primitive the renderer resolves a material in this order: user override
 | `Apparition.cs` | Timing for hallucinations: `Flicker` (stutter-cut on/off, gutter, tic), `FlashSchedule` (when the next one is due), `Heartbeat` (an uneven pulse) |
 | `Sigil.cs` | `LayerCamera` (tilted 2.5D stack), `SigilSway` and `SigilView` (a stack's lean, swing and breath per cast), `SigilGeometry` (rings, polygons), `RuneGlyphs` |
 | `VerletStrand.cs` | Strand physics, `StrandRig`, `RigSet` |
-| `Goop.cs` | Viscous liquids (slime, blood): `GoopEmitter`, `GoopDraw` |
+| `Goop.cs` | Drips shed from strands: `GoopEmitter`, `GoopDraw` |
+| `Liquid.cs` | `LiquidPhysics` (one viscosity axis: water, blood, slime), `Liquid` (look + physics), `DropPool` |
+| `LiquidField.cs`, `LiquidDraw.cs` | Liquid sim and renderer: jets, ceiling drips, wave-equation pool, splashes, bubbles, foam, lens beads |
 | `Mesh.cs`, `Shading.cs` | Triangle-mesh drawing (`MeshBuilder`, `PathRows` for tube materials) and lighting |
 | `Screen.cs` | Screen-edge anchors, growth, wind |
 | `Bolt.cs`, `Dendrite.cs`, `FrostField.cs`, `Noise.cs` | Lightning, branching growth, frost, noise |
@@ -80,5 +82,6 @@ No `<TargetFramework>` is set on purpose; the SDK picks the one Dalamud targets.
 - **Material**: implement a material interface and add it in `MaterialRegistry`'s static constructor. Give it `NaturalLanguageWords` to make it selectable via "made of X".
 - **Color of light**: add a `Palette` in `Palette.cs`, then register `StrokeGlow` / `ParticleMote` (and `StrokeSigil`, `ParticleRune`, `ParticleEmber`, `RegionFirelight` for a full theme) with it. Add new rune glyph sets after the existing ones; don't change `LegacyCount`.
 - **Eyes**: `ParticleEye` (`particle.eye`) draws a shaded eye in any of the `EyeStyle`s, including a lidless `Orb` with its nerve; `ParticleEye.Held(open, style)` lets an effect drive the lids, and small or far eyes use fewer vertices. A themed set registers another instance with its palette. `StrokeWisp` is a soft tapered streamer for things in motion (path runs tail to head).
-- **Viscous liquid**: add a `LiquidSpec` to `LiquidPresets`, subclass `ParticleGoop` (see `ParticleSlime`) and register it. Any stroke can shed it with a `Drip` emission.
+- **Liquid**: add a `LiquidSpec` (look, plus `Viscosity` 0 water to 1 slime) to `LiquidPresets`, subclass `ParticleGoop` (see `ParticleWater`) and register it. Drips, stream breakup, pool waves, splash and cling all follow from `Viscosity`; any stroke can shed it with `Liquid.Phys.Shed()`.
+- **Pouring liquid**: an effect owns a `LiquidField`: `Begin(..., jets, seeps)` on `f.Fresh || f.Resized` makes idle slots; `Launch` a jet when it is `Idle`, `Place` a seep, set `Flow`, `Speed`, `Angle`, `Level` each frame, then `Step` and `Emit`. `Spray`, `Fling` and `Splat` throw droplets, a drop or lens beads. See `DropsyEffect`; resolve the liquid with `Liquid.Resolve(scene, Kind, role)` so a hero slot swap changes everything.
 - **`DebuffKind`**: add at the END of the enum (values are serialized).

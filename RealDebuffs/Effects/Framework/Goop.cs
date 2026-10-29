@@ -11,6 +11,9 @@ internal static class GoopDraw
     private const int MaxRows = 30;  // profile samples: keeps Half+3 vertices per row under MeshDraw.MaxVerts
     private const float MinRadius = 0.45f;  // a thread thinner than this still draws as a hairline
 
+    /// <summary>ParticlePrimitive.Variant for a droplet too small to be worth a mesh: a streak with a glint.</summary>
+    public const int Speck = 1;
+
     /// <summary>Everything about how this particle is coloured, resolved once.</summary>
     private struct Look
     {
@@ -26,7 +29,7 @@ internal static class GoopDraw
     {
         float alpha = p.Brightness * ctx.Alpha;
         float rb = p.Size;
-        if (alpha <= 0.01f || rb < 0.5f) return;
+        if (alpha <= 0.01f || rb < (p.Variant == Speck ? 0.3f : 0.5f)) return;
 
         var look = new Look
         {
@@ -38,6 +41,8 @@ internal static class GoopDraw
             Uv = MeshDraw.WhiteUv(ctx.Time),
         };
 
+        if (p.Variant == Speck) { SpeckDraw(dl, in p, in look); return; }
+
         bool threaded = p.Tether > 0.001f;
         bool attached = threaded && Vector2.DistanceSquared(p.ThreadEnd, p.Position) < 0.25f;
 
@@ -48,6 +53,30 @@ internal static class GoopDraw
         }
         if (threaded) Stub(dl, in p, in look);
         Bead(dl, in p, in look);
+    }
+
+    /// <summary>A flying droplet at a few pixels: a soft streak along its motion (as a camera would blur it), lit by the same table, with a glint when big enough.</summary>
+    private static void SpeckDraw(ImDrawListPtr dl, in ParticlePrimitive p, in Look look)
+    {
+        float rb = p.Size, speed = p.Velocity.Length();
+        Vector2 d = speed > 1e-2f ? p.Velocity / speed : Vector2.UnitY;
+        Vector2 perp = new(-d.Y, d.X);
+        float tail = MathF.Min(speed * (1f / 120f), rb * 9f) + rb * 0.6f;  // half a frame of travel
+        float w = MathF.Max(rb, 0.6f) + look.Feather * 0.4f;
+
+        uint body = Pack(look.Liquid.Sample(-0.30f, -0.40f), 1f, in look);
+        uint edge = (body & 0x00FFFFFFu) | ((((body >> 24) * 3u) >> 2) << 24);
+        uint clear = body & 0x00FFFFFFu;
+
+        Span<Vector2> rim = stackalloc Vector2[4];
+        Span<uint> col = stackalloc uint[4];
+        rim[0] = p.Position - d * tail;         col[0] = clear;
+        rim[1] = p.Position - perp * w;         col[1] = edge;
+        rim[2] = p.Position + d * (rb * 1.2f);  col[2] = clear;
+        rim[3] = p.Position + perp * w;         col[3] = edge;
+        MeshDraw.Fan(dl, look.Uv, p.Position - d * (tail * 0.25f), body, rim, col);
+
+        Glint(dl, p.Position, d, rb, rb, in look);
     }
 
     // Angles that never change are not worth a sine and a cosine per vertex, per row, per drop, per frame.
@@ -335,8 +364,8 @@ public static class GoopEmitter
     private const float MaxStep = 0.05f;  // a frame hitch must not make a drop teleport
 
     // Fractions of a cycle: the bead rests, swells and stretches until PinchAt, then lets go.
-    private const float RestEnd = 0.10f;
-    private const float PinchAt = 0.86f;
+    public const float RestEnd = 0.10f;
+    public const float PinchAt = 0.86f;
 
     private readonly record struct SiteKey(DebuffKind Owner, int StrokeSeed, int Index);
 
@@ -348,29 +377,20 @@ public static class GoopEmitter
         public float LastSeen;
     }
 
-    private struct Drop
-    {
-        public DebuffKind Owner;
-        public Vector2 Pos, Vel, Gravity;
-        public Vector2 Anchor, Pinch;  // where the string was fixed, and where it broke
-        public float Born, Life;
-        public float Size, Brightness;
-        public float Tether;  // thickness of the string at the moment of release, fraction of Size
-        public float RecoilTime;  // how long the string takes to snap back; 0 = no string
-        public float Drag;
-        public int   Seed;
-        public int   HostSeed;  // the strand it came from, so it is drawn with that strand
-        public string? Material;
-        public Vector4? ColorOverride;
-    }
-
     private static readonly Dictionary<SiteKey, Site> Sites = new();
     private static readonly List<SiteKey> Stale = new();
-    private static readonly Drop[] Drops = new Drop[MaxDrops];
-    private static int _dropCount;
+    private static readonly DropPool Drops = new(MaxDrops);
     private static readonly ParticlePrimitive[] Pendants = new ParticlePrimitive[MaxPendants];
     private static int _pendantCount;
     private static float _lastPrune;
+
+    /// <summary>The drop at q (0..1 through its swell): bead radius, how far it hangs, and the neck's thickness as a fraction of the bead.</summary>
+    public static void PendantShape(float q, float rMax, float lMax, float stringiness, out float rb, out float len, out float neck)
+    {
+        rb = rMax * (0.40f + 0.60f * MathF.Sqrt(q));
+        len = rb * 0.45f + lMax * MathF.Pow(q, 2.4f);
+        neck = DrawHelpers.Lerp(0.66f, 0.10f + 0.10f * (1f - stringiness), MathF.Pow(q, 1.4f));
+    }
 
     /// <summary>Call once at the start of each frame: moves fallen drops and forgets sites whose strand is gone.</summary>
     public static void Advance(float time, float dt, Vector2 screen)
@@ -378,19 +398,9 @@ public static class GoopEmitter
         _pendantCount = 0;
         dt = MathF.Min(dt, MaxStep);
 
-        int w = 0;
         float floor = screen.Y > 0f ? screen.Y + 80f : float.MaxValue;
-        for (int i = 0; i < _dropCount; i++)
-        {
-            ref Drop d = ref Drops[i];
-            if (time - d.Born >= d.Life) continue;
-            d.Vel += d.Gravity * dt;
-            d.Vel *= MathF.Exp(-d.Drag * dt);  // viscous drag: drops reach a terminal speed
-            d.Pos += d.Vel * dt;
-            if (d.Pos.Y > floor) continue;
-            Drops[w++] = d;
-        }
-        _dropCount = w;
+        var none = new DropPool.NoHook();
+        Drops.Advance(time, dt, floor, ref none);
 
         if (time - _lastPrune > 0.5f)
         {
@@ -485,9 +495,7 @@ public static class GoopEmitter
 
         // the shape of the pendant drop at this point in its life
         float q = Math.Clamp((site.Phase - RestEnd) / (PinchAt - RestEnd), 0f, 1f);
-        float rb = rMax * (0.40f + 0.60f * MathF.Sqrt(q));
-        float len = rb * 0.45f + lMax * MathF.Pow(q, 2.4f);
-        float neck = DrawHelpers.Lerp(0.66f, 0.10f + 0.10f * (1f - o.Stringiness), MathF.Pow(q, 1.4f));
+        PendantShape(q, rMax, lMax, o.Stringiness, out float rb, out float len, out float neck);
         float swing = 0.12f * MathF.Sin(time * 1.9f + siteSeed * 0.37f) * q;
         Vector2 bead = anchor + new Vector2(MathF.Sin(swing), MathF.Cos(swing)) * len;
 
@@ -526,19 +534,19 @@ public static class GoopEmitter
     private static void Release(in StrokePrimitive s, in StrokeEmission e, in StrokeDripOptions o, string? material,
                                 Vector2 anchor, Vector2 bead, float rb, float neck, int seed, float time, float px)
     {
-        if (_dropCount >= MaxDrops) return;
+        if (Drops.Full) return;
 
         float g = e.Gravity.Y != 0f ? e.Gravity.Y : 1500f;
         float v0 = DrawHelpers.HashRange(seed + 5, e.SpeedMin, e.SpeedMax) * px;
         float life = DrawHelpers.HashRange(seed + 6, e.LifespanMin, e.LifespanMax);
 
-        Drops[_dropCount++] = new Drop
+        Drops.Add(new DropPool.Drop
         {
             Owner = s.Owner,
             Pos = bead,
             Vel = new Vector2(DrawHelpers.HashRange(seed + 7, -10f, 10f) * px, v0),
             Gravity = new Vector2(e.Gravity.X, g) * px,
-            Drag = 1.6f,
+            Drag = o.Drag,
             Anchor = anchor,
             Pinch = bead,
             Born = time,
@@ -551,19 +559,19 @@ public static class GoopEmitter
             HostSeed = s.Seed,
             Material = material,
             ColorOverride = s.ColorOverride,
-        };
+        });
 
         // The string rarely breaks cleanly: sometimes a small droplet is left in the gap, falling a little behind.
-        if (_dropCount < MaxDrops && DrawHelpers.Hash01(seed + 8) < o.SatelliteChance)
+        if (!Drops.Full && DrawHelpers.Hash01(seed + 8) < o.SatelliteChance)
         {
             Vector2 at = Vector2.Lerp(anchor, bead, 0.62f);
-            Drops[_dropCount++] = new Drop
+            Drops.Add(new DropPool.Drop
             {
                 Owner = s.Owner,
                 Pos = at,
                 Vel = new Vector2(DrawHelpers.HashRange(seed + 9, -12f, 12f) * px, v0 * 0.35f),
                 Gravity = new Vector2(e.Gravity.X, g) * px,
-                Drag = 1.6f,
+                Drag = o.Drag,
                 Born = time,
                 Life = life,
                 Size = rb * DrawHelpers.HashRange(seed + 10, 0.20f, 0.32f),
@@ -572,7 +580,7 @@ public static class GoopEmitter
                 HostSeed = s.Seed,
                 Material = material,
                 ColorOverride = s.ColorOverride,
-            };
+            });
         }
     }
 
@@ -582,38 +590,7 @@ public static class GoopEmitter
         for (int i = 0; i < _pendantCount; i++)
             scene.AddParticleForOwner(Pendants[i], Pendants[i].Owner);
 
-        for (int i = 0; i < _dropCount; i++)
-        {
-            ref readonly Drop d = ref Drops[i];
-            float age = time - d.Born;
-            float t01 = Math.Clamp(age / d.Life, 0f, 1f);
-
-            var p = new ParticlePrimitive
-            {
-                Owner = d.Owner,
-                Position = d.Pos,
-                Velocity = d.Vel,
-                Size = d.Size,
-                AgeRatio = t01,
-                Brightness = d.Brightness * ParticleEmitter.FadeFor(t01),
-                Seed = d.Seed,
-                HasHost = true, HostSeed = d.HostSeed,
-                Role = PrimitiveRole.Goop,
-                MaterialName = d.Material,
-                ColorOverride = d.ColorOverride,
-            };
-
-            // The broken string snaps back up to where it was fixed, thinning as it goes.
-            if (d.RecoilTime > 0f && age < d.RecoilTime)
-            {
-                float k = age / d.RecoilTime;
-                float eased = 1f - (1f - k) * (1f - k);
-                p.Anchor = d.Anchor;
-                p.ThreadEnd = Vector2.Lerp(d.Pinch, d.Anchor, eased);
-                p.Tether = d.Tether * (1f - 0.65f * k);
-            }
-            scene.AddParticleForOwner(p, d.Owner);
-        }
+        Drops.Emit(scene, time, hosted: true);
     }
 
 }

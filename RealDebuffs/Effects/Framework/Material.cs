@@ -101,11 +101,12 @@ public readonly record struct StrokeFlowOptions(
     float ObstacleSpacingPx,
     float LateralOffsetFrac);
 
-/// <summary>Viscous emission: grows drops (Size = radius px at 1080p, Gravity = px/s^2; DensityPer100px is ignored).</summary>
+/// <summary>Viscous emission: grows drops (Size = radius px at 1080p, Gravity = px/s^2, Drag = 1/s; DensityPer100px is ignored).</summary>
 public readonly record struct StrokeDripOptions(
     float SiteSpacingPx,
     float CycleSecondsMin,
     float CycleSecondsMax,
     float MinSlope,
     float Stringiness,
-    float SatelliteChance);
+    float SatelliteChance,
+    float Drag = 1.6f);

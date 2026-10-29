@@ -32,6 +32,7 @@ public enum PrimitiveRole
     Horn = 36,
     Eye = 37,
     Trail = 38,
+    Whisper = 39,
 }
 
 public struct StrokePrimitive

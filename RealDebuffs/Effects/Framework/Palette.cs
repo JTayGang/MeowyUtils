@@ -176,3 +176,28 @@ internal static class HellColor
     /// <summary>The flash an infernal cast lands with (orange-red, so it stays chromatic under a colour override).</summary>
     public static readonly uint Flash = DrawHelpers.Pack(1.00f, 0.36f, 0.12f);
 }
+
+/// <summary>Charm: rose and blush light, a pearl core, and pink-lit fog from plum shadow to peach highlight.</summary>
+internal static class CharmColor
+{
+    /// <summary>Light, dim to hot: 0 = deep plum, 0.3 = raspberry, 0.55 = rose, 0.78 = blush, 1 = pearl.</summary>
+    public static readonly Palette Glow = new(
+        (0.00f, 0.300f, 0.050f, 0.240f),
+        (0.30f, 0.740f, 0.200f, 0.500f),
+        (0.55f, 1.000f, 0.420f, 0.660f),
+        (0.78f, 1.000f, 0.700f, 0.800f),
+        (1.00f, 1.000f, 0.940f, 0.950f));
+
+    /// <summary>Fog lit by that light: 0 = shadowed mauve, 0.4 = rose, 0.75 = lit pink, 1 = peach-pearl.</summary>
+    public static readonly Palette Fog = new(
+        (0.00f, 0.380f, 0.090f, 0.340f),
+        (0.40f, 0.920f, 0.380f, 0.620f),
+        (0.75f, 1.000f, 0.640f, 0.790f),
+        (1.00f, 1.000f, 0.800f, 0.850f));
+
+    /// <summary>Edge tint for the screen's vignette: deep rose-plum.</summary>
+    public static readonly uint Vignette = DrawHelpers.Pack(0.360f, 0.050f, 0.240f);
+
+    /// <summary>The flush a charm lands with (rose-white, so it stays chromatic under a colour override).</summary>
+    public static readonly uint Flash = DrawHelpers.Pack(1.000f, 0.700f, 0.860f);
+}

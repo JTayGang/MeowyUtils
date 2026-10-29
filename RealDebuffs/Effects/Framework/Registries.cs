@@ -84,6 +84,7 @@ public static class EffectRegistry
         PrimitiveRole.Flash     => "particle.flare",
         PrimitiveRole.Candle    => "particle.candle",
         PrimitiveRole.Eye       => "particle.eye",
+        PrimitiveRole.Whisper   => "particle.whisper",
         _                       => "particle.spark",
     };
 
@@ -156,7 +157,9 @@ public static class MaterialRegistry
         Add(Particles, new ParticleRune("particle.hellrune", HellColor.Glow, RuneGlyphs.FirstInfernal, RuneGlyphs.InfernalCount, "occult", "hex", "hexes", "hexglyph"));
         Add(Particles, new ParticleMote("particle.hellmote", HellColor.Glow, false, "emberlight", "fireflies", "firefly"));
         Add(Particles, new ParticleEye());
+        Add(Particles, new ParticleWhisper());
         Add(Particles, new ParticleRune("particle.omen", HauntColor.Glow, 0, RuneGlyphs.FirstSilence, "omen", "omens", "hallucination", "hallucinations"));
+        Add(Particles, new ParticleMote("particle.stardust", CharmColor.Glow, true, "stardust", "pixie", "pixies", "faerie", "faeries"));
         Add(Particles, new ParticleMote("particle.spirit", HauntColor.Glow, false, "spirit", "spirits", "soul", "souls", "wraith", "wraiths"));
 
         var vocabulary = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);

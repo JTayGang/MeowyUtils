@@ -141,6 +141,7 @@ public static class MaterialRegistry
         Add(Particles, new ParticleSnow());
         Add(Particles, new ParticleSnowflake());
         Add(Particles, new ParticleGlint());
+        Add(Particles, new ParticleGlint("particle.twinkle", CharmColor.Glow.Sample(0.99f), CharmColor.Glow.Sample(0.62f), "twinkle", "twinkles", "starlight"));
         foreach (var puff in ParticlePuff.All) Add(Particles, puff);
         Add(Particles, new ParticleFlake());
         Add(Particles, new ParticleFibre());

@@ -27,11 +27,12 @@ public sealed class CharmEffect : SceneEffect, IHasSwappableSlots
         new("Particle", PrimitiveRole.Mist,    "Fog",      "particle.rosefog", Hero: true),
         new("Particle", PrimitiveRole.Whisper, "Whispers", "particle.whisper"),
         new("Particle", PrimitiveRole.Mote,    "Stardust", "particle.stardust"),
+        new("Particle", PrimitiveRole.Glint,   "Sparkles", "particle.twinkle"),
     };
 
     // the cast
     private const float IntroSecs = 1.8f;  // the fog arrives and the vignette closes
-    private const float FirstWhisper = 0.55f;
+    private const float FirstWhisper = 0.55f, FirstBeat = 1.6f;
 
     // fog: billows in three depths; each slot lives one cycle, then comes back somewhere else
     private readonly record struct Tier(int Count, float SizeMin, float SizeMax, float Speed, float Alpha, float EdgeBias, float PeriodMin, float PeriodMax, float Arrive, int Squash);
@@ -47,23 +48,26 @@ public sealed class CharmEffect : SceneEffect, IHasSwappableSlots
     private const int MaxWhispers = 7;
     private static readonly float[] DepthSize  = { 62f, 33f, 20f };   // x-height px at 1080p: near, mid, far
     private static readonly float[] DepthAlpha = { 1.00f, 0.88f, 0.60f };
-    private static readonly (float Lo, float Hi)[] DepthLife = { (4.0f, 5.2f), (4.8f, 6.4f), (6.2f, 8.2f) };
+    private static readonly (float Lo, float Hi)[] DepthLife = { (5.2f, 6.6f), (6.2f, 8.0f), (7.6f, 9.6f) };
+    private static readonly float[] DepthDrift = { 16f, 10f, 6f };   // px a second downwind at 1080p: near words drift faster than far
+
+    // sparkles: stars that flare and fade where they are, each slot coming back somewhere else
+    private const int Sparkles = 22;
 
     private static readonly uint Haze = DrawHelpers.Pack(0.95f, 0.42f, 0.66f);
 
     private readonly CastTracker _cast = new(envelope: true);
     private CastFrame _f;
-    private readonly Heartbeat _beat = new();
-    private readonly MoteField _motes = new(30, 650f, -420f, (8f, 26f), (10f, 40f), (1.6f, 4.2f));
+    private readonly MoteField _motes = new(40, 650f, -420f, (8f, 26f), (10f, 40f), (1.6f, 4.2f));
 
-    private struct Whisper { public bool On; public int Phrase, Seed, Depth; public Vector2 At, Breath; public float Size, Tilt, Born, Life; public int In, Out; }
+    private struct Whisper { public bool On; public int Phrase, Seed, Depth; public Vector2 At, Half, Breath; public float Size, Tilt, Spin, Born, Life; public int In, Out; }
     private readonly Whisper[] _w = new Whisper[MaxWhispers];
     private readonly int[] _bag = new int[CharmWhispers.Phrases.Length];
     private int _bagAt, _spawned, _lastIn, _lastOut;
 
     // per-cast layout
     private int _seed;
-    private float _windAngle, _windSpeed, _gustA, _gustB, _density;
+    private float _windAngle, _windSpeed, _gustA, _gustB, _density, _beatEvery;
     private float _nextWhisper, _nextChorus, _chorusEnds;
     private Vector2 _chorusAt;
 
@@ -80,7 +84,7 @@ public sealed class CharmEffect : SceneEffect, IHasSwappableSlots
         if (f.Fresh || f.Resized) { if (f.Fresh) BeginCast(f.Seed); else Array.Clear(_w); }
 
         float intro = DrawHelpers.Smooth(f.Age / IntroSecs);
-        float beat = _beat.Level(f.Age, 0.2f);
+        float beat = f.Age < FirstBeat ? 0f : Pulse((f.Age - FirstBeat) % _beatEvery);
 
         EmitAtmosphere(scene, intro, beat);
         UpdateWhispers();
@@ -93,7 +97,9 @@ public sealed class CharmEffect : SceneEffect, IHasSwappableSlots
         EmitWhispers(scene, 1);
         var cam = new LayerCamera(f.Center, 1500f * f.Px, 0f, 0f);
         _motes.Emit(scene, in cam, 1500f * f.Px, f.Size, f.Px, f.Age, f.Alpha * 0.9f * intro * (1f - f.Leave), blurDim: 0.45f, twinkle: 0.5f, f.Color);
+        EmitSparkles(scene, near: false, intro);
         EmitWhispers(scene, 0);
+        EmitSparkles(scene, near: true, intro);
         EmitFog(scene, 2, beat);
     }
 
@@ -108,7 +114,7 @@ public sealed class CharmEffect : SceneEffect, IHasSwappableSlots
         _gustB = DrawHelpers.Hash01(seed + 5) * MathF.Tau;
         _density = DrawHelpers.HashRange(seed + 6, 0.88f, 1.12f);
 
-        _beat.Begin(seed, 1.1f);
+        _beatEvery = DrawHelpers.HashRange(seed + 10, 3.4f, 4.4f);
         _motes.Seed(seed);
 
         Array.Clear(_w);
@@ -127,13 +133,20 @@ public sealed class CharmEffect : SceneEffect, IHasSwappableSlots
 
     // atmosphere
 
+    /// <summary>A slow, deliberate heartbeat, 0..1: seconds since a beat began in, and two soft swells (the second half as strong) out; no sharp edges, so it breathes rather than flickers.</summary>
+    internal static float Pulse(float since)
+        => MathF.Max(Swell(since, 0.45f, 1.1f), 0.55f * Swell(since - 0.65f, 0.40f, 1.0f));
+
+    private static float Swell(float t, float rise, float fall)
+        => t <= 0f || t >= rise + fall ? 0f : t < rise ? DrawHelpers.Smooth(t / rise) : 1f - DrawHelpers.Smooth((t - rise) / fall);
+
     private void EmitAtmosphere(EffectScene scene, float intro, float beat)
     {
         ref readonly CastFrame f = ref _f;
 
         // The vignette closes in as the fog arrives and swells a little on every beat.
-        scene.RequestVignette(CharmColor.Vignette, 0.16f + 0.22f * intro, MathF.Min(1f, f.Alpha * 0.72f * intro * (0.92f + 0.16f * beat)), priority: 22, f.Color);
-        scene.Wash(f.Size, Haze, 0.12f * f.Alpha * intro * (1f + 0.25f * beat), f.Color);
+        scene.RequestVignette(CharmColor.Vignette, 0.16f + 0.22f * intro, MathF.Min(1f, f.Alpha * 0.72f * intro * (0.88f + 0.22f * beat)), priority: 22, f.Color);
+        scene.Wash(f.Size, Haze, 0.12f * f.Alpha * intro * (1f + 0.40f * beat), f.Color);
 
         // The cast flash uses f.Gate so the fade-in can't swallow it.
         float flash = f.Age < 0.8f ? MathF.Exp(-f.Age / 0.17f) : 0f;
@@ -165,7 +178,7 @@ public sealed class CharmEffect : SceneEffect, IHasSwappableSlots
         ref readonly Tier T = ref Tiers[tier];
         float px = f.Px, halfW = f.Size.X * 0.5f, halfH = f.Size.Y * 0.5f;
         float arrive = DrawHelpers.Smooth(f.Age / (IntroSecs * T.Arrive + 0.2f));
-        float level = f.Alpha * T.Alpha * _density * (1f - 0.6f * f.Leave) * (0.94f + 0.12f * beat);
+        float level = f.Alpha * T.Alpha * _density * (1f - 0.6f * f.Leave) * (0.91f + 0.18f * beat);
         float edgeExp = 1f - 0.62f * T.EdgeBias;
 
         for (int i = 0; i < T.Count; i++)
@@ -196,7 +209,7 @@ public sealed class CharmEffect : SceneEffect, IHasSwappableSlots
 
             scene.AddParticle(new ParticlePrimitive
             {
-                Position = at, Size = DrawHelpers.HashRange(cs + 5, T.SizeMin, T.SizeMax) * px * (0.55f + 0.45f * arrive) * (1f + 0.03f * beat),
+                Position = at, Size = DrawHelpers.HashRange(cs + 5, T.SizeMin, T.SizeMax) * px * (0.55f + 0.45f * arrive) * (1f + 0.04f * beat),
                 AgeRatio = life, Brightness = level * (0.7f + 0.3f * arrive), Seed = cs, Rotation = bearing, Variant = T.Squash, Role = PrimitiveRole.Mist, ColorOverride = f.Color,
             });
         }
@@ -226,9 +239,9 @@ public sealed class CharmEffect : SceneEffect, IHasSwappableSlots
 
         bool chorus = age < _chorusEnds;
         Spawn(age, chorus);
-        float gap = chorus ? DrawHelpers.HashRange(_seed + _spawned * 53 + 1, 0.25f, 0.50f)
-                  : age < 3.5f ? DrawHelpers.HashRange(_seed + _spawned * 53 + 2, 0.50f, 0.90f)
-                  : DrawHelpers.HashRange(_seed + _spawned * 53 + 3, 0.90f, 1.70f);
+        float gap = chorus ? DrawHelpers.HashRange(_seed + _spawned * 53 + 1, 0.30f, 0.55f)
+                  : age < 3.5f ? DrawHelpers.HashRange(_seed + _spawned * 53 + 2, 0.60f, 1.05f)
+                  : DrawHelpers.HashRange(_seed + _spawned * 53 + 3, 1.25f, 2.25f);
         _nextWhisper = age + gap;
     }
 
@@ -247,9 +260,21 @@ public sealed class CharmEffect : SceneEffect, IHasSwappableSlots
         int phrase = _bag[_bagAt++ % _bag.Length];
         int arrive = Fresh(ref _lastIn, ParticleWhisper.Arrivals, s + 8), depart = Fresh(ref _lastOut, ParticleWhisper.Departures, s + 9);
         float width = ScriptFont.Width(CharmWhispers.Phrases[phrase]) * size, height = ScriptFont.Height * size;
+        float life = DrawHelpers.HashRange(s + 4, DepthLife[depth].Lo, DepthLife[depth].Hi);
 
-        // Somewhere clear: not on top of another phrase, and (mostly) wholly on screen.
-        float bleed = depth == 0 ? 0.25f : 0f;
+        // Mostly nearly level, often askew, now and then steeply so; and turning slowly as it hangs.
+        float lean = DrawHelpers.Hash01(s + 5);
+        float tilt = (DrawHelpers.Hash01(s + 11) < 0.5f ? -1f : 1f) * (lean < 0.40f ? DrawHelpers.HashRange(s + 12, 0f, 0.08f) : lean < 0.85f ? DrawHelpers.HashRange(s + 12, 0.08f, 0.24f) : DrawHelpers.HashRange(s + 12, 0.24f, 0.42f));
+        float spin = (DrawHelpers.Hash01(s + 13) < 0.5f ? -1f : 1f) * DrawHelpers.HashRange(s + 14, 0.008f, 0.022f);
+
+        // The room it takes once tilted (at its most turned), and where the wind will have carried it by the end.
+        float reach = MathF.Abs(tilt) + MathF.Abs(spin) * life;
+        var half = new Vector2(0.5f * (width * MathF.Cos(reach) + height * MathF.Sin(reach)), 0.5f * (width * MathF.Sin(reach) + height * MathF.Cos(reach)));
+        var downwind = new Vector2(MathF.Cos(_windAngle), MathF.Sin(_windAngle));
+        Vector2 travel = downwind * (DepthDrift[depth] * _windSpeed * life * f.Px);
+
+        // Somewhere clear: not on top of another phrase, and (mostly) wholly on screen, now and when it has drifted.
+        float bleed = depth == 0 ? 0.12f : 0f;
         for (int attempt = 0; attempt < 14; attempt++)
         {
             Vector2 at;
@@ -258,16 +283,16 @@ public sealed class CharmEffect : SceneEffect, IHasSwappableSlots
             else
                 at = new Vector2(DrawHelpers.Hash01(s + 20 + attempt) * f.Size.X, DrawHelpers.Hash01(s + 40 + attempt) * f.Size.Y);
 
-            float mx = MathF.Max(0f, width * (0.5f - bleed)) + 12f * f.Px, my = height * 0.5f + 12f * f.Px;
-            at = new Vector2(Math.Clamp(at.X, mx, MathF.Max(mx, f.Size.X - mx)), Math.Clamp(at.Y, my, MathF.Max(my, f.Size.Y - my)));
+            float mx = MathF.Max(0f, half.X - width * bleed) + 20f * f.Px, my = half.Y + 20f * f.Px;
+            at = new Vector2(Fit(at.X, mx - MathF.Min(0f, travel.X), f.Size.X - mx - MathF.Max(0f, travel.X)),
+                             Fit(at.Y, my - MathF.Min(0f, travel.Y), f.Size.Y - my - MathF.Max(0f, travel.Y)));
 
             bool clear = true;
             for (int j = 0; j < MaxWhispers && clear; j++)
             {
                 ref readonly Whisper o = ref _w[j];
                 if (!o.On) continue;
-                float ow = ScriptFont.Width(CharmWhispers.Phrases[o.Phrase]) * o.Size, oh = ScriptFont.Height * o.Size;
-                clear = MathF.Abs(at.X - o.At.X) > (width + ow) * 0.5f * 0.9f || MathF.Abs(at.Y - o.At.Y) > (height + oh) * 0.5f * 1.1f;
+                clear = MathF.Abs(at.X - o.At.X) > (half.X + o.Half.X) * 0.9f || MathF.Abs(at.Y - o.At.Y) > (half.Y + o.Half.Y) * 1.05f;
             }
             if (!clear && attempt < 13) continue;
             if (!clear) return;
@@ -275,14 +300,16 @@ public sealed class CharmEffect : SceneEffect, IHasSwappableSlots
             float bearing = _windAngle + DrawHelpers.HashRange(s + 3, -0.5f, 0.5f);
             _w[slot] = new Whisper
             {
-                On = true, Phrase = phrase, Seed = s, Depth = depth, At = at, Size = size, Born = age, In = arrive, Out = depart,
-                Life = DrawHelpers.HashRange(s + 4, DepthLife[depth].Lo, DepthLife[depth].Hi),
-                Tilt = DrawHelpers.HashRange(s + 5, -0.10f, 0.10f) * (depth == 0 ? 1.6f : 1f),
+                On = true, Phrase = phrase, Seed = s, Depth = depth, At = at, Half = half, Size = size, Born = age, In = arrive, Out = depart,
+                Life = life, Tilt = tilt, Spin = spin,
                 Breath = new Vector2(MathF.Cos(bearing), MathF.Sin(bearing)) * DrawHelpers.HashRange(s + 6, 28f, 64f) * f.Px,
             };
             return;
         }
     }
+
+    /// <summary>v kept within lo..hi; centred if there is no room.</summary>
+    private static float Fit(float v, float lo, float hi) => hi <= lo ? 0.5f * (lo + hi) : Math.Clamp(v, lo, hi);
 
     /// <summary>A style that isn't the one just used, so neighbouring phrases never move alike.</summary>
     private static int Fresh(ref int last, int count, int seed)
@@ -296,15 +323,48 @@ public sealed class CharmEffect : SceneEffect, IHasSwappableSlots
     {
         ref readonly CastFrame f = ref _f;
         float intro = DrawHelpers.Smooth(f.Age / 0.8f);
+        var downwind = new Vector2(MathF.Cos(_windAngle), MathF.Sin(_windAngle));
         for (int i = 0; i < MaxWhispers; i++)
         {
             ref readonly Whisper w = ref _w[i];
             if (!w.On || w.Depth != depth) continue;
+
+            // Words hang in the fog: carried downwind with it, and rocking gently.
+            float age = f.Age - w.Born;
+            Vector2 drift = downwind * ((Wind(f.Age) - Wind(w.Born)) * DepthDrift[depth] * f.Px);
+            Vector2 rock = new Vector2(MathF.Sin(age * 0.53f + w.Seed), MathF.Sin(age * 0.37f + w.Seed * 0.7f)) * (0.14f * w.Size);
             scene.AddParticle(new ParticlePrimitive
             {
-                Position = w.At, Velocity = w.Breath, Size = w.Size, AgeRatio = (f.Age - w.Born) / w.Life,
-                Brightness = f.Alpha * DepthAlpha[depth] * intro * (1f - f.Leave), Seed = w.Seed, Rotation = w.Tilt,
+                Position = w.At + drift + rock, Velocity = w.Breath, Size = w.Size, AgeRatio = age / w.Life,
+                Brightness = f.Alpha * DepthAlpha[depth] * intro * (1f - f.Leave), Seed = w.Seed, Rotation = w.Tilt + w.Spin * age + 0.03f * MathF.Sin(age * 0.41f + w.Seed * 1.3f),
                 Variant = (w.Phrase + 1) | (depth << ParticleWhisper.DepthShift) | (w.In << ParticleWhisper.ArriveShift) | (w.Out << ParticleWhisper.DepartShift), Role = PrimitiveRole.Whisper, ColorOverride = f.Color,
+            });
+        }
+    }
+
+    // sparkles
+
+    private void EmitSparkles(EffectScene scene, bool near, float intro)
+    {
+        ref readonly CastFrame f = ref _f;
+        float level = f.Alpha * intro * (1f - f.Leave);
+        for (int i = 0; i < Sparkles; i++)
+        {
+            int slot = _seed + 90001 + i * 1237;
+            if ((DrawHelpers.Hash01(slot + 1) < 0.35f) != near) continue;
+
+            float period = DrawHelpers.HashRange(slot + 2, 2.6f, 5.2f);
+            float u = f.Age / period + DrawHelpers.Hash01(slot + 3);
+            int cycle = (int)MathF.Floor(u);
+            int cs = slot + cycle * 7919;
+
+            // A quick flare and a slow fade.
+            float flare = MathF.Sin(MathF.PI * MathF.Pow(u - cycle, 0.55f));
+            scene.AddParticle(new ParticlePrimitive
+            {
+                Position = new Vector2(DrawHelpers.Hash01(cs + 4) * f.Size.X, DrawHelpers.Hash01(cs + 5) * f.Size.Y),
+                Size = (near ? DrawHelpers.HashRange(cs + 6, 15f, 27f) : DrawHelpers.HashRange(cs + 6, 7f, 14f)) * f.Px,
+                Brightness = flare * flare * level * (near ? 1f : 0.7f), Seed = cs, Role = PrimitiveRole.Glint, ColorOverride = f.Color,
             });
         }
     }

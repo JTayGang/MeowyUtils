@@ -186,8 +186,21 @@ public sealed class ParticleSnowflake : IParticleMaterial
 /// <summary>Four-point sparkle. Brightness is the twinkle and scales size. Size is the long ray; Seed rotates it.</summary>
 public sealed class ParticleGlint : IParticleMaterial
 {
-    public string Name => "particle.glint";
-    public string[] NaturalLanguageWords { get; } = { "glint", "glints", "sparkle", "sparkles", "glitter" };
+    private readonly string _name;
+    private readonly uint _white, _cold;
+
+    /// <summary>The icy glint (particle.glint).</summary>
+    public ParticleGlint() : this("particle.glint", IceColor.White, IceColor.Cold, "glint", "glints", "sparkle", "sparkles", "glitter") { }
+
+    /// <summary>The same star in another light: a bright heart and the tint of its rays.</summary>
+    internal ParticleGlint(string name, uint white, uint cold, params string[] words)
+    {
+        _name = name; _white = white; _cold = cold;
+        NaturalLanguageWords = words;
+    }
+
+    public string Name => _name;
+    public string[] NaturalLanguageWords { get; }
 
     private const int Rays = 8;  // alternating long / short: tip, notch, tip, notch ...
 
@@ -202,16 +215,16 @@ public sealed class ParticleGlint : IParticleMaterial
         float squash = 0.55f + 0.30f * DrawHelpers.Hash01(p.Seed + 2);
         Vector2 c = p.Position;
 
-        uint centerCol = DrawHelpers.WithAlpha(IceColor.White, inten);
-        uint notchCol  = DrawHelpers.WithAlpha(IceColor.Cold, inten * 0.55f);
-        uint tipCol    = DrawHelpers.WithAlpha(IceColor.Cold, 0f);
+        uint centerCol = DrawHelpers.WithAlpha(_white, inten);
+        uint notchCol  = DrawHelpers.WithAlpha(_cold, inten * 0.55f);
+        uint tipCol    = DrawHelpers.WithAlpha(_cold, 0f);
 
         Vector2 uv = MeshDraw.WhiteUv(ctx.Time);
 
         // Soft bloom behind the star, so a small glint reads as a flash rather than a scratch.
         Span<float> hr = stackalloc float[1] { R * 0.60f };
-        Span<uint> hc = stackalloc uint[1] { DrawHelpers.WithAlpha(IceColor.Cold, 0f) };
-        MeshDraw.Radial(dl, c, uv, DrawHelpers.WithAlpha(IceColor.Cold, inten * 0.50f), 10, hr, hc, rot, squashY: 1f, seed: p.Seed, irregular: 0f);
+        Span<uint> hc = stackalloc uint[1] { DrawHelpers.WithAlpha(_cold, 0f) };
+        MeshDraw.Radial(dl, c, uv, DrawHelpers.WithAlpha(_cold, inten * 0.50f), 10, hr, hc, rot, squashY: 1f, seed: p.Seed, irregular: 0f);
 
         Span<Vector2> rim = stackalloc Vector2[Rays * 2];
         Span<uint> rimCol = stackalloc uint[Rays * 2];
@@ -227,6 +240,6 @@ public sealed class ParticleGlint : IParticleMaterial
         }
         MeshDraw.Fan(dl, uv, c, centerCol, rim, rimCol);
 
-        dl.AddCircleFilled(c, MathF.Max(0.8f, R * 0.09f), DrawHelpers.WithAlpha(IceColor.White, inten));
+        dl.AddCircleFilled(c, MathF.Max(0.8f, R * 0.09f), DrawHelpers.WithAlpha(_white, inten));
     }
 }

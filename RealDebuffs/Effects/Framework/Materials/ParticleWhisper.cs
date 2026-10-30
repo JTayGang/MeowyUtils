@@ -12,30 +12,31 @@ public sealed class ParticleWhisper : IParticleMaterial
     public const int PhraseBits = 10, DepthShift = 10, ArriveShift = 12, DepartShift = 15;
 
     // How a phrase arrives and leaves: the order its letters go in, how far that order is spread over the phrase's life, and how long each letter takes.
+    // Each letter fades and moves over the same stretch, from fully transparent to settled (or back), so Spread + Span is the whole arrival (or departure).
     public const int Arrivals = 6, Departures = 6;
     private enum Order { Forward, Backward, CentreOut, EdgesIn, Random, Together }
     private static readonly (Order Order, float Spread, float Span)[] Arrive =
     {
-        (Order.Forward, 0.16f, 0.20f),   // 0 rises from below, letter by letter
-        (Order.Together, 0.04f, 0.30f),  // 1 blooms into focus from a heavy blur, all at once
-        (Order.Random, 0.20f, 0.16f),    // 2 surfaces from the fog in no order
-        (Order.CentreOut, 0.14f, 0.20f), // 3 unfolds from the middle outward
-        (Order.Forward, 0.14f, 0.22f),   // 4 slides in on the wind
-        (Order.Forward, 0.28f, 0.07f),   // 5 is spoken, each letter with a flare
+        (Order.Forward, 0.20f, 0.20f),   // 0 rises from below, letter by letter
+        (Order.Together, 0.06f, 0.34f),  // 1 blooms into focus from a heavy blur, all at once
+        (Order.Random, 0.22f, 0.18f),    // 2 surfaces from the fog in no order
+        (Order.CentreOut, 0.18f, 0.22f), // 3 unfolds from the middle outward
+        (Order.Forward, 0.18f, 0.22f),   // 4 slides in on the wind
+        (Order.Forward, 0.30f, 0.10f),   // 5 is spoken, each letter with a flare
     };
     private static readonly (Order Order, float Spread, float Span)[] Depart =
     {
-        (Order.Forward, 0.12f, 0.18f),   // 0 is breathed away downwind, letter by letter
-        (Order.Random, 0.12f, 0.18f),    // 1 sinks
-        (Order.Together, 0.04f, 0.26f),  // 2 evaporates where it hangs
-        (Order.Together, 0.05f, 0.24f),  // 3 rushes toward you and dissolves
-        (Order.Random, 0.14f, 0.16f),    // 4 scatters
-        (Order.EdgesIn, 0.12f, 0.18f),   // 5 folds in to the middle
+        (Order.Forward, 0.16f, 0.22f),   // 0 is breathed away downwind, letter by letter
+        (Order.Random, 0.16f, 0.22f),    // 1 sinks
+        (Order.Together, 0.05f, 0.33f),  // 2 evaporates where it hangs
+        (Order.Together, 0.06f, 0.32f),  // 3 rushes toward you and dissolves
+        (Order.Random, 0.18f, 0.20f),    // 4 scatters
+        (Order.EdgesIn, 0.16f, 0.22f),   // 5 folds in to the middle
     };
-    private const float DepartAt = 0.70f;
+    private const float DepartAt = 0.62f;
 
-    /// <summary>One letter's moment: how much in focus it is, how soft, how it is displaced, and the flare of being spoken.</summary>
-    private struct Letter { public float Focus, Soft, Pop, Spread, Rise; public Vector2 Shift; }
+    /// <summary>One letter's moment: how opaque it is, how soft, how it is displaced, the glow's slow pulse, and the flare of being spoken.</summary>
+    private struct Letter { public float Focus, Soft, Pop, Glimmer, Spread, Rise; public Vector2 Shift; }
 
     private const float Slant = 0.20f, Weight = 0.072f;
     private static readonly MeshBuilder Mb = new();
@@ -106,15 +107,14 @@ public sealed class ParticleWhisper : IParticleMaterial
             var (ao, asp, adu) = Arrive[inS];
             if (inS == 4 && flip) ao = Order.Backward;
             float start = asp * OrderOf(ao, i, n, p.Seed);
-            float up = DrawHelpers.Smooth((t - start) / adu);
+            float rise = DrawHelpers.Saturate((t - start) / adu);
+            float arrived = DrawHelpers.Smooth(rise), come = (1f - rise) * (1f - rise);  // it fades in evenly but slows as it settles
 
             var (dro, dsp, ddu) = Depart[outS];
             float dis = DrawHelpers.Smooth((t - DepartAt - dsp * OrderOf(dro, i, n, p.Seed + 77)) / ddu);
 
-            float shimmer = 1f + 0.07f * MathF.Sin(ctx.Time * 2.1f + seedPhase + i * 0.7f);
             int h = p.Seed * 131 + i * 17;
-            float come = 1f - up;
-            var L = new Letter { Focus = up * (1f - dis) * shimmer, Spread = 1f };
+            var L = new Letter { Focus = arrived * (1f - dis), Spread = 1f, Glimmer = 1f + 0.15f * MathF.Sin(ctx.Time * 2.1f + seedPhase + i * 0.7f) };
 
             switch (inS)
             {
@@ -123,7 +123,7 @@ public sealed class ParticleWhisper : IParticleMaterial
                 case 2: L.Shift += new Vector2(DrawHelpers.HashRange(h + 2, -1f, 1f), DrawHelpers.HashRange(h + 3, -1f, 1f)) * (0.5f * unit * come); break;
                 case 3: L.Shift.X -= mid * 0.30f * unit * come; break;
                 case 4: L.Shift.X += (flip ? -1f : 1f) * 1.5f * unit * come; break;
-                case 5: L.Pop = t >= start ? MathF.Exp(-(t - start) / 0.04f) : 0f; break;
+                case 5: L.Pop = t >= start ? MathF.Exp(-(t - start) / 0.05f) : 0f; break;
             }
 
             switch (outS)
@@ -136,14 +136,13 @@ public sealed class ParticleWhisper : IParticleMaterial
                 case 5: L.Shift.X -= mid * 0.60f * unit * dis; break;
             }
 
-            // Blooming in and evaporating out go through an extra-soft blur.
-            float soft = MathF.Max(MathF.Min(1.5f, MathF.Max(come * (inS == 1 ? 1.5f : 1f), dis * (outS == 2 ? 1.5f : 1f))), 1f - DrawHelpers.Saturate(L.Focus));
-            L.Soft = soft;
+            // The more transparent, the softer; blooming in and evaporating out go through an extra-soft blur.
+            L.Soft = MathF.Min(1.5f, MathF.Max((1f - arrived) * (inS == 1 ? 1.5f : 1f), dis * (outS == 2 ? 1.5f : 1f)));
             letters[i] = L;
         }
 
-        // The phrase hangs a little askew, turned about its vertical axis so one end is nearer.
-        var pose = new Pose(p.DrawPos, unit, DrawHelpers.HashRange(p.Seed + 5, -0.55f, 0.55f), width, p.Rotation);
+        // The phrase hangs a little askew, turned about its vertical axis so one end is nearer, and swivels slowly.
+        var pose = new Pose(p.DrawPos, unit, DrawHelpers.HashRange(p.Seed + 5, -0.70f, 0.70f) + 0.14f * MathF.Sin(ctx.Time * 0.35f + seedPhase), width, p.Rotation);
         // Shallow depth of field: the middle distance is in focus, the near and far are soft.
         float blur = depth == 0 ? 1.9f : depth == 1 ? 1.0f : 1.6f;
         uint plumC = CharmColor.Vignette, haloC = CharmColor.Glow.Sample(0.34f), roseC = CharmColor.Glow.Sample(0.54f), blushC = CharmColor.Glow.Sample(0.80f), pearlC = CharmColor.Glow.Sample(0.99f);
@@ -168,13 +167,13 @@ public sealed class ParticleWhisper : IParticleMaterial
                 float spread = L.Spread;
                 Vector2 away = L.Shift;
                 float soft = L.Soft;
-                float aCore = k * MathF.Pow(f, 2.2f), aBody = k * 0.92f * MathF.Pow(f, 1.35f) * (1.1f - 0.12f * blur);
+                float aCore = k * MathF.Pow(f, 1.5f), aBody = k * 0.92f * f * (1.1f - 0.12f * blur);
                 float haloReach = unit * MathF.Min(1.1f, (0.34f + 0.55f * soft + 0.5f * L.Pop) * blur);
 
                 if (pass == 0)
                 {
                     if (depth < 2) Glow(g, in pose, x0, lift, spread, away, haloReach * 0.55f, DrawHelpers.Tint(plumC, aBody * 0.36f, overridden), DrawHelpers.Tint(plumC, aBody * 0.16f, overridden));
-                    Glow(g, in pose, x0, lift, spread, away, haloReach, DrawHelpers.Tint(haloC, aBody * (0.20f + 0.5f * L.Pop), overridden), DrawHelpers.Tint(haloC, aBody * (0.09f + 0.25f * L.Pop), overridden));
+                    Glow(g, in pose, x0, lift, spread, away, haloReach, DrawHelpers.Tint(haloC, aBody * L.Glimmer * (0.20f + 0.5f * L.Pop), overridden), DrawHelpers.Tint(haloC, aBody * L.Glimmer * (0.09f + 0.25f * L.Pop), overridden));
                 }
                 else
                 {

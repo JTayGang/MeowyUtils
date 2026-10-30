@@ -98,6 +98,7 @@ public sealed class LiquidJet
         rLoc *= MathF.Max(0.55f, 1f + 0.20f * churn * Noise.Value(t0 * 6.3f + Seed * 0.7f, 3.1f));  // lumps, fixed to the parcel so they stretch as it speeds up
         float e = Eps(i, _r[s], rLoc, a, f);
         float m = 1f - e * BeadCos[(int)(i % Bead)];  // the cross-section's ripple; zero is a closed neck
+        rLoc *= 1f + 0.14f * e * (DrawHelpers.Hash01(Seed + (int)(i / Bead) * 17 + 5) * 2f - 1f);  // as it breaks up, each bead carries its own share
         return new Parcel
         {
             E = e,
@@ -448,8 +449,8 @@ public sealed class LiquidField
         {
             Owner = _owner, Pos = pos, Vel = vel, Gravity = new Vector2(0f, Gravity), Drag = drag,
             Born = Time - 0.3f * life, Life = life,  // born past the fade-in: a bead that has just let go is already there
-            Size = r, Brightness = 1f, Seed = seed, ColorOverride = Color,
-            Variant = r < 1.7f * Px ? GoopDraw.Speck : 0,
+            Released = Time, Size = r, Brightness = 1f, Seed = seed, ColorOverride = Color,
+            Variant = r < 1.7f * Px ? GoopDraw.Speck : GoopDraw.Free,
         });
     }
 
@@ -538,7 +539,7 @@ public sealed class LiquidField
             {
                 Owner = _owner, Pos = bead, Vel = new Vector2(DrawHelpers.HashRange(cs + 7, -10f, 10f) * Px, DrawHelpers.HashRange(cs + 5, ph.ReleaseMin, ph.ReleaseMax) * Px),
                 Gravity = new Vector2(0f, Gravity), Drag = ph.Drag, Anchor = anchor, Pinch = bead,
-                Born = Time - 1.2f, Life = 4f, Size = rb, Brightness = 1f, Tether = neck, RecoilTime = 0.15f + 0.12f * ph.Stringiness,
+                Born = Time - 1.2f, Life = 4f, Released = Time, Variant = GoopDraw.Free, Size = rb, Brightness = 1f, Tether = neck, RecoilTime = 0.15f + 0.12f * ph.Stringiness,
                 Seed = cs, ColorOverride = Color,
             });
             if (!_drops.Full && DrawHelpers.Hash01(cs + 8) < ph.Satellites)

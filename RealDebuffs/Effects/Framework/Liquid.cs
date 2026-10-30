@@ -111,7 +111,8 @@ internal sealed class DropPool
         public float Drag;
         public int   Seed;
         public int   HostSeed;  // the strand it came from, so it is drawn with that strand
-        public int   Variant;  // GoopDraw.Speck for a droplet too small to mesh
+        public int   Variant;  // GoopDraw.Speck for a droplet too small to mesh, GoopDraw.Free for one that wobbles as it falls
+        public float Released;  // when it came loose (Free drops animate their shape from it)
         public string? Material;
         public Vector4? ColorOverride;
     }
@@ -167,6 +168,7 @@ internal sealed class DropPool
                 HasHost = hosted, HostSeed = d.HostSeed,
                 Role = PrimitiveRole.Goop,
                 Variant = d.Variant,
+                Age = time - d.Released,
                 MaterialName = d.Material,
                 ColorOverride = d.ColorOverride,
             };

@@ -14,10 +14,15 @@ internal static class GoopDraw
     /// <summary>ParticlePrimitive.Variant for a droplet too small to be worth a mesh: a streak with a glint.</summary>
     public const int Speck = 1;
 
+    /// <summary>ParticlePrimitive.Variant for a drop in free fall: it wobbles long and flat, rounds up and flattens with speed, and keeps only the tail its liquid would (needs Age).</summary>
+    public const int Free = 2;
+
     /// <summary>Everything about how this particle is coloured, resolved once.</summary>
     private struct Look
     {
         public LiquidMatcap Liquid;
+        public LiquidPhysics Phys;
+        public float Scale;
         public float Alpha;
         public float Feather;
         public bool  Overridden;
@@ -25,7 +30,7 @@ internal static class GoopDraw
         public Vector2 Uv;
     }
 
-    public static void Draw(ImDrawListPtr dl, in ParticlePrimitive p, LiquidMatcap liquid, in MaterialContext ctx)
+    public static void Draw(ImDrawListPtr dl, in ParticlePrimitive p, Liquid liquid, in MaterialContext ctx)
     {
         float alpha = p.Brightness * ctx.Alpha;
         float rb = p.Size;
@@ -33,7 +38,9 @@ internal static class GoopDraw
 
         var look = new Look
         {
-            Liquid = liquid,
+            Liquid = liquid.Matcap,
+            Phys = liquid.Phys,
+            Scale = MathF.Max(ctx.ScreenScale, 0.25f),
             Alpha = alpha > 1f ? 1f : alpha,
             Feather = MathF.Max(0.8f, ctx.ScreenScale * 0.9f),
             Overridden = DrawHelpers.ColorOverrideActive,
@@ -52,7 +59,8 @@ internal static class GoopDraw
             return;
         }
         if (threaded) Stub(dl, in p, in look);
-        Bead(dl, in p, in look);
+        if (p.Variant == Free) FreeDrop(dl, in p, in look);
+        else Bead(dl, in p, in look);
     }
 
     /// <summary>A flying droplet at a few pixels: a soft streak along its motion (as a camera would blur it), lit by the same table, with a glint when big enough.</summary>
@@ -173,9 +181,43 @@ internal static class GoopDraw
         float sigma = Math.Clamp(speed / 900f, 0f, 1.4f);
         float a = rb * (1f + 0.32f * sigma);  // half-length of the bead along the axis
         float tail = rb * (0.35f + 1.9f * sigma);
+        Teardrop(dl, p.Position, d, a, rb, tail, 1f, in look);
+    }
+
+    /// <summary>A drop in free fall. Every drop is its own shape: it wobbles between long and flat at its own pace (a thick liquid soon stops), air squashes the big fast ones, and the tail it had when it let go draws back in.</summary>
+    private static void FreeDrop(ImDrawListPtr dl, in ParticlePrimitive p, in Look look)
+    {
+        float rb = p.Size, speed = p.Velocity.Length(), age = p.Age, scale = look.Scale;
+        Vector2 d = speed > 1e-2f ? p.Velocity / speed : Vector2.UnitY;
+        float h1 = DrawHelpers.Hash01(p.Seed * 7 + 1), h2 = DrawHelpers.Hash01(p.Seed * 7 + 2), h3 = DrawHelpers.Hash01(p.Seed * 7 + 3), h4 = DrawHelpers.Hash01(p.Seed * 7 + 4), h5 = DrawHelpers.Hash01(p.Seed * 7 + 5);
+        var ph = look.Phys;
+        float big = DrawHelpers.Smooth(rb / (6f * scale));
+
+        float freq = DrawHelpers.Lerp(9f, 4f, big);  // Hz: small drops ring faster
+        float ring = DrawHelpers.Lerp(1.2f, 0.07f, MathF.Pow(ph.Viscosity, 0.6f));  // seconds the ringing lasts
+        float wobble = (0.10f + 0.40f * h1) * MathF.Exp(-age / ring) * MathF.Cos(MathF.Tau * (freq * age + h2));
+        float fast = MathF.Min(1f, speed / (2400f * scale));
+        float flat = 0.10f * DrawHelpers.Smooth(rb / (7f * scale)) * fast;
+        float blur = 0.58f * MathF.Pow(h5, 1.4f) * fast * (1f - 0.35f * big);  // fast drops are drawn stretched along their travel, each by its own amount
+
+        float q = Math.Clamp((1f + wobble) * (1f + blur) - flat, 0.74f, 1.9f);  // long axis over short; the volume stays that of a sphere of radius rb
+        float b = rb / MathF.Cbrt(q), a = b * q;
+
+        float st = ph.Stringiness;
+        float keep = DrawHelpers.Smooth(0.55f, 1f, h3);  // zero for most; some drops stay teardrops, each with its own length of tail
+        float tail = rb * ((0.5f + 2.2f * st) * (0.5f + h3) * MathF.Exp(-age / (0.07f + 0.25f * st)) + (1.1f * st + 1.7f * keep) * MathF.Min(1f, speed / (900f * scale)));
+
+        var lk = look;
+        lk.Alpha *= 0.84f + 0.16f * h4;
+        Teardrop(dl, p.Position, d, a, b, tail, DrawHelpers.Smooth(tail / (1.3f * rb)), in lk);  // a short tail is thin too, so it fades out instead of leaving a nub
+    }
+
+    /// <summary>A bead of half-length a and radius rb along d, drawing out into a pointed tail of the given length behind it.</summary>
+    private static void Teardrop(ImDrawListPtr dl, Vector2 at, Vector2 d, float a, float rb, float tail, float tailW, in Look look)
+    {
         float sc = tail + a;  // axis distance from the tail tip to the bead's centre
 
-        Vector2 start = p.Position - d * sc;
+        Vector2 start = at - d * sc;
 
         Span<float> s = stackalloc float[MaxRows];
         Span<float> r = stackalloc float[MaxRows];
@@ -186,7 +228,7 @@ internal static class GoopDraw
         for (int k = 0; k < tailRows; k++)
         {
             float sk = (sc - a) * k / tailRows;
-            s[n] = sk; r[n] = TeardropRadius(sk, sc, a, rb); n++;
+            s[n] = sk; r[n] = TeardropRadius(sk, sc, a, rb, tailW); n++;
         }
 
         const int beadRows = 10;
@@ -194,25 +236,24 @@ internal static class GoopDraw
         {
             float sk = sc - a * BeadCos[k];
             if (sk <= s[n - 1] + 0.05f) continue;
-            s[n] = sk; r[n] = TeardropRadius(sk, sc, a, rb); n++;
+            s[n] = sk; r[n] = TeardropRadius(sk, sc, a, rb, tailW); n++;
         }
         s[n] = sc + a; r[n] = 0f; n++;
 
         Tube(dl, start, d, s, r, n, attachFade: 0f, in look);
-        Glint(dl, p.Position, d, a, rb, in look);
+        Glint(dl, at, d, a, rb, in look);
     }
 
-    private static float TeardropRadius(float s, float sc, float a, float rb)
+    private static float TeardropRadius(float s, float sc, float a, float rb, float tailW = 1f)
     {
         float u = (s - sc) / a;
         float sphere = u * u < 1f ? rb * MathF.Sqrt(1f - u * u) : 0f;
         if (s >= sc) return sphere;
         float t = Math.Clamp(s / MathF.Max(sc - a * 0.35f, 1e-3f), 0f, 1f);
-        float tailR = rb * 0.92f * MathF.Pow(t, 1.9f);
+        float tailR = rb * 0.92f * MathF.Pow(t, 1.9f) * tailW;
         return SmoothMax(tailR, sphere, rb * 0.5f);
     }
 
-    /// <summary>The thread left on the surface after a drop lets go, recoiling up toward its anchor.</summary>
     private static void Stub(ImDrawListPtr dl, in ParticlePrimitive p, in Look look)
     {
         Vector2 toEnd = p.ThreadEnd - p.Anchor;

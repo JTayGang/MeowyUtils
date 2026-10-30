@@ -105,6 +105,9 @@ public struct ParticlePrimitive
     /// <summary>Which way the particle's own "up" points, in radians clockwise from screen-up.</summary>
     public float Rotation;
 
+    /// <summary>Seconds since it came loose, for materials that animate a free particle's shape (Goop's Free variant).</summary>
+    public float Age;
+
     // Optional thread. Zero is neutral, so a particle that never sets these draws as it always did.
 
     /// <summary>Filament thickness joining the particle to a point it is attached to</summary>

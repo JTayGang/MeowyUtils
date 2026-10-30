@@ -167,7 +167,7 @@ public abstract class ParticleGoop : IParticleMaterial
     public Liquid Liquid { get; }
 
     public void Draw(ImDrawListPtr dl, in ParticlePrimitive p, in MaterialContext ctx) =>
-        GoopDraw.Draw(dl, in p, Liquid.Matcap, in ctx);
+        GoopDraw.Draw(dl, in p, Liquid, in ctx);
 
     public ReadOnlySpan<StrokeEmission> Emissions => _emissions;
 

@@ -11,13 +11,13 @@ public sealed class DropsyEffect : SceneEffect, IHasSwappableSlots
     {
         new("Particle", PrimitiveRole.Goop,       "Liquid",           "particle.water", Hero: true),
         new("Region",   PrimitiveRole.MainStroke, "Pool and streams", "region.liquid", "EdgeGlow"),
-        new("Region",   PrimitiveRole.MainStroke, "Murk",             "region.flat-fill", "FlatFill"),
+        new("Region",   PrimitiveRole.MainStroke, "Flash",            "region.flat-fill", "FlatFill"),
     };
 
     private const float PoolDepth = 0.15f;  // of the screen height
     private const float SideZone = 0.20f;  // leaks may also start this far down the side edges
     private const int Leaks = 9, Drips = 12;
-    private const float FillSecs = 3.2f;  // the pool takes this long to rise
+    private const float FillSecs = 3.2f;  // the pool takes this long to rise, once water lands
 
     private enum Size { Gusher, Medium, Pinhole }
 
@@ -41,7 +41,7 @@ public sealed class DropsyEffect : SceneEffect, IHasSwappableSlots
     private readonly float[] _dripEnd = new float[Drips];
     private readonly CastTracker _cast = new(envelope: true);
     private Burst _burst;
-    private float _nextLeak, _nextEvent, _nextDrip, _fill, _breath;
+    private float _nextLeak, _nextEvent, _nextDrip, _fill, _breath, _contact;
     private int _target, _spawned;
 
     public DropsyEffect() : base(DebuffKind.Dropsy, "Dropsy",
@@ -87,6 +87,7 @@ public sealed class DropsyEffect : SceneEffect, IHasSwappableSlots
         _nextLeak = 0f;
         _nextEvent = _field.Rand(2.4f, 4f);
         _nextDrip = 0f;
+        _contact = -1f;
     }
 
     /// <summary>Runs the cast: opens and closes leaks, sets each one's flow and aim, fires the odd spray, and sets the pool's depth.</summary>
@@ -109,7 +110,13 @@ public sealed class DropsyEffect : SceneEffect, IHasSwappableSlots
         if (open) Events(in f);
         Spritz(dt);
 
-        float rise = 1f - MathF.Exp(-t / (FillSecs * 0.45f));
+        // the pool starts to rise when the first water reaches the bottom, so it looks filled by what is pouring in
+        if (_contact < 0f)
+        {
+            foreach (var l in _leaks) if (l.Jet.Wet) { _contact = t; break; }
+            if (_contact < 0f && t > 1.5f) _contact = t;  // nothing landed: do not hold the pool back
+        }
+        float rise = _contact < 0f ? 0f : 1f - MathF.Exp(-(t - _contact) / (FillSecs * 0.45f));
         _field.Level = f.Size.Y * PoolDepth * _fill * rise * (0.55f + 0.45f * keep) * (1f + 0.04f * MathF.Sin(0.7f * t + _breath));
         _field.Chop = 0.35f + 1.2f * MathF.Exp(-t / 1.8f);
     }
@@ -275,14 +282,13 @@ public sealed class DropsyEffect : SceneEffect, IHasSwappableSlots
     private static float Cycle(float t, float period) => t - period * MathF.Floor(t / period);
     private static float Bump(float u) => u is > 0f and < 1f ? MathF.Sin(MathF.PI * u) : 0f;
 
-    /// <summary>A murk and a flash in the liquid's own colour.</summary>
+    /// <summary>A dark vignette, and a flash as the water arrives, in the liquid's own colour.</summary>
     private void Mood(EffectScene scene, in CastFrame f, Liquid liquid)
     {
         var look = liquid.Look;
         Vector3 deep = Matcap.ToDisplay(look.Deep * 0.55f), pale = Matcap.ToDisplay(look.Thin * 1.5f);
         float ramp = DrawHelpers.Saturate(f.Age / 2.4f);
         scene.RequestVignette(DrawHelpers.Pack(deep.X * 0.15f, deep.Y * 0.15f, deep.Z * 0.15f), 0.14f, f.Alpha * 0.85f * ramp, priority: 20, f.Color);
-        scene.Wash(f.Size, DrawHelpers.Pack(deep.X, deep.Y, deep.Z), f.Alpha * 0.26f * ramp, f.Color);
         scene.Wash(f.Size, DrawHelpers.Pack(pale.X, pale.Y, pale.Z), 0.30f * f.Gate * MathF.Exp(-f.Age / 0.22f), f.Color);
     }
 }

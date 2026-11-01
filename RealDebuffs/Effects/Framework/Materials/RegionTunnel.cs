@@ -104,7 +104,6 @@ public sealed class RegionTunnel : IRegionMaterial
 
     // One tessellation for every strip and lip: a changing vertex count would resample the grime and shift the wall.
     private const int WallSegments = 64;
-    private static int SegmentsFor(float scale) => WallSegments;
 
     /// <summary>Fades a detail in as a rib comes near (0 below lo, 1 above hi); a hard threshold popped.</summary>
     private static float Near(float scale, float lo, float hi) => DrawHelpers.Smooth((scale - lo) / (hi - lo));
@@ -170,7 +169,7 @@ public sealed class RegionTunnel : IRegionMaterial
             {
                 int steps = Math.Clamp((int)MathF.Ceiling((end - reach) / 150f), 1, 8);
                 for (int k = 0; k <= steps; k++) rows[k] = new Row(TunnelField.WallRadius, reach + (end - reach) * k / steps, 1f);
-                Strip(f, in e, rows[..(steps + 1)], WallKind, 0, reach);
+                Strip(f, in e, rows[..(steps + 1)], WallKind, reach);
                 Seams(f, in e, rows[..(steps + 1)], i);
             }
             if (i == n) break;
@@ -183,14 +182,14 @@ public sealed class RegionTunnel : IRegionMaterial
             if (bandShow > 0.02f)
             {
                 rows[0] = new Row(TunnelField.RibRadius, back, bandShow); rows[1] = new Row(TunnelField.RibRadius, rib.H, bandShow);
-                Strip(f, in e, rows[..2], BandKind, rib.Seed);
+                Strip(f, in e, rows[..2], BandKind);
             }
             rows[0] = new Row(TunnelField.RibRadius, rib.H, 1f); rows[1] = new Row(TunnelField.WallRadius, rib.H, 1f);
-            Strip(f, in e, rows[..2], FrontKind, rib.Seed);
+            Strip(f, in e, rows[..2], FrontKind);
             reach = rib.H;
 
             // Painter's order: this rib's lip goes in after its own faces and before anything nearer.
-            Lip(f, in e, rib.H, rib.Seed);
+            Lip(f, in e, rib.H);
         }
         Cracks(f, in e);
         Mb.Flush(dl, e.Uv);
@@ -203,18 +202,16 @@ public sealed class RegionTunnel : IRegionMaterial
     }
 
     /// <summary>One strip of wall: rows of vertices, each a full turn round the tunnel, stitched into quads.</summary>
-    private static void Strip(TunnelField f, in Env e, ReadOnlySpan<Row> rows, int kind, int ribSeed, float spanStart = 0f)
+    private static void Strip(TunnelField f, in Env e, ReadOnlySpan<Row> rows, int kind, float spanStart = 0f)
     {
         float px = f.Px, shortSide = f.Short, flightLen = f.Flight.Length, far = f.Flight.FarHeight;
-        float midH = 0.5f * (rows[0].Hu + rows[^1].Hu);
-        float sc = f.Cam.ScaleAt(midH * px);
 
         // Nothing to draw once the whole strip is out beyond the corners of the screen.
         float halfDiag = 0.5f * MathF.Sqrt(f.Size.X * f.Size.X + f.Size.Y * f.Size.Y);
         float inner = MathF.Min(rows[0].Radius, rows[^1].Radius) * shortSide;
         if (inner * f.Cam.ScaleAt(rows[0].Hu * px) * 0.9f > halfDiag * 1.25f && inner * f.Cam.ScaleAt(rows[^1].Hu * px) * 0.9f > halfDiag * 1.25f) return;
 
-        int segs = SegmentsFor(sc);
+        const int segs = WallSegments;
         var (cosT, sinT) = TurnTable(segs);
         int cols = segs + 1, count = rows.Length * cols;
         Mb.Reserve(count, (rows.Length - 1) * segs * 6);
@@ -412,7 +409,7 @@ public sealed class RegionTunnel : IRegionMaterial
     }
 
     /// <summary>The bright lip along a rib's inside edge, with a lens's red and cyan fringes at the frame edges.</summary>
-    private static void Lip(TunnelField f, in Env e, float hu, int seed)
+    private static void Lip(TunnelField f, in Env e, float hu)
     {
         float px = f.Px, shortSide = f.Short;
         float t = f.Flight.Near(hu);
@@ -421,7 +418,7 @@ public sealed class RegionTunnel : IRegionMaterial
         if (k < 0.006f) return;
 
         float h = hu * px, sc = f.Cam.ScaleAt(h);
-        int segs = SegmentsFor(sc);
+        const int segs = WallSegments;
         var (cosT, sinT) = TurnTable(segs);
         float radius = f.RibPx, twist = f.Swirl * hu + f.Roll;
         float ct = MathF.Cos(twist), st = MathF.Sin(twist);

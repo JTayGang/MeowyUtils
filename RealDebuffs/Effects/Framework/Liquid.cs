@@ -51,7 +51,7 @@ public readonly struct LiquidPhysics
         Breakup = At(v, 5.5f, 2.2f, 0f);
         Ripple = At(v, 0.045f, 0.035f, 0.010f);
         Wave = At(v, 460f, 300f, 55f);
-        Damping = At(v, 1.7f, 3.6f, 11f);
+        Damping = At(v, 2.4f, 4.2f, 11f);
         Smooth = At(v, 0f, 500f, 7000f);
         Splash = At(v, 1f, 0.55f, 0.10f);
         Foam = At(v, 1f, 0.45f, 0f);

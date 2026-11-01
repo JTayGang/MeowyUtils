@@ -201,3 +201,31 @@ internal static class CharmColor
     /// <summary>The flush a charm lands with (rose-white, so it stays chromatic under a colour override).</summary>
     public static readonly uint Flash = DrawHelpers.Pack(1.000f, 0.700f, 0.860f);
 }
+
+/// <summary>Amnesia: milky lilac fog and pearl light over deep indigo ink.</summary>
+internal static class MemoryColor
+{
+    /// <summary>Light, dim to hot: 0 = indigo ink, 0.3 = periwinkle, 0.55 = lavender, 0.78 = pearl lilac, 1 = warm pearl.</summary>
+    public static readonly Palette Glow = new(
+        (0.00f, 0.100f, 0.100f, 0.270f),
+        (0.30f, 0.300f, 0.330f, 0.620f),
+        (0.55f, 0.580f, 0.620f, 0.880f),
+        (0.78f, 0.820f, 0.860f, 0.980f),
+        (1.00f, 1.000f, 0.980f, 0.960f));
+
+    /// <summary>Fog lit from within: 0 = slate indigo shadow, 0.4 = periwinkle, 0.75 = milky lilac, 1 = pearl.</summary>
+    public static readonly Palette Fog = new(
+        (0.00f, 0.420f, 0.430f, 0.620f),
+        (0.40f, 0.660f, 0.680f, 0.860f),
+        (0.75f, 0.880f, 0.890f, 0.980f),
+        (1.00f, 0.990f, 0.980f, 0.990f));
+
+    /// <summary>The deep tone behind script and ribbon.</summary>
+    public static readonly uint Ink = DrawHelpers.Pack(0.070f, 0.070f, 0.200f);
+
+    /// <summary>Edge tint for the screen's vignette: pale lilac, so the edges bleach rather than darken.</summary>
+    public static readonly uint Vignette = DrawHelpers.Pack(0.800f, 0.820f, 0.940f);
+
+    /// <summary>The white-out a lapse lands with (lilac-tinged, so it stays chromatic under a colour override).</summary>
+    public static readonly uint Flash = DrawHelpers.Pack(0.930f, 0.930f, 1.000f);
+}

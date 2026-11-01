@@ -117,6 +117,7 @@ public static class MaterialRegistry
         Add(Regions, new RegionFrost());
         Add(Regions, new RegionTunnel());
         Add(Regions, new RegionLiquid());
+        Add(Regions, new RegionVortex());
 
         Add(Strokes, new StrokeSimple());
         Add(Strokes, new StrokeChain());
@@ -134,6 +135,7 @@ public static class MaterialRegistry
         Add(Strokes, new StrokeSigil("stroke.haunt", HauntColor.Glow, "particle.spirit", "ghostlight", "spectral", "specter", "wraithlight"));
         Add(Strokes, new StrokeGlow("stroke.hauntglow", HauntColor.Glow, "hauntglow", "ghostglow", "pallor"));
         Add(Strokes, new StrokeWisp());
+        Add(Strokes, new StrokeSilk());
 
         Add(Particles, new ParticleEmber());
         Add(Particles, new ParticleCinder());
@@ -162,6 +164,8 @@ public static class MaterialRegistry
         Add(Particles, new ParticleRune("particle.omen", HauntColor.Glow, 0, RuneGlyphs.FirstSilence, "omen", "omens", "hallucination", "hallucinations"));
         Add(Particles, new ParticleMote("particle.stardust", CharmColor.Glow, true, "stardust", "pixie", "pixies", "faerie", "faeries"));
         Add(Particles, new ParticleMote("particle.spirit", HauntColor.Glow, false, "spirit", "spirits", "soul", "souls", "wraith", "wraiths"));
+        Add(Particles, new ParticleWhisper("particle.fugue", MemoryColor.Glow, MemoryColor.Ink, AmnesiaWhispers.Phrases, "fugue", "forgotten", "oblivion", "mumbling"));
+        Add(Particles, new ParticleMote("particle.lethe", MemoryColor.Glow, true, "lethe", "memory", "memories", "recollections"));
 
         var vocabulary = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var material in All)

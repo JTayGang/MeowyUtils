@@ -6,8 +6,22 @@ namespace RealDebuffs.Effects.Framework.Materials;
 /// <summary>A whispered phrase in glowing script. Size = x-height px; Variant = phrase + 1 (10 bits) | depth (2 bits: 0 near, 1 mid, 2 far) | how it arrives (3 bits) | how it leaves (3 bits); Velocity = the way it is breathed off.</summary>
 public sealed class ParticleWhisper : IParticleMaterial
 {
-    public string Name => "particle.whisper";
-    public string[] NaturalLanguageWords { get; } = { "whisper", "whispers", "murmur", "murmurs", "words", "script" };
+    private readonly string _name;
+    private readonly Palette _glow;
+    private readonly uint _ink;
+    private readonly string[] _phrases;
+
+    /// <summary>Charm's rose script (particle.whisper).</summary>
+    public ParticleWhisper() : this("particle.whisper", CharmColor.Glow, CharmColor.Vignette, CharmWhispers.Phrases, "whisper", "whispers", "murmur", "murmurs", "words", "script") { }
+
+    /// <summary>The script in another palette and phrase book: one registered per theme (see particle.fugue).</summary>
+    internal ParticleWhisper(string name, Palette glow, uint ink, string[] phrases, params string[] words)
+    {
+        _name = name; _glow = glow; _ink = ink; _phrases = phrases; NaturalLanguageWords = words;
+    }
+
+    public string Name => _name;
+    public string[] NaturalLanguageWords { get; }
 
     public const int PhraseBits = 10, DepthShift = 10, ArriveShift = 12, DepartShift = 15;
 
@@ -81,7 +95,7 @@ public sealed class ParticleWhisper : IParticleMaterial
         float k = p.Brightness * ctx.Alpha;
         if (k <= 0.004f || p.Size <= 2f) return;
 
-        var phrases = CharmWhispers.Phrases;
+        var phrases = _phrases;
         int pick = (p.Variant & ((1 << PhraseBits) - 1)) - 1;
         if (pick < 0) pick = (int)(DrawHelpers.Hash01(p.Seed + 3) * phrases.Length);
         string text = phrases[pick % phrases.Length];
@@ -145,7 +159,7 @@ public sealed class ParticleWhisper : IParticleMaterial
         var pose = new Pose(p.DrawPos, unit, DrawHelpers.HashRange(p.Seed + 5, -0.70f, 0.70f) + 0.14f * MathF.Sin(ctx.Time * 0.35f + seedPhase), width, p.Rotation);
         // Shallow depth of field: the middle distance is in focus, the near and far are soft.
         float blur = depth == 0 ? 1.9f : depth == 1 ? 1.0f : 1.6f;
-        uint plumC = CharmColor.Vignette, haloC = CharmColor.Glow.Sample(0.34f), roseC = CharmColor.Glow.Sample(0.54f), blushC = CharmColor.Glow.Sample(0.80f), pearlC = CharmColor.Glow.Sample(0.99f);
+        uint plumC = _ink, haloC = _glow.Sample(0.34f), roseC = _glow.Sample(0.54f), blushC = _glow.Sample(0.80f), pearlC = _glow.Sample(0.99f);
 
         // Two passes over every letter (halos, then bodies), so one letter's glow never sits over another's core.
         Span<uint> line = stackalloc uint[7];

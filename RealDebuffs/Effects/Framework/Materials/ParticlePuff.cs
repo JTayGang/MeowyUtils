@@ -120,7 +120,21 @@ public sealed class ParticlePuff : IParticleMaterial
             BiasVelocity: new Vector2(0f, -6f),
             PrimaryDirection: new Vector2(0f, -1f)));
 
-    public static readonly ParticlePuff[] All = { Smoke, Mist, Dust, Miasma, Thunderhead, Brimstone, Gloom, Rosefog };
+    // Milky haze: a billow of pearl and lilac, slate in its folds
+    public static readonly ParticlePuff Pearlfog = new("particle.pearlfog", new[] { "pearlfog", "milk", "cloud", "clouds", "brume" },
+        new Look(Warm: DrawHelpers.Pack(0.84f, 0.86f, 0.96f), Cool: 0, CoolSpan: 0f,
+                 GrowFrom: 0.80f, GrowBy: 0.28f, FadeIn: 0.20f, FadeOutAt: 0.72f,
+                 Alpha: 0.56f, Squash: 0.78f, Irregular: 0.30f, MinSize: 6f, Ramp: MemoryColor.Fog),
+        new StrokeEmission(Role: PrimitiveRole.Mist,
+            DensityPer100px: 0.30f,
+            SpeedMin: 5f, SpeedMax: 12f,
+            LifespanMin: 3.0f, LifespanMax: 5.0f,
+            SizeMin: 40f, SizeMax: 80f,
+            SpreadRadians: 1.4f,
+            BiasVelocity: new Vector2(0f, -6f),
+            PrimaryDirection: new Vector2(0f, -1f)));
+
+    public static readonly ParticlePuff[] All = { Smoke, Mist, Dust, Miasma, Thunderhead, Brimstone, Gloom, Rosefog, Pearlfog };
 
     private const int Segs = 12;
 

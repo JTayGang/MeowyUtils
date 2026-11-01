@@ -2,7 +2,7 @@
 
 A Dalamud plugin for Final Fantasy XIV that turns your debuffs into screen effects: Blind darkens the view, Burns licks fire up from the bottom edge, Bind throws ropes that pull taut. Effects layer and fade in and out smoothly.
 
-Effects so far: Bind, Blind, Burns, Charm, Disease, Doom, Dropsy, Frost, Heavy, Hysteria, Paralysis, Silence, Vulnerability.
+Effects so far: Amnesia, Bind, Blind, Burns, Charm, Disease, Doom, Dropsy, Frost, Heavy, Hysteria, Paralysis, Silence, Vulnerability.
 
 Commands:
 - `/realdebuffs` opens settings.
@@ -83,7 +83,8 @@ No `<TargetFramework>` is set on purpose; the SDK picks the one Dalamud targets.
 - **Color of light**: add a `Palette` in `Palette.cs`, then register `StrokeGlow` / `ParticleMote` (and `StrokeSigil`, `ParticleRune`, `ParticleEmber`, `RegionFirelight` for a full theme) with it. Add new rune glyph sets after the existing ones; don't change `LegacyCount`.
 - **Eyes**: `ParticleEye` (`particle.eye`) draws a shaded eye in any of the `EyeStyle`s, including a lidless `Orb` with its nerve; `ParticleEye.Held(open, style)` lets an effect drive the lids, and small or far eyes use fewer vertices. A themed set registers another instance with its palette. `StrokeWisp` is a soft tapered streamer for things in motion (path runs tail to head).
 - **Fog**: a `ParticlePuff` `Look` with a `Ramp` draws as a billow: a mesh shaded from warped noise and lit from the screen's middle (`Variant` = squash %, `Rotation` = stretch). Give any smoke or mist a `Ramp` to upgrade it.
-- **Script**: `ScriptFont` (`Script.cs`) is a single-stroke cursive alphabet (lowercase, `' , . ! ? -`, `♥`); `ParticleWhisper` draws a phrase in it. Charm's phrases are `CharmWhispers.Phrases`.
+- **Script**: `ScriptFont` (`Script.cs`) is a single-stroke cursive alphabet (lowercase, `' , . ! ? -`, `♥`); `ParticleWhisper` draws a phrase in it and `WhisperField` spawns and drifts them. Phrases are `CharmWhispers.Phrases` and `AmnesiaWhispers.Phrases`; a themed set registers another `ParticleWhisper` with its palette and phrases.
+- **Vortex**: `RegionVortex` draws a flown-through spiral tunnel from a `VortexField` (`At` places anything on its wall); `StrokeSilk` is a twisting two-tone ribbon for the arms. See `AmnesiaEffect`.
 - **Liquid**: add a `LiquidSpec` (look, plus `Viscosity` 0 water to 1 slime) to `LiquidPresets`, subclass `ParticleGoop` (see `ParticleWater`) and register it. Drips, stream breakup, pool waves, splash and cling all follow from `Viscosity`; any stroke can shed it with `Liquid.Phys.Shed()`.
 - **Pouring liquid**: an effect owns a `LiquidField`: `Begin(..., jets, seeps)` on `f.Fresh || f.Resized` makes idle slots; `Launch` a jet when it is `Idle`, `Place` a seep, set `Flow`, `Speed`, `Angle`, `Level` each frame, then `Step` and `Emit`. `Spray`, `Fling` and `Splat` throw droplets, a drop or lens beads. See `DropsyEffect`; resolve the liquid with `Liquid.Resolve(scene, Kind, role)` so a hero slot swap changes everything.
 - **`DebuffKind`**: add at the END of the enum (values are serialized).

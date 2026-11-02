@@ -27,7 +27,7 @@ public readonly struct LiquidPhysics
     // jets and pools
     public readonly float Breakup;  // 1/s: how fast a falling stream's ripples grow, at an 8 px radius
     public readonly float Ripple;  // size of the ripples a stream starts with
-    public readonly float Wave, Damping, Smooth;  // pool surface: wave speed px/s, decay 1/s, viscous relaxation px^2/s
+    public readonly float Wave, Damping, Smooth;  // pool surface: long-wave speed px/s at 140 px deep, drag 1/s, extra viscosity px^2/s
     public readonly float Splash, Foam, FoamLife;  // droplets thrown, foam laid down, seconds it lasts
     public readonly float Bubbles, Rise;  // bubbles dragged under, and how fast they climb (px/s)
     public readonly float Cling;  // how fast a bead runs down glass, px/s
@@ -50,7 +50,7 @@ public readonly struct LiquidPhysics
 
         Breakup = At(v, 5.5f, 2.2f, 0f);
         Ripple = At(v, 0.045f, 0.035f, 0.010f);
-        Wave = At(v, 460f, 300f, 55f);
+        Wave = At(v, 650f, 424f, 78f);
         Damping = At(v, 2.4f, 4.2f, 11f);
         Smooth = At(v, 0f, 500f, 7000f);
         Splash = At(v, 1f, 0.55f, 0.10f);

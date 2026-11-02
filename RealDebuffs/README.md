@@ -61,7 +61,7 @@ For each primitive the renderer resolves a material in this order: user override
 | `VerletStrand.cs` | Strand physics, `StrandRig`, `RigSet` |
 | `Goop.cs` | Drips shed from strands: `GoopEmitter`, `GoopDraw` |
 | `Liquid.cs` | `LiquidPhysics` (one viscosity axis: water, blood, slime), `Liquid` (look + physics), `DropPool` |
-| `LiquidField.cs`, `LiquidDraw.cs` | Liquid sim and renderer: jets, ceiling drips, wave-equation pool, splashes, bubbles, foam, lens beads |
+| `LiquidField.cs`, `PoolSurface.cs`, `LiquidDraw.cs`, `LiquidDraw.Pool.cs` | Liquid sim and renderer: jets, ceiling drips, standing-wave pool (gravity-wave dispersion, fixed volume), traced light shafts, splashes, bubbles, foam, lens beads |
 | `Mesh.cs`, `Shading.cs` | Triangle-mesh drawing (`MeshBuilder`, `PathRows` for tube materials) and lighting |
 | `Screen.cs` | Screen-edge anchors, growth, wind |
 | `Bolt.cs`, `Dendrite.cs`, `FrostField.cs`, `Noise.cs` | Lightning, branching growth, frost, noise |

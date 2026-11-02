@@ -302,6 +302,7 @@ public sealed class LiquidField
 {
     private const int MaxDrops = 360, MaxBubbles = 64, MaxHits = 48, MaxRebounds = 12, MaxBeads = 44, MaxTrails = 56, TrailPoints = 26, MaxCrowns = 14;
     private const float MaxStep = 0.05f;
+    private const float PoolEddy = 28f, PoolDrag = 0.22f;  // eddy viscosity px^2/s, and the share of a liquid's Damping that drags long swells
 
     public Vector2 Size { get; private set; }
     public float Px { get; private set; }
@@ -327,7 +328,9 @@ public sealed class LiquidField
     // the pool
     private int _n;
     private float _dx;
-    internal float[] H = Array.Empty<float>(), Vel = Array.Empty<float>(), Foam = Array.Empty<float>();
+    private readonly PoolSurface _surf = new();
+    internal float[] H => _surf.H;
+    internal float[] Foam = [];
 
     // bubbles under the surface
     internal struct Bubble { public Vector2 P; public float R, Phase, Age; public Vector2 V; }
@@ -377,9 +380,9 @@ public sealed class LiquidField
 
         _n = Math.Clamp((int)MathF.Round(size.X / (5f * Px)), 96, 640);
         _dx = size.X / (_n - 1);
-        if (H.Length != _n) { H = new float[_n]; Vel = new float[_n]; Foam = new float[_n]; }
-        else { Array.Clear(H); Array.Clear(Vel); Array.Clear(Foam); }
-        Gravity = liquid.Phys.Gravity * Px;
+        _surf.Begin(_n, size.X);
+        if (Foam.Length != _n) Foam = new float[_n]; else Array.Clear(Foam);
+        ApplyGravity();
     }
 
     /// <summary>Starts a stream from at (px): speed in px/s at 1080p, angle in radians from straight down (positive toward +x), radius in px at 1080p. The jet must be Idle.</summary>
@@ -403,7 +406,7 @@ public sealed class LiquidField
     {
         if (liquid == Liquid) return;
         Liquid = liquid;
-        Gravity = liquid.Phys.Gravity * Px;
+        ApplyGravity();
         foreach (var j in _jets) j.Retune(this);
     }
 
@@ -417,17 +420,57 @@ public sealed class LiquidField
         if (_n == 0) return Size.Y;
         float u = Math.Clamp(x / _dx, 0f, _n - 1.001f);
         int i = (int)u;
-        float creep = Level > 0f ? 3.2f * Px * (MathF.Exp(-x / (10f * Px)) + MathF.Exp(-(Size.X - x) / (10f * Px))) : 0f;
-        return Size.Y - Level - (H[i] + (H[i + 1] - H[i]) * (u - i)) - creep;
+        float creep = 0f;  // the meniscus climbs the glass at either edge
+        if (Level > 0f)
+        {
+            if (x < 90f * Px) creep += 3.2f * Px * MathF.Exp(-x / (10f * Px));
+            if (Size.X - x < 90f * Px) creep += 3.2f * Px * MathF.Exp(-(Size.X - x) / (10f * Px));
+        }
+        float h = MathF.Max(H[i] + (H[i + 1] - H[i]) * (u - i), -0.45f * Level);  // a hollow can only go so deep before it meets the floor
+        return Size.Y - Level - h - creep - Swell(x);
     }
 
-    /// <summary>Digs (negative) or heaps (positive) the surface at x; the water shoved aside banks up in a rim round it.</summary>
+    // gentle gravity ripples always running on open water (shorter ones slower), so a calm pool is never dead flat
+    private static readonly (float Wavelength, float Amp, float Dir, float Phase)[] Ripples = [(41f, 0.30f, 1f, 0.7f), (67f, 0.40f, -1f, 2.9f), (109f, 0.50f, 1f, 5.1f)];
+
+    private readonly float[] _rippleK = new float[Ripples.Length], _rippleW = new float[Ripples.Length];
+
+    private void ApplyGravity()
+    {
+        Gravity = Liquid.Phys.Gravity * Px;
+        for (int i = 0; i < Ripples.Length; i++)
+        {
+            float k = MathF.Tau / (Ripples[i].Wavelength * Px);
+            (_rippleK[i], _rippleW[i]) = (k, Ripples[i].Dir * MathF.Sqrt(Gravity * k));  // deep water: w^2 = g k
+        }
+    }
+
+    private float Swell(float x)
+    {
+        if (Level <= 0f) return 0f;
+        float sum = 0f;
+        for (int i = 0; i < Ripples.Length; i++)
+            sum += Ripples[i].Amp * MathF.Sin(_rippleK[i] * x - _rippleW[i] * Time + Ripples[i].Phase);
+        return sum * Px * DrawHelpers.Smooth(Level / (24f * Px));
+    }
+
+    /// <summary>Digs (negative) or heaps (positive) the surface at x with a blow; the water shoved aside banks up in a rim round it.</summary>
     internal void Dimple(float x, float reach, float push)
     {
         Disturb(x, reach, push);
         float rim = -0.45f * push * (1f - Liquid.Phys.Viscosity);
         Disturb(x - 1.7f * reach, reach * 0.9f, rim);
         Disturb(x + 1.7f * reach, reach * 0.9f, rim);
+    }
+
+    /// <summary>Holds a hollow depth px deep under the stream at x (negative heaps), with the water it shoves aside banked up either side.</summary>
+    internal void Hollow(float x, float reach, float depth)
+    {
+        if (depth > 0f) depth = MathF.Min(depth, 0.4f * Level);
+        _surf.Press(x, reach, depth);
+        float rim = -0.22f * depth * (1f - Liquid.Phys.Viscosity);
+        _surf.Press(x - 1.6f * reach, reach * 0.55f, rim);
+        _surf.Press(x + 1.6f * reach, reach * 0.55f, rim);
     }
 
     /// <summary>How far the surface sits below its level at x (zero or more), px.</summary>
@@ -439,16 +482,7 @@ public sealed class LiquidField
     }
 
     /// <summary>Kicks the surface under a Gaussian; positive px/s is up.</summary>
-    internal void Disturb(float x, float reach, float push)
-    {
-        int lo = Math.Max(0, (int)((x - 3f * reach) / _dx)), hi = Math.Min(_n - 1, (int)((x + 3f * reach) / _dx) + 1);
-        float inv = 1f / (2f * reach * reach);
-        for (int i = lo; i <= hi; i++)
-        {
-            float d = i * _dx - x;
-            Vel[i] += push * MathF.Exp(-d * d * inv);
-        }
-    }
+    internal void Disturb(float x, float reach, float push) => _surf.Kick(x, reach, push);
 
     internal void AddFoam(float x, float reach, float amount)
     {
@@ -592,7 +626,7 @@ public sealed class LiquidField
         // a crater, and the ring that leaves it
         float depth = MathF.Min(r * 1.6f, 15f) * MathF.Sqrt(Math.Clamp(v, 0.2f, 2f)) * Px;
         float room = Math.Clamp(1f - Depression(h.X) / (14f * Px), 0f, 1f);  // spray lands again and again in one place: a crater cannot be dug twice
-        Dimple(h.X, MathF.Max(h.R * 1.3f, 3f * Px), -depth / 0.05f * room);
+        Dimple(h.X, MathF.Max(h.R * 1.3f, 3f * Px), -depth * 6f * room);
         AddFoam(h.X, h.R * 1.6f + 3f * Px, 0.18f * s * ph.Foam);
 
         if (r < 1.0f) return;
@@ -655,15 +689,15 @@ public sealed class LiquidField
         float x = j.Hit.X, reach = j.HitR * 1.3f + 5f * Px;
 
         // water digs a hollow; a thick liquid has nowhere to go and piles up instead
-        float dig = DrawHelpers.Lerp(-1f, 0.7f, DrawHelpers.Smooth(0.30f, 0.90f, ph.Viscosity));
-        Dimple(x, reach, dig * F * 420f * Px * dt * MathF.Min(1f, 22f * Px / reach));  // a steady force: the hollow settles near 10 px, however wide the stream
-        Disturb(x + Rand(-1.5f, 1.5f) * reach, reach * 0.6f, Rand(-1f, 1f) * F * 110f * Px * (0.6f + Chop) * dt);  // the boil
+        float dig = DrawHelpers.Lerp(1f, -0.7f, DrawHelpers.Smooth(0.30f, 0.90f, ph.Viscosity));
+        Hollow(x, reach, dig * (3f + 6f * F) * Px);
+        Disturb(x + Rand(-1.5f, 1.5f) * reach, reach * 0.6f, Rand(-1f, 1f) * F * 440f * Px * (0.6f + Chop) * dt);  // the boil
         AddFoam(x, reach * 1.5f, F * dt * 7f * ph.Foam);
 
         // the churn sheds ripples that travel out across the pool
         _ripple += (2f + 5f * F) * dt;
         for (; _ripple >= 1f; _ripple -= 1f)
-            Disturb(x + Rand(-0.8f, 0.8f) * reach, reach * 0.5f, Rand(-1f, 1f) * (56f + 100f * F) * Px * (0.5f + Chop));
+            Disturb(x + Rand(-0.8f, 0.8f) * reach, reach * 0.5f, Rand(-1f, 1f) * (11f + 20f * F) * Px * (0.5f + Chop));
 
         _spray += ph.Splash * MathF.Min(F * 22f, 60f) * dt;
         for (; _spray >= 1f; _spray -= 1f)
@@ -823,28 +857,8 @@ public sealed class LiquidField
     private void StepPool(float dt)
     {
         var ph = Liquid.Phys;
-        float c = ph.Wave * Px * MathF.Sqrt(Math.Clamp(Level / (140f * Px), 0.35f, 1.2f));  // shallow water is slow
-        float dx2 = _dx * _dx, k = c * c / dx2, diff = ph.Smooth * Px * Px / dx2;
-        float kap = 1.2f * k * (1f - ph.Viscosity);  // capillary stiffness: short ripples outrun long swells, so a splash spreads into a fan of rings
-        int sub = Math.Clamp((int)MathF.Ceiling(MathF.Max(5.2f * c * dt / _dx / 1.8f, diff * dt / 0.4f)), 1, 24);
-        float h = dt / sub, damp = ph.Damping, spring = 14f;
-        float floorH = -0.42f * Level;  // a hollow can only go so deep before it meets the floor
-
-        for (int s = 0; s < sub; s++)
-        {
-            for (int i = 0; i < _n; i++)
-            {
-                float h0 = H[i], l = At(i - 1), r = At(i + 1);
-                float bend = At(i - 2) - 4f * l + 6f * h0 - 4f * r + At(i + 2);
-                float wall = h0 < floorH ? 400f * (floorH - h0) : 0f;
-                Vel[i] += h * (k * (l + r - 2f * h0) - kap * bend - spring * h0 - damp * Vel[i] + wall);
-            }
-            for (int i = 0; i < _n; i++)
-            {
-                float l = At(i - 1), r = At(i + 1);
-                H[i] += h * (Vel[i] + diff * (l + r - 2f * H[i]));
-            }
-        }
+        float g = ph.Wave * ph.Wave * Px / 140f, nu = (PoolEddy + ph.Smooth) * Px * Px;
+        _surf.Step(dt, Level, g, nu, PoolDrag * ph.Damping);
 
         // foam fades, and spreads a little along the surface
         float fade = MathF.Exp(-dt / MathF.Max(ph.FoamLife, 0.05f));
@@ -856,9 +870,6 @@ public sealed class LiquidField
             prev = cur;
         }
     }
-
-    // the surface with its ends mirrored, so waves reflect off the screen edges
-    private float At(int i) => H[i < 0 ? -i - 1 : i >= _n ? 2 * _n - 1 - i : i];
 
     /// <summary>Hands the scene the pool region, swelling drips, beads and drops.</summary>
     public void Emit(EffectScene scene, float alpha)

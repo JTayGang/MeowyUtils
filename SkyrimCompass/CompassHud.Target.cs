@@ -233,7 +233,7 @@ public sealed partial class CompassHud
         dl.AddQuadFilled(fTL, fTR, fBR, fBL, WithAlpha(0xFFFFFFFFu, _flashAlpha * 0.5f * alpha));
     }
 
-    // Braided ribbons flank the name; they grow in on a new target and speed up and fill with the warning color while it casts.
+    // Soft flowing ribbons flank the name; they grow in on a new target and brighten with the warning color while it casts.
     private void DrawNameRibbons(ImDrawListPtr dl, IGameObject curTarget, float leftEdge, float rightEdge,
         float nameCx, float rowW, float textCy, uint border, float alpha, float t)
     {
@@ -256,8 +256,11 @@ public sealed partial class CompassHud
         float grow = SmoothStep(Math.Clamp((t - _ribbonBorn) / 0.5f, 0f, 1f));
         uint castCol = WithAlpha(C(_cfg.AggroWarningColor), alpha);
 
-        Ribbon.Draw(dl, V(leftEdge, textCy), V(rL, textCy), border, castCol, alpha, _ribbonPhase, grow, _ribbonEnergy, castDisp, castWipe, 0f);
-        Ribbon.Draw(dl, V(rightEdge, textCy), V(rR, textCy), border, castCol, alpha, _ribbonPhase + 2.1f, grow, _ribbonEnergy, castDisp, castWipe, 0.37f);
+        // The shadow keeps the old side-specific phase rates and offsets, but stays a dark counter-wave.
+        Ribbon.Draw(dl, V(leftEdge, textCy), V(rL, textCy), border, castCol, alpha, _ribbonPhase, grow, _ribbonEnergy, castDisp, castWipe,
+            0f, _ribbonPhase * 0.65f + 14.2f);
+        Ribbon.Draw(dl, V(rightEdge, textCy), V(rR, textCy), border, castCol, alpha, _ribbonPhase + 2.1f, grow, _ribbonEnergy, castDisp, castWipe,
+            0.37f, _ribbonPhase * 0.71875f + 5.3f);
     }
 
     private void DrawPercent(ImDrawListPtr dl, string pct, float px, float py, float size, float alpha) =>

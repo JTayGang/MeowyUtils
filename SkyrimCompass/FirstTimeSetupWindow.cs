@@ -1,6 +1,7 @@
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Windowing;
+using static SkyrimCompass.Loc;
 
 namespace SkyrimCompass;
 
@@ -28,15 +29,14 @@ public sealed class FirstTimeSetupWindow : Window
 
     public override void OnClose()
     {
-        if (!plugin.Config.HasCompletedFirstTimeSetup)
-        {
-            plugin.Config.HasCompletedFirstTimeSetup = true;
-            plugin.Config.Save(plugin.PluginInterface);
-        }
+        if (plugin.Config.HasCompletedFirstTimeSetup) return;
+        plugin.Config.HasCompletedFirstTimeSetup = true;
+        plugin.Config.Save(plugin.PluginInterface);
     }
 
     public override void PreDraw()
     {
+        WindowName = L("Welcome to Skyrim Compass", "skyrimcompasssetup");
         var vp = ImGui.GetMainViewport();
         var center = new Vector2(vp.Pos.X + vp.Size.X * 0.5f, vp.Pos.Y + vp.Size.Y * 0.5f);
         ImGui.SetNextWindowPos(center, ImGuiCond.Appearing, new Vector2(0.5f, 0.5f));
@@ -46,32 +46,30 @@ public sealed class FirstTimeSetupWindow : Window
     {
         var cfg = plugin.Config;
 
-        ImGui.TextWrapped(
-            "Pick how you want to use this plugin. This is just a \"preset\", you can change everything later using /compass config.");
-
+        ImGui.TextWrapped(T("Pick a starting look. You can change everything later with /compass config."));
         ImGui.Spacing();
         ImGui.Separator();
         ImGui.Spacing();
 
-        bool everything  = cfg.ShowCompassBar && cfg.ShowTargetBar;
-        bool moodlesOnly = !cfg.ShowCompassBar && !cfg.ShowTargetBar;
+        bool everything  = cfg.ShowCompassBar && cfg.ShowTargetBar && cfg.ShowTargetStatuses;
+        bool statusOnly = !cfg.ShowCompassBar && !cfg.ShowTargetBar && cfg.ShowTargetStatuses;
 
-        if (DrawModeCard(
-                "Give me everything", everything,
-                "Full compass strip, target health bar, and Moodles/Loci status icons. This is the what I was originally intended."))
+        if (DrawModeCard("all", T("Give me everything"), everything,
+                T("The compass strip, target health bars and status icons.")))
         {
             cfg.ShowCompassBar = true;
             cfg.ShowTargetBar = true;
+            cfg.ShowTargetStatuses = true;
         }
 
         ImGui.Spacing();
 
-        if (DrawModeCard(
-                "I'm just here for Moodles + Loci", moodlesOnly,
-                "Turns off everything except the Moodles/Loci status bar needed to show all statuses correctly."))
+        if (DrawModeCard("status", T("I'm only here for Moodles + Loci"), statusOnly,
+                T("Hides the compass and health bars. Keeps the status icons, which are what show Moodles and Loci.")))
         {
             cfg.ShowCompassBar = false;
             cfg.ShowTargetBar = false;
+            cfg.ShowTargetStatuses = true;
         }
 
         ImGui.Spacing();
@@ -84,8 +82,7 @@ public sealed class FirstTimeSetupWindow : Window
         ImGui.Separator();
         ImGui.Spacing();
 
-        float footerWidth = ImGui.GetContentRegionAvail().X;
-        if (ImGui.Button("Get Started", new Vector2(footerWidth, 32f)))
+        if (ImGui.Button(L("Done", "done"), new Vector2(ImGui.GetContentRegionAvail().X, 32f)))
         {
             cfg.HasCompletedFirstTimeSetup = true;
             cfg.Save(plugin.PluginInterface);
@@ -93,7 +90,7 @@ public sealed class FirstTimeSetupWindow : Window
         }
     }
 
-    private static bool DrawModeCard(string title, bool selected, string description)
+    private static bool DrawModeCard(string id, string title, bool selected, string description)
     {
         float width = ImGui.GetContentRegionAvail().X;
         var accent = selected ? AccentGreen : NeutralGrey;
@@ -104,19 +101,13 @@ public sealed class FirstTimeSetupWindow : Window
         ImGui.PushStyleColor(ImGuiCol.Border, new Vector4(accent.X, accent.Y, accent.Z, selected ? 0.95f : 0.35f));
         ImGui.PushStyleVar(ImGuiStyleVar.FrameBorderSize, selected ? 2.0f : 1.0f);
 
-        bool clicked = ImGui.Button(title, new Vector2(width, 34f));
+        bool clicked = ImGui.Button($"{title}##card{id}", new Vector2(width, 34f));
 
         ImGui.PopStyleVar();
         ImGui.PopStyleColor(4);
 
-        if (selected)
-        {
-            ImGui.SameLine();
-            ImGui.TextColored(AccentGreen, "<- current");
-        }
-
-        ImGui.PushStyleColor(ImGuiCol.Text, DimText);
-        ImGui.TextWrapped(description);
+        ImGui.PushStyleColor(ImGuiCol.Text, selected ? AccentGreen : DimText);
+        ImGui.TextWrapped(selected ? $"{T("Selected")}: {description}" : description);
         ImGui.PopStyleColor();
 
         return clicked;
@@ -125,53 +116,56 @@ public sealed class FirstTimeSetupWindow : Window
     private void DrawMoodlesNotice()
     {
         var mirror = plugin.StatusMirror;
+        ImGui.TextColored(AccentAmber, T("Moodles and Loci"));
 
-        ImGui.TextColored(AccentAmber, "IMPORTANT - setup instructions for moodles/loci users");
+        if (mirror.MoodlesAvailable || mirror.LociAvailable)
+        {
+            ImGui.TextDisabled(F("Found: Moodles {0}, Loci {1}",
+                mirror.MoodlesAvailable ? T("yes") : T("no"), mirror.LociAvailable ? T("yes") : T("no")));
+            DrawChecklist();
+            return;
+        }
 
         ImGui.PushStyleColor(ImGuiCol.Text, DimText);
-        ImGui.TextWrapped(
-            "If Moodles and Loci are left on default settings, every status will pop up " +
-            "TWICE - once from Moodles, once from loci.");
+        ImGui.TextWrapped(T("Neither Moodles nor Loci was found, so you can skip this. If you install them later, type /compass setup to come back."));
         ImGui.PopStyleColor();
+        if (ImGui.CollapsingHeader(L("Show the checklist anyway", "checklist"))) DrawChecklist();
+    }
 
-        ImGui.Spacing();
-        ImGui.TextDisabled(
-            $"Detected right now  -  Moodles: {(mirror.MoodlesAvailable ? "yes" : "not running")}" +
-            $"    Loci: {(mirror.LociAvailable ? "yes" : "not running")}");
+    private static void DrawChecklist()
+    {
+        ImGui.PushStyleColor(ImGuiCol.Text, DimText);
+        ImGui.TextWrapped(T("With the default settings every status pops up twice, once from Moodles and once from Loci. Follow these steps to fix it."));
+        ImGui.PopStyleColor();
         ImGui.Spacing();
 
-        ImGui.TextWrapped("Fix the following in the vanilla status bar:");
-        ImGui.BulletText("Press Escape and open HUD Layout.");
-        ImGui.BulletText("Click the \"Status Effects\" hud element, open UI element settings (the gear icon).");
+        ImGui.TextWrapped(T("Step 1. In the game's own status bar:"));
+        ImGui.BulletText(T("Press Escape and open HUD Layout."));
+        ImGui.BulletText(T("Click \"Status Effects\", then open its settings (the gear icon)."));
         DrawSettingLine("Display as Single Element", shouldBeOn: false);
         ImGui.Spacing();
 
-        ImGui.TextWrapped("Fix the following in Moodles itself:");
-        ImGui.BulletText("Run /moodles to open its settings window.");
-        ImGui.BulletText("Open the Settings tab.");
-
+        ImGui.TextWrapped(T("Step 2. In Moodles:"));
+        ImGui.BulletText(T("Type /moodles and open the Settings tab."));
         DrawSettingLine("Allow other plugins apply Moodles", shouldBeOn: true);
         DrawSettingLine("Allow applying moodles from everyone", shouldBeOn: true);
         DrawSettingLine("Enable Moodle VFX", shouldBeOn: false);
         DrawSettingLine("Enable Fly/Popup Text", shouldBeOn: false);
-  
-
-        ImGui.TextWrapped("Other settings you may or may not need to change:");
         ImGui.Spacing();
-        ImGui.TextWrapped("If you still see double VFX, change this in Loci settings:");
+
+        ImGui.TextWrapped(T("Only if you need it:"));
+        ImGui.TextDisabled(T("Still seeing double effects? In Loci settings:"));
         DrawSettingLine("Loci VFX", shouldBeOn: false);
-
-        ImGui.Spacing();
-        ImGui.TextWrapped("If you care about serious content, change this in both Moodles+Loci:");
+        ImGui.TextDisabled(T("Playing hard content? In both Moodles and Loci:"));
         DrawSettingLine("Disable in combat, Disable in duties/instances", shouldBeOn: true);
-
     }
 
+    // Setting names are the other plugins' own English labels, so they stay untranslated.
     private static void DrawSettingLine(string settingName, bool shouldBeOn)
     {
         ImGui.Bullet();
         ImGui.SameLine();
-        ImGui.TextColored(shouldBeOn ? AccentGreen : AccentRed, shouldBeOn ? "Turn ON " : "Turn OFF");
+        ImGui.TextColored(shouldBeOn ? AccentGreen : AccentRed, shouldBeOn ? T("Turn ON") : T("Turn OFF"));
         ImGui.SameLine();
         ImGui.TextWrapped($"\"{settingName}\"");
     }

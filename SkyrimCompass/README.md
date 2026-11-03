@@ -52,6 +52,7 @@ https://raw.githubusercontent.com/JTayGang/MeowyUtils/main/repo.json
 - Target of target tier with its own warning color when it's targeting you
 - Limit break glow that creeps around the border as your gauge charges
 - 5 built in color themes, or customize every color yourself
+- English and 日本語, following your Dalamud language (changeable at the bottom of the settings window)
 
 <p align="center">
   <img src="images/markers.png" alt="Compass marker icons" width="47%">
@@ -62,7 +63,7 @@ https://raw.githubusercontent.com/JTayGang/MeowyUtils/main/repo.json
 
 ## Configuration
 
-Open with `/compass config`. Settings are split across tabs (Layout, General, Players, Combat, NPCs, Gathering, Treasure, Aetherytes, FATEs), and every option has a hover tooltip explaining what it does.
+Open with `/compass config`. Settings are split across four tabs (Look, Compass, Target, Advanced), and hovering most options explains what they do. **Reset all settings** at the bottom undoes any mess.
 
 <p align="center">
   <img src="images/config.png" alt="Settings window" width="480">
@@ -77,6 +78,7 @@ Open with `/compass config`. Settings are split across tabs (Layout, General, Pl
 | `/compass` | Toggle the compass on/off |
 | `/compass on - /compass off` | For macro use if a big black box was covering your screen or something |
 | `/compass config` | Open settings |
+| `/compass setup` | Open the first-time setup and Moodles/Loci checklist |
 
 The settings window is also reachable from the Dalamud plugin list's gear icon.
 
@@ -101,8 +103,8 @@ Needs the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) (10.0
 
 ## Troubleshooting
 
-- **N and S swapped**: Layout tab, set Rotation Offset to `180`.
-- **Compass not showing**: make sure it's enabled, run `/compass`.
+- **N and S swapped**: Advanced tab, click **Flip North and South**.
+- **Compass not showing**: run `/compass on`, then check the tick boxes at the top of the settings window.
 - **Build error, can't find Dalamud.dll**: confirm `DALAMUD_HOME` is set and XIVLauncher has been run at least once.
 - **`System.Runtime` version mismatch**: install .NET SDK 10.0.101 or later.
 - **API level mismatch after a Dalamud update**: bump `Dalamud.NET.Sdk` to the latest version and update `DalamudApiLevel` in `SkyrimCompass.json` to match.

@@ -1,18 +1,25 @@
 using System;
 using System.Numerics;
-using Dalamud.Interface.Windowing;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Windowing;
+using static SkyrimCompass.Loc;
 
 namespace SkyrimCompass;
 
 public sealed class ConfigWindow : Window
 {
+    private const float SaveDebounceSeconds = 1f;
+    private static readonly Vector4 Amber = new(1f, .82f, .16f, 1f);
+    private static readonly ImGuiColorEditFlags ColorFlags = ImGuiColorEditFlags.NoInputs | ImGuiColorEditFlags.AlphaBar;
+
     private readonly Plugin plugin;
     private PlayerIconOverride _newOverride = new();
-    private int _selectedThemeIndex;
-    private DateTime _lastConfigSave = DateTime.MinValue;
-    private const float ConfigSaveDebounceSeconds = 1f;
-    private bool _configDirty;
+    private string[] _themeNames = [];
+    private int _themeNamesRev = -1;
+    private int _themeIndex;
+    private DateTime _lastSave = DateTime.MinValue;
+    private bool _dirty;
+    private bool _confirmReset;
 
     public ConfigWindow(Plugin plugin) : base("Skyrim Compass Settings##skyrimcompasscfg",
         ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoScrollbar)
@@ -21,290 +28,347 @@ public sealed class ConfigWindow : Window
         SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(370, 200), MaximumSize = new Vector2(620, 800) };
     }
 
+    public override void PreDraw() => WindowName = L("Skyrim Compass Settings", "skyrimcompasscfg");
+
+    public override void OnClose() => Flush();
+
     public override void Draw()
     {
         var cfg = plugin.Config;
-        bool dirty = false;
+        bool ch = false;
 
-        dirty |= DrawToggle("Compass##topcompass", () => cfg.ShowCompassBar, v => cfg.ShowCompassBar = v, "The compass element. Full options in Compass tab.");
+        if (!cfg.Enabled)
+        {
+            ImGui.TextColored(Amber, T("Skyrim Compass is turned off."));
+            ImGui.SameLine();
+            if (ImGui.Button(L("Turn on", "turnon"))) { cfg.Enabled = true; ch = true; }
+        }
+
+        ch |= Toggle(L("Compass", "topcompass"), ref cfg.ShowCompassBar, T("Shows the compass strip. Options are in the Compass tab."));
         ImGui.SameLine();
-        dirty |= DrawToggle("HP bars##tophp", () => cfg.ShowTargetBar, v => cfg.ShowTargetBar = v, "Name+HP bars beneath the compass. Full options in HP Bars & Statuses tab.");
+        ch |= Toggle(L("HP bars", "tophp"), ref cfg.ShowTargetBar, T("Shows name and health bars under the compass. Options are in the Target tab."));
         ImGui.SameLine();
-        dirty |= DrawToggle("Statuses##topstatus", () => cfg.ShowTargetStatuses, v => cfg.ShowTargetStatuses = v, "Target's buff/debuff icons. Full options in HP Bars & Statuses tab.");
+        ch |= Toggle(L("Statuses", "topstatus"), ref cfg.ShowTargetStatuses, T("Shows your target's buff and debuff icons. Options are in the Target tab."));
         ImGui.Separator();
 
         if (ImGui.BeginTabBar("##tabs"))
         {
-            dirty |= DrawAppearanceTab(cfg);
-            dirty |= DrawCompassTab(cfg);
-            dirty |= DrawCombatTab(cfg);
-            dirty |= DrawAdvancedTab(cfg);
+            ch |= LookTab(cfg);
+            ch |= CompassTab(cfg);
+            ch |= TargetTab(cfg);
+            ch |= AdvancedTab(cfg);
             ImGui.EndTabBar();
         }
 
         ImGui.Separator();
-        if (ImGui.Button("Close", new Vector2(80, 0))) IsOpen = false;
-        ImGui.SameLine();
-        if (ImGui.Button("Setup Wizard")) plugin.OpenFirstTimeSetup();
-        if (ImGui.IsItemHovered()) ImGui.SetTooltip("Re-open the \"Give me everything\" / \"Moodles + Loci only\" quick setup.");
+        ch |= DrawFooter(cfg);
 
-        if (dirty) _configDirty = true;
-
-        if (_configDirty && ((DateTime.UtcNow - _lastConfigSave).TotalSeconds >= ConfigSaveDebounceSeconds || !IsOpen))
-        {
-            cfg.Save(plugin.PluginInterface);
-            _lastConfigSave = DateTime.UtcNow;
-            _configDirty = false;
-        }
+        if (ch) _dirty = true;
+        if (_dirty && ((DateTime.UtcNow - _lastSave).TotalSeconds >= SaveDebounceSeconds || !IsOpen)) Flush();
     }
 
-    private bool DrawAppearanceTab(Configuration cfg)
+    private void Flush()
     {
-        if (!ImGui.BeginTabItem("Appearance")) return false;
+        if (!_dirty) return;
+        plugin.Config.Save(plugin.PluginInterface);
+        _lastSave = DateTime.UtcNow;
+        _dirty = false;
+    }
+
+    private bool DrawFooter(Configuration cfg)
+    {
         bool ch = false;
+        if (ImGui.Button(L("Close", "close"), new Vector2(80, 0))) IsOpen = false;
+        ImGui.SameLine();
+        if (ImGui.Button(L("Setup guide", "setup"))) plugin.OpenFirstTimeSetup();
+        Tip(T("Opens the first-time setup again, with the Moodles/Loci checklist."));
+        ImGui.SameLine();
 
-        if (ImGui.CollapsingHeader("Size+Position", ImGuiTreeNodeFlags.DefaultOpen))
+        if (!_confirmReset)
         {
-            ch |= DrawSliderInt("Width##w", 200, 1400, () => (int)cfg.CompassWidth, v => cfg.CompassWidth = v, 120f);
-            ImGui.SameLine();
-            ch |= DrawSliderInt("Height##h", 20, 80, () => (int)cfg.CompassHeight, v => cfg.CompassHeight = v, 120f);
-
-            ch |= DrawToggle("Lock position##lockpos", () => cfg.LockPosition, v => cfg.LockPosition = v, "When unlocked, click and drag the compass, target bars, or target's status icons to move it all.");
-            ImGui.SameLine();
-            if (ImGui.Button("Center##centerpos")) { cfg.XOffset = 0f; ch = true; }
-            if (ImGui.IsItemHovered()) ImGui.SetTooltip("Recenters the compass horizontally.");
-
-            ch |= DrawToggle("Hide during cutscenes and Gpose", () => cfg.HideDuringCutscenes, v => cfg.HideDuringCutscenes = v);
+            if (ImGui.Button(L("Reset all settings", "reset"))) _confirmReset = true;
+            Tip(T("Puts every setting back to its default. Keeps your language, custom player icons and the Moodles/Loci mirror switch."));
         }
-
-        if (ImGui.CollapsingHeader("Colors & Theme", ImGuiTreeNodeFlags.DefaultOpen))
+        else
         {
-            ImGui.SetNextItemWidth(180);
-            if (ImGui.Combo("Theme preset##colortheme", ref _selectedThemeIndex, ColorThemeNames, ColorThemeNames.Length))
+            ImGui.TextColored(Amber, T("Are you sure?"));
+            ImGui.SameLine();
+            if (ImGui.Button(L("Yes, reset", "resetyes")))
             {
-                ApplyColorTheme(cfg, ColorThemes[_selectedThemeIndex]);
+                cfg.ResetToDefaults();
+                _themeIndex = 0;
+                _confirmReset = false;
                 ch = true;
             }
-            if (ImGui.IsItemHovered()) ImGui.SetTooltip("Overwrites all colors; pick \"Original\" to restore defaults.");
-
-            ch |= DrawColorEdit("Compass Background, Status tooltips##bgc", cfg.BackgroundColor, v => cfg.BackgroundColor = v);
-            ch |= DrawColorEdit("Border##bdc", cfg.BorderColor, v => cfg.BorderColor = v);
-            ch |= DrawColorEdit("Cardinal (N/S/E/W)##cdc", cfg.CardinalColor, v => cfg.CardinalColor = v);
-            ch |= DrawColorEdit("Intercardinal (NE/SW…)##icc", cfg.IntercardinalColor, v => cfg.IntercardinalColor = v);
-            ch |= DrawColorEdit("Tick marks##tkc", cfg.TickColor, v => cfg.TickColor = v);
-        }
-
-        ImGui.EndTabItem();
-        return ch;
-    }
-
-    private bool DrawCompassTab(Configuration cfg)
-    {
-        if (!ImGui.BeginTabItem("Compass")) return false;
-        bool ch = false;
-
-        // Helper to draw a standard collapsible header with a disable wrapper
-        void DrawSection(string label, bool enabled, Action draw, ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags.None)
-        {
-            ImGui.BeginDisabled(!enabled);
-            if (ImGui.CollapsingHeader(label, flags)) draw();
-            ImGui.EndDisabled();
-        }
-
-        DrawSection("Compass Settings", cfg.ShowCompassBar, () =>
-        {
-            ch |= DrawSliderInt("Detection range (yalms)##maxd", 10, 200, () => (int)cfg.MaxMarkerDistance, v => cfg.MaxMarkerDistance = v, tooltip: "Maximum distance for all markers (FATEs use a multiplier).");
-            ch |= DrawSliderInt("Visible Degrees##vd", 30, 180, () => (int)cfg.VisibleDegrees, v => cfg.VisibleDegrees = v);
-            ch |= DrawSliderFloat("Lens Strength##ls", 1f, 3f, () => cfg.LensStrength, v => cfg.LensStrength = v);
-            ch |= DrawSliderFloat("Font Scale##fs", .5f, 2.5f, () => cfg.FontScale, v => cfg.FontScale = v);
-            ImGui.Spacing();
-            ImGui.TextDisabled("Marker distance fade");
-            ch |= DrawSliderFloat("Full opacity zone##nz", .5f, 1f, () => cfg.DotNearZone, v => cfg.DotNearZone = v, tooltip: "Dots fully opaque closer than this fraction of max range; 1.0 = always opaque.");
-            ch |= DrawSliderFloat("Fade to zero zone##fz", 0f, .5f, () => cfg.DotFarZone, v => cfg.DotFarZone = v, tooltip: "Dots fade to invisible below this fraction of max range; 0.0 = no fade‑to‑zero.");
-            ch |= DrawSliderFloat("Midrange opacity##ma", 0f, 1f, () => cfg.DotMidAlpha, v => cfg.DotMidAlpha = v, tooltip: "Opacity of dots in the middle distance band.");
-        }, ImGuiTreeNodeFlags.DefaultOpen);
-
-        DrawSection("Camera & Direction", cfg.ShowCompassBar, () =>
-        {
-            ch |= DrawToggle("Use camera direction (not character facing)", () => cfg.UseCameraDirection, v => cfg.UseCameraDirection = v);
-            ImGui.BeginDisabled(!cfg.UseCameraDirection);
-            ch |= DrawToggle("Also measure distances from camera location##ucp", () => cfg.UseCameraPosition, v => cfg.UseCameraPosition = v);
-            ImGui.EndDisabled();
-            ImGui.Spacing();
-            ImGui.TextDisabled("Rotation Offset (set 180 if N/S swapped)");
-            ch |= DrawSliderInt("##rotoff", -180, 180, () => (int)cfg.RotationOffset, v => cfg.RotationOffset = v);
-        }, ImGuiTreeNodeFlags.DefaultOpen);
-
-        DrawSection("Players", cfg.ShowCompassBar, () =>
-        {
-            ch |= DrawEnableAndColor("players", "Players", () => cfg.ShowPlayers, v => cfg.ShowPlayers = v, () => cfg.PlayerColor, v => cfg.PlayerColor = v);
-            ImGui.BeginDisabled(!cfg.ShowPlayers);
-            ch |= DrawSizeSliders(() => cfg.PartyRoleIconMinSize, v => cfg.PartyRoleIconMinSize = v, () => cfg.PartyRoleIconMaxSize, v => cfg.PartyRoleIconMaxSize = v, 50, 60, "pr");
-            ImGui.Spacing();
-            ch |= DrawToggle("Solid dot for friends##sfr", () => cfg.SolidFriendDots, v => cfg.SolidFriendDots = v);
-            ch |= DrawToggle("Show job icon for party members##pri", () => cfg.ShowPartyRoleIcons, v => cfg.ShowPartyRoleIcons = v);
-            ImGui.BeginDisabled(!cfg.ShowPartyRoleIcons);
-            ch |= DrawToggle("Only in duty / PvP##pridonly", () => cfg.PartyRoleIconsOnlyInDuty, v => cfg.PartyRoleIconsOnlyInDuty = v);
-            ImGui.EndDisabled();
-            ImGui.EndDisabled();
-        }, ImGuiTreeNodeFlags.DefaultOpen);
-
-        DrawSection("Enemies", cfg.ShowCompassBar, () =>
-        {
-            ch |= DrawEnableAndColor("enemies", "Enemies", () => cfg.ShowEnemies, v => cfg.ShowEnemies = v, () => cfg.EnemyColor, v => cfg.EnemyColor = v);
-            ImGui.BeginDisabled(!cfg.ShowEnemies);
-            ch |= DrawToggle("Only show aggro'ed enemies##eng", () => cfg.EnemiesOnlyIfEngaged, v => cfg.EnemiesOnlyIfEngaged = v);
-            ch |= DrawSizeSliders(() => cfg.EnemyMinSize, v => cfg.EnemyMinSize = v, () => cfg.EnemyMaxSize, v => cfg.EnemyMaxSize = v, 50, 60, "en");
-            ImGui.EndDisabled();
-        });
-
-        DrawSection("NPCs", cfg.ShowCompassBar, () =>
-        {
-            ch |= DrawEnableAndColor("npcs", "NPCs", () => cfg.ShowNpcs, v => cfg.ShowNpcs = v, () => cfg.NpcColor, v => cfg.NpcColor = v);
-            ImGui.BeginDisabled(!cfg.ShowNpcs);
-            ch |= DrawToggle("Hide untargetable \"ghost\" NPCs##tgt", () => cfg.NpcsOnlyIfTargetable, v => cfg.NpcsOnlyIfTargetable = v, "Filters placeholder/empty slot NPCs.");
-            ch |= DrawToggle("Show quest marker icons##qicon", () => cfg.ShowNpcQuestIcons, v => cfg.ShowNpcQuestIcons = v);
-            ch |= DrawToggle("Show Shops/Menders##sicon", () => cfg.ShowShopIcons, v => cfg.ShowShopIcons = v);
-            ch |= DrawToggle("Show Fast Travel icons##fticon", () => cfg.ShowFastTravelIcons, v => cfg.ShowFastTravelIcons = v, "Ferry, airship, Chocobo Keep, etc.");
-            ch |= DrawSizeSliders(() => cfg.NpcQuestIconMinSize, v => cfg.NpcQuestIconMinSize = v, () => cfg.NpcQuestIconMaxSize, v => cfg.NpcQuestIconMaxSize = v, 50, 60, "q");
-            ImGui.EndDisabled();
-        });
-
-        DrawSection("Gathering Nodes", cfg.ShowCompassBar, () =>
-        {
-            ch |= DrawEnableAndColor("gath", "Gathering Nodes", () => cfg.ShowGatheringNodes, v => cfg.ShowGatheringNodes = v, () => cfg.GatheringColor, v => cfg.GatheringColor = v);
-            ImGui.BeginDisabled(!cfg.ShowGatheringNodes);
-            ch |= DrawToggle("Hide untargetable \"ghost\" nodes##gtgt", () => cfg.GatheringOnlyIfTargetable, v => cfg.GatheringOnlyIfTargetable = v, "Filters depleted/not yet spawned nodes.");
-            ch |= DrawToggle("Show node type icons##gicon", () => cfg.ShowGatheringIcons, v => cfg.ShowGatheringIcons = v);
-            ImGui.BeginDisabled(!cfg.ShowGatheringIcons);
-            ch |= DrawSizeSliders(() => cfg.GatheringIconMinSize, v => cfg.GatheringIconMinSize = v, () => cfg.GatheringIconMaxSize, v => cfg.GatheringIconMaxSize = v, 50, 60, "g");
-            ImGui.EndDisabled();
-            ImGui.EndDisabled();
-        });
-
-        DrawSection("Treasure Coffers", cfg.ShowCompassBar, () =>
-        {
-            ch |= DrawEnableAndColor("tres", "Treasure", () => cfg.ShowTreasure, v => cfg.ShowTreasure = v, () => cfg.TreasureColor, v => cfg.TreasureColor = v);
-            ImGui.BeginDisabled(!cfg.ShowTreasure);
-            ch |= DrawSizeSliders(() => cfg.TreasureMinSize, v => cfg.TreasureMinSize = v, () => cfg.TreasureMaxSize, v => cfg.TreasureMaxSize = v, 50, 60, "tr");
-            ImGui.Spacing();
-            ch |= DrawToggle("Show chest icon##tricon", () => cfg.ShowTreasureIcons, v => cfg.ShowTreasureIcons = v);
-            ImGui.BeginDisabled(!cfg.ShowTreasureIcons);
-            int trIconId = cfg.TreasureIconId;
-            ImGui.SetNextItemWidth(90f);
-            if (ImGui.InputInt("Icon ID##triconid", ref trIconId, 0, 0)) { cfg.TreasureIconId = Math.Max(0, trIconId); ch = true; }
-            ImGui.EndDisabled();
-            ImGui.EndDisabled();
-        });
-
-        DrawSection("Aetherytes", cfg.ShowCompassBar, () =>
-        {
-            ch |= DrawEnableAndColor("aeth", "Aetherytes", () => cfg.ShowAetherytes, v => cfg.ShowAetherytes = v, () => cfg.AetheryteColor, v => cfg.AetheryteColor = v);
-            ImGui.BeginDisabled(!cfg.ShowAetherytes);
-            ch |= DrawToggle("Show Aethernet shards##aethshards", () => cfg.ShowAethernetShards, v => cfg.ShowAethernetShards = v);
-            ch |= DrawToggle("Show Aetheryte icon##aicon", () => cfg.ShowAetheryteIcons, v => cfg.ShowAetheryteIcons = v);
-            ch |= DrawSizeSliders(() => cfg.AetheryteIconMinSize, v => cfg.AetheryteIconMinSize = v, () => cfg.AetheryteIconMaxSize, v => cfg.AetheryteIconMaxSize = v, 50, 60, "a");
-            string shardName = cfg.AethernetShardName;
-            ImGui.SetNextItemWidth(200f);
-            if (ImGui.InputText("Aethernet shard name##shardname", ref shardName, 64)) { cfg.AethernetShardName = shardName; ch = true; }
-            if (ImGui.IsItemHovered()) ImGui.SetTooltip("Substring in shard names to identify them (e.g. \"Aethernet\").");
-            ImGui.EndDisabled();
-        });
-
-        DrawSection("FATEs", cfg.ShowCompassBar, () =>
-        {
-            ch |= DrawEnableAndColor("fates", "Show FATEs", () => cfg.ShowFates, v => cfg.ShowFates = v, () => cfg.FateColor, v => cfg.FateColor = v, "Shows active/about to start FATEs; range = General range × multiplier.");
-            ImGui.BeginDisabled(!cfg.ShowFates);
-            ch |= DrawSliderFloat("Distance multiplier##fatemul", .5f, 5f, () => cfg.FateDistanceMultiplier, v => cfg.FateDistanceMultiplier = MathF.Max(.5f, v), "%.1f×");
-            ImGui.TextDisabled($"Effective FATE range: {cfg.MaxMarkerDistance * cfg.FateDistanceMultiplier:F0} yalms");
-            ch |= DrawSizeSliders(() => cfg.FateIconMinSize, v => cfg.FateIconMinSize = v, () => cfg.FateIconMaxSize, v => cfg.FateIconMaxSize = v, 50, 64, "fate");
-            ImGui.EndDisabled();
-        });
-
-        DrawSection("Limit Break Glow", cfg.ShowCompassBar, () =>
-        {
-            ch |= DrawEnableAndColor("lbglow", "Limit break glow (bar 1 color)", () => cfg.ShowLimitBreakGlow, v => cfg.ShowLimitBreakGlow = v, () => cfg.LimitBreakGlowColor, v => cfg.LimitBreakGlowColor = v, "Glowing border as LB charges – one layer per bar.");
-            ImGui.BeginDisabled(!cfg.ShowLimitBreakGlow);
-            ch |= DrawColorEdit("Bar 2 color##lbc2", cfg.LimitBreakGlowColor2, v => cfg.LimitBreakGlowColor2 = v);
-            ch |= DrawColorEdit("Bar 3 color##lbc3", cfg.LimitBreakGlowColor3, v => cfg.LimitBreakGlowColor3 = v);
-            ImGui.EndDisabled();
-        });
-
-        ImGui.EndTabItem();
-        return ch;
-    }
-
-    private bool DrawCombatTab(Configuration cfg)
-    {
-        if (!ImGui.BeginTabItem("HP Bars & Statuses")) return false;
-        bool ch = false;
-
-        void DrawSection(string label, bool enabled, Action draw, ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags.None)
-        {
-            ImGui.BeginDisabled(!enabled);
-            if (ImGui.CollapsingHeader(label, flags)) draw();
-            ImGui.EndDisabled();
-        }
-
-        DrawSection("Target Health Bar", cfg.ShowTargetBar, () =>
-        {
-            ch |= DrawSliderFloat("Width (fraction of compass)##tbwf", .3f, 1f, () => cfg.TargetBarWidthFraction, v => cfg.TargetBarWidthFraction = v);
-            ch |= DrawSliderInt("Bar thickness##tbh", 6, 30, () => (int)cfg.TargetBarHeight, v => cfg.TargetBarHeight = v);
-            ch |= DrawSliderFloat("Name font scale##tbfs", .5f, 2.5f, () => cfg.TargetBarFontScale, v => cfg.TargetBarFontScale = v);
-            ch |= DrawToggle("Show target level##tblvl", () => cfg.ShowTargetLevel, v => cfg.ShowTargetLevel = v);
-            ch |= DrawToggle("Show HP percentage##tbhpp", () => cfg.ShowTargetHealthPercent, v => cfg.ShowTargetHealthPercent = v, "Shows percentage under the health bar.");
-            ImGui.BeginDisabled(!cfg.ShowTargetHealthPercent);
-            ch |= DrawToggle("Show on target of target##tbtothpp", () => cfg.ShowTargetOfTargetHealthPercent, v => cfg.ShowTargetOfTargetHealthPercent = v);
-            ImGui.EndDisabled();
-            ch |= DrawEnableAndColor("tbshd", "Show shield overlay", () => cfg.ShowTargetBarShield, v => cfg.ShowTargetBarShield = v, () => cfg.TargetBarShieldColor, v => cfg.TargetBarShieldColor = v, "Light sheen over shielded portion of the bar.");
-            ch |= DrawToggle("Show name ribbons##tbrib", () => cfg.ShowTargetBarRibbons, v => cfg.ShowTargetBarRibbons = v, "Glowing ribbons from name ornaments.");
-        }, ImGuiTreeNodeFlags.DefaultOpen);
-
-        DrawSection("Target-of-Target", cfg.ShowTargetBar, () =>
-        {
-            ch |= DrawToggle("Target-of-target bar", () => cfg.ShowTargetOfTargetBar, v => cfg.ShowTargetOfTargetBar = v, "Shows who/what your target has targeted.");
-            ImGui.BeginDisabled(!cfg.ShowTargetOfTargetBar);
-            ch |= DrawToggle("Highlight if targeting me##aggro", () => cfg.HighlightIfTargetingMe, v => cfg.HighlightIfTargetingMe = v);
-            ImGui.BeginDisabled(!cfg.HighlightIfTargetingMe);
-            ch |= DrawColorEdit("Warning color##aggroc", cfg.AggroWarningColor, v => cfg.AggroWarningColor = v);
-            ImGui.EndDisabled();
-            ch |= DrawToggle("Show name##totname", () => cfg.ShowTargetOfTargetName, v => cfg.ShowTargetOfTargetName = v, "Shows the target of target's name centered over their bar.");
-            ImGui.BeginDisabled(!cfg.ShowTargetOfTargetName);
-            ch |= DrawToggle("Only show first name##totfirstname", () => cfg.TargetOfTargetFirstNameOnly, v => cfg.TargetOfTargetFirstNameOnly = v);
-            ch |= DrawToggle("Show \"YOU\" for yourself##totyou", () => cfg.TargetOfTargetShowYou, v => cfg.TargetOfTargetShowYou = v, "Displays \"YOU\" instead of your character name when you are the target of target.");
-            ImGui.EndDisabled();
-            ImGui.EndDisabled();
-        });
-
-        DrawSection("Target Status Icons", cfg.ShowTargetStatuses, () =>
-        {
-            ch |= DrawSliderInt("Icon size##tssize", 12, 40, () => (int)cfg.TargetStatusIconSize, v => cfg.TargetStatusIconSize = v);
-            ch |= DrawSliderInt("Max icons##tsmax", 3, 20, () => cfg.TargetStatusMaxIcons, v => cfg.TargetStatusMaxIcons = v);
-            ch |= DrawToggle("Left align##tsalignl", () => cfg.TargetStatusIconAlignLeft, v => { cfg.TargetStatusIconAlignLeft = v; if (v) cfg.TargetStatusIconAlignRight = false; }, "Icons anchor to the left edge and grow rightward, instead of staying centered.");
             ImGui.SameLine();
-            ch |= DrawToggle("Right align##tsalignr", () => cfg.TargetStatusIconAlignRight, v => { cfg.TargetStatusIconAlignRight = v; if (v) cfg.TargetStatusIconAlignLeft = false; }, "Icons anchor to the right edge and grow leftward, instead of staying centered.");
-            ch |= DrawEnableAndColor("tsesuna", "Esuna-able marker", () => cfg.ShowTargetStatusEsunaMarker, v => cfg.ShowTargetStatusEsunaMarker = v, () => cfg.TargetStatusEsunaMarkerColor, v => cfg.TargetStatusEsunaMarkerColor = v, "Bar above statuses that Esuna/dispel can remove: real game data for vanilla statuses, the author's own 'Dispelable' setting for Moodles/Loci. That setting depends on the target's own Moodles/Loci config to actually do anything, so treat it as intended rather than guaranteed.");
-        }, ImGuiTreeNodeFlags.DefaultOpen);
+            if (ImGui.Button(L("Cancel", "resetno"))) _confirmReset = false;
+        }
+
+        int lang = (int)cfg.Language;
+        ImGui.SetNextItemWidth(130f);
+        if (ImGui.Combo("Language / 言語##lang", ref lang, new[] { T("Auto"), "English", "日本語" }, 3))
+        {
+            cfg.Language = (LanguageSetting)lang;
+            ch = true;
+        }
+        return ch;
+    }
+
+    private bool LookTab(Configuration cfg)
+    {
+        if (!ImGui.BeginTabItem(L("Look", "tabLook"))) return false;
+        bool ch = false;
+
+        if (ImGui.CollapsingHeader(L("Size & position", "hSize"), ImGuiTreeNodeFlags.DefaultOpen))
+        {
+            ch |= Slider(L("Width", "w"), ref cfg.CompassWidth, 200f, 1400f, "%.0f", null, 120f);
+            ImGui.SameLine();
+            ch |= Slider(L("Height", "h"), ref cfg.CompassHeight, 20f, 80f, "%.0f", null, 120f);
+
+            ch |= Toggle(L("Lock position", "lockpos"), ref cfg.LockPosition, T("Untick to move things around with your mouse."));
+            ImGui.SameLine();
+            if (ImGui.Button(L("Reset position", "resetpos"))) { cfg.XOffset = 0f; cfg.YOffset = Configuration.DefaultYOffset; ch = true; }
+            Tip(T("Puts the compass back at the top center of the screen."));
+            if (!cfg.LockPosition) ImGui.TextColored(Amber, T("Unlocked: drag the compass, health bars or status icons to move them."));
+
+            ch |= Toggle(L("Hide in cutscenes and GPose", "hidecs"), ref cfg.HideDuringCutscenes);
+        }
+
+        if (ImGui.CollapsingHeader(L("Colors", "hColors"), ImGuiTreeNodeFlags.DefaultOpen))
+        {
+            if (_themeNamesRev != Revision)
+            {
+                _themeNames = Array.ConvertAll(ColorThemes, t => T(t.Name));
+                _themeNamesRev = Revision;
+            }
+            ImGui.SetNextItemWidth(180f);
+            if (ImGui.Combo(L("Theme", "colortheme"), ref _themeIndex, _themeNames, _themeNames.Length))
+            {
+                ApplyColorTheme(cfg, ColorThemes[_themeIndex]);
+                ch = true;
+            }
+            Tip(T("Changes every color at once. Pick Original to go back to the defaults."));
+
+            ImGui.Spacing();
+            ImGui.TextDisabled(T("Custom colors"));
+            ch |= ColorPick(L("Background (also status tooltips)", "bgc"), ref cfg.BackgroundColor);
+            ch |= ColorPick(L("Border", "bdc"), ref cfg.BorderColor);
+            ch |= ColorPick(L("Main letters (N, E, S, W)", "cdc"), ref cfg.CardinalColor);
+            ch |= ColorPick(L("In-between letters (NE, SW...)", "icc"), ref cfg.IntercardinalColor);
+            ch |= ColorPick(L("Tick marks", "tkc"), ref cfg.TickColor);
+        }
 
         ImGui.EndTabItem();
         return ch;
     }
 
-    private bool DrawAdvancedTab(Configuration cfg)
+    private bool CompassTab(Configuration cfg)
     {
-        if (!ImGui.BeginTabItem("Advanced")) return false;
+        if (!ImGui.BeginTabItem(L("Compass", "tabCompass"))) return false;
+        bool ch = false;
+        bool on = cfg.ShowCompassBar;
+        if (!on) ImGui.TextColored(Amber, T("The compass is hidden. Tick \"Compass\" at the top to change these."));
+
+        Section(L("Basics", "sBasics"), on, () =>
+        {
+            ch |= Slider(L("Marker range (yalms)", "maxd"), ref cfg.MaxMarkerDistance, 10f, 200f, "%.0f", T("How far away something can be and still show up. FATEs show from farther away."));
+            ch |= Slider(L("View width (degrees)", "vd"), ref cfg.VisibleDegrees, 30f, 180f, "%.0f", T("How much of the world fits on the compass. Smaller means more zoomed in."));
+            ch |= Slider(L("Text size", "fs"), ref cfg.FontScale, .5f, 2.5f);
+        }, true);
+
+        Section(L("Players", "sPlayers"), on, () =>
+        {
+            ch |= EnableColor("players", T("Players"), ref cfg.ShowPlayers, ref cfg.PlayerColor);
+            ImGui.BeginDisabled(!cfg.ShowPlayers);
+            ch |= SizeSliders(ref cfg.PartyRoleIconMinSize, ref cfg.PartyRoleIconMaxSize, 50, 60, "pr");
+            ImGui.Spacing();
+            ch |= Toggle(L("Solid dot for friends", "sfr"), ref cfg.SolidFriendDots);
+            ch |= Toggle(L("Show job icon for party members", "pri"), ref cfg.ShowPartyRoleIcons);
+            ImGui.BeginDisabled(!cfg.ShowPartyRoleIcons);
+            ch |= Toggle(L("Only in duties and PvP", "pridonly"), ref cfg.PartyRoleIconsOnlyInDuty);
+            ImGui.EndDisabled();
+            ImGui.EndDisabled();
+        }, true);
+
+        Section(L("Enemies", "sEnemies"), on, () =>
+        {
+            ch |= EnableColor("enemies", T("Enemies"), ref cfg.ShowEnemies, ref cfg.EnemyColor);
+            ImGui.BeginDisabled(!cfg.ShowEnemies);
+            ch |= Toggle(L("Only enemies that are fighting", "eng"), ref cfg.EnemiesOnlyIfEngaged, T("Hides enemies that haven't noticed you yet."));
+            ch |= SizeSliders(ref cfg.EnemyMinSize, ref cfg.EnemyMaxSize, 50, 60, "en");
+            ImGui.EndDisabled();
+        });
+
+        Section(L("NPCs", "sNpcs"), on, () =>
+        {
+            ch |= EnableColor("npcs", T("NPCs"), ref cfg.ShowNpcs, ref cfg.NpcColor);
+            ImGui.BeginDisabled(!cfg.ShowNpcs);
+            ch |= Toggle(L("Hide NPCs you can't click", "tgt"), ref cfg.NpcsOnlyIfTargetable, T("Skips invisible placeholder NPCs."));
+            ch |= Toggle(L("Show quest marker icons", "qicon"), ref cfg.ShowNpcQuestIcons);
+            ch |= Toggle(L("Show shop and repair icons", "sicon"), ref cfg.ShowShopIcons);
+            ch |= Toggle(L("Show travel icons", "fticon"), ref cfg.ShowFastTravelIcons, T("Ferries, airships, Chocobo porters and similar."));
+            ch |= SizeSliders(ref cfg.NpcQuestIconMinSize, ref cfg.NpcQuestIconMaxSize, 50, 60, "q");
+            ImGui.EndDisabled();
+        });
+
+        Section(L("Gathering nodes", "sGather"), on, () =>
+        {
+            ch |= EnableColor("gath", T("Gathering nodes"), ref cfg.ShowGatheringNodes, ref cfg.GatheringColor);
+            ImGui.BeginDisabled(!cfg.ShowGatheringNodes);
+            ch |= Toggle(L("Hide nodes you can't gather from", "gtgt"), ref cfg.GatheringOnlyIfTargetable, T("Skips nodes that are used up or haven't appeared yet."));
+            ch |= Toggle(L("Show node type icons", "gicon"), ref cfg.ShowGatheringIcons);
+            ImGui.BeginDisabled(!cfg.ShowGatheringIcons);
+            ch |= SizeSliders(ref cfg.GatheringIconMinSize, ref cfg.GatheringIconMaxSize, 50, 60, "g");
+            ImGui.EndDisabled();
+            ImGui.EndDisabled();
+        });
+
+        Section(L("Treasure chests", "sTreasure"), on, () =>
+        {
+            ch |= EnableColor("tres", T("Treasure chests"), ref cfg.ShowTreasure, ref cfg.TreasureColor);
+            ImGui.BeginDisabled(!cfg.ShowTreasure);
+            ch |= SizeSliders(ref cfg.TreasureMinSize, ref cfg.TreasureMaxSize, 50, 60, "tr");
+            ImGui.Spacing();
+            ch |= Toggle(L("Show chest icon", "tricon"), ref cfg.ShowTreasureIcons);
+            ImGui.BeginDisabled(!cfg.ShowTreasureIcons);
+            ImGui.SetNextItemWidth(90f);
+            if (ImGui.InputInt(L("Icon number", "triconid"), ref cfg.TreasureIconId, 0, 0)) { cfg.TreasureIconId = Math.Max(0, cfg.TreasureIconId); ch = true; }
+            ImGui.EndDisabled();
+            ImGui.EndDisabled();
+        });
+
+        Section(L("Aetherytes", "sAeth"), on, () =>
+        {
+            ch |= EnableColor("aeth", T("Aetherytes"), ref cfg.ShowAetherytes, ref cfg.AetheryteColor);
+            ImGui.BeginDisabled(!cfg.ShowAetherytes);
+            ch |= Toggle(L("Show Aethernet shards", "aethshards"), ref cfg.ShowAethernetShards);
+            ch |= Toggle(L("Show aetheryte icon", "aicon"), ref cfg.ShowAetheryteIcons);
+            ch |= SizeSliders(ref cfg.AetheryteIconMinSize, ref cfg.AetheryteIconMaxSize, 50, 60, "a");
+            ImGui.EndDisabled();
+        });
+
+        Section(L("FATEs", "sFates"), on, () =>
+        {
+            ch |= EnableColor("fates", T("Show FATEs"), ref cfg.ShowFates, ref cfg.FateColor, T("Shows FATEs that are running or about to start."));
+            ImGui.BeginDisabled(!cfg.ShowFates);
+            ch |= Slider(L("Range multiplier", "fatemul"), ref cfg.FateDistanceMultiplier, .5f, 5f, "%.1fx", T("FATEs show from this many times the marker range."));
+            ImGui.TextDisabled(F("FATE range: {0:F0} yalms", cfg.MaxMarkerDistance * cfg.FateDistanceMultiplier));
+            ch |= SizeSliders(ref cfg.FateIconMinSize, ref cfg.FateIconMaxSize, 50, 64, "fate");
+            ImGui.EndDisabled();
+        });
+
+        Section(L("Limit Break glow", "sLb"), on, () =>
+        {
+            ch |= EnableColor("lbglow", T("Limit Break glow (bar 1 color)"), ref cfg.ShowLimitBreakGlow, ref cfg.LimitBreakGlowColor, T("The compass edges glow as your Limit Break charges. One color per bar."));
+            ImGui.BeginDisabled(!cfg.ShowLimitBreakGlow);
+            ch |= ColorPick(L("Bar 2 color", "lbc2"), ref cfg.LimitBreakGlowColor2);
+            ch |= ColorPick(L("Bar 3 color", "lbc3"), ref cfg.LimitBreakGlowColor3);
+            ImGui.EndDisabled();
+        });
+
+        ImGui.EndTabItem();
+        return ch;
+    }
+
+    private bool TargetTab(Configuration cfg)
+    {
+        if (!ImGui.BeginTabItem(L("Target", "tabTarget"))) return false;
+        bool ch = false;
+        ImGui.TextDisabled(T("Tip: click something in the game to see your changes right away."));
+
+        Section(L("Health bar", "sHp"), cfg.ShowTargetBar, () =>
+        {
+            ch |= Slider(L("Bar width", "tbwf"), ref cfg.TargetBarWidthFraction, .3f, 1f, "%.2f", T("How wide the bars are compared to the compass."));
+            ch |= Slider(L("Bar thickness", "tbh"), ref cfg.TargetBarHeight, 6f, 30f, "%.0f");
+            ch |= Slider(L("Name text size", "tbfs"), ref cfg.TargetBarFontScale, .5f, 2.5f);
+            ch |= Toggle(L("Show level", "tblvl"), ref cfg.ShowTargetLevel);
+            ch |= Toggle(L("Show HP percent", "tbhpp"), ref cfg.ShowTargetHealthPercent, T("Shows the percent under the health bar."));
+            ImGui.BeginDisabled(!cfg.ShowTargetHealthPercent);
+            ch |= Toggle(L("Also on the target's target", "tbtothpp"), ref cfg.ShowTargetOfTargetHealthPercent);
+            ImGui.EndDisabled();
+            ch |= EnableColor("tbshd", T("Show shield"), ref cfg.ShowTargetBarShield, ref cfg.TargetBarShieldColor, T("A light sheen over the shielded part of the bar."));
+            ch |= Toggle(L("Show name ribbons", "tbrib"), ref cfg.ShowTargetBarRibbons, T("Glowing lines beside the name. They also show cast progress."));
+        }, true);
+
+        Section(L("Target's target", "sTot"), cfg.ShowTargetBar, () =>
+        {
+            ch |= Toggle(L("Show the target's target", "totbar"), ref cfg.ShowTargetOfTargetBar, T("A small bar for whoever your target is looking at."));
+            ImGui.BeginDisabled(!cfg.ShowTargetOfTargetBar);
+            ch |= Toggle(L("Warn if it's me", "aggro"), ref cfg.HighlightIfTargetingMe);
+            ImGui.BeginDisabled(!cfg.HighlightIfTargetingMe);
+            ch |= ColorPick(L("Warning color", "aggroc"), ref cfg.AggroWarningColor);
+            ImGui.EndDisabled();
+            ch |= Toggle(L("Show name", "totname"), ref cfg.ShowTargetOfTargetName);
+            ImGui.BeginDisabled(!cfg.ShowTargetOfTargetName);
+            ch |= Toggle(L("First name only", "totfirstname"), ref cfg.TargetOfTargetFirstNameOnly);
+            ch |= Toggle(L("Show \"YOU\" for me", "totyou"), ref cfg.TargetOfTargetShowYou, T("Shows YOU instead of your character name."));
+            ImGui.EndDisabled();
+            ImGui.EndDisabled();
+        });
+
+        Section(L("Status icons", "sStatus"), cfg.ShowTargetStatuses, () =>
+        {
+            ch |= Slider(L("Icon size", "tssize"), ref cfg.TargetStatusIconSize, 12f, 40f, "%.0f");
+            ch |= SliderInt(L("Most icons shown", "tsmax"), ref cfg.TargetStatusMaxIcons, 3, 20);
+
+            int align = cfg.TargetStatusIconAlignLeft ? 1 : cfg.TargetStatusIconAlignRight ? 2 : 0;
+            ImGui.SetNextItemWidth(120f);
+            if (ImGui.Combo(L("Icon position", "tsalign"), ref align, new[] { T("Center"), T("Left"), T("Right") }, 3))
+            {
+                cfg.TargetStatusIconAlignLeft = align == 1;
+                cfg.TargetStatusIconAlignRight = align == 2;
+                ch = true;
+            }
+            Tip(T("Where the icons sit under the health bar."));
+
+            ch |= EnableColor("tsesuna", T("Esuna marker"), ref cfg.ShowTargetStatusEsunaMarker, ref cfg.TargetStatusEsunaMarkerColor,
+                T("A small bar above statuses that Esuna can remove. For Moodles and Loci it follows their own Dispellable setting."));
+        }, true);
+
+        ImGui.EndTabItem();
+        return ch;
+    }
+
+    private bool AdvancedTab(Configuration cfg)
+    {
+        if (!ImGui.BeginTabItem(L("Advanced", "tabAdv"))) return false;
         bool ch = false, ovCh = false;
 
-        if (ImGui.CollapsingHeader("Player Icon Overrides", ImGuiTreeNodeFlags.DefaultOpen))
+        if (ImGui.CollapsingHeader(L("Direction", "hDir"), ImGuiTreeNodeFlags.DefaultOpen))
         {
-            ImGui.TextDisabled("Override icons for specific players by name. (IconIDs can be found in /xldata icons)");
-            if (cfg.PlayerIconOverrides.Count == 0) ImGui.TextDisabled("  (none)");
+            ch |= Toggle(L("Follow the camera, not my character", "ucd"), ref cfg.UseCameraDirection);
+            ImGui.BeginDisabled(!cfg.UseCameraDirection);
+            ch |= Toggle(L("Measure distances from the camera", "ucp"), ref cfg.UseCameraPosition);
+            ImGui.EndDisabled();
+            ch |= Slider(L("Turn compass (degrees)", "rotoff"), ref cfg.RotationOffset, -180f, 180f, "%.0f", T("Turns the compass if North points the wrong way."));
+            if (ImGui.Button(L("Flip North and South", "flipns"))) { cfg.RotationOffset = cfg.RotationOffset == 180f ? 0f : 180f; ch = true; }
+            Tip(T("Click this if North and South look swapped."));
+        }
+
+        if (ImGui.CollapsingHeader(L("Compass shape", "hShape")))
+        {
+            ch |= Slider(L("Center zoom", "ls"), ref cfg.LensStrength, 1f, 3f, "%.2f", T("Higher gives the middle more room and squeezes the edges."));
+            ImGui.Spacing();
+            ImGui.TextDisabled(T("Markers fade as they get farther away."));
+            float solid = (1f - cfg.DotNearZone) * 100f;
+            if (Slider(L("Fully solid within", "nz"), ref solid, 0f, 50f, "%.1f%%", T("Markers this close are fully solid. Measured as a part of the marker range."))) { cfg.DotNearZone = 1f - solid / 100f; ch = true; }
+            float fadeFrom = (1f - cfg.DotFarZone) * 100f;
+            if (Slider(L("Fade out from", "fz"), ref fadeFrom, 50f, 100f, "%.1f%%", T("Markers farther than this fade away to nothing."))) { cfg.DotFarZone = 1f - fadeFrom / 100f; ch = true; }
+            ch |= Slider(L("Opacity in between", "ma"), ref cfg.DotMidAlpha, 0f, 1f, "%.2f", T("How see-through markers are in the middle distance."));
+        }
+
+        if (ImGui.CollapsingHeader(L("Custom player icons", "hOverrides")))
+        {
+            ImGui.TextDisabled(T("Give specific players their own icon. Find icon numbers with /xldata (Icon Browser)."));
+            ImGui.TextDisabled(T("Columns: name, icon number, B = border, F = fill, circle = round icon, last box = size."));
+            if (cfg.PlayerIconOverrides.Count == 0) ImGui.TextDisabled(T("  (none yet)"));
 
             int removeAt = -1;
             for (int i = 0; i < cfg.PlayerIconOverrides.Count; i++)
             {
                 ImGui.PushID(i);
                 if (ImGui.Button("X##rmov")) removeAt = i;
+                Tip(T("Remove"));
                 ImGui.SameLine();
                 if (DrawOverrideRow(cfg.PlayerIconOverrides[i], "ov", 110f)) ovCh = true;
                 ImGui.PopID();
@@ -312,14 +376,14 @@ public sealed class ConfigWindow : Window
             if (removeAt >= 0) { cfg.PlayerIconOverrides.RemoveAt(removeAt); ovCh = true; }
 
             ImGui.Separator();
-            ImGui.TextDisabled("Add new override:");
+            ImGui.TextDisabled(T("Add a player:"));
             ImGui.SameLine();
             ch |= DrawOverrideRow(_newOverride, "newov", 120f);
             ImGui.SameLine();
 
             bool canAdd = !string.IsNullOrWhiteSpace(_newOverride.PlayerName) && _newOverride.IconBaseId > 0;
             ImGui.BeginDisabled(!canAdd);
-            if (ImGui.Button("Add##addov"))
+            if (ImGui.Button(L("Add", "addov")))
             {
                 _newOverride.PlayerName = _newOverride.PlayerName.Trim();
                 cfg.PlayerIconOverrides.Add(_newOverride);
@@ -362,7 +426,6 @@ public sealed class ConfigWindow : Window
         return ch || ovCh;
     }
 
-    // ----- Theme definitions (unchanged but compact) -----
     private record ColorTheme(string Name, Vector4 Background, Vector4 Border, Vector4 Cardinal,
         Vector4 Intercardinal, Vector4 Tick, Vector4 Player, Vector4 Enemy, Vector4 Npc,
         Vector4 Gathering, Vector4 Treasure, Vector4 Aetheryte, Vector4 Fate);
@@ -386,8 +449,6 @@ public sealed class ConfigWindow : Window
             new(.88f,.78f,1f,.92f), new(.55f,.95f,.65f,.92f), new(1f,.75f,.95f,.95f), new(.68f,.55f,1f,.92f), new(.85f,.40f,1f,.95f))
     ];
 
-    private static readonly string[] ColorThemeNames = Array.ConvertAll(ColorThemes, t => t.Name);
-
     private static void ApplyColorTheme(Configuration cfg, ColorTheme t)
     {
         cfg.BackgroundColor = t.Background;
@@ -404,43 +465,96 @@ public sealed class ConfigWindow : Window
         cfg.FateColor = t.Fate;
     }
 
-    // ----- Helper drawing methods (condensed) -----
     private static bool DrawOverrideRow(PlayerIconOverride ov, string idSuffix, float nameWidth)
     {
         bool ch = false;
         string name = ov.PlayerName;
         ImGui.SetNextItemWidth(nameWidth);
         if (ImGui.InputText($"##{idSuffix}name", ref name, 64)) { ov.PlayerName = name; ch = true; }
+        Tip(T("Player name"));
         ImGui.SameLine();
-        int iconId = ov.IconBaseId;
         ImGui.SetNextItemWidth(68f);
-        if (ImGui.InputInt($"##{idSuffix}id", ref iconId, 0, 0)) { ov.IconBaseId = Math.Max(0, iconId); ch = true; }
+        if (ImGui.InputInt($"##{idSuffix}id", ref ov.IconBaseId, 0, 0)) { ov.IconBaseId = Math.Max(0, ov.IconBaseId); ch = true; }
+        Tip(T("Icon number"));
         ImGui.SameLine();
 
-        ch |= DrawToggle($"B##{idSuffix}b", () => ov.ShowBorder, v => ov.ShowBorder = v);
+        ch |= Toggle($"B##{idSuffix}b", ref ov.ShowBorder, T("Border"));
         ImGui.SameLine();
         ImGui.BeginDisabled(!ov.ShowBorder);
-        ch |= DrawColorEdit($"##{idSuffix}bc", ov.BorderColor, v => ov.BorderColor = v);
+        ch |= ColorPick($"##{idSuffix}bc", ref ov.BorderColor);
         ImGui.EndDisabled();
         ImGui.SameLine();
 
-        ch |= DrawToggle($"F##{idSuffix}f", () => ov.ShowFill, v => ov.ShowFill = v);
+        ch |= Toggle($"F##{idSuffix}f", ref ov.ShowFill, T("Fill"));
         ImGui.SameLine();
         ImGui.BeginDisabled(!ov.ShowFill);
-        ch |= DrawColorEdit($"##{idSuffix}fc", ov.FillColor, v => ov.FillColor = v);
+        ch |= ColorPick($"##{idSuffix}fc", ref ov.FillColor);
         ImGui.EndDisabled();
         ImGui.SameLine();
 
-        ch |= DrawToggle($"○##{idSuffix}circ", () => ov.ClipToCircle, v => ov.ClipToCircle = v);
+        ch |= Toggle($"○##{idSuffix}circ", ref ov.ClipToCircle, T("Round icon"));
         ImGui.SameLine();
 
-        float mul = ov.SizeMultiplier;
         ImGui.SetNextItemWidth(58f);
-        if (ImGui.DragFloat($"##{idSuffix}mul", ref mul, .05f, .5f, 3f, "%.2fx"))
-        { ov.SizeMultiplier = Math.Clamp(mul, .5f, 3f); ch = true; }
+        if (ImGui.DragFloat($"##{idSuffix}mul", ref ov.SizeMultiplier, .05f, .5f, 3f, "%.2fx"))
+        { ov.SizeMultiplier = Math.Clamp(ov.SizeMultiplier, .5f, 3f); ch = true; }
+        Tip(T("Size"));
         return ch;
     }
 
+    private static void Section(string label, bool enabled, Action body, bool open = false)
+    {
+        ImGui.BeginDisabled(!enabled);
+        if (ImGui.CollapsingHeader(label, open ? ImGuiTreeNodeFlags.DefaultOpen : ImGuiTreeNodeFlags.None)) body();
+        ImGui.EndDisabled();
+    }
+
+    private static void Tip(string? tip)
+    {
+        if (tip != null && ImGui.IsItemHovered()) ImGui.SetTooltip(tip);
+    }
+
+    private static bool Toggle(string label, ref bool v, string? tip = null)
+    {
+        bool ch = ImGui.Checkbox(label, ref v);
+        Tip(tip);
+        return ch;
+    }
+
+    private static bool Slider(string label, ref float v, float lo, float hi, string fmt = "%.2f", string? tip = null, float width = 0f)
+    {
+        if (width > 0f) ImGui.SetNextItemWidth(width);
+        bool ch = ImGui.SliderFloat(label, ref v, lo, hi, fmt);
+        Tip(tip);
+        return ch;
+    }
+
+    private static bool SliderInt(string label, ref int v, int lo, int hi, string? tip = null)
+    {
+        bool ch = ImGui.SliderInt(label, ref v, lo, hi);
+        Tip(tip);
+        return ch;
+    }
+
+    private static bool ColorPick(string label, ref Vector4 v) => ImGui.ColorEdit4(label, ref v, ColorFlags);
+
+    private static bool EnableColor(string id, string label, ref bool enabled, ref Vector4 color, string? tip = null)
+    {
+        bool ch = ImGui.Checkbox($"##{id}_en", ref enabled);
+        ImGui.SameLine();
+        ch |= ImGui.ColorEdit4($"{label}##{id}_c", ref color, ColorFlags);
+        Tip(tip);
+        return ch;
+    }
+
+    private static bool SizeSliders(ref float min, ref float max, int minHi, int maxHi, string id, int lo = 8)
+    {
+        bool ch = ImGui.SliderFloat($"{T("Size when far")}##{id}min", ref min, lo, minHi, "%.0f");
+        ch |= ImGui.SliderFloat($"{T("Size when close")}##{id}max", ref max, lo, maxHi, "%.0f");
+        return ch;
+    }
+
+    // Only used by the Moodles/Loci mirror block above.
     private static bool DrawToggle(string label, Func<bool> get, Action<bool> set, string? tooltip = null)
     {
         bool v = get();
@@ -449,60 +563,4 @@ public sealed class ConfigWindow : Window
         if (tooltip != null && ImGui.IsItemHovered()) ImGui.SetTooltip(tooltip);
         return ch;
     }
-
-    private static bool DrawEnableAndColor(string idPrefix, string label,
-        Func<bool> getEnabled, Action<bool> setEnabled,
-        Func<Vector4> getColor, Action<Vector4> setColor, string? tooltip = null)
-    {
-        bool en = getEnabled();
-        bool ch = ImGui.Checkbox($"##{idPrefix}_en", ref en);
-        if (ch) setEnabled(en);
-        ImGui.SameLine();
-        Vector4 col = getColor();
-        if (ImGui.ColorEdit4($"{label}##{idPrefix}_c", ref col, ColorPickerFlags)) { setColor(col); ch = true; }
-        if (tooltip != null && ImGui.IsItemHovered()) ImGui.SetTooltip(tooltip);
-        return ch;
-    }
-
-    private static bool DrawSizeSliders(Func<float> getMin, Action<float> setMin,
-        Func<float> getMax, Action<float> setMax, int minHi, int maxHi, string idPrefix,
-        string minLabel = "Min size (far)", string maxLabel = "Max size (close)", int lo = 8)
-    {
-        bool ch = false;
-        int mn = (int)getMin();
-        if (ImGui.SliderInt($"{minLabel}##{idPrefix}min", ref mn, lo, minHi)) { setMin(mn); ch = true; }
-        int mx = (int)getMax();
-        if (ImGui.SliderInt($"{maxLabel}##{idPrefix}max", ref mx, lo, maxHi)) { setMax(mx); ch = true; }
-        return ch;
-    }
-
-    private static bool DrawSliderInt(string label, int lo, int hi, Func<int> get, Action<int> set,
-        float width = 0f, string? tooltip = null)
-    {
-        if (width > 0f) ImGui.SetNextItemWidth(width);
-        int v = get();
-        if (ImGui.SliderInt(label, ref v, lo, hi)) { set(v); return true; }
-        if (tooltip != null && ImGui.IsItemHovered()) ImGui.SetTooltip(tooltip);
-        return false;
-    }
-
-    private static bool DrawSliderFloat(string label, float lo, float hi, Func<float> get, Action<float> set,
-        string? fmt = null, string? tooltip = null)
-    {
-        float v = get();
-        bool ch = fmt is null ? ImGui.SliderFloat(label, ref v, lo, hi) : ImGui.SliderFloat(label, ref v, lo, hi, fmt);
-        if (ch) set(v);
-        if (tooltip != null && ImGui.IsItemHovered()) ImGui.SetTooltip(tooltip);
-        return ch;
-    }
-
-    private static bool DrawColorEdit(string label, Vector4 val, Action<Vector4> set,
-        ImGuiColorEditFlags flags = ImGuiColorEditFlags.NoInputs | ImGuiColorEditFlags.AlphaBar)
-    {
-        if (ImGui.ColorEdit4(label, ref val, flags)) { set(val); return true; }
-        return false;
-    }
-
-    private static readonly ImGuiColorEditFlags ColorPickerFlags =
-        ImGuiColorEditFlags.NoInputs | ImGuiColorEditFlags.AlphaBar;
 }

@@ -14,8 +14,7 @@ public sealed class EffectManager
     private readonly ISceneEffect[] _order;
 
     /// <summary>How long an effect takes to fade fully in from nothing.</summary>
-    internal const float FadeInSeconds = 0.35f;
-    private const float FadeInPerSecond = 1f / FadeInSeconds;
+    private const float FadeInPerSecond = 1f / CastTracker.FadeInSeconds;
     private const float FadeOutPerSecond = 1f / 0.6f;
 
     /// <summary>Effects that have thrown this session; skipped until reload. Config is left untouched.</summary>

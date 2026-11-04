@@ -21,7 +21,7 @@ Commands:
 
 ## How it works
 
-Every effect derives from `SceneEffect` (an `ISceneEffect`). Effects don't draw; they push primitives into an `EffectScene`, `StrokeShed` adds what strokes shed, and `SceneRenderer` draws the frame once (vignette, regions, strokes, particles). `EffectDiscovery` finds every public, non-abstract effect with a parameterless constructor, so a new effect is one class.
+Every effect derives from `SceneEffect` (an `ISceneEffect`). Effects don't draw; they push primitives into an `EffectScene`, `StrokeShed` adds what strokes shed, and `SceneRenderer` draws the frame once (vignette, regions, strokes, particles). `EffectDiscovery` finds every public, non-abstract effect with a parameterless constructor, so a new effect is one class. An effect that owns more than its own file gets a folder (`Effects/Doom/`) holding its strokes, particles, fields and theme; anything two effects use lives in `Effects/Framework`. `Effects/` needs nothing from the host except `DebuffKind` (`Effects/DebuffKind.cs`), which is why the harness can compile it alone.
 
 Each frame `EffectManager` maps your statuses to `DebuffKind`s (via `StatusCatalog`), adds kinds requested by Moodles/Loci rules or tooltip keywords, steps each fade, calls `Emit`, and renders. It skips drawing below 64px.
 
@@ -34,7 +34,7 @@ Each frame `EffectManager` maps your statuses to `DebuffKind`s (via `StatusCatal
 
 ### Materials
 
-Looked up by name (config stores strings), in three families: `IStrokeMaterial`, `IParticleMaterial`, `IRegionMaterial` (`RegionMaterial<TState>` for ones that draw an `IRegionState`). `MaterialRegistry` finds them by reflection: every material with a public parameterless constructor, plus every `IMaterialPack` (palette variants live in `Materials/Variants.cs`). Strokes may declare `Emissions` (shed along the strand) and `ImpactEmissions`; particles may declare `Emissions` for when they're used as a stroke emitter.
+Looked up by name (config stores strings), in three families: `IStrokeMaterial`, `IParticleMaterial`, `IRegionMaterial` (`RegionMaterial<TState>` for ones that draw an `IRegionState`). `MaterialRegistry` finds them by reflection: every material with a public parameterless constructor, plus every `IMaterialPack` (an effect's palette variants live in its `<Name>Theme.cs`). Strokes may declare `Emissions` (shed along the strand) and `ImpactEmissions`; particles may declare `Emissions` for when they're used as a stroke emitter.
 
 `EffectScene.Materials` (a `MaterialResolver`) resolves each primitive in this order: user override (settings or a "made of X" phrase), the effect's declared default (`SwappableSlot`), then a fallback (a role's `[Fallback]` particle) so an unknown name never crashes. Results are cached until the override dictionary instance changes.
 
@@ -52,16 +52,18 @@ Looked up by name (config stores strings), in three families: `IStrokeMaterial`,
 
 ## Shared building blocks (`Effects/Framework`)
 
+Folders don't dictate namespaces, and materials are found by reflection, so where a file lives is purely organisational.
+
 | Folder | Provides |
 |---|---|
 | `Core/` | `EffectScene` and the primitives; `Cast.cs` (`CastTracker`, `CastFrame` with `Fresh`/`Resized`, the optional alpha envelope, `ShockFront`); `Material.cs` (material contracts, `RegionMaterial<T>`, `IMaterialPack`); `Timing.cs` (`Flicker`, `FlashSchedule`, `Heartbeat`); `Screen.cs` (edge anchors, `ScreenGrowth`); `DrawHelpers`, `Noise`, `Palette` |
 | `Registry/` | `EffectRegistry` (slots, defaults), `MaterialRegistry`, `MaterialResolver`, `MaterialOverrideKey`, `EffectDiscovery`, `RegistryAudit` |
 | `Rendering/` | `SceneRenderer` |
-| `Particles/` | `ParticleSystem` (pool: spawn, integrate, retire, emit), `StrokeShed`, `Flames` and `FireDrift` (`Fire.cs`), `MoteField`, `WindField` |
+| `Particles/` | `ParticleSystem` (pool: spawn, integrate, retire, emit), `StrokeShed`, `Flames` and `FireDrift` (`Fire.cs`), `MoteField` |
 | `Strokes/` | `StrandPath`; `VerletStrand.cs` (strand physics, `StrandRig`, `RigSet`); `Mesh.cs` (`MeshBuilder`, `PathRows` for tube materials); `Shading.cs` (lighting); `SceneStrokes` (`Ring`, `HeroRing`) |
 | `Regions/` | `SceneRegions` (`Wash`, `EdgeSpill`, `Pool`, `Murk`) |
-| `Systems/` | Simulations shared by a family of effects, each with the region state its material draws: `Liquid/` (`LiquidPhysics` on one viscosity axis, `Liquid`, `DropPool`, `GoopEmitter`, `LiquidField` jets, drips, a standing-wave pool, light shafts, splashes), `Frost/`, `Tunnel/` (`TunnelField`, `TunnelFlight`), `Sigil/` (`LayerCamera`, `SigilView`, `SigilGeometry`, `RuneGlyphs`), `Whispers/` (`ScriptFont`, `WhisperField`), `Electric/` (`Bolt`) |
-| `Materials/` | `Particles/`, `Strokes/`, `Regions/`, and `Variants.cs` |
+| `Systems/` | Simulations shared by a family of effects, each with the region state its material draws: `Liquid/` (`LiquidPhysics` on one viscosity axis, `Liquid`, `DropPool`, `GoopEmitter`, `LiquidField` jets, drips, a standing-wave pool, light shafts, splashes, `RegionLiquid`), `Tunnel/` (`TunnelField`, `TunnelFlight`), `Sigil/` (`LayerCamera`, `SigilView`, `SigilGeometry`, `RuneGlyphs`), `Whispers/` (`ScriptFont`, `WhisperField`) |
+| `Materials/` | The materials any effect can use: `Particles/`, `Strokes/`, `Regions/` |
 
 ## Building
 
@@ -75,15 +77,15 @@ No `<TargetFramework>` is set on purpose; the SDK picks the one Dalamud targets.
 
 ## Adding things
 
-- **Effect**: derive from `SceneEffect` and pass `kind, name, description, drawOrder, status` (plus optional `keywords`) to its constructor. Call `CastTracker.Frame(...)` once per `Emit` for a `CastFrame` (size, `Px`, `Age`, `Seed`, `Fresh`, alpha, color); `new CastTracker(envelope: true)` adds a faster fade-in plus `Gate`/`Leave`/`Leaving` (see `DoomEffect`). Implement `IHasSwappableSlots` to expose materials (`Slot.Stroke`, `Slot.Particle`, `Slot.Region`), and mark the slots a "made of X" phrase replaces with `hero: true`. Scale sizes by `f.Px` (it is `DrawHelpers.PixelScale`, the same scale materials use), and re-lay anything anchored to the screen size when `f.Fresh || f.Resized`.
+- **Effect**: derive from `SceneEffect`, pass `kind, name, description, drawOrder, status` (plus optional `keywords`, `envelope: true`) to its constructor, and override `Emit(EffectScene scene, in CastFrame f)`. `f` carries the screen size, `Px`, `Age`, `Seed`, `Fresh`, `Resized`, alpha and color; `envelope: true` adds a faster fade-in plus `Gate`/`Leave`/`Leaving` (see `DoomEffect`); override `MaxStep` to cap the frame step (see `DiseaseEffect`). Art only this effect uses goes beside it in `Effects/<Name>/`. Implement `IHasSwappableSlots` to expose materials (`Slot.Stroke`, `Slot.Particle`, `Slot.Region`), and mark the slots a "made of X" phrase replaces with `hero: true`. Scale sizes by `f.Px` (it is `DrawHelpers.PixelScale`, the same scale materials use), and re-lay anything anchored to the screen size when `f.Fresh || f.Resized`.
 - **Material**: implement a material interface with a public parameterless constructor and it is registered. Give it `NaturalLanguageWords` to make it selectable via "made of X" (words are unique across materials; the audit flags clashes).
 - **Role**: add a `PrimitiveRole` with an unused number; `[Fallback("particle.x")]` names the particle drawn when a slot has none.
 - **Particles**: an effect owns a `ParticleSystem(capacity, seedSalt, physics)`; `Stream` spawns on a random interval, `Burst` all at once, `Emit` hands them to the scene as one `ParticleStyle`. Anything else is hand-built `scene.AddParticle` calls.
-- **Color of light**: add a `Palette` in `Palette.cs`, then add `StrokeGlow` / `ParticleMote` (and `StrokeSigil`, `ParticleRune`, `ParticleEmber`, `RegionFirelight` for a full theme) with it to an `IMaterialPack` in `Materials/Variants.cs`. Add new rune glyph sets after the existing ones; don't change `LegacyCount`.
+- **Color of light**: in the effect's folder, a `<Name>Theme.cs` holds its palette class and an `IMaterialPack` listing `StrokeGlow` / `ParticleMote` (and `StrokeSigil`, `ParticleRune`, `ParticleEmber`, `ParticlePuff`, `RegionFirelight` for a full theme) built with it (see `DoomTheme.cs`). A `Palette` used by shared code stays in `Palette.cs`. Add new rune glyph sets after the existing ones; don't change `LegacyCount`.
 - **Eyes**: `ParticleEye` (`particle.eye`) draws a shaded eye in any of the `EyeStyle`s, including a lidless `Orb` with its nerve; `ParticleEye.Held(open, style)` lets an effect drive the lids, and small or far eyes use fewer vertices. A themed set registers another instance with its palette. `StrokeWisp` is a soft tapered streamer for things in motion (path runs tail to head).
 - **Fog**: a `ParticlePuff` `Look` with a `Ramp` draws as a billow: a mesh shaded from warped noise and lit from the screen's middle (`Variant` = squash %, `Rotation` = stretch). Give any smoke or mist a `Ramp` to upgrade it.
 - **Script**: `ScriptFont` (`Script.cs`) is a single-stroke cursive alphabet (lowercase, `' , . ! ? -`, `♥`); `ParticleWhisper` draws a phrase in it and `WhisperField` spawns and drifts them. Phrases are `CharmWhispers.Phrases` and `AmnesiaWhispers.Phrases`; a themed set adds another `ParticleWhisper` with its palette and phrases to a pack.
 - **Vortex**: `RegionVortex` draws a flown-through spiral tunnel from a `VortexField` (`At` places anything on its wall); `StrokeSilk` is a twisting two-tone ribbon for the arms. See `AmnesiaEffect`.
 - **Liquid**: add a `LiquidSpec` (look, plus `Viscosity` 0 water to 1 slime) to `LiquidPresets`, subclass `ParticleGoop` (see `ParticleWater`). Drips, stream breakup, pool waves, splash and cling all follow from `Viscosity`; any stroke can shed it with `Liquid.Phys.Shed()`.
 - **Pouring liquid**: an effect owns a `LiquidField`: `Begin(..., jets, seeps)` on `f.Fresh || f.Resized` makes idle slots; `Launch` a jet when it is `Idle`, `Place` a seep, set `Flow`, `Speed`, `Angle`, `Level` each frame, then `Step` and `Emit`. `Spray`, `Fling` and `Splat` throw droplets, a drop or lens beads. See `DropsyEffect`; resolve the liquid with `Liquid.Resolve(scene, Kind, role)` so a hero slot swap changes everything.
-- **`DebuffKind`**: add at the END of the enum (values are serialized).
+- **`DebuffKind`**: add at the END of the enum in `Effects/DebuffKind.cs` (values are serialized); 13 kinds are already reserved.

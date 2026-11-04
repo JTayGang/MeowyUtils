@@ -1,0 +1,13 @@
+{
+    "Author": "Meowmeowmeow Cat",
+    "Name": "Real Debuffs",
+    "Punchline": "Blind actually blinds you. Paralysis actually crackles. Silence actually shuts you up.",
+    "Description": "Adds real screen effects for status debuffs. Effects stack and layer with each other, and fade in/out smoothly. Commands: /realdebuffs (opens settings), /realdebuffs toggle.",
+    "Tags": [ "debuff", "immersion", "screen effects", "status", "roleplay" ],
+    "InternalName": "RealDebuffs",
+    "AssemblyVersion": "1.0.0.0",
+    "ApplicableVersion": "any",
+    "DalamudApiLevel": 15,
+    "RepoUrl": "",
+    "LoadPriority": 0
+}

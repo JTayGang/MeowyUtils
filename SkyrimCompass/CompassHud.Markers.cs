@@ -40,7 +40,7 @@ public sealed partial class CompassHud
     private readonly Dictionary<uint, string> _titleCache = new();
     private readonly Dictionary<uint, string> _singularCache = new();
     private readonly Dictionary<uint, uint> _roleColorCache = new();
-    private readonly Dictionary<uint, bool> _shardRowCache = new();
+    private readonly Dictionary<(ObjectKind Kind, uint BaseId), AetheryteKind> _aetheryteKindCache = new();
 
     private Dictionary<string, PlayerIconOverride>? _overrideDict;
     private int _overrideDictVer = -1;
@@ -157,7 +157,7 @@ public sealed partial class CompassHud
                     }
                     if (!drewJob)
                     {
-                        var ov=FindOverride(obj.Name.TextValue);
+                        var ov=FindOverride(obj);
                         if (ov!=null)
                         {
                             float ovSize=pSize*IconSizeMul;
@@ -211,8 +211,9 @@ public sealed partial class CompassHud
         return icon;
     }
 
-    private PlayerIconOverride? FindOverride(string name)
+    private PlayerIconOverride? FindOverride(IGameObject obj)
     {
+        if (_cfg.PlayerIconOverrides.Count==0) return null;
         if (_overrideDict==null || _overrideDictVer != _cfg.PlayerIconOverridesVersion)
         {
             _overrideDict=new Dictionary<string,PlayerIconOverride>(StringComparer.OrdinalIgnoreCase);
@@ -221,7 +222,8 @@ public sealed partial class CompassHud
                     _overrideDict[e.PlayerName]=e;
             _overrideDictVer=_cfg.PlayerIconOverridesVersion;
         }
-        _overrideDict.TryGetValue(name,out var found);
+        if (_overrideDict.Count==0) return null;
+        _overrideDict.TryGetValue(obj.Name.TextValue,out var found);
         return found;
     }
 
@@ -297,22 +299,21 @@ public sealed partial class CompassHud
         }
     }
 
-    // Shards are found by sheet row (works in any client language), with the English name as a fallback.
+    // Shards come from the sheet row (any client language) with the English name as fallback; cached per kind + base ID.
     private AetheryteKind ClassifyAetheryte(IGameObject obj)
     {
-        bool isAetheryteObj = obj.ObjectKind == ObjectKind.Aetheryte;
-        bool shard = (isAetheryteObj && IsShardRow(obj.BaseId))
-            || obj.Name.TextValue.Contains(ShardNameFallback, StringComparison.OrdinalIgnoreCase);
-        if (isAetheryteObj) return shard ? AetheryteKind.Shard : AetheryteKind.Big;
-        return shard ? AetheryteKind.Shard : AetheryteKind.None;
-    }
+        var key = (obj.ObjectKind, obj.BaseId);
+        if (_aetheryteKindCache.TryGetValue(key, out var cached)) return cached;
 
-    private bool IsShardRow(uint baseId)
-    {
-        if (_shardRowCache.TryGetValue(baseId, out bool isShard)) return isShard;
-        isShard = _aetheryteSheet.GetRowOrDefault(baseId) is { IsAetheryte: false };
-        _shardRowCache[baseId] = isShard;
-        return isShard;
+        string name = obj.Name.TextValue;
+        bool isAetheryteObj = obj.ObjectKind == ObjectKind.Aetheryte;
+        bool shard = (isAetheryteObj && _aetheryteSheet.GetRowOrDefault(obj.BaseId) is { IsAetheryte: false })
+            || name.Contains(ShardNameFallback, StringComparison.OrdinalIgnoreCase);
+        var kind = shard ? AetheryteKind.Shard : isAetheryteObj ? AetheryteKind.Big : AetheryteKind.None;
+
+        // Skip caching while the name hasn't loaded or the base ID is unset.
+        if (name.Length > 0 && obj.BaseId != 0) _aetheryteKindCache[key] = kind;
+        return kind;
     }
 
     private int GetAetheryteIconId(AetheryteKind kind) =>

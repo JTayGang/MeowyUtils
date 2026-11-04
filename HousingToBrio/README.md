@@ -1,5 +1,7 @@
 # Housing To Brio
 
+[日本語版はこちら](./README.ja.md)
+
 A GPose plugin: load a housing layout file and it spawns the furniture as
 Brio props, so you can shoot in any house layout without owning the house,
 buying the furniture, or decorating anything yourself - just more
@@ -26,6 +28,11 @@ https://raw.githubusercontent.com/JTayGang/MeowyUtils/main/repo.json
 
 Items that can't be matched to a current in-game furniture model are skipped
 and listed after saving.
+
+## Language
+
+The window follows Dalamud's UI language (English or Japanese). To change it,
+use the **Language / 言語** dropdown at the bottom of the window.
 
 ## Limitations
 

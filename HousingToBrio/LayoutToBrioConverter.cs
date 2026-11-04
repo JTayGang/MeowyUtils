@@ -1,8 +1,11 @@
+using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Numerics;
 using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
+using static HousingToBrio.Loc;
 
 namespace HousingToBrio;
 
@@ -14,6 +17,7 @@ namespace HousingToBrio;
 /// </summary>
 public sealed class FurnitureModelResolver
 {
+    private readonly IDataManager _dataManager;
     private readonly Dictionary<uint, uint> _indoorModelKeyByItemId = new();
     private readonly Dictionary<uint, uint> _outdoorModelKeyByItemId = new();
 
@@ -22,6 +26,8 @@ public sealed class FurnitureModelResolver
 
     public FurnitureModelResolver(IDataManager dataManager)
     {
+        _dataManager = dataManager;
+
         var indoorSheet = dataManager.GetExcelSheet<HousingFurniture>();
         if (indoorSheet is not null)
         {
@@ -47,6 +53,17 @@ public sealed class FurnitureModelResolver
                 _outdoorModelKeyByItemId[item.Value.RowId] = row.ModelKey;
             }
         }
+    }
+
+    /// <summary>The item's name in the game client's language, or null if the Item sheet has none.</summary>
+    public string? TryGetItemName(uint itemId)
+    {
+        var sheet = _dataManager.GetExcelSheet<Item>();
+        if (sheet is null || !sheet.TryGetRow(itemId, out var row))
+            return null;
+
+        var name = row.Name.ToString();
+        return string.IsNullOrWhiteSpace(name) ? null : name;
     }
 
     /// <summary>False if itemId isn't in the current game's housing sheets.</summary>
@@ -78,10 +95,47 @@ public sealed class ConversionOptions
 
 public sealed class ConversionResult
 {
+    private const int MaxListedSkippedItems = 25;
+
+    private readonly Dictionary<string, int> _skippedCounts = new();
+
     public List<BrioWorldObjectDto> WorldObjects { get; } = new();
     public int PlacedCount { get; set; }
     public int SkippedUnknownItemCount { get; set; }
+
+    /// <summary>Labels for the skipped-items list ("Name" or "Name ×3"), most frequent first. Built once by FinishSkippedList().</summary>
     public List<string> SkippedItemNames { get; } = new();
+
+    /// <summary>True when more distinct skipped items exist than SkippedItemNames lists.</summary>
+    public bool SkippedListTruncated { get; private set; }
+
+    internal void AddSkipped(string name)
+    {
+        SkippedUnknownItemCount++;
+        _skippedCounts.TryGetValue(name, out var count);
+        _skippedCounts[name] = count + 1;
+    }
+
+    internal void FinishSkippedList()
+    {
+        SkippedItemNames.Clear();
+        SkippedListTruncated = false;
+
+        var ordered = _skippedCounts
+            .OrderByDescending(kv => kv.Value)
+            .ThenBy(kv => kv.Key, StringComparer.Ordinal);
+
+        foreach (var (name, count) in ordered)
+        {
+            if (SkippedItemNames.Count >= MaxListedSkippedItems)
+            {
+                SkippedListTruncated = true;
+                break;
+            }
+
+            SkippedItemNames.Add(count > 1 ? $"{name} ×{count}" : name);
+        }
+    }
 }
 
 public static class LayoutToBrioConverter
@@ -96,6 +150,7 @@ public static class LayoutToBrioConverter
         if (options.IncludeExterior)
             ConvertList(layout.ExteriorFurniture, indoors: false, layout.ExteriorScale, resolver, options, result);
 
+        result.FinishSkippedList();
         return result;
     }
 
@@ -158,7 +213,7 @@ public static class LayoutToBrioConverter
 
             result.WorldObjects.Add(new BrioWorldObjectDto
             {
-                FriendlyName = string.IsNullOrEmpty(entry.Name) ? $"Item #{entry.ItemId}" : entry.Name,
+                FriendlyName = DisplayName(entry, resolver),
                 ObjectType = BrioWorldObjectType.Furniture,
                 Path = sgbPath,
                 Transform = new BrioTransform { Position = position, Rotation = rotation, Scale = scale },
@@ -176,9 +231,7 @@ public static class LayoutToBrioConverter
         }
         else
         {
-            result.SkippedUnknownItemCount++;
-            if (result.SkippedItemNames.Count < 25)
-                result.SkippedItemNames.Add(string.IsNullOrEmpty(entry.Name) ? $"Item #{entry.ItemId}" : entry.Name);
+            result.AddSkipped(DisplayName(entry, resolver));
         }
 
         if (entry.Attachments is not null)
@@ -187,6 +240,11 @@ public static class LayoutToBrioConverter
                 ConvertEntry(child, indoors, divisor, resolver, options, result);
         }
     }
+
+    // Prefer the game's own name (in the player's client language) over whatever language the layout was exported in.
+    private static string DisplayName(FurnitureEntry entry, FurnitureModelResolver resolver)
+        => resolver.TryGetItemName(entry.ItemId)
+           ?? (string.IsNullOrEmpty(entry.Name) ? F("Item #{0}", entry.ItemId) : entry.Name);
 
     private static float SafeGet(float[] array, int index, float fallback = 0f)
         => array.Length > index ? array[index] : fallback;

@@ -6,6 +6,7 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using static HousingToBrio.Loc;
 using WinForms = System.Windows.Forms;
 
 namespace HousingToBrio;
@@ -46,7 +47,7 @@ public sealed class MainWindow : Window, IDisposable
         ICommandManager commandManager,
         IClientState clientState,
         IDataManager dataManager)
-        : base("Housing To Brio (Use /housingtobrio OR /h2b to open this menu)###housing_to_brio_main", ImGuiWindowFlags.None)
+        : base("Housing To Brio###housing_to_brio_main", ImGuiWindowFlags.None)
     {
         _plugin = plugin;
         _log = log;
@@ -61,13 +62,24 @@ public sealed class MainWindow : Window, IDisposable
 
         _layoutPathInput = plugin.Configuration.LastLayoutPath;
 
-        var detected = BrioProjectInstaller.TryDetectBrioDataFolder(_pluginInterface);
-        if (detected is not null)
+        var remembered = plugin.Configuration.BrioFolderPath;
+        if (!string.IsNullOrWhiteSpace(remembered) && Directory.Exists(remembered))
         {
-            _brioFolderInput = detected;
-            _brioFolderAutoDetected = true;
+            _brioFolderInput = remembered;
+        }
+        else
+        {
+            var detected = BrioProjectInstaller.TryDetectBrioDataFolder(_pluginInterface);
+            if (detected is not null)
+            {
+                _brioFolderInput = detected;
+                _brioFolderAutoDetected = true;
+            }
         }
     }
+
+    public override void PreDraw()
+        => WindowName = L("Housing To Brio (Use /housingtobrio OR /h2b to open this menu)", "housing_to_brio_main");
 
     public override void Draw()
     {
@@ -83,9 +95,8 @@ public sealed class MainWindow : Window, IDisposable
             _pendingBrioFolderPath = null;
             _brioFolderInput = newBrioFolder;
             _brioFolderAutoDetected = false;
+            RememberBrioFolder();
         }
-
-        _brioReload.Tick(_pluginInterface, _commandManager);
 
         DrawLayoutSection();
 
@@ -103,34 +114,96 @@ public sealed class MainWindow : Window, IDisposable
 
             DrawBrioProjectSection();
         }
+
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+
+        DrawLanguageSelector();
     }
+
+    /// <summary>
+    /// Advances the Brio disable/enable cycle. The plugin calls this every frame, because
+    /// Draw() doesn't run while the window is closed and Brio would be left disabled.
+    /// </summary>
+    public void TickBrioReload() => _brioReload.Tick(_pluginInterface, _commandManager);
+
+    // "Copy as path" in Explorer wraps the path in quotes; stray spaces sneak in when pasting too.
+    private static string CleanPath(string path) => path.Trim().Trim('"');
+
+    private void RememberBrioFolder()
+    {
+        if (string.IsNullOrWhiteSpace(_brioFolderInput)
+            || _plugin.Configuration.BrioFolderPath == _brioFolderInput)
+            return;
+
+        _plugin.Configuration.BrioFolderPath = _brioFolderInput;
+        _plugin.SaveConfiguration();
+    }
+
+    private void DrawLanguageSelector()
+    {
+        var lang = (int)_plugin.Configuration.Language;
+        ImGui.SetNextItemWidth(130f);
+        if (ImGui.Combo("Language / 言語###language", ref lang, new[] { T("Auto"), "English", "日本語" }, 3))
+        {
+            _plugin.Configuration.Language = (LanguageSetting)lang;
+            _plugin.SaveConfiguration();
+        }
+    }
+
+    // Japanese text is wider than English, so long lines wrap instead of running off the window.
+    private static void WrappedColored(Vector4 color, string text)
+    {
+        ImGui.PushTextWrapPos(0f);
+        ImGui.TextColored(color, text);
+        ImGui.PopTextWrapPos();
+    }
+
+    // Grows past minWidth when the (translated) label needs it. The ### ID keeps it stable across languages.
+    private static bool SizedButton(string en, string id, float minWidth)
+    {
+        var text = T(en);
+        var width = Math.Max(minWidth, ImGui.CalcTextSize(text).X + 24f);
+        return ImGui.Button($"{text}###{id}", new Vector2(width, 0));
+    }
+
+    // Sizes come from the layout file / territory sheet in English; show them in the UI language.
+    private static string LocalizeHouseSize(string size) => size.Trim().ToLowerInvariant() switch
+    {
+        "small" => T("Small"),
+        "medium" => T("Medium"),
+        "large" => T("Large"),
+        "apartment" => T("Apartment"),
+        _ => size,
+    };
 
     private void DrawLayoutSection()
     {
-        ImGui.TextUnformatted("Layout file");
+        ImGui.TextUnformatted(T("Layout file"));
 
         ImGui.SetNextItemWidth(-90f);
         ImGui.InputText("###layout_path", ref _layoutPathInput, 512);
         ImGui.SameLine();
-        if (ImGui.Button("Browse...###browse_layout"))
+        if (ImGui.Button(L("Browse...", "browse_layout")))
             BrowseForLayoutFile();
 
-        if (ImGui.Button("Load layout", new Vector2(160, 0)))
+        if (SizedButton("Load layout", "load_layout", 160f))
             LoadLayout();
 
         if (_loadError is not null)
         {
             ImGui.Spacing();
-            ImGui.TextColored(new Vector4(1f, 0.4f, 0.4f, 1f), _loadError);
+            WrappedColored(new Vector4(1f, 0.4f, 0.4f, 1f), _loadError);
         }
 
         if (_loadedLayout is { } layout)
         {
             ImGui.Spacing();
-            ImGui.TextUnformatted($"House size: {(string.IsNullOrEmpty(layout.HouseSize) ? "unknown" : layout.HouseSize)}");
-            ImGui.TextUnformatted($"Interior furniture: {layout.InteriorFurniture.Count}");
-            ImGui.TextUnformatted($"Exterior furniture: {layout.ExteriorFurniture.Count}");
-            ImGui.TextUnformatted($"Fixtures (skipped): {layout.InteriorFixture.Count + layout.ExteriorFixture.Count}");
+            ImGui.TextUnformatted(F("House size: {0}", string.IsNullOrEmpty(layout.HouseSize) ? T("unknown") : LocalizeHouseSize(layout.HouseSize)));
+            ImGui.TextUnformatted(F("Interior furniture: {0}", layout.InteriorFurniture.Count));
+            ImGui.TextUnformatted(F("Exterior furniture: {0}", layout.ExteriorFurniture.Count));
+            ImGui.TextUnformatted(F("Fixtures (skipped): {0}", layout.InteriorFixture.Count + layout.ExteriorFixture.Count));
 
             var currentSize = HouseSizeDetector.GetCurrentIndoorHouseSize(_clientState, _dataManager);
             if (currentSize is not null
@@ -138,31 +211,31 @@ public sealed class MainWindow : Window, IDisposable
                 && !string.Equals(currentSize, layout.HouseSize, StringComparison.OrdinalIgnoreCase))
             {
                 ImGui.Spacing();
-                ImGui.TextColored(new Vector4(1f, 0.8f, 0.3f, 1f), $"Layout is {layout.HouseSize}, you're in {currentSize}.");
+                WrappedColored(new Vector4(1f, 0.8f, 0.3f, 1f), F("Layout is {0}, you're in {1}.", LocalizeHouseSize(layout.HouseSize), LocalizeHouseSize(currentSize)));
             }
         }
     }
 
     private void DrawOptionsSection()
     {
-        ImGui.TextUnformatted("Options");
+        ImGui.TextUnformatted(T("Options"));
 
         var includeInterior = _plugin.Configuration.IncludeInterior;
-        if (ImGui.Checkbox("Include interior furniture", ref includeInterior))
+        if (ImGui.Checkbox(L("Include interior furniture", "opt_interior"), ref includeInterior))
         {
             _plugin.Configuration.IncludeInterior = includeInterior;
             _plugin.SaveConfiguration();
         }
 
         var includeExterior = _plugin.Configuration.IncludeExterior;
-        if (ImGui.Checkbox("Include exterior furniture", ref includeExterior))
+        if (ImGui.Checkbox(L("Include exterior furniture", "opt_exterior"), ref includeExterior))
         {
             _plugin.Configuration.IncludeExterior = includeExterior;
             _plugin.SaveConfiguration();
         }
 
         var applyDye = _plugin.Configuration.ApplyDyeColors;
-        if (ImGui.Checkbox("Apply dye colors", ref applyDye))
+        if (ImGui.Checkbox(L("Apply dye colors", "opt_dye"), ref applyDye))
         {
             _plugin.Configuration.ApplyDyeColors = applyDye;
             _plugin.SaveConfiguration();
@@ -171,28 +244,28 @@ public sealed class MainWindow : Window, IDisposable
 
     private void DrawBrioProjectSection()
     {
-        ImGui.TextUnformatted("Save as a Brio Project");
+        ImGui.TextUnformatted(T("Save as a Brio Project"));
 
         ImGui.SetNextItemWidth(-140f);
         ImGui.InputText("###brio_folder", ref _brioFolderInput, 512);
         ImGui.SameLine();
-        if (ImGui.Button("Re-detect###redetect_brio"))
+        if (ImGui.Button(L("Re-detect", "redetect_brio")))
             DetectBrioFolder();
         ImGui.SameLine();
-        if (ImGui.Button("Browse...###browse_brio_folder"))
+        if (ImGui.Button(L("Browse...", "browse_brio_folder")))
             BrowseForBrioFolder();
 
         if (!_brioFolderAutoDetected && string.IsNullOrEmpty(_brioFolderInput))
-            ImGui.TextColored(new Vector4(1f, 0.8f, 0.3f, 1f), "Brio folder not found - set manually.");
+            WrappedColored(new Vector4(1f, 0.8f, 0.3f, 1f), T("Brio folder not found - set manually."));
 
         ImGui.SetNextItemWidth(-1f);
-        ImGui.InputTextWithHint("###project_name", "Project name", ref _projectNameInput, 100);
+        ImGui.InputTextWithHint("###project_name", T("Project name"), ref _projectNameInput, 100);
 
         ImGui.SetNextItemWidth(-1f);
-        ImGui.InputTextWithHint("###project_description", "Description (optional)", ref _projectDescriptionInput, 250);
+        ImGui.InputTextWithHint("###project_description", T("Description (optional)"), ref _projectDescriptionInput, 250);
 
         var autoReload = _plugin.Configuration.AutoReloadBrio;
-        if (ImGui.Checkbox("Auto-reload Brio after saving", ref autoReload))
+        if (ImGui.Checkbox(L("Auto-reload Brio after saving", "opt_autoreload"), ref autoReload))
         {
             _plugin.Configuration.AutoReloadBrio = autoReload;
             _plugin.SaveConfiguration();
@@ -202,13 +275,13 @@ public sealed class MainWindow : Window, IDisposable
 
         if (!autoReload)
         {
-            ImGui.BulletText("1. Save as Brio Project");
-            ImGui.BulletText("2. Reload Brio (don't Save/Delete Project first)");
-            ImGui.BulletText("3. Load Project in Brio");
+            ImGui.BulletText(T("1. Save as Brio Project"));
+            ImGui.BulletText(T("2. Reload Brio (don't Save/Delete Project first)"));
+            ImGui.BulletText(T("3. Load Project in Brio"));
         }
 
-        ImGui.TextColored(new Vector4(1f, 0.3f, 0.3f, 1f),
-            "In Load Project's options (gear icon): uncheck \"Relative Object Positions\".");
+        WrappedColored(new Vector4(1f, 0.3f, 0.3f, 1f),
+            T("In Load Project's options (gear icon): uncheck \"Relative Object Positions\"."));
 
         ImGui.Spacing();
         ImGui.Separator();
@@ -217,7 +290,7 @@ public sealed class MainWindow : Window, IDisposable
         var reloadRunning = _brioReload.IsRunning;
         if (reloadRunning)
             ImGui.BeginDisabled();
-        if (ImGui.Button("Save as Brio Project", new Vector2(200, 0)))
+        if (SizedButton("Save as Brio Project", "save_brio_project", 200f))
             SaveAsBrioProject();
         if (reloadRunning)
             ImGui.EndDisabled();
@@ -231,19 +304,19 @@ public sealed class MainWindow : Window, IDisposable
                 BrioPluginControl.State.Failed => new Vector4(1f, 0.4f, 0.4f, 1f),
                 _ => new Vector4(1f, 0.8f, 0.3f, 1f),
             };
-            ImGui.TextColored(color, _brioReload.Message);
+            WrappedColored(color, _brioReload.Message);
         }
 
         if (_projectSaveError is not null)
         {
             ImGui.Spacing();
-            ImGui.TextColored(new Vector4(1f, 0.4f, 0.4f, 1f), _projectSaveError);
+            WrappedColored(new Vector4(1f, 0.4f, 0.4f, 1f), _projectSaveError);
         }
 
         if (_projectSaveMessage is not null)
         {
             ImGui.Spacing();
-            ImGui.TextColored(new Vector4(0.4f, 1f, 0.4f, 1f), _projectSaveMessage);
+            WrappedColored(new Vector4(0.4f, 1f, 0.4f, 1f), _projectSaveMessage);
         }
 
         if (_lastProjectResult is { SkippedUnknownItemCount: > 0 } projResult)
@@ -253,13 +326,13 @@ public sealed class MainWindow : Window, IDisposable
     private static void DrawSkippedItems(ConversionResult result)
     {
         ImGui.Spacing();
-        ImGui.TextColored(new Vector4(1f, 0.8f, 0.3f, 1f), $"{result.SkippedUnknownItemCount} item(s) skipped:");
+        WrappedColored(new Vector4(1f, 0.8f, 0.3f, 1f), F("{0} item(s) skipped:", result.SkippedUnknownItemCount));
 
         ImGui.Indent();
         foreach (var name in result.SkippedItemNames)
             ImGui.BulletText(name);
-        if (result.SkippedUnknownItemCount > result.SkippedItemNames.Count)
-            ImGui.BulletText("...and more.");
+        if (result.SkippedListTruncated)
+            ImGui.BulletText(T("...and more."));
         ImGui.Unindent();
     }
 
@@ -274,17 +347,19 @@ public sealed class MainWindow : Window, IDisposable
         else
         {
             _brioFolderAutoDetected = false;
-            _projectSaveError = "Not found - set manually.";
+            _projectSaveError = T("Not found - set manually.");
         }
     }
 
     private void BrowseForBrioFolder()
     {
+        var description = T("Select Brio's config folder");
+
         RunOnStaThread(() =>
         {
             using var dialog = new WinForms.FolderBrowserDialog
             {
-                Description = "Select Brio's config folder",
+                Description = description,
                 UseDescriptionForTitle = true,
             };
 
@@ -301,16 +376,17 @@ public sealed class MainWindow : Window, IDisposable
         _projectSaveError = null;
         _projectSaveMessage = null;
         _brioReload.Reset();
+        _brioFolderInput = CleanPath(_brioFolderInput);
 
         if (_loadedLayout is null)
         {
-            _projectSaveError = "Load a layout first.";
+            _projectSaveError = T("Load a layout first.");
             return;
         }
 
         if (string.IsNullOrWhiteSpace(_brioFolderInput) || !Directory.Exists(_brioFolderInput))
         {
-            _projectSaveError = "Set a valid Brio folder first.";
+            _projectSaveError = T("Set a valid Brio folder first.");
             return;
         }
 
@@ -331,7 +407,7 @@ public sealed class MainWindow : Window, IDisposable
         {
             Author = "HousingToBrio",
             Description = string.IsNullOrWhiteSpace(_projectDescriptionInput)
-                ? $"Converted from {Path.GetFileName(_layoutPathInput)}"
+                ? F("Converted from {0}", Path.GetFileName(_layoutPathInput))
                 : _projectDescriptionInput,
         };
 
@@ -346,7 +422,8 @@ public sealed class MainWindow : Window, IDisposable
 
         if (installResult.Success)
         {
-            _projectSaveMessage = $"{installResult.Message} {result.PlacedCount} objects.";
+            _projectSaveMessage = F("{0} {1} objects.", installResult.Message, result.PlacedCount);
+            RememberBrioFolder();
 
             if (_plugin.Configuration.AutoReloadBrio)
                 _brioReload.Start(_pluginInterface, _commandManager);
@@ -360,6 +437,7 @@ public sealed class MainWindow : Window, IDisposable
 
     private void LoadLayout()
     {
+        _layoutPathInput = CleanPath(_layoutPathInput);
         _loadError = null;
         _lastProjectResult = null;
         _projectSaveMessage = null;
@@ -377,18 +455,21 @@ public sealed class MainWindow : Window, IDisposable
         {
             _log.Warning(ex, "Failed to load housing layout from {Path}", _layoutPathInput);
             _loadedLayout = null;
-            _loadError = $"Couldn't load: {ex.Message}";
+            _loadError = F("Couldn't load: {0}", ex.Message);
         }
     }
 
     private void BrowseForLayoutFile()
     {
+        var title = T("Select a housing layout file");
+        var filter = $"{T("Housing layout (*.json)")}|*.json|{T("All files (*.*)")}|*.*";
+
         RunOnStaThread(() =>
         {
             using var dialog = new WinForms.OpenFileDialog
             {
-                Title = "Select a housing layout file",
-                Filter = "Housing layout (*.json)|*.json|All files (*.*)|*.*",
+                Title = title,
+                Filter = filter,
                 CheckFileExists = true,
             };
 

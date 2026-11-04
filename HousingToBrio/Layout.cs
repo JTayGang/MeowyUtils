@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
+using static HousingToBrio.Loc;
 
 namespace HousingToBrio;
 
@@ -116,13 +117,27 @@ public static class LayoutParser
     public static LayoutFile LoadFromFile(string path)
     {
         if (!File.Exists(path))
-            throw new FileNotFoundException("Layout file not found.", path);
+            throw new FileNotFoundException(T("Layout file not found."), path);
 
         var json = File.ReadAllText(path);
-        var layout = JsonSerializer.Deserialize<LayoutFile>(json, Options);
+
+        LayoutFile? layout;
+        try
+        {
+            layout = JsonSerializer.Deserialize<LayoutFile>(json, Options);
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidDataException(T("This file couldn't be read as a housing layout (invalid or unexpected JSON)."), ex);
+        }
 
         if (layout is null)
-            throw new InvalidDataException("The selected file does not contain a valid housing layout.");
+            throw new InvalidDataException(T("The selected file does not contain a valid housing layout."));
+
+        // Any JSON object deserializes into a LayoutFile with empty lists, so the wrong file would otherwise "load" without a hint.
+        if (layout.InteriorFurniture.Count + layout.ExteriorFurniture.Count
+            + layout.InteriorFixture.Count + layout.ExteriorFixture.Count == 0)
+            throw new InvalidDataException(T("No furniture or fixtures found. Is this a ReMakePlace layout file?"));
 
         return layout;
     }

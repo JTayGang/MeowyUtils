@@ -7,6 +7,7 @@ using System.Text;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using MessagePack;
+using static HousingToBrio.Loc;
 
 namespace HousingToBrio;
 
@@ -147,6 +148,7 @@ public sealed class BrioProjectRegistry
 public static class BrioProjectInstaller
 {
     private const string BrioInternalName = "Brio";
+    private const int MaxRegistryBackups = 5;
 
     public sealed class InstallResult
     {
@@ -194,13 +196,14 @@ public static class BrioProjectInstaller
                     return new InstallResult
                     {
                         Success = false,
-                        Message = $"Couldn't read Brio's registry: {ex.Message}",
+                        Message = F("Couldn't read Brio's registry: {0}", ex.Message),
                     };
                 }
 
                 // Never touch the real registry without a recovery copy first.
                 var backupPath = registryPath + $".backup-{DateTime.Now:yyyyMMdd-HHmmss}";
                 File.Copy(registryPath, backupPath, overwrite: true);
+                PruneRegistryBackups(registryPath);
             }
             else
             {
@@ -223,8 +226,11 @@ public static class BrioProjectInstaller
                 Created = DateTime.UtcNow,
             });
 
+            // Write beside the registry and swap it in, so a crash mid-write can't leave a half-written brio.data.
             var registryBytes = MessagePackSerializer.Serialize(registry);
-            File.WriteAllBytes(registryPath, registryBytes);
+            var tempPath = registryPath + ".tmp";
+            File.WriteAllBytes(tempPath, registryBytes);
+            File.Move(tempPath, registryPath, overwrite: true);
 
             // Confirms our own write landed; can't detect Brio overwriting it
             // later from a stale in-memory copy (see class summary).
@@ -239,7 +245,7 @@ public static class BrioProjectInstaller
                     return new InstallResult
                     {
                         Success = false,
-                        Message = "Save verification failed - don't reload Brio.",
+                        Message = T("Save verification failed - don't reload Brio."),
                     };
                 }
             }
@@ -248,14 +254,14 @@ public static class BrioProjectInstaller
                 return new InstallResult
                 {
                     Success = false,
-                    Message = $"Verification failed: {ex.Message}",
+                    Message = F("Verification failed: {0}", ex.Message),
                 };
             }
 
             return new InstallResult
             {
                 Success = true,
-                Message = $"Saved as \"{projectName}\".",
+                Message = F("Saved as \"{0}\".", projectName),
                 SavedScenePath = scenePath,
             };
         }
@@ -264,8 +270,31 @@ public static class BrioProjectInstaller
             return new InstallResult
             {
                 Success = false,
-                Message = $"Save failed: {ex.Message}",
+                Message = F("Save failed: {0}", ex.Message),
             };
+        }
+    }
+
+    /// <summary>Keeps only the newest few "brio.data.backup-*" copies; each save adds one. Never fails a save.</summary>
+    private static void PruneRegistryBackups(string registryPath)
+    {
+        try
+        {
+            var directory = Path.GetDirectoryName(registryPath);
+            if (directory is null)
+                return;
+
+            // The yyyyMMdd-HHmmss suffix sorts chronologically as plain text.
+            var stale = Directory.GetFiles(directory, Path.GetFileName(registryPath) + ".backup-*")
+                .OrderByDescending(file => file, StringComparer.Ordinal)
+                .Skip(MaxRegistryBackups);
+
+            foreach (var staleFile in stale)
+                File.Delete(staleFile);
+        }
+        catch
+        {
+            // Housekeeping only.
         }
     }
 
@@ -317,19 +346,19 @@ public sealed class BrioPluginControl
         if (brio is null)
         {
             CurrentState = State.Failed;
-            Message = "Brio not found.";
+            Message = T("Brio not found.");
             return;
         }
 
         if (!brio.IsLoaded)
         {
             CurrentState = State.Failed;
-            Message = "Brio isn't enabled.";
+            Message = T("Brio isn't enabled.");
             return;
         }
 
         CurrentState = State.WaitingForDisable;
-        Message = "Disabling Brio...";
+        Message = T("Disabling Brio...");
         _stepStarted = DateTime.UtcNow;
         commandManager.ProcessCommand($"/xldisableplugin {BrioInternalName}");
     }
@@ -348,14 +377,14 @@ public sealed class BrioPluginControl
             if (brio is not null && !brio.IsLoaded)
             {
                 CurrentState = State.WaitingForEnable;
-                Message = "Re-enabling Brio...";
+                Message = T("Re-enabling Brio...");
                 _stepStarted = DateTime.UtcNow;
                 commandManager.ProcessCommand($"/xlenableplugin {BrioInternalName}");
             }
             else if (elapsed > TimeoutSeconds)
             {
                 CurrentState = State.Failed;
-                Message = "Didn't disable in time - reload manually.";
+                Message = T("Didn't disable in time - reload manually.");
             }
         }
         else if (CurrentState == State.WaitingForEnable)
@@ -363,12 +392,12 @@ public sealed class BrioPluginControl
             if (brio is not null && brio.IsLoaded)
             {
                 CurrentState = State.Succeeded;
-                Message = "Reloaded - open Load Project.";
+                Message = T("Reloaded - open Load Project.");
             }
             else if (elapsed > TimeoutSeconds)
             {
                 CurrentState = State.Failed;
-                Message = "Didn't re-enable in time - enable manually.";
+                Message = T("Didn't re-enable in time - enable manually.");
             }
         }
     }

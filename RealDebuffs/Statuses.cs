@@ -88,13 +88,14 @@ public enum StatusSource { None = 0, Moodles = 1, Loci = 2 }
 
 public sealed record ActiveCustomStatus(
     string Key, string Name, string Description, StatusSource Sources,
-    IReadOnlyList<TooltipEffectMatch> TooltipMatches);
+    ParseResult Language);
 
 public sealed class CustomStatusSnapshot
 {
     public static readonly CustomStatusSnapshot Empty = new(
         Array.Empty<ActiveCustomStatus>(),
         new HashSet<DebuffKind>(),
+        new Dictionary<DebuffKind, Vector4>(),
         new Dictionary<DebuffKind, Vector4>(),
         new Dictionary<string, string>(StringComparer.Ordinal));
 
@@ -104,30 +105,35 @@ public sealed class CustomStatusSnapshot
     public IReadOnlyCollection<DebuffKind> TooltipKinds { get; }
     public IReadOnlyDictionary<DebuffKind, Vector4> TooltipColors { get; }
 
-    /// <summary>Material substitutions from description text, keyed as the renderer expects.</summary>
+    /// <summary>The second colour (modifier layer) from description text.</summary>
+    public IReadOnlyDictionary<DebuffKind, Vector4> TooltipModifierColors { get; }
+
+    /// <summary>Body and modifier substitutions from description text, keyed as the renderer expects.</summary>
     public IReadOnlyDictionary<string, string> TooltipMaterialOverrides { get; }
 
     private CustomStatusSnapshot(
         ActiveCustomStatus[] statuses,
         HashSet<DebuffKind> tooltipKinds,
         Dictionary<DebuffKind, Vector4> tooltipColors,
+        Dictionary<DebuffKind, Vector4> tooltipModifierColors,
         Dictionary<string, string> tooltipMaterials)
     {
         Statuses = statuses;
         _keys = new HashSet<string>(statuses.Select(s => s.Key), StringComparer.Ordinal);
         TooltipKinds = tooltipKinds;
         TooltipColors = tooltipColors;
+        TooltipModifierColors = tooltipModifierColors;
         TooltipMaterialOverrides = tooltipMaterials;
     }
 
     /// <summary>True if a status with this key is active.</summary>
     public bool Contains(string key) => key.Length > 0 && _keys.Contains(key);
 
-    /// <summary>Merges both plugins' statuses by name, then resolves tooltip keywords over the merged descriptions.</summary>
+    /// <summary>Merges both plugins' statuses by name, then reads each merged description (when tooltipConfig is given) for the Looks it asks for.</summary>
     internal static CustomStatusSnapshot Build(
         IEnumerable<StatusHead> moodlesStatuses,
         IEnumerable<StatusHead> lociStatuses,
-        IReadOnlyList<TooltipKeywordRule> tooltipRules)
+        Configuration? tooltipConfig)
     {
         var merged = new Dictionary<string, (string Name, string Description, StatusSource Sources)>(StringComparer.Ordinal);
 
@@ -149,46 +155,12 @@ public sealed class CustomStatusSnapshot
         if (merged.Count == 0) return Empty;
 
         var built = new List<ActiveCustomStatus>(merged.Count);
-        var tooltipKinds = new HashSet<DebuffKind>();
-        var tooltipColors = new Dictionary<DebuffKind, Vector4>();
-        var tooltipMaterials = new Dictionary<string, string>(StringComparer.Ordinal);
-
         foreach (var kv in merged)
         {
-            var matches = tooltipRules.Count > 0 && kv.Value.Description.Length > 0
-                ? TooltipKeywordParser.Parse(kv.Value.Description, tooltipRules)
-                : Array.Empty<TooltipEffectMatch>();
-
-            built.Add(new ActiveCustomStatus(kv.Key, kv.Value.Name, kv.Value.Description, kv.Value.Sources, matches));
-
-            foreach (var m in matches)
-            {
-                tooltipKinds.Add(m.Kind);
-
-                if (m.Color is { } c && !tooltipColors.ContainsKey(m.Kind))
-                    tooltipColors[m.Kind] = c;
-
-                if (m.MaterialSubstitution is not { } matName) continue;
-
-                // A stroke can't fill a particle slot; a particle on a stroke hero goes to the emit axis.
-                string matType = PrefixOf(matName);
-                foreach (var hero in EffectRegistry.HeroSlotsFor(m.Kind))
-                {
-                    if (string.Equals(hero.Type.ToString(), matType, StringComparison.OrdinalIgnoreCase))
-                    {
-                        string key = MaterialOverrideKey.For(m.Kind, hero);
-                        if (!tooltipMaterials.ContainsKey(key))
-                            tooltipMaterials[key] = matName;
-                    }
-                    else if (hero.Type == SlotType.Stroke
-                             && string.Equals(matType, "particle", StringComparison.OrdinalIgnoreCase))
-                    {
-                        string key = MaterialOverrideKey.ForStrokeEmit(m.Kind, hero.Role);
-                        if (!tooltipMaterials.ContainsKey(key))
-                            tooltipMaterials[key] = matName;
-                    }
-                }
-            }
+            var language = tooltipConfig is not null && kv.Value.Description.Length > 0
+                ? TooltipLanguage.Parse(kv.Value.Description, tooltipConfig)
+                : ParseResult.Empty;
+            built.Add(new ActiveCustomStatus(kv.Key, kv.Value.Name, kv.Value.Description, kv.Value.Sources, language));
         }
 
         var statuses = built
@@ -196,13 +168,28 @@ public sealed class CustomStatusSnapshot
             .ThenBy(s => s.Key, StringComparer.Ordinal)
             .ToArray();
 
-        return new CustomStatusSnapshot(statuses, tooltipKinds, tooltipColors, tooltipMaterials);
-    }
+        // One Look per effect: the one that says the most wins, ties go to the earlier name, so the result never depends on dictionary order.
+        var chosen = new Dictionary<DebuffKind, Look>();
+        foreach (var status in statuses)
+            foreach (var look in status.Language.Looks)
+                if (!chosen.TryGetValue(look.Kind, out var have) || look.Score > have.Score)
+                    chosen[look.Kind] = look;
 
-    private static string PrefixOf(string materialName)
-    {
-        int dot = materialName.IndexOf('.');
-        return dot >= 0 ? materialName[..dot] : materialName;
+        var tooltipKinds = new HashSet<DebuffKind>();
+        var tooltipColors = new Dictionary<DebuffKind, Vector4>();
+        var tooltipModifierColors = new Dictionary<DebuffKind, Vector4>();
+        var tooltipMaterials = new Dictionary<string, string>(StringComparer.Ordinal);
+        long now = Environment.TickCount64;
+
+        foreach (var look in chosen.Values)
+        {
+            tooltipKinds.Add(look.Kind);
+            if (look.BodyColor is { } body) tooltipColors[look.Kind] = body.Resolve(now);
+            if (look.ModifierColor is { } mod) tooltipModifierColors[look.Kind] = mod.Resolve(now);
+            LookApply.Overrides(look, tooltipMaterials);
+        }
+
+        return new CustomStatusSnapshot(statuses, tooltipKinds, tooltipColors, tooltipModifierColors, tooltipMaterials);
     }
 }
 
@@ -297,11 +284,7 @@ public sealed class CustomStatusWatcher : IDisposable
     {
         if (_objectTable.LocalPlayer == null) { _snapshot = CustomStatusSnapshot.Empty; return; }
 
-        IReadOnlyList<TooltipKeywordRule> tooltipRules = _config.ParseCustomStatusTooltips
-            ? _config.TooltipKeywordRules
-            : Array.Empty<TooltipKeywordRule>();
-
-        _snapshot = CustomStatusSnapshot.Build(ReadSource(_moodles, now), ReadSource(_loci, now), tooltipRules);
+        _snapshot = CustomStatusSnapshot.Build(ReadSource(_moodles, now), ReadSource(_loci, now), _config.ParseCustomStatusTooltips ? _config : null);
     }
 
     /// <summary>Never throws; logs one warning per failure streak.</summary>

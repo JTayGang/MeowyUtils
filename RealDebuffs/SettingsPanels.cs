@@ -300,7 +300,7 @@ internal sealed class CustomStatusPanel
     }
 }
 
-/// <summary>"Tooltip keywords" section: master toggle plus the keyword rule list and add row.</summary>
+/// <summary>"Tooltip keywords" section: master toggle, each effect's built-in words (switch off a whole effect or single words), and the user's extra words.</summary>
 internal sealed class TooltipKeywordPanel
 {
     private const float KeywordWidth = 240f;
@@ -339,18 +339,25 @@ internal sealed class TooltipKeywordPanel
                 changed = true;
             }
 
-            ImGui.TextWrapped("Look for words inside a status's tooltip - useful when the title alone isn't telling enough.");
+            ImGui.TextWrapped("Look for words inside a status's tooltip - useful when the title alone isn't telling enough. " +
+                              "Every effect already understands its own words (and their plurals, -ed and -ing forms); add your own below.");
 
             ImGui.Spacing();
 
-            string rulesLabel = rules.Count == 1 ? "Rules (1)###rules" : $"Rules ({rules.Count})###rules";
+            changed |= DrawBuiltIn();
+
+            ImGui.Spacing();
+
+            string rulesLabel = rules.Count == 1 ? "Extra words (1)###rules" : $"Extra words ({rules.Count})###rules";
             if (ImGui.CollapsingHeader(rulesLabel))
             {
                 ImGui.BeginDisabled(rules.Count == 0);
                 if (ImGui.Button("Clear all##rulesclear")) _clearAllRequested = true;
                 ImGui.EndDisabled();
                 ImGui.SameLine();
-                if (ImGui.Button("Reset to defaults##rulesreset")) _resetDefaultsRequested = true;
+                if (ImGui.Button("Reset all word settings##rulesreset")) _resetDefaultsRequested = true;
+                if (ImGui.IsItemHovered())
+                    ImGui.SetTooltip("Removes your extra words and turns every built-in word back on.");
 
                 ImGui.Spacing();
 
@@ -411,7 +418,7 @@ internal sealed class TooltipKeywordPanel
                 ImGui.EndDisabled();
 
                 if (duplicate)
-                    ImGui.TextDisabled("  One of those words is already driving this effect.");
+                    ImGui.TextDisabled("  One of those words is already in your extras for this effect.");
             }
 
             if (_clearAllRequested)
@@ -423,11 +430,67 @@ internal sealed class TooltipKeywordPanel
             if (_resetDefaultsRequested)
             {
                 _resetDefaultsRequested = false;
-                TooltipKeywordRule.ResetToDefaults(_config, _effects);
+                TooltipKeywordRule.ResetToDefaults(_config);
                 changed = true;
             }
         }
         finally { ImGui.PopID(); }
+
+        return changed;
+    }
+
+    /// <summary>Built-in words per effect: switch an effect's words off, or mute single words.</summary>
+    private bool DrawBuiltIn()
+    {
+        bool changed = false;
+
+        if (!ImGui.CollapsingHeader("Built-in words###builtin")) return false;
+
+        foreach (var effect in _effects)
+        {
+            if (effect.TriggerKeywords.Count == 0) continue;
+            var kind = effect.Kind;
+
+            ImGui.PushID((int)kind);
+            if (ImGui.TreeNode($"{kind}###bi"))
+            {
+                bool on = !_config.TooltipOffKinds.Contains(kind);
+                if (ImGui.Checkbox("Trigger from these words##on", ref on))
+                {
+                    if (on) _config.TooltipOffKinds.Remove(kind);
+                    else    _config.TooltipOffKinds.Add(kind);
+                    changed = true;
+                }
+
+                _config.MutedWords.TryGetValue(kind, out var muted);
+
+                ImGui.BeginDisabled(!on);
+                for (int i = 0; i < effect.TriggerKeywords.Count; i++)
+                {
+                    string word = effect.TriggerKeywords[i];
+                    bool wordOn = muted is null || !muted.Contains(word, StringComparer.OrdinalIgnoreCase);
+                    if (ImGui.Checkbox($"{word}##w{i}", ref wordOn))
+                    {
+                        if (wordOn)
+                        {
+                            muted?.RemoveAll(w => string.Equals(w, word, StringComparison.OrdinalIgnoreCase));
+                            if (muted is { Count: 0 }) _config.MutedWords.Remove(kind);
+                        }
+                        else
+                        {
+                            if (muted is null) _config.MutedWords[kind] = muted = new List<string>();
+                            muted.Add(word);
+                        }
+                        changed = true;
+                    }
+                    if (i % 3 != 2 && i < effect.TriggerKeywords.Count - 1) ImGui.SameLine(0f, 14f);
+                }
+                ImGui.EndDisabled();
+
+                ImGui.TreePop();
+            }
+            ImGui.PopID();
+        }
 
         return changed;
     }
@@ -439,6 +502,7 @@ internal sealed class EffectStylePanel
     private readonly Configuration _config;
     private string _testText = "";
     private DebuffKind _selectedKind = DebuffKind.Blind;
+    private bool _advanced;
 
     // Cached once: both registries are fully populated before the first panel is built.
     private static readonly DebuffKind[] KindValues;
@@ -449,7 +513,7 @@ internal sealed class EffectStylePanel
     private static readonly string[] EmitOptions, EmitOptionIds;
 
     // Stored value for "rainbow" is the canonical spelling; the parser also accepts "rgb".
-    private static readonly string[] _colorNames = TooltipKeywordParser.NamedColors.Keys
+    private static readonly string[] _colorNames = ColorLexicon.Named.Keys
         .Concat(new[] { "rainbow" })
         .OrderBy(k => k, StringComparer.OrdinalIgnoreCase)
         .ToArray();
@@ -498,7 +562,8 @@ internal sealed class EffectStylePanel
             ImGui.SetNextItemOpen(true, ImGuiCond.FirstUseEver);
             if (ImGui.CollapsingHeader("Effect generator###effectstyles"))
             {
-                ImGui.TextWrapped("Paste a status description to see what it triggers, or customize what each effect is made of. Changes apply live.");
+                ImGui.TextWrapped("Paste a status description to see what it triggers, or build a look: what an effect is made of, " +
+                                  "what's on it, and up to two colours. Changes apply live.");
 
                 DrawTester();
 
@@ -512,6 +577,19 @@ internal sealed class EffectStylePanel
         finally { ImGui.PopID(); }
 
         return changed;
+    }
+
+    /// <summary>The look being edited, read back from the live overrides.</summary>
+    private Look CurrentLook(DebuffKind kind) => LookApply.FromOverrides(kind, _config.MaterialOverrides, ColorOf(_config.ColorOverrides, kind), ColorOf(_config.ModifierColorOverrides, kind));
+
+    private static LookColor? ColorOf(Dictionary<DebuffKind, string> map, DebuffKind kind) =>
+        map.TryGetValue(kind, out var name) && ColorLexicon.TryLookColor(name, out var c) ? c : null;
+
+    /// <summary>The phrase if the words can say it, else the code; what the tester is filled with after an edit.</summary>
+    private string ExportText(DebuffKind kind)
+    {
+        var look = CurrentLook(kind);
+        return LookText.Phrase(look, TooltipLanguage.For(_config)) ?? LookCode.Encode(look);
     }
 
     /// <summary>Changing the effect combo doesn't reset the previous effect; Reset is an explicit button.</summary>
@@ -533,18 +611,36 @@ internal sealed class EffectStylePanel
         if (ImGui.Combo("##effectselect", ref idx, KindNames, KindNames.Length))
         {
             _selectedKind = KindValues[idx];
-            _testText = BuildExportPhrase(_selectedKind);
+            _testText = ExportText(_selectedKind);
         };
 
+        var kind = _selectedKind;
+        var lex = TooltipLanguage.For(_config);
+        var look = CurrentLook(kind);
+        string? phrase = LookText.Phrase(look, lex);
+        string code = LookCode.Encode(look);
+
         ImGui.SameLine();
-        if (ImGui.SmallButton("Copy##effectcopy"))
+        ImGui.BeginDisabled(phrase is null);
+        if (ImGui.SmallButton("Copy phrase##effectcopy"))
         {
-            string phrase = BuildExportPhrase(_selectedKind);
-            ImGui.SetClipboardText(phrase);
-            _testText = phrase;
+            ImGui.SetClipboardText(phrase!);
+            _testText = phrase!;
+        }
+        ImGui.EndDisabled();
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip(phrase is null
+                ? "This look uses settings words can't say - copy the code instead."
+                : $"Copies to clipboard and fills the tester above:\n\n\"{phrase}\"");
+
+        ImGui.SameLine();
+        if (ImGui.SmallButton("Copy code##effectcode"))
+        {
+            ImGui.SetClipboardText(code);
+            _testText = code;
         }
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip($"Copies to clipboard and fills the tester above:\n\n\"{BuildExportPhrase(_selectedKind)}\"");
+            ImGui.SetTooltip($"Exact and always works, even for advanced slots. Paste it anywhere in a status description:\n\n{code}");
 
         // Wide gap before Reset so a misclick on Copy can't land on the destructive button.
         ImGui.SameLine(0f, 32f);
@@ -552,50 +648,82 @@ internal sealed class EffectStylePanel
         ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.95f, 0.55f, 0.35f, 1f));
         if (ImGui.SmallButton("Reset##effectreset"))
         {
-            if (ResetToDefaults(_selectedKind))
+            if (ResetToDefaults(kind))
             {
                 changed = true;
-                _testText = BuildExportPhrase(_selectedKind);
+                _testText = ExportText(kind);
             }
         }
         ImGui.PopStyleColor();
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip($"Returns {_selectedKind} to its built-in defaults.\n\nOnly affects the currently-selected effect.");
+            ImGui.SetTooltip($"Returns {kind} to its built-in defaults.\n\nOnly affects the currently-selected effect.");
+
+        ImGui.Spacing();
+        ImGui.TextDisabled("Phrase");
+        ImGui.SameLine();
+        if (phrase is not null) ImGui.TextWrapped(phrase);
+        else ImGui.TextDisabled("(code only)");
+        ImGui.TextDisabled("Code  ");
+        ImGui.SameLine();
+        ImGui.TextWrapped(code);
 
         ImGui.Spacing();
 
-        if (DrawColorRow(_selectedKind))
+        var body = EffectRegistry.BodyFor(kind);
+        var modifier = EffectRegistry.ModifierFor(kind);
+        string? modifierKey = LookApply.ModifierKey(kind);
+        bool edited = false;
+
+        // Both rows are drawn every frame even if only one reports a change, so evaluate in order.
+        if (body is { } bodySlot)
+            edited |= DrawSlotRow(kind, bodySlot, $"Made of ({bodySlot.Label})");
+
+        if (modifier is { } modSlot)
+            edited |= DrawSlotRow(kind, modSlot, $"With ({modSlot.Label})");
+        else if (body is { Type: SlotType.Stroke } strokeBody)
+            edited |= DrawEmitRow(kind, strokeBody, "With (what it sheds)");
+
+        edited |= DrawColorRow(kind, "Colour", _config.ColorOverrides);
+        if (modifierKey is not null)
+            edited |= DrawColorRow(kind, "Modifier colour", _config.ModifierColorOverrides);
+
+        ImGui.Spacing();
+        ImGui.Checkbox("Advanced: every material slot##advanced", ref _advanced);
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Shows the remaining slots. Words can't reach these - copy the code to share a look that uses them.");
+
+        if (_advanced)
         {
-            changed = true;
-            _testText = BuildExportPhrase(_selectedKind);
-            RefreshActivePreview();
+            ImGui.Indent();
+            foreach (var slot in EffectRegistry.SlotsFor(kind))
+            {
+                bool isBody = body is { } b && b.Type == slot.Type && b.Role == slot.Role && b.Region == slot.Region;
+                bool isModifier = modifier is { } m && m.Type == slot.Type && m.Role == slot.Role;
+                bool emitIsModifier = modifier is null && isBody;
+
+                if (!isBody && !isModifier) edited |= DrawSlotRow(kind, slot, slot.Label);
+                if (slot.Type == SlotType.Stroke && !emitIsModifier) edited |= DrawEmitRow(kind, slot, $"Emits ({slot.Label})");
+            }
+            ImGui.Unindent();
         }
 
-        ImGui.Spacing();
-
-        foreach (var slot in EffectRegistry.SlotsFor(_selectedKind))
+        if (edited)
         {
-            // Both are drawn every frame even if only one reports a change, so evaluate in order.
-            bool slotChanged = DrawSlotRow(_selectedKind, slot);
-            bool emitChanged = slot.Type == SlotType.Stroke && DrawEmitRow(_selectedKind, slot);
-
-            if (slotChanged || emitChanged)
-            {
-                changed = true;
-                _testText = BuildExportPhrase(_selectedKind);
-            }
+            changed = true;
+            _testText = ExportText(kind);
+            RefreshActivePreview();
         }
 
         return changed;
     }
 
-    /// <summary>Removes every override belonging to kind on both the material and emit axes.</summary>
+    /// <summary>Removes every override belonging to kind: colours, materials and emit axes.</summary>
     private bool ResetToDefaults(DebuffKind kind)
     {
         bool removedAny = false;
 
-        if (_config.ColorOverrides.Remove(kind))
-            removedAny = true;
+        if (_config.ColorOverrides.Remove(kind)) removedAny = true;
+        if (_config.ModifierColorOverrides.Remove(kind)) removedAny = true;
 
         foreach (var slot in EffectRegistry.SlotsFor(kind))
         {
@@ -610,7 +738,7 @@ internal sealed class EffectStylePanel
         return removedAny;
     }
 
-    /// <summary>Paste-in tester; Preview forces each matched kind on screen for 15s (material substitutions only apply live).</summary>
+    /// <summary>Paste-in tester: shows what each effect was understood to be; Preview forces every matched look on screen for 15s.</summary>
     private void DrawTester()
     {
         ImGui.PushID("GeneratorTester");
@@ -620,100 +748,86 @@ internal sealed class EffectStylePanel
 
             ImGui.InputTextMultiline("##testtext", ref _testText, 1024, new Vector2(-1, 60));
 
-            var matches = TooltipKeywordParser.Parse(_testText, _config.TooltipKeywordRules);
+            var result = TooltipLanguage.Parse(_testText, _config);
+            long now = Environment.TickCount64;
 
             if (_testText.Trim().Length == 0)
             {
                 ImGui.TextDisabled("  (paste a description above)");
             }
-            else if (matches.Count == 0)
+            else if (result.Looks.Count == 0)
             {
-                ImGui.TextDisabled("  No matches.");
+                ImGui.TextDisabled("  No effect recognised.");
             }
             else
             {
-                foreach (var m in matches)
-                {
-                    if (m.Color is { } c)
-                    {
-                        ImGui.TextColored(new Vector4(c.X, c.Y, c.Z, 1f), "\u25a0");
-                        ImGui.SameLine();
-                        ImGui.Text(m.Kind.ToString());
-                    }
-                    else
-                    {
-                        ImGui.Text("    " + m.Kind);
-                    }
-
-                    if (m.MaterialSubstitution is { } mat)
-                    {
-                        string? word = TooltipKeywordParser.CanonicalMaterialWord(mat);
-                        string display = word != null ? $"{mat} ({word})" : mat;
-                        ImGui.SameLine();
-                        ImGui.TextDisabled($"  -  made of {display}");
-                    }
-                }
+                foreach (var look in result.Looks)
+                    DrawLookLine(look, now);
             }
 
+            foreach (var note in result.Notes) ImGui.TextDisabled("  " + note);
+            foreach (var hint in result.Hints) ImGui.TextDisabled("  " + hint);
+
             ImGui.Spacing();
-            ImGui.BeginDisabled(matches.Count == 0);
+            ImGui.BeginDisabled(result.Looks.Count == 0);
             if (ImGui.Button("Preview", new Vector2(-1, 0)))
             {
-                foreach (var m in matches)
-                    DebugTester.Force(m.Kind, true, m.Color);
+                foreach (var look in result.Looks)
+                    DebugTester.ForceLook(look);
             }
             ImGui.EndDisabled();
             if (ImGui.IsItemHovered())
-                ImGui.SetTooltip("Shows the matched effects on screen for 15 seconds.");
+                ImGui.SetTooltip("Shows the matched effects on screen for 15 seconds, with their materials and colours.");
         }
         finally { ImGui.PopID(); }
     }
 
-    /// <summary>The Moodle phrase for this effect's style; the material axis wins over the emit axis.</summary>
-    private string BuildExportPhrase(DebuffKind kind)
+    /// <summary>"[swatch] Heavy  made of Silk  with [swatch] Ember".</summary>
+    private static void DrawLookLine(Look look, long now)
     {
-        string trigger = CanonicalTrigger(kind);
-
-        if (_config.ColorOverrides.TryGetValue(kind, out var colorName)
-            && TooltipKeywordParser.IsColorWord(colorName))
+        if (look.BodyColor is { } c)
         {
-            if (string.Equals(colorName, "rgb", StringComparison.OrdinalIgnoreCase))
-                colorName = "rainbow";
-            trigger = $"{colorName} {trigger}";
+            var rgb = c.Resolve(now);
+            ImGui.TextColored(new Vector4(rgb.X, rgb.Y, rgb.Z, 1f), "\u25a0");
+            ImGui.SameLine();
+            ImGui.Text(look.Kind.ToString());
+        }
+        else
+        {
+            ImGui.Text("    " + look.Kind);
         }
 
-        var heroes = EffectRegistry.HeroSlotsFor(kind);
-        if (heroes.Length == 0) return trigger;
-        var hero = heroes[0];
-
-        string matKey = MaterialOverrideKey.For(kind, hero);
-        if (_config.MaterialOverrides.TryGetValue(matKey, out var matName))
+        if (look.Body is { } body)
         {
-            string? word = TooltipKeywordParser.CanonicalMaterialWord(matName);
-            if (word != null) return $"{trigger} made of {word}";
+            ImGui.SameLine();
+            ImGui.TextDisabled($"  made of {FriendlyMaterialName(body)}");
         }
 
-        if (hero.Type == SlotType.Stroke)
+        if (look.Modifier is { } mod)
         {
-            string emitKey = MaterialOverrideKey.ForStrokeEmit(kind, hero.Role);
-            if (_config.MaterialOverrides.TryGetValue(emitKey, out var emitName)
-                && emitName != "__none__")
+            ImGui.SameLine();
+            ImGui.TextDisabled(mod == Look.NoShed ? "  shedding nothing" : "  with");
+            if (mod != Look.NoShed)
             {
-                string? word = TooltipKeywordParser.CanonicalMaterialWord(emitName);
-                if (word != null) return $"{trigger} made of {word}";
+                if (look.ModifierColor is { } mc)
+                {
+                    var rgb = mc.Resolve(now);
+                    ImGui.SameLine();
+                    ImGui.TextColored(new Vector4(rgb.X, rgb.Y, rgb.Z, 1f), "\u25a0");
+                }
+                ImGui.SameLine();
+                ImGui.Text(FriendlyMaterialName(mod));
             }
         }
 
-        return trigger;
+        if (look.Details is { Count: > 0 } d)
+        {
+            ImGui.SameLine();
+            ImGui.TextDisabled($"  +{d.Count} advanced slot{(d.Count == 1 ? "" : "s")}");
+        }
     }
 
-    private string CanonicalTrigger(DebuffKind kind)
-    {
-        string? c = TooltipKeywordParser.CanonicalTriggerWord(kind, _config.TooltipKeywordRules);
-        return c ?? kind.ToString().ToLowerInvariant();
-    }
-
-    private bool DrawSlotRow(DebuffKind kind, in SwappableSlot slot)
+    private bool DrawSlotRow(DebuffKind kind, in SwappableSlot slot, string label)
     {
         var (names, labels) = MaterialTables(slot.Type);
         if (names.Length == 0) return false;
@@ -726,7 +840,7 @@ internal sealed class EffectStylePanel
         if (idx < 0) idx = 0;
 
         ImGui.SetNextItemWidth(200f);
-        bool changed = ImGui.Combo(slot.Label, ref idx, labels, labels.Length);
+        bool changed = ImGui.Combo(label, ref idx, labels, labels.Length);
         if (changed)
         {
             string picked = names[idx];
@@ -743,18 +857,14 @@ internal sealed class EffectStylePanel
         _                 => (RegionNames, RegionLabels),
     };
 
-    /// <summary>After a colour change, refresh the forced colour on any previewed kind.</summary>
-    private void RefreshActivePreview()
-    {
-        foreach (var m in TooltipKeywordParser.Parse(_testText, _config.TooltipKeywordRules))
-            DebugTester.UpdateForcedColor(m.Kind, m.Color);
-    }
+    /// <summary>After an edit, refresh the preview of the selected effect if it is on screen.</summary>
+    private void RefreshActivePreview() => DebugTester.UpdateForcedLook(CurrentLook(_selectedKind));
 
-    private bool DrawColorRow(DebuffKind kind)
+    private bool DrawColorRow(DebuffKind kind, string label, Dictionary<DebuffKind, string> store)
     {
         bool changed = false;
 
-        string current = _config.ColorOverrides.TryGetValue(kind, out var name) ? name : "";
+        string current = store.TryGetValue(kind, out var name) ? name : "";
 
         // Older configs stored "rgb"; map it so the dropdown shows the right selection.
         if (string.Equals(current, "rgb", StringComparison.OrdinalIgnoreCase))
@@ -768,21 +878,21 @@ internal sealed class EffectStylePanel
         }
 
         ImGui.SetNextItemWidth(200f);
-        if (ImGui.Combo("Color", ref idx, _colorOptions, _colorOptions.Length))
+        if (ImGui.Combo(label, ref idx, _colorOptions, _colorOptions.Length))
         {
             if (idx == 0)
             {
-                if (_config.ColorOverrides.Remove(kind)) changed = true;
+                if (store.Remove(kind)) changed = true;
             }
             else
             {
-                _config.ColorOverrides[kind] = _colorNames[idx - 1];
+                store[kind] = _colorNames[idx - 1];
                 changed = true;
             }
         }
 
         // Read-only swatch (not ColorButton): a custom picked color has no name to store back.
-        if (current.Length > 0 && TooltipKeywordParser.TryResolveColorToken(current, out var swatchRgb))
+        if (current.Length > 0 && ColorLexicon.TryToken(current, out Vector4 swatchRgb))
         {
             ImGui.SameLine();
             Vector2 swatchMin  = ImGui.GetCursorScreenPos();
@@ -797,7 +907,7 @@ internal sealed class EffectStylePanel
     }
 
     /// <summary>Emit dropdown for stroke slots: "(from material)", "(none)", or a particle material.</summary>
-    private bool DrawEmitRow(DebuffKind kind, in SwappableSlot slot)
+    private bool DrawEmitRow(DebuffKind kind, in SwappableSlot slot, string label)
     {
         if (EmitOptions.Length == 2) return false;  // no particle material declares emissions
 
@@ -807,10 +917,8 @@ internal sealed class EffectStylePanel
         int idx = Array.IndexOf(EmitOptionIds, current);
         if (idx < 0) idx = 0;
 
-        ImGui.Indent();
         ImGui.SetNextItemWidth(200f);
-        bool changed = ImGui.Combo($"Emits##{kind}{slot.Role}", ref idx, EmitOptions, EmitOptions.Length);
-        ImGui.Unindent();
+        bool changed = ImGui.Combo($"{label}##emit{kind}{slot.Role}", ref idx, EmitOptions, EmitOptions.Length);
 
         if (changed)
         {
@@ -844,26 +952,84 @@ internal static class DebugTester
 
     private static readonly Dictionary<DebuffKind, long> EndsAt = new();
     private static readonly Dictionary<DebuffKind, Vector4?> ForcedColor = new();
+    private static readonly Dictionary<DebuffKind, Look> ForcedLooks = new();
+
+    /// <summary>Bumps when a forced look changes, so the manager re-resolves its inputs.</summary>
+    public static int Version { get; private set; }
+
+    /// <summary>The looks of previews still on screen.</summary>
+    public static IEnumerable<Look> ActiveLooks()
+    {
+        foreach (var kv in ForcedLooks)
+            if (IsForced(kv.Key)) yield return kv.Value;
+    }
+
+    /// <summary>Previews a full look (materials and both colours), not just a colour.</summary>
+    public static void ForceLook(Look look)
+    {
+        Force(look.Kind, true, look.BodyColor?.Resolve(Environment.TickCount64));
+        ForcedLooks[look.Kind] = look;
+        Version++;
+    }
+
+    /// <summary>Re-applies a look to a running preview without restarting its timer.</summary>
+    public static void UpdateForcedLook(Look look)
+    {
+        if (!IsForced(look.Kind)) return;
+        ForcedColor[look.Kind] = look.BodyColor?.Resolve(Environment.TickCount64);
+        ForcedLooks[look.Kind] = look;
+        Version++;
+    }
+
+    /// <summary>Removes expired previews and invalidates cached material/modifier overrides once.</summary>
+    public static void ExpirePreviews()
+    {
+        long now = Environment.TickCount64;
+        List<DebuffKind>? expired = null;
+        foreach (var (kind, end) in EndsAt)
+            if (end > 0 && end <= now)
+                (expired ??= new List<DebuffKind>()).Add(kind);
+
+        if (expired is null) return;
+        foreach (var kind in expired)
+        {
+            EndsAt.Remove(kind);
+            ForcedColor.Remove(kind);
+            ForcedLooks.Remove(kind);
+        }
+        Version++;
+    }
 
     public static bool IsForced(DebuffKind kind) =>
         EndsAt.TryGetValue(kind, out long end) && end > Environment.TickCount64;
 
     public static Vector4? GetForcedColor(DebuffKind kind) =>
-        ForcedColor.TryGetValue(kind, out var c) ? c : null;
+        IsForced(kind) && ForcedColor.TryGetValue(kind, out var c) ? c : null;
 
     public static void Force(DebuffKind kind, bool on) => Force(kind, on, null);
 
     public static void Force(DebuffKind kind, bool on, Vector4? color)
     {
-        EndsAt[kind] = on ? Environment.TickCount64 + (long)(Seconds * 1000f) : 0L;
+        if (!on)
+        {
+            EndsAt.Remove(kind);
+            ForcedColor.Remove(kind);
+            if (ForcedLooks.Remove(kind)) Version++;
+            return;
+        }
+
+        EndsAt[kind] = Environment.TickCount64 + (long)(Seconds * 1000f);
         ForcedColor[kind] = color;
+        if (ForcedLooks.Remove(kind)) Version++;
     }
 
-    /// <summary>Recolours a running preview without restarting its timer.</summary>
-    public static void UpdateForcedColor(DebuffKind kind, Vector4? color)
+    public static void StopAll()
     {
-        if (IsForced(kind))
-            ForcedColor[kind] = color;
+        if (EndsAt.Count == 0 && ForcedColor.Count == 0 && ForcedLooks.Count == 0) return;
+        EndsAt.Clear();
+        ForcedColor.Clear();
+        ForcedLooks.Clear();
+        Version++;
     }
 
     public static void DrawUi(Func<DebuffKind, bool> isShowing, IReadOnlyList<ISceneEffect> effects)
@@ -901,7 +1067,7 @@ internal static class DebugTester
             }
 
             if (ImGui.Button("All off"))
-                EndsAt.Clear();
+                StopAll();
         }
         finally
         {

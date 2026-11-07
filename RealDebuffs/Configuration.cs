@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Dalamud.Configuration;
 using RealDebuffs.Effects;
 
@@ -7,7 +6,7 @@ namespace RealDebuffs;
 [Serializable]
 public class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 1;
+    public int Version { get; set; } = 2;
 
     public bool Enabled { get; set; } = true;
     public bool HideDuringCutscenes { get; set; } = true;
@@ -32,8 +31,11 @@ public class Configuration : IPluginConfiguration
     /// <summary>Material overrides: "{Kind}.{Stroke|Particle}.{Role}" or "{Kind}.Region.{EdgeGlow|FlatFill}" to a registry name.</summary>
     public Dictionary<string, string> MaterialOverrides { get; set; } = new();
 
-    /// <summary>Per-effect color overrides, keyed by DebuffKind; value is a color word from NamedColors.</summary>
+    /// <summary>Per-effect color overrides, keyed by DebuffKind; value is a color word from ColorLexicon.Named.</summary>
     public Dictionary<DebuffKind, string> ColorOverrides { get; set; } = new();
+
+    /// <summary>Per-effect color for the modifier layer (the generator's second colour); absent means it follows ColorOverrides.</summary>
+    public Dictionary<DebuffKind, string> ModifierColorOverrides { get; set; } = new();
 
     /// <summary>"While I have this custom status, show this effect" links.</summary>
     public List<CustomStatusRule> CustomStatusRules { get; set; } = new();
@@ -41,10 +43,16 @@ public class Configuration : IPluginConfiguration
     /// <summary>Also scan each active status's tooltip for TooltipKeywordRules. Off by default.</summary>
     public bool ParseCustomStatusTooltips { get; set; }
 
-    /// <summary>"If a status's tooltip contains this word, show this effect" links.</summary>
+    /// <summary>Extra trigger words on top of each effect's built-in ones ("If a status's tooltip contains this word, show this effect").</summary>
     public List<TooltipKeywordRule> TooltipKeywordRules { get; set; } = new();
 
-    /// <summary>Kinds whose default keyword rule was seeded once (so a deleted rule stays deleted); Reset clears this.</summary>
+    /// <summary>Effects whose built-in trigger words are switched off; their extra words still apply.</summary>
+    public HashSet<DebuffKind> TooltipOffKinds { get; set; } = new();
+
+    /// <summary>Built-in trigger words the user switched off, per effect.</summary>
+    public Dictionary<DebuffKind, List<string>> MutedWords { get; set; } = new();
+
+    /// <summary>Version 1 only: kinds whose default rule was seeded into TooltipKeywordRules; read once by TooltipKeywordRule.Migrate.</summary>
     public HashSet<DebuffKind> SeededKinds { get; set; } = new();
 
     /// <summary>OFF by default: actually stop outgoing chat while silenced. See ChatBlocker.cs.</summary>
@@ -72,18 +80,17 @@ public class CustomStatusRule
     public string GetKey() => _key ??= StatusNames.Key(_name);
 }
 
-/// <summary>One "if a status's tooltip contains any of these words, show that effect" link.</summary>
+/// <summary>One "if a status's tooltip contains any of these words, show that effect" link: the user's extras on top of the built-in words.</summary>
 public sealed class TooltipKeywordRule
 {
     private string _keywords = "";
     private string[]? _parsed;
-    private Regex? _pattern;
 
     /// <summary>Comma/newline/semicolon-separated whole-word, case-insensitive matches; blanks and duplicates dropped.</summary>
     public string Keywords
     {
         get => _keywords;
-        set { _keywords = value ?? ""; _parsed = null; _pattern = null; }
+        set { _keywords = value ?? ""; _parsed = null; }
     }
 
     public DebuffKind Kind { get; set; } = DebuffKind.Bind;
@@ -91,20 +98,6 @@ public sealed class TooltipKeywordRule
     public bool Enabled { get; set; } = true;
 
     public IReadOnlyList<string> ParsedKeywords => _parsed ??= ParseKeywords(_keywords);
-
-    /// <summary>Cached; invalidated by Keywords.</summary>
-    public Regex? GetPattern()
-    {
-        if (_pattern != null) return _pattern;
-        var parsed = ParsedKeywords;
-        if (parsed.Count == 0) return null;
-
-        string alternation = parsed.Count == 1
-            ? Regex.Escape(parsed[0])
-            : "(?:" + string.Join("|", parsed.Select(Regex.Escape)) + ")";
-
-        return _pattern = new Regex($@"\b{alternation}\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-    }
 
     public static string[] ParseKeywords(string? raw)
     {
@@ -115,44 +108,41 @@ public sealed class TooltipKeywordRule
             .ToArray();
     }
 
-    private static TooltipKeywordRule DefaultRuleFor(ISceneEffect effect) => new()
+    /// <summary>Version 1 seeded each effect's words into editable rules; carry over deleted/disabled rules as switched off, removed words as muted, added words as extras.</summary>
+    public static bool Migrate(Configuration config, IReadOnlyList<ISceneEffect> effects)
     {
-        Keywords = string.Join(", ", effect.TriggerKeywords),
-        Kind = effect.Kind,
-    };
-
-    /// <summary>Once per session: seeds each effect's default rule unless the user has one. True if changed.</summary>
-    public static bool SeedNewEffects(Configuration config, IReadOnlyList<ISceneEffect> effects)
-    {
-        bool changed = false;
-        var rules = config.TooltipKeywordRules;
+        if (config.Version >= 2) return false;
 
         foreach (var effect in effects)
         {
-            if (config.SeededKinds.Contains(effect.Kind)) continue;
-            config.SeededKinds.Add(effect.Kind);
-            changed = true;
+            if (effect.TriggerKeywords.Count == 0 || !config.SeededKinds.Contains(effect.Kind)) continue;
 
-            if (effect.TriggerKeywords.Count == 0) continue;
-            if (rules.Any(r => r.Kind == effect.Kind)) continue;
+            var mine = config.TooltipKeywordRules.Where(r => r.Kind == effect.Kind).ToList();
+            var builtIn = new HashSet<string>(effect.TriggerKeywords, StringComparer.OrdinalIgnoreCase);
+            config.TooltipKeywordRules.RemoveAll(r => r.Kind == effect.Kind);
 
-            rules.Add(DefaultRuleFor(effect));
+            bool off = mine.Count == 0 || mine.All(r => !r.Enabled);
+            if (off) config.TooltipOffKinds.Add(effect.Kind);
+
+            var kept = new HashSet<string>(mine.Where(r => r.Enabled || off).SelectMany(r => r.ParsedKeywords), StringComparer.OrdinalIgnoreCase);
+            var extras = kept.Where(w => !builtIn.Contains(w)).ToList();
+            if (extras.Count > 0)
+                config.TooltipKeywordRules.Add(new TooltipKeywordRule { Keywords = string.Join(", ", extras), Kind = effect.Kind, Enabled = !mine.All(r => !r.Enabled) });
+
+            if (!off && builtIn.Where(w => !kept.Contains(w)).ToList() is { Count: > 0 } removed)
+                config.MutedWords[effect.Kind] = removed;
         }
 
-        return changed;
+        config.SeededKinds.Clear();
+        config.Version = 2;
+        return true;
     }
 
-    /// <summary>Wipes user rules and the seeded set, then re-seeds every effect from TriggerKeywords.</summary>
-    public static void ResetToDefaults(Configuration config, IReadOnlyList<ISceneEffect> effects)
+    /// <summary>Drops every extra word, switch-off and mute, leaving only the built-in words.</summary>
+    public static void ResetToDefaults(Configuration config)
     {
         config.TooltipKeywordRules.Clear();
-        config.SeededKinds.Clear();
-
-        foreach (var effect in effects)
-        {
-            config.SeededKinds.Add(effect.Kind);
-            if (effect.TriggerKeywords.Count == 0) continue;
-            config.TooltipKeywordRules.Add(DefaultRuleFor(effect));
-        }
+        config.TooltipOffKinds.Clear();
+        config.MutedWords.Clear();
     }
 }

@@ -51,7 +51,9 @@ public sealed class Plugin : IDalamudPlugin
         foreach (var effect in effects)
             EffectRegistry.Register(effect);
 
-        if (TooltipKeywordRule.SeedNewEffects(_config, effects))
+        TooltipLanguage.Init(effects);
+
+        if (TooltipKeywordRule.Migrate(_config, effects))
             SaveConfig();
 
         var catalog = new StatusCatalog(dataManager, effects, log);
@@ -118,11 +120,12 @@ public sealed class Plugin : IDalamudPlugin
     /// <summary>Wipes live-preview generator overrides (they'd silently re-skin a vanilla debuff) on window close and at load.</summary>
     private bool ClearGeneratorOverrides()
     {
-        if (_config.MaterialOverrides.Count == 0 && _config.ColorOverrides.Count == 0)
+        if (_config.MaterialOverrides.Count == 0 && _config.ColorOverrides.Count == 0 && _config.ModifierColorOverrides.Count == 0)
             return false;
 
         _config.MaterialOverrides.Clear();
         _config.ColorOverrides.Clear();
+        _config.ModifierColorOverrides.Clear();
         SaveConfig();
         return true;
     }

@@ -16,8 +16,8 @@ Commands:
 - Optional chat blocking while Silenced (off by default).
 - Moodles/Loci support: match a custom status by title to show an effect.
 - Tooltip keywords: a status description containing "burning" triggers Burns, and so on.
-- "Made of X" swaps: *"bound with chains"* draws Bind's ropes as chains; *"red flame"* tints Burns red; *"white chains made of snow"* gives white chains that shed snowflakes.
-- An effect generator panel to test a description and swap materials or colors by hand.
+- Natural wording: *"red chains made of flames"*, *"red flaming chains"* and *"red, burning chains"* all give red chains that shed red flames; *"black chains with white flames"* colors the two separately; *"rope made of red, flaming tentacles"* swaps Bind's rope for tentacles too.
+- An effect generator panel to test a description, build a look (body, modifier, two colors), and copy it as a phrase or an exact code.
 
 ## How it works
 
@@ -42,9 +42,11 @@ Looked up by name (config stores strings), in three families: `IStrokeMaterial`,
 
 `RegistryAudit` cross-checks slots, defaults, role fallbacks, shed targets and vocabulary; Plugin logs its findings at startup, and the harness runs it with `audit`.
 
-### Tooltip keywords
+### Tooltip language
 
-`TooltipKeywordParser` matches keywords as whole words, reads colors from `[color=...]` tags or color words in the same clause, and resolves "made of X" per clause. The settings tester uses the same parser, so it shows exactly what a real status would do.
+Status text becomes one `Look` per effect (`Effects/Framework/Language/`): an optional `Body` (what "made of X" swaps), one `Modifier` (what "with X" or an adjective like "flaming" adds), and two colors. `PhraseParser` tags each word as an effect trigger, material, color, link ("made of", "with", "covered in"...) or filler. A color sticks to the next noun, an adjective form or a linked noun modifies the effect noun it belongs to, a word that is both an effect and a material is consumed as the material when attached to another effect, and anything left over triggers its own effect. A modifier with no color of its own inherits the body's. `Lexicon` generates plural, `-ed` and `-ing` forms from each effect's `keywords` and each material's `NaturalLanguageWords`, so lists stay short.
+
+A `Look` is applied by `LookApply` as ordinary override keys, so everything below it is unchanged. `LookCode` writes the exact form (`RD1-heavy-m.ember-c.D92626`), which also reaches advanced slots words can't; a code in a description wins for its effect. `TooltipLanguage` (host) builds the lexicon from the effects plus the user's extra, switched-off and muted words, and caches parses. The settings tester and the generator use the same parser, so they show exactly what a real status would do.
 
 ### Chat blocking
 
@@ -58,6 +60,7 @@ Folders don't dictate namespaces, and materials are found by reflection, so wher
 |---|---|
 | `Core/` | `EffectScene` and the primitives; `Cast.cs` (`CastTracker`, `CastFrame` with `Fresh`/`Resized`, the optional alpha envelope, `ShockFront`); `Material.cs` (material contracts, `RegionMaterial<T>`, `IMaterialPack`); `Timing.cs` (`Flicker`, `FlashSchedule`, `Heartbeat`); `Screen.cs` (edge anchors, `ScreenGrowth`); `DrawHelpers`, `Noise`, `Palette` |
 | `Registry/` | `EffectRegistry` (slots, defaults), `MaterialRegistry`, `MaterialResolver`, `MaterialOverrideKey`, `EffectDiscovery`, `RegistryAudit` |
+| `Language/` | `Lexicon`, `PhraseParser`, `Look` and `LookApply`, `LookCode`, `LookText`, `ColorLexicon` (see Tooltip language) |
 | `Rendering/` | `SceneRenderer` |
 | `Particles/` | `ParticleSystem` (pool: spawn, integrate, retire, emit), `StrokeShed`, `Flames` and `FireDrift` (`Fire.cs`), `MoteField` |
 | `Strokes/` | `StrandPath`; `VerletStrand.cs` (strand physics, `StrandRig`, `RigSet`); `Mesh.cs` (`MeshBuilder`, `PathRows` for tube materials); `Shading.cs` (lighting); `SceneStrokes` (`Ring`, `HeroRing`) |
@@ -77,15 +80,15 @@ No `<TargetFramework>` is set on purpose; the SDK picks the one Dalamud targets.
 
 ## Adding things
 
-- **Effect**: derive from `SceneEffect`, pass `kind, name, description, drawOrder, status` (plus optional `keywords`, `envelope: true`) to its constructor, and override `Emit(EffectScene scene, in CastFrame f)`. `f` carries the screen size, `Px`, `Age`, `Seed`, `Fresh`, `Resized`, alpha and color; `envelope: true` adds a faster fade-in plus `Gate`/`Leave`/`Leaving` (see `DoomEffect`); override `MaxStep` to cap the frame step (see `DiseaseEffect`). Art only this effect uses goes beside it in `Effects/<Name>/`. Implement `IHasSwappableSlots` to expose materials (`Slot.Stroke`, `Slot.Particle`, `Slot.Region`), and mark the slots a "made of X" phrase replaces with `hero: true`. Scale sizes by `f.Px` (it is `DrawHelpers.PixelScale`, the same scale materials use), and re-lay anything anchored to the screen size when `f.Fresh || f.Resized`.
-- **Material**: implement a material interface with a public parameterless constructor and it is registered. Give it `NaturalLanguageWords` to make it selectable via "made of X" (words are unique across materials; the audit flags clashes).
+- **Effect**: derive from `SceneEffect`, pass `kind, name, description, drawOrder, status` (plus optional `keywords`, `envelope: true`) to its constructor, and override `Emit(EffectScene scene, in CastFrame f)`. `f` carries the screen size, `Px`, `Age`, `Seed`, `Fresh`, `Resized`, alpha and color; `envelope: true` adds a faster fade-in plus `Gate`/`Leave`/`Leaving` (see `DoomEffect`); override `MaxStep` to cap the frame step (see `DiseaseEffect`). Art only this effect uses goes beside it in `Effects/<Name>/`. Implement `IHasSwappableSlots` to expose materials (`Slot.Stroke`, `Slot.Particle`, `Slot.Region`), and mark at most one slot `hero: true` (the body "made of X" replaces) and one particle slot `modifier: true` (what "with X" replaces; a stroke body with none takes the modifier as its shed). Pick the modifier from a layer that is visible on screen; the audit enforces the limits. Scale sizes by `f.Px` (it is `DrawHelpers.PixelScale`, the same scale materials use), and re-lay anything anchored to the screen size when `f.Fresh || f.Resized`.
+- **Material**: implement a material interface with a public parameterless constructor and it is registered. Give it `NaturalLanguageWords` to make it selectable by wording (words are unique across materials; the audit flags clashes). Plurals, and for particles `-ed`/`-ing`/`-y` forms, are generated; list an adjective ("fiery", "frozen") only when it isn't derived from a listed noun.
 - **Role**: add a `PrimitiveRole` with an unused number; `[Fallback("particle.x")]` names the particle drawn when a slot has none.
 - **Particles**: an effect owns a `ParticleSystem(capacity, seedSalt, physics)`; `Stream` spawns on a random interval, `Burst` all at once, `Emit` hands them to the scene as one `ParticleStyle`. Anything else is hand-built `scene.AddParticle` calls.
 - **Color of light**: in the effect's folder, a `<Name>Theme.cs` holds its palette class and an `IMaterialPack` listing `StrokeGlow` / `ParticleMote` (and `StrokeSigil`, `ParticleRune`, `ParticleEmber`, `ParticlePuff`, `RegionFirelight` for a full theme) built with it (see `DoomTheme.cs`). A `Palette` used by shared code stays in `Palette.cs`. Add new rune glyph sets after the existing ones; don't change `LegacyCount`.
 - **Eyes**: `ParticleEye` (`particle.eye`) draws a shaded eye in any of the `EyeStyle`s, including a lidless `Orb` with its nerve; `ParticleEye.Held(open, style)` lets an effect drive the lids, and small or far eyes use fewer vertices. A themed set registers another instance with its palette. `StrokeWisp` is a soft tapered streamer for things in motion (path runs tail to head).
 - **Fog**: a `ParticlePuff` `Look` with a `Ramp` draws as a billow: a mesh shaded from warped noise and lit from the screen's middle (`Variant` = squash %, `Rotation` = stretch). Give any smoke or mist a `Ramp` to upgrade it.
-- **Script**: `ScriptFont` (`Script.cs`) is a single-stroke cursive alphabet (lowercase, `' , . ! ? -`, `♥`); `ParticleWhisper` draws a phrase in it and `WhisperField` spawns and drifts them (two on screen as a rule, three at most). Phrases are `CharmWhispers.Phrases` and `AmnesiaWhispers.Phrases`; a themed set adds another `ParticleWhisper` with its palette and phrases to a pack.
-- **Vortex**: `RegionVortex` draws a flat two-colour spiral behind a tunnel of fog from a `VortexField` (`At` places anything on the fog's wall); the fog thins to nothing at the centre. `StrokeSilk` is a twisting two-tone ribbon no effect uses by default. See `AmnesiaEffect`.
+- **Script**: `ScriptFont` (`Script.cs`) is a single-stroke cursive alphabet (lowercase, `' , . ! ? -`, `♥`); `ParticleWhisper` draws a phrase in it and `WhisperField` spawns and drifts them. Phrases are `CharmWhispers.Phrases` and `AmnesiaWhispers.Phrases`; a themed set adds another `ParticleWhisper` with its palette and phrases to a pack.
+- **Vortex**: `RegionVortex` draws the flown-through spiral tunnel from a `VortexField` (`At` places anything on its wall). The current `AmnesiaEffect` builds its spiral, fog and drifting whispers around that tunnel.
 - **Liquid**: add a `LiquidSpec` (look, plus `Viscosity` 0 water to 1 slime) to `LiquidPresets`, subclass `ParticleGoop` (see `ParticleWater`). Drips, stream breakup, pool waves, splash and cling all follow from `Viscosity`; any stroke can shed it with `Liquid.Phys.Shed()`.
 - **Pouring liquid**: an effect owns a `LiquidField`: `Begin(..., jets, seeps)` on `f.Fresh || f.Resized` makes idle slots; `Launch` a jet when it is `Idle`, `Place` a seep, set `Flow`, `Speed`, `Angle`, `Level` each frame, then `Step` and `Emit`. `Spray`, `Fling` and `Splat` throw droplets, a drop or lens beads. See `DropsyEffect`; resolve the liquid with `Liquid.Resolve(scene, Kind, role)` so a hero slot swap changes everything.
 - **`DebuffKind`**: add at the END of the enum in `Effects/DebuffKind.cs` (values are serialized); 13 kinds are already reserved.

@@ -28,11 +28,14 @@ public sealed class EffectManager
 
     // Per-heartbeat inputs; dictionaries are replaced, never mutated (the scene caches by instance).
     private static readonly IReadOnlyDictionary<string, string> NoOverrides = new Dictionary<string, string>();
+    private static readonly IReadOnlyDictionary<DebuffKind, Vector4> NoModifierColors = new Dictionary<DebuffKind, Vector4>();
     private int _resolvedTick = -1;
     private volatile bool _inputsStale = true;
     private CustomStatusSnapshot _snapshot = CustomStatusSnapshot.Empty;
     private DebuffKind[] _ruleKinds = Array.Empty<DebuffKind>();
     private IReadOnlyDictionary<string, string> _materialOverrides = NoOverrides;
+    private IReadOnlyDictionary<DebuffKind, Vector4> _modifierColors = NoModifierColors;
+    private int _seenDebugVersion;
     private Dictionary<DebuffKind, Vector4> _configColors = new();
 
     /// <summary>Per-frame buffer effects emit into, then the shed and renderer work through.</summary>
@@ -92,6 +95,12 @@ public sealed class EffectManager
 
         // Tick before snapshot: if a beat lands in between we re-sync next frame, never miss one.
         int tick = _customStatuses.Tick;
+        DebugTester.ExpirePreviews();
+        if (DebugTester.Version != _seenDebugVersion)
+        {
+            _seenDebugVersion = DebugTester.Version;
+            _inputsStale = true;
+        }
         if (_inputsStale || tick != _resolvedTick)
         {
             _inputsStale = false;
@@ -126,6 +135,7 @@ public sealed class EffectManager
         }
 
         var materialOverrides = live ? _materialOverrides : NoOverrides;
+        var modifierColors = live ? _modifierColors : NoModifierColors;
 
         _chatBlocker.SetSilenced(_config.SilenceBlocksChat && _activeScratch.Contains(DebuffKind.Silence));
 
@@ -141,6 +151,7 @@ public sealed class EffectManager
         _scene.Clear();
         _scene.ScreenSize = screenSize;
         _scene.Overrides = materialOverrides;
+        _scene.ModifierColors = modifierColors;
 
         foreach (var effect in _order)
         {
@@ -197,15 +208,36 @@ public sealed class EffectManager
         var overrides = new Dictionary<string, string>(_config.MaterialOverrides, StringComparer.Ordinal);
         foreach (var kv in snapshot.TooltipMaterialOverrides)
             overrides[kv.Key] = kv.Value;
+
+        // A preview from the generator shows its whole look (materials and both colours), over anything a status asks for.
+        var previewColors = new Dictionary<DebuffKind, Vector4>();
+        long now = Environment.TickCount64;
+        foreach (var look in DebugTester.ActiveLooks())
+        {
+            LookApply.Overrides(look, overrides);
+            if (look.ModifierColor is { } previewModifier) previewColors[look.Kind] = previewModifier.Resolve(now);
+        }
         _materialOverrides = overrides;
 
         var colors = new Dictionary<DebuffKind, Vector4>();
         foreach (var (kind, name) in _config.ColorOverrides)
         {
-            if (TooltipKeywordParser.TryResolveColorToken(name, out var rgb))
+            if (ColorLexicon.TryToken(name, out Vector4 rgb))
                 colors[kind] = rgb;
         }
         _configColors = colors;
+
+        var modifierColors = new Dictionary<DebuffKind, Vector4>();
+        foreach (var (kind, name) in _config.ModifierColorOverrides)
+        {
+            if (ColorLexicon.TryToken(name, out Vector4 rgb))
+                modifierColors[kind] = rgb;
+        }
+        foreach (var kv in snapshot.TooltipModifierColors)
+            modifierColors[kv.Key] = kv.Value;
+        foreach (var kv in previewColors)
+            modifierColors[kv.Key] = kv.Value;
+        _modifierColors = modifierColors;
     }
 
     /// <summary>Colour priority: tooltip (live only), dev-tester, config override; null = the effect's own palette.</summary>
@@ -289,20 +321,15 @@ public sealed class EffectManager
                 continue;
             }
 
-            if (status.TooltipMatches.Count == 0)
-            {
-                lines.Add("    tooltip: no keyword matches");
-                continue;
-            }
+            if (status.Language.Looks.Count == 0)
+                lines.Add("    tooltip: nothing recognised");
 
-            foreach (var m in status.TooltipMatches)
-            {
-                var colorText = m.Color is { } col
-                    ? $"color #{(int)(col.X * 255):X2}{(int)(col.Y * 255):X2}{(int)(col.Z * 255):X2} (from {m.ColorSource})"
-                    : "no color override";
-                var matText = m.MaterialSubstitution is { } mat ? $", material {mat}" : "";
-                lines.Add($"    tooltip -> {m.Kind}, {colorText}{matText}");
-            }
+            foreach (var look in status.Language.Looks)
+                lines.Add($"    tooltip -> {LookText.Describe(look)}");
+            foreach (var note in status.Language.Notes)
+                lines.Add($"    note: {note}");
+            foreach (var hint in status.Language.Hints)
+                lines.Add($"    hint: {hint}");
         }
 
         _log.Information($"RealDebuffs: {lines.Count} custom status line(s) ({sources}):\n{string.Join("\n", lines)}");

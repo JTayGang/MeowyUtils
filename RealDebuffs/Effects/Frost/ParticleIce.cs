@@ -7,7 +7,7 @@ namespace RealDebuffs.Effects.Framework.Materials;
 public sealed class ParticleSnow : IParticleMaterial
 {
     public string Name => "particle.snow";
-    public string[] NaturalLanguageWords { get; } = { "snow", "frost", "hoarfrost", "rime" };
+    public string[] NaturalLanguageWords { get; } = { "snow", "frost", "hoarfrost", "rime", "ice", "icy", "frozen", "frosty", "snowy", "wintry", "icicle", "icicles" };
 
     private const float StreakFromSpeed = 100f;  // px/s at 1080p; chain-shed snow tops out near 57, so it never streaks
     private const float StreakSeconds = 0.07f;  // seconds of travel drawn behind a speck

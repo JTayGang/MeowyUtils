@@ -22,6 +22,34 @@ public sealed class EffectScene
         set => Materials.Overrides = value;
     }
 
+    private IReadOnlyDictionary<DebuffKind, Vector4>? _modifierColors;
+    private Vector4?[] _modColor = Array.Empty<Vector4?>();
+    private ulong[] _modRoles = Array.Empty<ulong>();
+
+    /// <summary>A second colour per effect for its modifier layer; null or absent means the modifier keeps the effect's colour. Replace the instance to change it.</summary>
+    public IReadOnlyDictionary<DebuffKind, Vector4>? ModifierColors
+    {
+        get => _modifierColors;
+        set
+        {
+            if (ReferenceEquals(value, _modifierColors)) return;
+            _modifierColors = value;
+            if (value is null || value.Count == 0) { _modColor = Array.Empty<Vector4?>(); _modRoles = Array.Empty<ulong>(); return; }
+
+            int size = (int)value.Keys.Max() + 1;
+            _modColor = new Vector4?[size];
+            _modRoles = new ulong[size];
+            foreach (var kv in value)
+            {
+                _modColor[(int)kv.Key] = kv.Value;
+                if (EffectRegistry.ModifierFor(kv.Key) is { } slot) _modRoles[(int)kv.Key] = 1UL << (int)slot.Role;
+            }
+        }
+    }
+
+    /// <summary>The modifier colour for an effect, if its status named one.</summary>
+    public Vector4? ModifierColorFor(DebuffKind owner) => (uint)owner < (uint)_modColor.Length ? _modColor[(int)owner] : null;
+
     public VignetteRequest Vignette;
     public DebuffKind CurrentOwner;
 
@@ -36,7 +64,13 @@ public sealed class EffectScene
     }
 
     public void AddStroke(in StrokePrimitive s)  { var c = s; c.Owner = CurrentOwner; Strokes.Add(c); }
-    public void AddParticle(in ParticlePrimitive p) { var c = p; c.Owner = CurrentOwner; Particles.Add(c); }
+    public void AddParticle(in ParticlePrimitive p)
+    {
+        var c = p; c.Owner = CurrentOwner;
+        int o = (int)c.Owner;
+        if ((uint)o < (uint)_modColor.Length && _modColor[o] is { } mc && ((_modRoles[o] >> (int)c.Role) & 1UL) != 0) c.ColorOverride = mc;
+        Particles.Add(c);
+    }
     public void AddRegion(in RegionPrimitive r) { var c = r; c.Owner = CurrentOwner; Regions.Add(c); }
     public void AddImpact(in ImpactPrimitive i) { var c = i; c.Owner = CurrentOwner; Impacts.Add(c); }
 

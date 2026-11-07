@@ -14,7 +14,7 @@ public sealed class DoomEffect : SceneEffect, IHasSwappableSlots
         Slot.Stroke(PrimitiveRole.Edge, "Star and circle", "stroke.magma"),
         Slot.Stroke(PrimitiveRole.Inscription, "Outer rings", "stroke.brand"),
         Slot.Stroke(PrimitiveRole.Horn, "Horns", "stroke.horn"),
-        Slot.Particle(PrimitiveRole.Ember, "Hellfire", "particle.hellfire", hero: true),
+        Slot.Particle(PrimitiveRole.Ember, "Hellfire", "particle.hellfire", modifier: true),
         Slot.Particle(PrimitiveRole.Cinder, "Cinders", "particle.cinder"),
         Slot.Particle(PrimitiveRole.Smoke, "Smoke", "particle.brimstone"),
         Slot.Particle(PrimitiveRole.Rune, "Runes", "particle.hellrune"),

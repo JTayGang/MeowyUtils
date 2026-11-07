@@ -25,7 +25,8 @@ public sealed class AmnesiaEffect : SceneEffect, IHasSwappableSlots
     public IReadOnlyList<SwappableSlot> Slots { get; } = new SwappableSlot[]
     {
         Slot.Particle(PrimitiveRole.Mist, "Fog", "particle.pearlfog", hero: true),
-        Slot.Particle(PrimitiveRole.Whisper, "Murmurs", "particle.fugue"),
+        // The murmurs are the secondary layer targeted by "with X" and modifier-colour phrases.
+        Slot.Particle(PrimitiveRole.Whisper, "Murmurs", "particle.fugue", modifier: true),
         Slot.Particle(PrimitiveRole.Mote, "Memories", "particle.lethe"),
         Slot.Region(RegionKind.FlatFill, "Spiral and fog", "region.vortex"),
     };

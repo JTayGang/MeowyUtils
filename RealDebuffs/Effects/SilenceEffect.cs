@@ -11,7 +11,7 @@ public sealed class SilenceEffect : SceneEffect, IHasSwappableSlots, IReactsToBl
         Slot.Stroke(PrimitiveRole.MainStroke, "Binding ring", "stroke.sigil", hero: true),
         Slot.Stroke(PrimitiveRole.Halo, "Ring glow", "stroke.glow"),
         Slot.Stroke(PrimitiveRole.Inscription, "Inner sigil", "stroke.sigil"),
-        Slot.Particle(PrimitiveRole.Rune, "Runes", "particle.rune", hero: true),
+        Slot.Particle(PrimitiveRole.Rune, "Runes", "particle.rune", modifier: true),
         Slot.Particle(PrimitiveRole.Mote, "Motes", "particle.mote"),
         Slot.Particle(PrimitiveRole.Miasma, "Miasma", "particle.miasma"),
         Slot.Region(RegionKind.EdgeGlow, "Curse veil", "region.edge-glow"),

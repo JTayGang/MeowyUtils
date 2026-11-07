@@ -13,7 +13,7 @@ public sealed class HysteriaEffect : SceneEffect, IHasSwappableSlots
         Slot.Stroke(PrimitiveRole.Trail, "Faint trails", "stroke.wisp"),
         Slot.Stroke(PrimitiveRole.Inscription, "Rings", "stroke.haunt"),
         Slot.Stroke(PrimitiveRole.Halo, "Ghosting", "stroke.hauntglow"),
-        Slot.Particle(PrimitiveRole.Eye, "Watchers", "particle.eye", hero: true),
+        Slot.Particle(PrimitiveRole.Eye, "Watchers", "particle.eye", modifier: true),
         Slot.Particle(PrimitiveRole.Rune, "Script", "particle.omen"),
         Slot.Particle(PrimitiveRole.Mote, "Specks", "particle.spirit"),
         Slot.Particle(PrimitiveRole.Miasma, "Gloom", "particle.gloom"),

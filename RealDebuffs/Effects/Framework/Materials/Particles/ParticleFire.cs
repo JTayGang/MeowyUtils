@@ -14,7 +14,7 @@ public sealed class ParticleEmber : IParticleMaterial
     private readonly Palette _ramp;
 
     /// <summary>The orange black-body flame (particle.ember).</summary>
-    public ParticleEmber() : this("particle.ember", FireColor.Flame, "fire", "flame", "flames", "ember", "embers") { }
+    public ParticleEmber() : this("particle.ember", FireColor.Flame, "fire", "flame", "flames", "ember", "embers", "burning", "burnt", "blazing", "fiery", "aflame", "ablaze", "scorching") { }
 
     /// <summary>The same flame tongue on another temperature ramp: one registered per theme (see particle.hellfire).</summary>
     internal ParticleEmber(string name, Palette ramp, params string[] words)

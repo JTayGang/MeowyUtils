@@ -37,6 +37,17 @@ public static class RegistryAudit
                 if (!exists) problems.Add($"{effect.Kind}: slot \"{slot.Label}\" defaults to unknown {slot.Type.ToString().ToLowerInvariant()} material \"{slot.DefaultMaterial}\"");
             }
 
+        var roster = effects.ToList();
+        foreach (var effect in roster)
+        {
+            var slots = EffectRegistry.SlotsFor(effect.Kind);
+            if (slots.Count(s => s.Hero) > 1) problems.Add($"{effect.Kind}: more than one hero (body) slot; words can only swap one");
+            if (slots.Count(s => s.Modifier) > 1) problems.Add($"{effect.Kind}: more than one modifier slot; words can only swap one");
+            if (slots.Any(s => s.Hero && s.Modifier)) problems.Add($"{effect.Kind}: a slot is both body and modifier");
+        }
+
+        problems.AddRange(new Lexicon(roster).Problems);
+
         foreach (var role in Enum.GetValues<PrimitiveRole>())
             if (MaterialRegistry.TryGetParticle(MaterialRegistry.FallbackParticle(role)) is null)
                 problems.Add($"role {role} falls back to unknown particle \"{MaterialRegistry.FallbackParticle(role)}\"");

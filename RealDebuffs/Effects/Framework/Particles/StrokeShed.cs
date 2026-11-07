@@ -66,6 +66,7 @@ public sealed class StrokeShed
             if (route.EmitName is not null)
             {
                 if (route.Emitter is null) continue;
+                if (scene.ModifierColorFor(s.Owner) is { } modColor) s.ColorOverride = modColor;
 
                 var specs = route.Emitter.Emissions;
                 for (int e = 0; e < specs.Length; e++)
@@ -158,6 +159,9 @@ public sealed class StrokeShed
         {
             if (route.Emitter is null) return;
 
+            var tinted = hit;
+            if (scene.ModifierColorFor(hit.Owner) is { } modColor) tinted.ColorOverride = modColor;
+
             // A particle material declares only a trickle, so derive a burst from its own speeds, lifespans and sizes.
             var specs = route.Emitter.Emissions;
             for (int e = 0; e < specs.Length; e++)
@@ -170,7 +174,7 @@ public sealed class StrokeShed
                     ConeRadians: MathF.Max(t.SpreadRadians, 0.7f),
                     Gravity: t.Gravity,
                     RenderMaterial: t.RenderMaterial ?? emitName);
-                SpawnBurst(in hit, dir, in burst, e, time);
+                SpawnBurst(in tinted, dir, in burst, e, time);
             }
             return;
         }

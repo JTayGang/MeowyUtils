@@ -6,10 +6,11 @@ namespace RealDebuffs.Effects.Framework;
 /// <summary>Phrases spoken into a breeze: where each hangs, how it arrives and leaves, and how it drifts. Begin per cast, Update per frame, Emit once per depth (0 near, 1 mid, 2 far).</summary>
 internal sealed class WhisperField
 {
-    private const int Max = 7;
-    private static readonly float[] DepthSize  = { 62f, 33f, 20f };   // x-height px at 1080p: near, mid, far
+    private const int Max = 3, Calm = 2;                              // never more than Max on screen; Calm is the usual ceiling, a chorus may reach Max
+    private static readonly float[] DepthSize  = { 50f, 29f, 18f };   // x-height px at 1080p: near, mid, far
     private static readonly float[] DepthAlpha = { 1.00f, 0.88f, 0.60f };
     private static readonly (float Lo, float Hi)[] DepthLife = { (5.2f, 6.6f), (6.2f, 8.0f), (7.6f, 9.6f) };
+    private static readonly (float Lo, float Hi) Gap = (3.0f, 4.6f), EarlyGap = (1.6f, 2.3f), ChorusEvery = (22f, 36f);   // seconds between words, early on, and between chorus
     private static readonly float[] DepthDrift = { 16f, 10f, 6f };   // px a second downwind at 1080p: near words drift faster than far
 
     private struct Whisper { public bool On; public int Phrase, Seed, Depth; public Vector2 At, Half, Breath; public float Size, Tilt, Spin, Born, Life; public int In, Out; }
@@ -17,7 +18,7 @@ internal sealed class WhisperField
     private readonly string[] _phrases;
     private readonly Whisper[] _w = new Whisper[Max];
     private readonly int[] _bag;
-    private int _seed, _bagAt, _spawned, _lastIn, _lastOut;
+    private int _seed, _bagAt, _spawned, _ticks, _lastIn, _lastOut;
     private float _gustA, _gustB, _windSpeed;
     private float _nextWhisper, _nextChorus, _chorusEnds;
     private Vector2 _chorusAt;
@@ -58,7 +59,7 @@ internal sealed class WhisperField
             int j = (int)(DrawHelpers.Hash01(seed + 900 + i) * (i + 1));
             (_bag[i], _bag[j]) = (_bag[j], _bag[i]);
         }
-        _bagAt = 0; _spawned = 0; _lastIn = _lastOut = -1;
+        _bagAt = 0; _spawned = 0; _ticks = 0; _lastIn = _lastOut = -1;
 
         _nextWhisper = firstAt;
         _nextChorus = DrawHelpers.HashRange(seed + 7, 1.7f, 2.4f);
@@ -77,23 +78,31 @@ internal sealed class WhisperField
 
         if (f.Leaving) return;
 
-        // Now and then several are spoken at once, close together, as if from one mouth.
+        // Now and then a few are spoken at once, close together, as if from one mouth.
         if (age >= _nextChorus && age >= _chorusEnds)
         {
             _chorusAt = new Vector2(DrawHelpers.HashRange(_seed + _spawned * 31 + 11, 0.2f, 0.8f) * f.Size.X, DrawHelpers.HashRange(_seed + _spawned * 31 + 12, 0.25f, 0.75f) * f.Size.Y);
             _chorusEnds = age + DrawHelpers.HashRange(_seed + _spawned * 31 + 13, 1.0f, 1.5f);
-            _nextChorus = _chorusEnds + DrawHelpers.HashRange(_seed + _spawned * 31 + 14, 11f, 18f);
+            _nextChorus = _chorusEnds + DrawHelpers.HashRange(_seed + _spawned * 31 + 14, ChorusEvery.Lo, ChorusEvery.Hi);
             _nextWhisper = MathF.Min(_nextWhisper, age);
         }
 
         if (age < _nextWhisper) return;
 
         bool chorus = age < _chorusEnds;
-        Spawn(in f, chorus);
-        float gap = chorus ? DrawHelpers.HashRange(_seed + _spawned * 53 + 1, 0.30f, 0.55f)
-                  : age < 3.5f ? DrawHelpers.HashRange(_seed + _spawned * 53 + 2, 0.60f, 1.05f)
-                  : DrawHelpers.HashRange(_seed + _spawned * 53 + 3, 1.25f, 2.25f);
+        int n = _seed + _ticks++ * 53;
+        if (Showing() < (chorus ? Max : Calm)) Spawn(in f, chorus);
+        float gap = chorus ? DrawHelpers.HashRange(n + 1, 0.30f, 0.55f)
+                  : age < 4f ? DrawHelpers.HashRange(n + 2, EarlyGap.Lo, EarlyGap.Hi)
+                  : DrawHelpers.HashRange(n + 3, Gap.Lo, Gap.Hi);
         _nextWhisper = age + gap;
+    }
+
+    private int Showing()
+    {
+        int n = 0;
+        for (int i = 0; i < Max; i++) if (_w[i].On) n++;
+        return n;
     }
 
     private void Spawn(in CastFrame f, bool chorus)
@@ -107,7 +116,7 @@ internal sealed class WhisperField
 
         float r = DrawHelpers.Hash01(s + 1);
         int depth = r < 0.22f ? 0 : r < 0.72f ? 1 : 2;
-        float size = DepthSize[depth] * DrawHelpers.HashRange(s + 2, 0.85f, 1.2f) * f.Px;
+        float size = DepthSize[depth] * DrawHelpers.HashRange(s + 2, 0.85f, 1.10f) * f.Px;
         int phrase = _bag[_bagAt++ % _bag.Length];
         int arrive = Fresh(ref _lastIn, ParticleWhisper.Arrivals, s + 8), depart = Fresh(ref _lastOut, ParticleWhisper.Departures, s + 9);
         float width = ScriptFont.Width(_phrases[phrase]) * size, height = ScriptFont.Height * size;

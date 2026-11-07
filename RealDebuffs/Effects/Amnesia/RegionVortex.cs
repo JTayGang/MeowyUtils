@@ -26,8 +26,15 @@ internal sealed class VortexField : IRegionState
 
     public float Breath = 1f, Alpha = 1f;
 
-    /// <summary>0..1: the tunnel builds out from its far light; the white-out of a lapse; brightness of the light.</summary>
-    public float Appear = 1f, Bleach, Eye = 1f;
+    /// <summary>0..1: the tunnel builds out from its far end; how much of the fog is left (a lapse thins it).</summary>
+    public float Appear = 1f, Thin = 1f;
+
+    /// <summary>The fog thins to nothing inside the eye (EyeIn, a fraction of the short side from the centre), reaching full strength by EyeOut.</summary>
+    public const float EyeIn = 0.24f, EyeOut = 0.62f, VeilMax = 0.60f;
+
+    /// <summary>The spiral behind the fog: an even number of arms, the radial gap between bands (fraction of the short side), which way it winds, how far round it has turned, and how much of it is drawn (0..1, from the centre out).</summary>
+    public int SpiralArms = 2;
+    public float SpiralPitch = 0.09f, SpiralHand = 1f, SpiralTurn, SpiralReach = 1f;
 
     /// <summary>A bright ring racing down the tunnel: its height and strength.</summary>
     public float Front, FrontGain;
@@ -67,7 +74,7 @@ internal sealed class VortexField : IRegionState
     }
 }
 
-/// <summary>A spiral tunnel seen from inside, flown down toward a light: a mesh of fog banded into helical arms, with a throat that swells as it passes; with no VortexField it is a flat fill.</summary>
+/// <summary>A flat spiral turning behind a tunnel of fog seen from inside: the fog is a mesh banded into helical arms, thinning to nothing at the centre; with no VortexField it is a flat fill.</summary>
 internal sealed class RegionVortex : RegionMaterial<VortexField>
 {
     public override string Name => "region.vortex";
@@ -94,28 +101,61 @@ internal sealed class RegionVortex : RegionMaterial<VortexField>
 
         f.Wall.Ensure(f.Seed);
         Vector2 uv = MeshDraw.WhiteUv(ctx.Time);
-        DrawLight(dl, f, a, uv);
-        DrawWall(dl, f, a, uv);
+        DrawSpiral(dl, f, a, (r.Min + r.Max) * 0.5f, r.Max - r.Min, uv);
+        DrawWall(dl, f, a, uv, (r.Min + r.Max) * 0.5f);
     }
 
-    /// <summary>The light at the far end of the tunnel: a pearl core with a wide halo, the one thing that never gets nearer.</summary>
-    private static void DrawLight(ImDrawListPtr dl, VortexField f, float a, Vector2 uv)
+    // The spiral: Archimedean arms, alternately ink and pearl with clear gaps between, so it reads over a dark scene and a bright one.
+    private const int SpiralCols = 4, MaxSamples = 1600;
+    private const float Duty = 0.5f, SpiralAlpha = 0.46f, Step = 0.06f;   // Step: radians between samples, small enough that no corner shows
+    private static readonly uint Pearl = MemoryColor.Glow.Sample(0.90f);
+    private static readonly MeshBuilder Mb = new();
+
+    private static void DrawSpiral(ImDrawListPtr dl, VortexField f, float a, Vector2 centre, Vector2 size, Vector2 uv)
     {
-        Vector2 at = f.At(0f, VortexField.FarHeight, 0f, out float sc);
-        float rad = f.RadiusAt(VortexField.FarHeight) * sc;
-        float k = a * DrawHelpers.Smooth(f.Appear * 2f) * (0.80f + 0.35f * f.Eye);
+        if (f.SpiralReach <= 0.01f) return;
 
-        Span<float> rr = stackalloc float[3] { 0.9f * rad, 2.0f * rad, 4.2f * rad };
-        Span<uint> rc = stackalloc uint[3]
+        float px = f.Px, pitch = f.SpiralPitch * f.Short;
+        float perRad = f.SpiralArms * pitch / MathF.Tau;                          // radius gained per radian along an arm
+        float rEnd = (0.5f * size.Length() + pitch) * f.SpiralReach, tip = 0.18f * rEnd;
+        float hw0 = pitch * Duty * 0.5f, hole = 0.9f * pitch;                      // arms are pointed at both ends: they grow from the middle over one hole's radius
+        float k = a * SpiralAlpha;
+
+        uint inkClear = DrawHelpers.WithAlpha(MemoryColor.Ink, 0f), pearlClear = DrawHelpers.WithAlpha(Pearl, 0f);
+        Mb.Reserve(f.SpiralArms * MaxSamples * SpiralCols, f.SpiralArms * MaxSamples * 6 * (SpiralCols - 1));
+
+        for (int arm = 0; arm < f.SpiralArms; arm++)
         {
-            DrawHelpers.WithAlpha(MemoryColor.Fog.Sample(0.95f), 0.80f * k),
-            DrawHelpers.WithAlpha(MemoryColor.Fog.Sample(0.80f), 0.40f * k),
-            DrawHelpers.WithAlpha(MemoryColor.Fog.Sample(0.60f), 0f),
-        };
-        MeshDraw.Radial(dl, at, uv, DrawHelpers.WithAlpha(MemoryColor.Fog.Sample(1f), 1.00f * k), 40, rr, rc, 0f, 1f, 0, 0f);
+            bool ink = arm % 2 == 0;
+            uint clear = ink ? inkClear : pearlClear, solid = DrawHelpers.WithAlpha(ink ? MemoryColor.Ink : Pearl, k);
+            float offset = MathF.Tau * arm / f.SpiralArms + f.SpiralTurn;
+            int first = Mb.Vertices, rows = 0;
+
+            float phi = 0f;
+            while (rows < MaxSamples)
+            {
+                float r = MathF.Min(perRad * phi, rEnd);
+                float hw = hw0 * DrawHelpers.Smooth(r / hole) * (1f - DrawHelpers.Smooth((r - (rEnd - tip)) / tip));
+                float feather = MathF.Min(MathF.Max(1.5f * px, 0.08f * hw), hw);
+                float ang = f.SpiralHand * phi + offset;
+                var dir = new Vector2(MathF.Cos(ang), MathF.Sin(ang));
+
+                float i0 = MathF.Max(0f, r - hw - feather), i1 = MathF.Max(i0, r - hw + feather), o1 = r + hw - feather, o0 = r + hw + feather;
+                Mb.VertexReserved(centre + dir * i0, clear);
+                Mb.VertexReserved(centre + dir * i1, solid);
+                Mb.VertexReserved(centre + dir * o1, solid);
+                Mb.VertexReserved(centre + dir * o0, clear);
+                rows++;
+
+                if (r >= rEnd) break;
+                phi += Step;
+            }
+            Mb.StitchGrid(first, rows, SpiralCols);
+        }
+        Mb.Flush(dl, uv);
     }
 
-    private static void DrawWall(ImDrawListPtr dl, VortexField f, float a, Vector2 uv)
+    private static void DrawWall(ImDrawListPtr dl, VortexField f, float a, Vector2 uv, Vector2 centre)
     {
         var fl = f.Flight;
         float px = f.Px, depth = f.Cam.Distance / px;
@@ -157,9 +197,10 @@ internal sealed class RegionVortex : RegionMaterial<VortexField>
                 float lit = 0.52f + glow + contrast * (0.95f * (arm - 0.5f) + 0.16f * ridge + 0.24f * streak - 0.14f * (1f - mottle)) + 0.10f * swell + 0.42f * band + 0.55f * front;
                 float dens = 0.80f + contrast * (0.18f * (arm - 0.5f) + 0.22f * (mottle - 0.5f)) - 0.08f * pit + 0.30f * band + 0.40f * front;
 
-                lit = DrawHelpers.Lerp(lit, 1f, f.Bleach * 0.85f);
-                dens = DrawHelpers.Lerp(dens, 0.97f, f.Bleach * 0.70f);
-                Col[i] = DrawHelpers.WithAlpha(MemoryColor.Fog.Sample(lit), a * mask * MathF.Pow(DrawHelpers.Saturate(dens), 1.15f));
+                // The fog follows the arms (milky bands, near-clear gaps) and thins to nothing toward the centre.
+                float rim = DrawHelpers.Smooth(VortexField.EyeIn, VortexField.EyeOut, (Pos[i] - centre).Length() / f.Short);
+                float veil = VortexField.VeilMax * rim * (0.10f + 0.90f * MathF.Pow(arm, 1.4f)) * f.Thin * (0.75f + 0.5f * (mottle - 0.5f) + 0.25f * band);
+                Col[i] = DrawHelpers.WithAlpha(MemoryColor.Fog.Sample(lit), a * mask * DrawHelpers.Saturate(veil));
             }
         }
 

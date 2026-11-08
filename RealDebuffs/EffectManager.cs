@@ -23,6 +23,7 @@ public sealed class EffectManager
     private readonly Dictionary<DebuffKind, float> _currentAlpha = new();
     private readonly HashSet<DebuffKind> _activeScratch = new();
     private readonly Dictionary<DebuffKind, float> _targetStrength = new();
+    private readonly Dictionary<DebuffKind, int> _stacks = new();
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private float _lastTime;
 
@@ -83,6 +84,7 @@ public sealed class EffectManager
 
         _activeScratch.Clear();
         _targetStrength.Clear();
+        _stacks.Clear();
 
         bool suppressed = !_config.Enabled
             || _gameGui.GameUiHidden
@@ -115,11 +117,14 @@ public sealed class EffectManager
             foreach (var status in player!.StatusList)
             {
                 if (status.StatusId == 0) continue;
-                if (_catalog.TryGetEffect(status.StatusId, out var kind, out var strength))
+                if (_catalog.TryGetEffect(status.StatusId, out var kind, out var strength, out var maxStacks))
                 {
                     _activeScratch.Add(kind);
                     if (!_targetStrength.TryGetValue(kind, out var soFar) || strength > soFar)
                         _targetStrength[kind] = strength;
+
+                    // Every status that maps to a kind adds its stacks: two vulnerabilities are worse than one.
+                    _stacks[kind] = _stacks.GetValueOrDefault(kind) + StatusCatalog.StacksOf(status.Param, maxStacks);
                 }
             }
 
@@ -175,6 +180,9 @@ public sealed class EffectManager
             {
                 if (chatBlocked && effect is IReactsToBlockedChat reactsToChat)
                     reactsToChat.OnChatBlocked(time);
+
+                if (effect is IReceivesStacks stacked)
+                    stacked.SetStacks(DebugTester.IsForced(effect.Kind) ? DebugTester.GetForcedStacks(effect.Kind) : Math.Max(1, _stacks.GetValueOrDefault(effect.Kind)));
 
                 effect.Emit(_scene, screenSize, current * strength, time, dt, color);
             }
@@ -273,8 +281,11 @@ public sealed class EffectManager
         {
             if (status.StatusId == 0) continue;
             string mapped;
-            if (_catalog.TryGetEffect(status.StatusId, out var kind, out var strength))
+            if (_catalog.TryGetEffect(status.StatusId, out var kind, out var strength, out var maxStacks))
+            {
                 mapped = strength < 0.999f ? $"{kind} ({strength:P0} intensity)" : kind.ToString();
+                if (maxStacks > 1) mapped += $", {StatusCatalog.StacksOf(status.Param, maxStacks)} of {maxStacks} stacks (param {status.Param})";
+            }
             else
                 mapped = "unmapped";
             lines.Add($"  #{status.StatusId} \"{_catalog.GetName(status.StatusId)}\" -> {mapped}");

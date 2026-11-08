@@ -953,6 +953,7 @@ internal static class DebugTester
     private static readonly Dictionary<DebuffKind, long> EndsAt = new();
     private static readonly Dictionary<DebuffKind, Vector4?> ForcedColor = new();
     private static readonly Dictionary<DebuffKind, Look> ForcedLooks = new();
+    private static readonly Dictionary<DebuffKind, int> ForcedStacks = new();
 
     /// <summary>Bumps when a forced look changes, so the manager re-resolves its inputs.</summary>
     public static int Version { get; private set; }
@@ -1006,6 +1007,8 @@ internal static class DebugTester
     public static Vector4? GetForcedColor(DebuffKind kind) =>
         IsForced(kind) && ForcedColor.TryGetValue(kind, out var c) ? c : null;
 
+    public static int GetForcedStacks(DebuffKind kind) => ForcedStacks.GetValueOrDefault(kind, 1);
+
     public static void Force(DebuffKind kind, bool on) => Force(kind, on, null);
 
     public static void Force(DebuffKind kind, bool on, Vector4? color)
@@ -1057,6 +1060,14 @@ internal static class DebugTester
                 {
                     ImGui.SameLine();
                     ImGui.TextDisabled($"{(end - now + 999) / 1000}s");
+
+                    if (effect is IReceivesStacks)
+                    {
+                        int stacks = GetForcedStacks(kind);
+                        ImGui.SameLine();
+                        ImGui.SetNextItemWidth(120f);
+                        if (ImGui.SliderInt($"stacks##{kind}", ref stacks, 1, 16)) ForcedStacks[kind] = stacks;
+                    }
                 }
 
                 if (!isShowing(kind))

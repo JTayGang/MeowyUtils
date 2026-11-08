@@ -14,7 +14,7 @@ namespace RealDebuffs;
 public sealed class StatusCatalog
 {
     // Kind and strength together: looked up per status per frame, so one hash lookup instead of two.
-    private readonly Dictionary<uint, (DebuffKind Kind, float Strength)> _idToInfo = new();
+    private readonly Dictionary<uint, (DebuffKind Kind, float Strength, int MaxStacks)> _idToInfo = new();
     private readonly IDataManager _dataManager;
 
     public StatusCatalog(IDataManager dataManager, IReadOnlyList<ISceneEffect> effects, IPluginLog log)
@@ -47,7 +47,7 @@ public sealed class StatusCatalog
             if (nameMap.TryGetValue(name, out var kind))
             {
                 float strength = strengths.TryGetValue(name, out var s) ? s : 1f;
-                _idToInfo[row.RowId] = (kind, strength);
+                _idToInfo[row.RowId] = (kind, strength, row.MaxStacks);
             }
         }
 
@@ -61,18 +61,25 @@ public sealed class StatusCatalog
                          "name may have changed in a recent patch.");
     }
 
-    public bool TryGetEffect(uint statusId, out DebuffKind kind, out float strength)
+    public bool TryGetEffect(uint statusId, out DebuffKind kind, out float strength) => TryGetEffect(statusId, out kind, out strength, out _);
+
+    public bool TryGetEffect(uint statusId, out DebuffKind kind, out float strength, out int maxStacks)
     {
         if (_idToInfo.TryGetValue(statusId, out var info))
         {
             kind = info.Kind;
             strength = info.Strength;
+            maxStacks = info.MaxStacks;
             return true;
         }
         kind = default;
         strength = 1f;
+        maxStacks = 0;
         return false;
     }
+
+    /// <summary>The stack count a status shows: its Param when the sheet says it stacks, otherwise 1.</summary>
+    public static int StacksOf(ushort param, int maxStacks) => maxStacks > 1 ? Math.Clamp((int)param, 1, maxStacks) : 1;
 
     /// <summary>Human-readable name for any status ID, for /realdebuffs statuses.</summary>
     public string GetName(uint statusId)

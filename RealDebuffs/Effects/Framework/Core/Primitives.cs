@@ -33,6 +33,7 @@ public enum PrimitiveRole
     [Fallback("particle.eye")] Eye = 37,
     Trail = 38,
     [Fallback("particle.whisper")] Whisper = 39,
+    [Fallback("particle.shard")] Shard = 40,
 }
 
 [AttributeUsage(AttributeTargets.Field)]

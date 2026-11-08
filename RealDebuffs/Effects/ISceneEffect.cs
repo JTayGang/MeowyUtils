@@ -67,3 +67,9 @@ public interface IReactsToBlockedChat
     /// <summary>One or more messages were swallowed since the last frame. time is the same clock Emit gets.</summary>
     void OnChatBlocked(float time);
 }
+
+/// <summary>Optional: wants its status's stack count; called before each Emit while the effect is on. 1 for a status that doesn't stack.</summary>
+public interface IReceivesStacks
+{
+    void SetStacks(int stacks);
+}

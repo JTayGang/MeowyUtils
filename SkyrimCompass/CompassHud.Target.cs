@@ -122,6 +122,11 @@ public sealed partial class CompassHud
 
     private Vector2 GetPctLabelSize(int pctInt, IFontHandle activeFont)
     {
+        if (!activeFont.Available)
+        {
+            _pctSizeCacheFont = null; // measured with the fallback font: use it for this frame, but don't keep it
+            return ImGui.CalcTextSize(PctLabels[pctInt]);
+        }
         if (_pctSizeCacheFont != activeFont)
         {
             Array.Fill(_pctSizeCache, new Vector2(-1f,-1f));
@@ -155,14 +160,16 @@ public sealed partial class CompassHud
             ? GetCastName(casting) : null;
         int shownLevel = (castName == null && _cfg.ShowTargetLevel && curTarget is ICharacter lv && lv.Level > 0) ? lv.Level : 0;
 
+        // Same rule as the compass labels: never cache a measurement taken before the font has finished baking.
+        bool fontReady = fontHandle.Available;
         if (_tbLabelTargetId != curTarget.GameObjectId || _tbLabelCastName != castName ||
-            _tbLabelLevel != shownLevel || _tbLabelFont != fontHandle)
+            _tbLabelLevel != shownLevel || !fontReady || _tbLabelFont != fontHandle)
         {
             string baseLabel = castName ?? curTarget.Name.TextValue;
             _tbLabelText = shownLevel > 0 ? $"Lv{shownLevel}  {baseLabel}" : baseLabel;
             _tbLabelSize = ImGui.CalcTextSize(_tbLabelText);
             _tbLabelTargetId = curTarget.GameObjectId; _tbLabelCastName = castName; _tbLabelLevel = shownLevel;
-            _tbLabelFont = fontHandle;
+            _tbLabelFont = fontReady ? fontHandle : null;
         }
         string label = _tbLabelText;
         var sz = _tbLabelSize;

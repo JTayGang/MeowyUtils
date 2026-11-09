@@ -109,11 +109,15 @@ public sealed partial class CompassHud
         float fontSize = ImGui.GetFontSize();
         var font = ImGui.GetFont();
         float labelTop = by + bh * 0.12f;
-        if (_labelMetricsFont != fontHandle)
+        // Only trust (and cache) measurements taken with the real font. While the handle is still baking nothing is pushed,
+        // so CalcTextSize would measure ImGui's default font, and since the handle object stays the same once it finishes
+        // the stale sizes would never be refreshed.
+        bool fontReady = fontHandle.Available;
+        if (!fontReady || _labelMetricsFont != fontHandle)
         {
             _tickLabelH = ImGui.CalcTextSize("N").Y;
             _dirLabelSizeCache.Clear();
-            _labelMetricsFont = fontHandle;
+            _labelMetricsFont = fontReady ? fontHandle : null;
         }
         float maxTickH = MathF.Max(2f, (by + bh - 1f) - (labelTop + _tickLabelH));
 

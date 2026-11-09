@@ -43,6 +43,7 @@ public sealed class Plugin : IDalamudPlugin
         Config = LoadConfig(pi, log);
         Config.Sanitize();
         Refresh(Config, pi.UiLanguage);
+        ApplyUiHidePrefs();
 
         _fonts = new DynamicGameFontCache(pi.UiBuilder.FontAtlas, GameFontFamily.Jupiter);
         StatusMirror = new StatusMirrorEngine(pi, fw, ot, log, Config);
@@ -111,9 +112,20 @@ public sealed class Plugin : IDalamudPlugin
         _chat.Print(ChatPrefix + (enabled ? T("Compass is on.") : T("Compass is off.")));
     }
 
+    // Dalamud hides every plugin's UI during cutscenes and GPose unless the plugin opts out, so "Hide in cutscenes and
+    // GPose" can only be switched OFF by setting these. They are plain property sets, so re-applying each frame is free
+    // and picks up the settings toggle without any extra plumbing.
+    private void ApplyUiHidePrefs()
+    {
+        bool hide = Config.HideDuringCutscenes;
+        PluginInterface.UiBuilder.DisableCutsceneUiHide = !hide;
+        PluginInterface.UiBuilder.DisableGposeUiHide = !hide;
+    }
+
     private void OnDraw()
     {
         Refresh(Config, PluginInterface.UiLanguage);
+        ApplyUiHidePrefs();
         try { _ws.Draw(); } catch (Exception ex) { LogDrawError(ex); }
         try { _hud.Draw(); } catch (Exception ex) { LogDrawError(ex); }
     }

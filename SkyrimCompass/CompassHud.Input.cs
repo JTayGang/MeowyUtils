@@ -30,6 +30,11 @@ public sealed partial class CompassHud
         return Lerp(open ? 1f : CtxDimAlpha, open ? CtxDimAlpha : 1f, SmoothStep(t));
     }
 
+    // IsMouseHoveringRect ignores window ordering, so on its own it also fires through any ImGui window (ours or another
+    // plugin's) sitting on top of the HUD. Requiring that no window is hovered makes clicks on those windows stay theirs.
+    private static bool IsHoveringRect(Vector2 min, Vector2 max) =>
+        ImGui.IsMouseHoveringRect(min, max, false) && !ImGui.IsWindowHovered(ImGuiHoveredFlags.AnyWindow);
+
     private bool IsCtxMenuOpen() => _gg.GetAddonByName("ContextMenu").IsVisible || _gg.GetAddonByName("AddonContextSub").IsVisible;
 
     private void HandleTargetClick(Vector2 min, Vector2 max, IGameObject obj, bool allowLeft)
@@ -39,20 +44,25 @@ public sealed partial class CompassHud
         // Decide once per press so the release is handled the same way; a mismatch leaves the game thinking the button is held.
         if (_rightClickCapture.HasValue)
         {
-            if (_rightClickCapture.Value) io.WantCaptureMouse = true;
-            if (ImGui.IsMouseReleased(ImGuiMouseButton.Right)) _rightClickCapture = null;
+            bool rightDown = ImGui.IsMouseDown(ImGuiMouseButton.Right);
+            // Keep owning the press until the frame the button comes up (so the game never sees a lone release)...
+            if (_rightClickCapture.Value && (rightDown || ImGui.IsMouseReleased(ImGuiMouseButton.Right))) io.WantCaptureMouse = true;
+            // ...but clear on "not held" rather than waiting for the release event. If Draw was skipped on the release
+            // frame (cutscene, loading screen, /compass off) that event is gone, and waiting for it would leave this
+            // flag swallowing game clicks until the next right-click.
+            if (!rightDown) _rightClickCapture = null;
             return;
         }
 
         // Menu already open: pass the click through so the game closes it.
         if (_ctxMenuWasOpen)
         {
-            if (ImGui.IsMouseHoveringRect(min, max, false) && ImGui.IsMouseClicked(ImGuiMouseButton.Right))
+            if (IsHoveringRect(min, max) && ImGui.IsMouseClicked(ImGuiMouseButton.Right))
                 _rightClickCapture = false;
             return;
         }
 
-        if (!ImGui.IsMouseHoveringRect(min, max, false)) return;
+        if (!IsHoveringRect(min, max)) return;
         io.WantCaptureMouse = true;
         if (allowLeft && ImGui.IsMouseClicked(ImGuiMouseButton.Left)) { _tm.Target = obj; return; }
         if (ImGui.IsMouseClicked(ImGuiMouseButton.Right))
@@ -67,19 +77,22 @@ public sealed partial class CompassHud
         if (!_isDraggingCompass) return;
         var io = ImGui.GetIO();
         io.WantCaptureMouse = true;
+        // End on "not held" instead of waiting for the release event: if Draw returned early while the button came up
+        // (no player, cutscene, disabled) the event is gone and the drag would otherwise never finish. Checked before
+        // moving anything so a stale drag doesn't jump the compass to wherever the mouse ended up.
+        if (!ImGui.IsMouseDown(ImGuiMouseButton.Left)) { _isDraggingCompass = false; _cfg.Save(_pi); return; }
         ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeAll);
         var delta = ImGui.GetMousePos() - _dragStartMouse;
         float xRange = MathF.Max(0f, (io.DisplaySize.X - _cfg.CompassWidth) * 0.5f);
         float yMax = MathF.Max(0f, io.DisplaySize.Y - _cfg.CompassHeight);
         _cfg.XOffset = Math.Clamp(_dragStartXOffset + delta.X, -xRange, xRange);
         _cfg.YOffset = Math.Clamp(_dragStartYOffset + delta.Y, 0f, yMax);
-        if (ImGui.IsMouseReleased(ImGuiMouseButton.Left)) { _isDraggingCompass = false; _cfg.Save(_pi); }
     }
 
     private void TryStartCompassDrag(Vector2 min, Vector2 max)
     {
         if (_isDraggingCompass || _cfg.LockPosition) return;
-        if (!ImGui.IsMouseHoveringRect(min, max, false)) return;
+        if (!IsHoveringRect(min, max)) return;
         var io = ImGui.GetIO();
         io.WantCaptureMouse = true;
         ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeAll);

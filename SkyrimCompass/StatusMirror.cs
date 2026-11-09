@@ -141,6 +141,7 @@ internal sealed class MoodlesMirrorIpc : IDisposable
     private readonly ICallGateSubscriber<MoodlesStatusInfo, IPlayerCharacter, object> _add;
     private readonly ICallGateSubscriber<System.Guid, IPlayerCharacter, object> _remove;
     private bool _subscribed;
+    private DateTime _nextReadWarn = DateTime.MinValue;
     public bool Available { get; private set; }
     public event Action<nint>? LocalStatusesChanged;
 
@@ -174,11 +175,22 @@ internal sealed class MoodlesMirrorIpc : IDisposable
 
     private void OnModified(nint addr) => LocalStatusesChanged?.Invoke(addr);
 
-    public List<MoodlesStatusInfo> GetLocalStatuses()
+    // null means the read FAILED (not available, threw, or returned nothing at all). That is not the same as an empty
+    // list, which is a real answer ("no statuses"). Callers must not sync or delete anything off a null.
+    public List<MoodlesStatusInfo>? GetLocalStatuses()
     {
-        if (!Available) return [];
-        try { return _get.InvokeFunc() ?? []; }
-        catch (Exception ex) { _log.Warning(ex, "Failed to read local Moodles statuses."); return []; }
+        if (!Available) return null;
+        try { return _get.InvokeFunc(); }
+        catch (Exception ex)
+        {
+            var now = DateTime.UtcNow;
+            if (now >= _nextReadWarn)
+            {
+                _nextReadWarn = now.AddSeconds(30);
+                _log.Warning(ex, "Failed to read local Moodles statuses - skipping this mirror pass.");
+            }
+            return null;
+        }
     }
 
     public bool TryApply(MoodlesStatusInfo status, IPlayerCharacter local)
@@ -211,6 +223,7 @@ internal sealed class LociMirrorIpc : IDisposable
     private readonly ICallGateSubscriber<LociStatusInfo, uint, int> _apply;
     private readonly ICallGateSubscriber<System.Guid, uint, int> _remove;
     private bool _subscribed;
+    private DateTime _nextReadWarn = DateTime.MinValue;
     public bool Available { get; private set; }
     public event Action<nint>? LocalStatusesChanged;
 
@@ -246,11 +259,21 @@ internal sealed class LociMirrorIpc : IDisposable
 
     private void OnModified(nint addr, int type) => LocalStatusesChanged?.Invoke(addr);
 
-    public List<LociStatusInfo> GetLocalStatuses()
+    // null means the read FAILED; see MoodlesMirrorIpc.GetLocalStatuses.
+    public List<LociStatusInfo>? GetLocalStatuses()
     {
-        if (!Available) return [];
-        try { return _get.InvokeFunc() ?? []; }
-        catch (Exception ex) { _log.Warning(ex, "Failed to read local Loci statuses."); return []; }
+        if (!Available) return null;
+        try { return _get.InvokeFunc(); }
+        catch (Exception ex)
+        {
+            var now = DateTime.UtcNow;
+            if (now >= _nextReadWarn)
+            {
+                _nextReadWarn = now.AddSeconds(30);
+                _log.Warning(ex, "Failed to read local Loci statuses - skipping this mirror pass.");
+            }
+            return null;
+        }
     }
 
     public LociApiEc TryApply(LociStatusInfo status)
@@ -313,6 +336,12 @@ public sealed class StatusMirrorEngine : IDisposable
     private DateTime _nextSave = DateTime.UtcNow;
     private const float SaveIntervalSecs = 5.0f;
     private bool _mirrorsNeedRefresh;
+
+    // Twins are never deleted in the first seconds after login. Right after login Moodles/Loci can still be loading and
+    // report a short or empty list, which looks exactly like "the player removed everything"; acting on that tears down
+    // every twin (restarting its timer and replaying its VFX) only to rebuild it a moment later. After this hold a source
+    // that is missing from one successful read has its twin removed straight away.
+    private const double StartupRemovalHoldSecs = 10.0;
     private DateTime _nextReconcile = DateTime.MinValue;
     private volatile bool _pendingReconcile = true;
 
@@ -424,6 +453,9 @@ public sealed class StatusMirrorEngine : IDisposable
 
     private void MarkDirty() => _dirty = true;
 
+    private bool RemovalAllowed(DateTime now) =>
+        _firstReconcileAt is { } t0 && (now - t0).TotalSeconds >= StartupRemovalHoldSecs;
+
     private void OnUpdate(IFramework fw)
     {
         var now = DateTime.UtcNow;
@@ -451,6 +483,11 @@ public sealed class StatusMirrorEngine : IDisposable
         if (!_moodles.Available || !_loci.Available) return;
         var moodleList = _moodles.GetLocalStatuses();
         var lociList = _loci.GetLocalStatuses();
+        if (moodleList == null || lociList == null)
+        {
+            // A failed read is not "no statuses": sync nothing this pass, and try again on the next one.
+            return;
+        }
         if (!_startupLogged)
         {
             _startupLogged = true;
@@ -560,6 +597,7 @@ public sealed class StatusMirrorEngine : IDisposable
             if (!allMoodleGuids.Contains(kv.Key)) toRemove.Add(kv.Key);
         foreach (var g in toRemove)
         {
+            if (!RemovalAllowed(now)) continue;
             if (lociGuids.Contains(g))
             {
                 var ec = _loci.TryRemove(g);
@@ -679,6 +717,7 @@ public sealed class StatusMirrorEngine : IDisposable
             if (!allLociGuids.Contains(kv.Key)) toRemove.Add(kv.Key);
         foreach (var g in toRemove)
         {
+            if (!RemovalAllowed(now)) continue;
             if (moodleGuids.Contains(g))
             {
                 _moodles.TryRemove(g, local);

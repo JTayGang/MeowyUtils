@@ -132,7 +132,7 @@ public sealed partial class CompassHud : IDisposable
     {
         if (!_cfg.Enabled) return;
         if (_cfg.HideDuringCutscenes && (_cond[ConditionFlag.OccupiedInCutSceneEvent] ||
-            _cond[ConditionFlag.WatchingCutscene] || _cond[ConditionFlag.WatchingCutscene78]))
+            _cond[ConditionFlag.WatchingCutscene] || _cond[ConditionFlag.WatchingCutscene78] || _cs.IsGPosing))
             return;
         var player = _ot.LocalPlayer;
         if (player == null || !TryGetView(player, out float heading, out Vector3 origin)) return;
@@ -297,7 +297,7 @@ public sealed partial class CompassHud : IDisposable
                 dl.AddText(font,fSize,V(lx,ly), WithAlpha(0xFFFFFFFFu,alpha), durLabel);
                 hoverBottom=ly+lsz.Y;
             }
-            if (ImGui.IsMouseHoveringRect(V(sx-size*0.5f,scy-halfH), V(sx+size*0.5f,hoverBottom), false))
+            if (IsHoveringRect(V(sx-size*0.5f,scy-halfH), V(sx+size*0.5f,hoverBottom)))
             {
                 ImGui.SetNextWindowPos(V(sx,hoverBottom+tipGap), ImGuiCond.Always, V(0.5f,0f));
                 var tipBg=_cfg.BackgroundColor;
@@ -413,8 +413,25 @@ public sealed partial class CompassHud : IDisposable
 
     private static bool TryResolveColor(string val, out ushort key) => ushort.TryParse(val,out key) || _namedColors.TryGetValue(val,out key);
 
+    // Moodles/Loci text can come from other players, so drop control characters (anything that could be mistaken for the
+    // start of a raw SeString payload) before it goes anywhere near the builder. Newlines are the one exception.
+    private static bool IsStrippedChar(char c) => char.IsControl(c) && c != '\n';
+
+    private static string SanitizeStatusText(string s)
+    {
+        int i = 0;
+        while (i < s.Length && !IsStrippedChar(s[i])) i++;
+        if (i == s.Length) return s;
+        var sb = new System.Text.StringBuilder(s.Length);
+        foreach (var c in s) if (!IsStrippedChar(c)) sb.Append(c);
+        return sb.ToString();
+    }
+
     private static void AppendFormat(SeStringBuilder sb,string raw)
     {
+        if (string.IsNullOrEmpty(raw)) return;
+        raw=SanitizeStatusText(raw);
+        const StringComparison oic=StringComparison.OrdinalIgnoreCase;
         bool col=false,glow=false,ital=false;
         int last=0;
         foreach (Match m in _formatTagRegex.Matches(raw))
@@ -422,14 +439,16 @@ public sealed partial class CompassHud : IDisposable
             if (m.Index>last) sb.AddText(raw[last..m.Index]);
             last=m.Index+m.Length;
             var tag=m.Value;
-            if (tag.StartsWith("[color=",StringComparison.OrdinalIgnoreCase))
+            // The regex is case-insensitive, so every comparison here has to be too ("[/COLOR]" used to fall through
+            // to the italics branch and leave the colour open).
+            if (tag.StartsWith("[color=",oic))
             { if (TryResolveColor(tag[7..^1],out var id)) { sb.AddUiForeground(id); col=true; } }
-            else if (tag=="[/color]") { if (col) { sb.AddUiForegroundOff(); col=false; } }
-            else if (tag.StartsWith("[glow=",StringComparison.OrdinalIgnoreCase))
+            else if (tag.Equals("[/color]",oic)) { if (col) { sb.AddUiForegroundOff(); col=false; } }
+            else if (tag.StartsWith("[glow=",oic))
             { if (TryResolveColor(tag[6..^1],out var id)) { sb.AddUiGlow(id); glow=true; } }
-            else if (tag=="[/glow]") { if (glow) { sb.AddUiGlowOff(); glow=false; } }
-            else if (tag=="[i]") { sb.AddItalicsOn(); ital=true; }
-            else if (ital) { sb.AddItalicsOff(); ital=false; }
+            else if (tag.Equals("[/glow]",oic)) { if (glow) { sb.AddUiGlowOff(); glow=false; } }
+            else if (tag.Equals("[i]",oic)) { if (!ital) { sb.AddItalicsOn(); ital=true; } }
+            else if (tag.Equals("[/i]",oic)) { if (ital) { sb.AddItalicsOff(); ital=false; } }
         }
         if (last<raw.Length) sb.AddText(raw[last..]);
         if (col) sb.AddUiForegroundOff();
@@ -481,7 +500,10 @@ public sealed partial class CompassHud : IDisposable
     {
         if (_iconAspectCache.TryGetValue(iconId,out float asp)) return asp;
         if (!_tp.TryGetFromGameIcon(new GameIconLookup((uint)iconId), out var shared)) return 1f;
-        var size=shared.GetWrapOrEmpty().Size;
+        // Still loading (or failed): GetWrapOrEmpty would hand back a placeholder, and caching ITS aspect would pin this
+        // icon to the wrong shape forever. Use 1 for now and ask again next frame.
+        if (!shared.TryGetWrap(out var wrap, out _)) return 1f;
+        var size=wrap!.Size;
         asp=size.X>0f ? size.Y/size.X : 1f;
         _iconAspectCache[iconId]=asp;
         return asp;

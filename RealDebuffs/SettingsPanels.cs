@@ -589,7 +589,7 @@ internal sealed class EffectStylePanel
     private string ExportText(DebuffKind kind)
     {
         var look = CurrentLook(kind);
-        return LookText.Phrase(look, TooltipLanguage.For(_config)) ?? LookCode.Encode(look);
+        return LookText.Phrase(look, TooltipLanguage.For(_config)) ?? LookCode.Encode(look) ?? "";
     }
 
     /// <summary>Changing the effect combo doesn't reset the previous effect; Reset is an explicit button.</summary>
@@ -618,7 +618,7 @@ internal sealed class EffectStylePanel
         var lex = TooltipLanguage.For(_config);
         var look = CurrentLook(kind);
         string? phrase = LookText.Phrase(look, lex);
-        string code = LookCode.Encode(look);
+        string? code = LookCode.Encode(look);
 
         ImGui.SameLine();
         ImGui.BeginDisabled(phrase is null);
@@ -634,13 +634,17 @@ internal sealed class EffectStylePanel
                 : $"Copies to clipboard and fills the tester above:\n\n\"{phrase}\"");
 
         ImGui.SameLine();
+        ImGui.BeginDisabled(code is null);
         if (ImGui.SmallButton("Copy code##effectcode"))
         {
-            ImGui.SetClipboardText(code);
-            _testText = code;
+            ImGui.SetClipboardText(code!);
+            _testText = code!;
         }
+        ImGui.EndDisabled();
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip($"Exact and always works, even for advanced slots. Paste it anywhere in a status description:\n\n{code}");
+            ImGui.SetTooltip(code is null
+                ? "A material or slot in this look has no short-code number yet (see CodeIds); the audit names it."
+                : $"Exact and always works, even for advanced slots. Paste it anywhere in a status description, exactly as copied (it is case-sensitive; {code.Length} characters):\n\n{code}");
 
         // Wide gap before Reset so a misclick on Copy can't land on the destructive button.
         ImGui.SameLine(0f, 32f);
@@ -659,13 +663,14 @@ internal sealed class EffectStylePanel
             ImGui.SetTooltip($"Returns {kind} to its built-in defaults.\n\nOnly affects the currently-selected effect.");
 
         ImGui.Spacing();
-        ImGui.TextDisabled("Phrase");
+        ImGui.TextDisabled(phrase is null ? "Phrase" : $"Phrase ({phrase.Length})");
         ImGui.SameLine();
         if (phrase is not null) ImGui.TextWrapped(phrase);
         else ImGui.TextDisabled("(code only)");
-        ImGui.TextDisabled("Code  ");
+        ImGui.TextDisabled(code is null ? "Code" : $"Code ({code.Length})");
         ImGui.SameLine();
-        ImGui.TextWrapped(code);
+        if (code is not null) ImGui.TextWrapped(code);
+        else ImGui.TextDisabled("(unavailable)");
 
         ImGui.Spacing();
 

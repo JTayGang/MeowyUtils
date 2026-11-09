@@ -16,7 +16,7 @@ public static class LookCode
     private static readonly Regex Rx = new(@"(?<![A-Za-z0-9])RD[A-Za-z0-9]{5,}(?![A-Za-z0-9])", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     /// <summary>Test hook: write the wide (8-bit) fields as if a table had outgrown the narrow ones.</summary>
-    internal static bool ForceWide;
+    internal static bool ForceWide { get; set; }
 
     public static IEnumerable<Match> Find(string text) => Rx.Matches(text);
 

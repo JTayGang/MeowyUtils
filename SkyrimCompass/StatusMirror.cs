@@ -112,8 +112,7 @@ internal sealed class MirrorState
             var path = FilePath(pi);
             Directory.CreateDirectory(pi.ConfigDirectory.FullName);
             var json = JsonSerializer.Serialize(this);
-            // Write a temp file, flush it to disk, then swap it in. If the game is killed mid-save (/xlkill, crash, power loss)
-            // the old ledger survives intact instead of being left truncated (which would make every mirrored twin look like a new status).
+            // Write to a temp file, flush, then swap it in, so a kill mid-save (/xlkill, crash) can't leave a truncated ledger.
             var tmp = path + ".tmp";
             using (var fs = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None))
             {
@@ -175,8 +174,7 @@ internal sealed class MoodlesMirrorIpc : IDisposable
 
     private void OnModified(nint addr) => LocalStatusesChanged?.Invoke(addr);
 
-    // null means the read FAILED (not available, threw, or returned nothing at all). That is not the same as an empty
-    // list, which is a real answer ("no statuses"). Callers must not sync or delete anything off a null.
+    // null means the read FAILED, which is not the same as an empty list; callers must not sync or delete off a null.
     public List<MoodlesStatusInfo>? GetLocalStatuses()
     {
         if (!Available) return null;
@@ -337,20 +335,12 @@ public sealed class StatusMirrorEngine : IDisposable
     private const float SaveIntervalSecs = 5.0f;
     private bool _mirrorsNeedRefresh;
 
-    // Twins are never deleted in the first seconds after login. Right after login Moodles/Loci can still be loading and
-    // report a short or empty list, which looks exactly like "the player removed everything"; acting on that tears down
-    // every twin (restarting its timer and replaying its VFX) only to rebuild it a moment later. After this hold a source
-    // that is missing from one successful read has its twin removed straight away.
+    // No twin is removed in the first seconds after login, when Moodles/Loci may still be loading and report a short list.
     private const double StartupRemovalHoldSecs = 10.0;
     private DateTime _nextReconcile = DateTime.MinValue;
     private volatile bool _pendingReconcile = true;
 
-    // ---- Mirror activity log -------------------------------------------------------------------------------------
-    // Moodles and Loci restore your statuses from their own last save, which after a hard kill (/xlkill) is older than the
-    // state you left. Each write the mirror makes is logged (Information, visible in /xllog) so a "ghost" status can be traced
-    // to where it came from, and every line says how long after the first reconcile of this session it happened (so a status
-    // restored at login shows up as a few seconds, anything later was put there by something else). Writes only happen on real changes, and
-    // identical repeats of the same (status, action) are gated to once per 10s so a stuck loop can't flood the log.
+    // Mirror writes are logged to /xllog with time since first reconcile, rate-limited to once per 10s per (status, action).
     private DateTime? _firstReconcileAt;
     private bool _startupLogged;
     private readonly Dictionary<(System.Guid, string), (DateTime At, int Suppressed)> _logGate = new();

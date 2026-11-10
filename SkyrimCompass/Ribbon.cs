@@ -5,8 +5,7 @@ using static SkyrimCompass.Gfx;
 
 namespace SkyrimCompass;
 
-// A soft, flowing ribbon beside the target name. It keeps the old single-line motion,
-// with a little extra body, a restrained highlight, and cast-progress coloration.
+// A soft flowing ribbon beside the target name, colored by cast progress.
 internal static class Ribbon
 {
     private const int MaxSamples = 28;
@@ -50,8 +49,7 @@ internal static class Ribbon
             float g = (u - glint) / 0.085f;
 
             pts[i] = V(x, from.Y + Wave(along, u, phase, amp));
-            // A thin, dark counter-wave sits behind the ribbon. The inverted wave and
-            // offset timing create a subtle sense of motion without reading as a braid.
+            // A thin dark counter-wave behind the ribbon adds subtle motion.
             shadowPts[i] = V(x, from.Y + ShadowWave(along, u, shadowPhase, amp * 1f) + 0.65f);
             colors[i] = MixColor(baseCol, castCol, mask);
 
@@ -101,8 +99,7 @@ internal static class Ribbon
             dl.AddLine(a, b, WithAlpha(Brighten(colors[i], 75u), 0.24f * light), 0.9f);
         }
 
-        // Randomly assign the motes to opposite paths so both ribbons get a little motion.
-        // Their start positions and speeds are independently varied for less synchronized travel.
+        // Motes are randomly assigned to opposite paths, with independent start positions and speeds.
         bool firstGlintUsesShadow = Random01(seed, 0, 3u) >= 0.5f;
         for (int m = 0; m < Glints; m++)
         {
@@ -151,8 +148,7 @@ internal static class Ribbon
     private static float ShadowWave(float along, float u, float phase, float amp) =>
         -Wave(along, u, phase, amp);
 
-    // Stable integer hash converted to [0, 1). Unlike System.Random, this has no mutable
-    // state, so the same ribbon seed always produces the same mote behavior on every frame.
+    // Stateless integer hash to [0, 1), so a ribbon seed gives identical motes every frame.
     private static float Random01(float seed, int index, uint channel)
     {
         unchecked

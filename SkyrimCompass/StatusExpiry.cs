@@ -4,33 +4,7 @@ using MemoryPack;
 
 namespace SkyrimCompass;
 
-// ---------------------------------------------------------------------------------------
-// Accurate Moodles/Loci timers on *other* players.
-//
-// The tuple IPC (Moodles.GetStatusManagerInfoByPtrV2 / Loci.GetManagerInfoByPtr) only carries
-// the status's configured TOTAL duration in "ExpireTicks" (milliseconds, -1 = no expiry). It
-// never says how much of that duration is left: both plugins treat the tuple as an "apply this"
-// command and stamp ExpiresAt = now + duration on whoever receives it
-// (Moodles Utils.PrepareToApply, Loci Utils.PreApply).
-//
-// The real absolute expiry (ExpiresAt, unix milliseconds, long.MaxValue = never) lives on
-// MyStatus / LociStatus and is only exposed in the base64 manager payload:
-//     Moodles.GetStatusManagerByPtrV2 : nint -> string
-//     Loci.GetManagerByPtr            : nint -> (int ec, string? base64)
-//
-// That is the exact value Moodles' and Loci's own target bars use (ExpiresAt - Utils.Time), and
-// it is what sync plugins (e.g. Sundouleia) hand to the viewer's local manager via
-// SetStatusManagerByPtrV2 / SetManagerByPtr: the sender's ExpiresAt is kept as-is. So decoding it
-// gives a timer that matches what Moodles/Loci themselves would show for that player.
-//
-// Both payloads are MemoryPack (StringEncoding.Utf16) serialized List<MyStatus> / List<LociStatus>.
-// MemoryPack is positional, so the mirror classes below must keep the exact member order and
-// wire types of the source classes (enums are written as their underlying integer type):
-//     Moodles  Moodles/Data/MyStatus.cs              (Moodles 1.1.3.5)
-//     Loci     Loci/Data/Models/LociStatus.cs        (Loci 0.1.3.12)
-// If either plugin ever appends a member, MemoryPack throws on the longer payload; ExpiryFeed
-// catches that, logs once, and the HUD falls back to showing the icon without a timer.
-// ---------------------------------------------------------------------------------------
+    // Timers come from the MemoryPack manager payload; the mirror classes must match Moodles 1.1.3.5 / Loci 0.1.3.12 exactly.
 
 /// <summary>Mirror of Moodles.Data.MyStatus (serialized members only, same order).</summary>
 [MemoryPackable]
@@ -78,26 +52,20 @@ internal enum ExpiryState
 {
     /// <summary>No usable ExpiresAt for this status (payload unavailable, undecodable, or GUID missing).</summary>
     Unknown,
-    /// <summary>ExpiresAt == long.MaxValue: the status has no timer.</summary>
     NoExpiry,
     /// <summary>ExpiresAt is in the past. Moodles/Loci hide these on their own bars.</summary>
     Expired,
-    /// <summary>Timer running; remaining time is reported.</summary>
     Active,
 }
 
 internal static class StatusExpiryCodec
 {
-    // Both plugins serialize with StringEncoding.Utf16
-    // (Moodles MyStatusManager.SerializerOptions, Loci Utils.SerializerOptions).
+    // Both plugins serialize with StringEncoding.Utf16.
     private static readonly MemoryPackSerializerOptions Opts = new() { StringEncoding = StringEncoding.Utf16 };
 
     public const long NoExpiry = long.MaxValue;
 
-    /// <summary>
-    /// Decode a Moodles manager payload into GUID -> ExpiresAt. An empty string is a valid payload
-    /// (the manager has no statuses). Returns false if the payload can't be decoded.
-    /// </summary>
+    /// <summary>Decodes a Moodles manager payload to GUID -> ExpiresAt; "" is valid (no statuses), false if undecodable.</summary>
     public static bool TryDecodeMoodles(string base64, Dictionary<Guid, long> into)
     {
         into.Clear();
@@ -128,11 +96,7 @@ internal static class StatusExpiryCodec
     }
 }
 
-/// <summary>
-/// Per-plugin (Moodles or Loci) view of "when does each status on the current target expire".
-/// Call <see cref="Refresh"/> on the same cadence as the tuple fetch, then <see cref="Get"/> every frame
-/// (a dictionary lookup and a subtraction; no decoding).
-/// </summary>
+/// <summary>ExpiresAt per status on the current target: Refresh on the fetch cadence, Get every frame.</summary>
 internal sealed class ExpiryFeed
 {
     private readonly string _name;

@@ -62,8 +62,7 @@ public sealed partial class CompassHud : IDisposable
     private PluginIpcState _lociIpc = new("Loci", 0, PluginIpcKind.Loci);
 
     private readonly List<(float Remaining, int Icon, string Name, string Desc, System.Guid Guid, int Stacks, int MaxStacks, bool Dispellable)> _statusBuf = new();
-    // Absolute ExpiresAt per status GUID for the current target (see StatusExpiry.cs). The tuple IPC's
-    // "ExpireTicks" is only the status's total configured duration, so it can't tell us time remaining.
+    // Absolute ExpiresAt per status GUID for the current target; IPC "ExpireTicks" is only the total duration (see StatusExpiry.cs).
     private readonly ExpiryFeed _moodlesExpiry;
     private readonly ExpiryFeed _lociExpiry;
 
@@ -74,10 +73,7 @@ public sealed partial class CompassHud : IDisposable
     private nint _cachedLociTarget = IntPtr.Zero;
     private float _cachedLociAt = -1000f;
     private const float StatusCacheSecs = 0.24f;
-    // Bit 0 of the IPC "Modifiers" field == the author-set "dispellable" flag on both plugins:
-    // Moodles.Data.Enums.Modifiers.CanDispel and LociApi.Enums.Modifiers.CanDispel are both
-    // `1u << 0` as of the current Moodles/Loci.Api sources. Re-verify against both projects if
-    // either bumps its IPC version, since this isn't a documented/stable part of either contract.
+    // Bit 0 of IPC "Modifiers" is CanDispel in both Moodles and Loci (undocumented; re-verify when either bumps its IPC version).
     private const uint PluginStatusCanDispelBit = 1u << 0;
 
     private readonly Dictionary<string, byte[]> _tooltipCache = new();
@@ -385,8 +381,7 @@ public sealed partial class CompassHud : IDisposable
             int icon=iconSel(s);
             if (icon<=0) continue;
             if (GuidInBuffer(g)) continue;
-            // Tuple ExpireTicks is the TOTAL duration (-1 == no expiry), not time left, so the timer comes from
-            // ExpiresAt. Unknown (payload unavailable/undecodable) shows the icon with no timer rather than a wrong one.
+            // ExpireTicks is the total duration, so the timer comes from ExpiresAt; Unknown shows the icon with no timer.
             float rem=0f;
             if (expireSel(s)>=0)
             {
@@ -413,8 +408,7 @@ public sealed partial class CompassHud : IDisposable
 
     private static bool TryResolveColor(string val, out ushort key) => ushort.TryParse(val,out key) || _namedColors.TryGetValue(val,out key);
 
-    // Moodles/Loci text can come from other players, so drop control characters (anything that could be mistaken for the
-    // start of a raw SeString payload) before it goes anywhere near the builder. Newlines are the one exception.
+    // Strip control characters (except newlines) from IPC text, which can come from other players, before building SeStrings.
     private static bool IsStrippedChar(char c) => char.IsControl(c) && c != '\n';
 
     private static string SanitizeStatusText(string s)
@@ -439,8 +433,7 @@ public sealed partial class CompassHud : IDisposable
             if (m.Index>last) sb.AddText(raw[last..m.Index]);
             last=m.Index+m.Length;
             var tag=m.Value;
-            // The regex is case-insensitive, so every comparison here has to be too ("[/COLOR]" used to fall through
-            // to the italics branch and leave the colour open).
+            // The tag regex is case-insensitive, so these comparisons must be too.
             if (tag.StartsWith("[color=",oic))
             { if (TryResolveColor(tag[7..^1],out var id)) { sb.AddUiForeground(id); col=true; } }
             else if (tag.Equals("[/color]",oic)) { if (col) { sb.AddUiForegroundOff(); col=false; } }
@@ -500,8 +493,7 @@ public sealed partial class CompassHud : IDisposable
     {
         if (_iconAspectCache.TryGetValue(iconId,out float asp)) return asp;
         if (!_tp.TryGetFromGameIcon(new GameIconLookup((uint)iconId), out var shared)) return 1f;
-        // Still loading (or failed): GetWrapOrEmpty would hand back a placeholder, and caching ITS aspect would pin this
-        // icon to the wrong shape forever. Use 1 for now and ask again next frame.
+        // Still loading: don't cache the placeholder's aspect; use 1 and ask again next frame.
         if (!shared.TryGetWrap(out var wrap, out _)) return 1f;
         var size=wrap!.Size;
         asp=size.X>0f ? size.Y/size.X : 1f;

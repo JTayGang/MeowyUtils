@@ -112,9 +112,7 @@ public sealed class Plugin : IDalamudPlugin
         _chat.Print(ChatPrefix + (enabled ? T("Compass is on.") : T("Compass is off.")));
     }
 
-    // Dalamud hides every plugin's UI during cutscenes and GPose unless the plugin opts out, so "Hide in cutscenes and
-    // GPose" can only be switched OFF by setting these. They are plain property sets, so re-applying each frame is free
-    // and picks up the settings toggle without any extra plumbing.
+    // Dalamud hides plugin UI in cutscenes/GPose unless these flags are set, so the config toggle has to drive them.
     private void ApplyUiHidePrefs()
     {
         bool hide = Config.HideDuringCutscenes;

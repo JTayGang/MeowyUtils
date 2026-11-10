@@ -109,9 +109,7 @@ public sealed partial class CompassHud
         float fontSize = ImGui.GetFontSize();
         var font = ImGui.GetFont();
         float labelTop = by + bh * 0.12f;
-        // Only trust (and cache) measurements taken with the real font. While the handle is still baking nothing is pushed,
-        // so CalcTextSize would measure ImGui's default font, and since the handle object stays the same once it finishes
-        // the stale sizes would never be refreshed.
+        // Cache text sizes only once the font is Available; before that CalcTextSize measures the fallback font.
         bool fontReady = fontHandle.Available;
         if (!fontReady || _labelMetricsFont != fontHandle)
         {

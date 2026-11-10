@@ -30,8 +30,7 @@ public sealed partial class CompassHud
         return Lerp(open ? 1f : CtxDimAlpha, open ? CtxDimAlpha : 1f, SmoothStep(t));
     }
 
-    // IsMouseHoveringRect ignores window ordering, so on its own it also fires through any ImGui window (ours or another
-    // plugin's) sitting on top of the HUD. Requiring that no window is hovered makes clicks on those windows stay theirs.
+    // IsMouseHoveringRect ignores window ordering, so also require that no ImGui window is hovered.
     private static bool IsHoveringRect(Vector2 min, Vector2 max) =>
         ImGui.IsMouseHoveringRect(min, max, false) && !ImGui.IsWindowHovered(ImGuiHoveredFlags.AnyWindow);
 
@@ -47,9 +46,7 @@ public sealed partial class CompassHud
             bool rightDown = ImGui.IsMouseDown(ImGuiMouseButton.Right);
             // Keep owning the press until the frame the button comes up (so the game never sees a lone release)...
             if (_rightClickCapture.Value && (rightDown || ImGui.IsMouseReleased(ImGuiMouseButton.Right))) io.WantCaptureMouse = true;
-            // ...but clear on "not held" rather than waiting for the release event. If Draw was skipped on the release
-            // frame (cutscene, loading screen, /compass off) that event is gone, and waiting for it would leave this
-            // flag swallowing game clicks until the next right-click.
+            // ...but clear on "not held", not on the release event, which is lost if Draw was skipped that frame.
             if (!rightDown) _rightClickCapture = null;
             return;
         }
@@ -77,9 +74,7 @@ public sealed partial class CompassHud
         if (!_isDraggingCompass) return;
         var io = ImGui.GetIO();
         io.WantCaptureMouse = true;
-        // End on "not held" instead of waiting for the release event: if Draw returned early while the button came up
-        // (no player, cutscene, disabled) the event is gone and the drag would otherwise never finish. Checked before
-        // moving anything so a stale drag doesn't jump the compass to wherever the mouse ended up.
+        // End on "not held" (the release event is lost if Draw was skipped); checked first so a stale drag can't jump the compass.
         if (!ImGui.IsMouseDown(ImGuiMouseButton.Left)) { _isDraggingCompass = false; _cfg.Save(_pi); return; }
         ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeAll);
         var delta = ImGui.GetMousePos() - _dragStartMouse;

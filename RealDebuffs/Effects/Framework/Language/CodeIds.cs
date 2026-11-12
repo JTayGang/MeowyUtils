@@ -13,7 +13,7 @@ internal static class CodeIds
         "stroke.blood", "stroke.brand", "stroke.chain", "stroke.corona", "stroke.glow", "stroke.haunt",
         "stroke.hauntglow", "stroke.hellglow", "stroke.horn", "stroke.lightning", "stroke.magma", "stroke.parasite",
         "stroke.rope", "stroke.sigil", "stroke.simple", "stroke.wisp",
-        "stroke.glasscrack",
+        "stroke.glasscrack", "stroke.gash",
     };
 
     public static readonly string[] Particle =

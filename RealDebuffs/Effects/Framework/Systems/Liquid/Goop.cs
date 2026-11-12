@@ -486,6 +486,8 @@ public sealed class GoopEmitter
                 if (arc > visibleLen - 14f * px) continue;  // not grown out to here yet
             }
 
+            if (strokeMaterial is not null && !strokeMaterial.CanDripAt(in s, arc, shortSide)) continue;
+
             TendSite(in s, in e, in o, strokeMaterial, particleMaterial, index, tip, arc,
                      time, dt, px, shortSide, depthScale, screen);
         }

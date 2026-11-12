@@ -38,6 +38,9 @@ public interface IStrokeMaterial : IMaterial
 
     /// <summary>Strand radius in px at arc length arc, so a drip finds the surface, not the centreline.</summary>
     float RadiusAt(in StrokePrimitive s, float arc, float shortSide) => MathF.Max(1f, s.WidthHint * 0.5f);
+
+    /// <summary>False where a strand can't hold a drip, such as a tapered end with no surface left to hang from.</summary>
+    bool CanDripAt(in StrokePrimitive s, float arc, float shortSide) => true;
 }
 
 public interface IParticleMaterial : IMaterial

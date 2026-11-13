@@ -21,7 +21,7 @@ Commands:
 
 ## How it works
 
-Every effect derives from `SceneEffect` (an `ISceneEffect`). Effects don't draw; they push primitives into an `EffectScene`, `StrokeShed` adds what strokes shed, and `SceneRenderer` draws the frame once (vignette, regions, strokes, particles). `EffectDiscovery` finds every public, non-abstract effect with a parameterless constructor, so a new effect is one class. An effect that owns more than its own file gets a folder (`Effects/Doom/`) holding its strokes, particles, fields and theme; anything two effects use lives in `Effects/Framework`. `Effects/` needs nothing from the host except `DebuffKind` (`Effects/DebuffKind.cs`), which is why the harness can compile it alone.
+Every effect derives from `SceneEffect` (an `ISceneEffect`). Effects don't draw; they push primitives into an `EffectScene`, `StrokeShed` adds what strokes shed, and `SceneRenderer` draws the frame once (vignette, regions, strokes, particles; a vignette requested with `over: true` goes after the regions, and `BelowVeil` particles go between the plain regions and the `Veil` ones). `EffectDiscovery` finds every public, non-abstract effect with a parameterless constructor, so a new effect is one class. An effect that owns more than its own file gets a folder (`Effects/Doom/`) holding its strokes, particles, fields and theme; anything two effects use lives in `Effects/Framework`. `Effects/` needs nothing from the host except `DebuffKind` (`Effects/DebuffKind.cs`), which is why the harness can compile it alone.
 
 Each frame `EffectManager` maps your statuses to `DebuffKind`s (via `StatusCatalog`), adds kinds requested by Moodles/Loci rules or tooltip keywords, steps each fade, calls `Emit`, and renders. It skips drawing below 64px.
 

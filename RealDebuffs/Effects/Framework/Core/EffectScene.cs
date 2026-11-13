@@ -80,7 +80,7 @@ public sealed class EffectScene
         var copy = p; copy.Owner = owner; Particles.Add(copy);
     }
 
-    public void RequestVignette(uint tint, float thicknessFrac, float alpha, int priority, Vector4? colorOverride)
+    public void RequestVignette(uint tint, float thicknessFrac, float alpha, int priority, Vector4? colorOverride, bool over = false)
     {
         if (!Vignette.Active || priority > Vignette.Priority ||
             (priority == Vignette.Priority && alpha > Vignette.Alpha))
@@ -88,7 +88,7 @@ public sealed class EffectScene
             Vignette = new VignetteRequest
             {
                 Active = true, Tint = tint, ThicknessFrac = thicknessFrac,
-                Alpha = alpha, Priority = priority, ColorOverride = colorOverride,
+                Alpha = alpha, Priority = priority, ColorOverride = colorOverride, Over = over,
             };
         }
     }

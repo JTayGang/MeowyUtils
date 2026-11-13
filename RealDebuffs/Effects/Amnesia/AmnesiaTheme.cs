@@ -21,14 +21,22 @@ internal static class MemoryColor
         (0.75f, 0.880f, 0.890f, 0.980f),
         (1.00f, 0.990f, 0.980f, 0.990f));
 
-    /// <summary>The deep tone behind script and ribbon.</summary>
+    /// <summary>Script: soft cool grey, dim to light, so the words sit in the fog instead of glowing on it.</summary>
+    public static readonly Palette Murmur = new(
+        (0.00f, 0.300f, 0.310f, 0.350f),
+        (0.30f, 0.480f, 0.490f, 0.550f),
+        (0.55f, 0.640f, 0.650f, 0.710f),
+        (0.78f, 0.780f, 0.790f, 0.840f),
+        (1.00f, 0.900f, 0.900f, 0.930f));
+
+    /// <summary>The shade behind script: slate grey.</summary>
+    public static readonly uint MurmurInk = DrawHelpers.Pack(0.300f, 0.310f, 0.360f);
+
+    /// <summary>The deep tone of the spiral's ink arms.</summary>
     public static readonly uint Ink = DrawHelpers.Pack(0.070f, 0.070f, 0.200f);
 
     /// <summary>Edge tint for the screen's vignette: pale lilac, so the edges bleach rather than darken.</summary>
     public static readonly uint Vignette = DrawHelpers.Pack(0.800f, 0.820f, 0.940f);
-
-    /// <summary>The white-out a lapse lands with (lilac-tinged, so it stays chromatic under a colour override).</summary>
-    public static readonly uint Flash = DrawHelpers.Pack(0.930f, 0.930f, 1.000f);
 }
 
 internal sealed class MemoryMaterials : IMaterialPack
@@ -49,7 +57,7 @@ internal sealed class MemoryMaterials : IMaterialPack
                 SpreadRadians: 1.4f,
                 BiasVelocity: new Vector2(0f, -6f),
                 PrimaryDirection: new Vector2(0f, -1f))),
-        new ParticleWhisper("particle.fugue", MemoryColor.Glow, MemoryColor.Ink, AmnesiaWhispers.Phrases, "fugue", "forgotten", "oblivion", "mumbling"),
+        new ParticleWhisper("particle.fugue", MemoryColor.Murmur, MemoryColor.MurmurInk, AmnesiaWhispers.Phrases, "fugue", "forgotten", "oblivion", "mumbling"),
         new ParticleMote("particle.lethe", MemoryColor.Glow, true, "lethe", "memory", "memories", "recollections"),
     };
 }

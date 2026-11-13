@@ -129,6 +129,9 @@ public struct ParticlePrimitive
     /// <summary>Set when the particle belongs to a stroke (identified by owner and HostSeed).</summary>
     public bool HasHost;
     public int  HostSeed;
+
+    /// <summary>Drawn after the other regions but before the Veil ones, so a Veil region lies over it.</summary>
+    public bool BelowVeil;
 }
 
 public struct RegionPrimitive
@@ -139,6 +142,9 @@ public struct RegionPrimitive
     public uint Tint;
     public float Alpha;
     public bool Top, Bottom, Left, Right;
+
+    /// <summary>Drawn after the BelowVeil particles instead of before them.</summary>
+    public bool Veil;
 
     /// <summary>Optional effect-built data too large for a primitive; materials ignore state they don't recognise.</summary>
     public IRegionState? State;
@@ -177,4 +183,7 @@ public struct VignetteRequest
     public float Alpha;
     public int   Priority;
     public Vector4? ColorOverride;
+
+    /// <summary>Drawn over the regions instead of under them (so a region can sit behind the vignette).</summary>
+    public bool  Over;
 }

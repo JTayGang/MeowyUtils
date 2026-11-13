@@ -3,7 +3,7 @@ using RealDebuffs.Effects.Framework.Materials;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Phrases spoken into a breeze: where each hangs, how it arrives and leaves, and how it drifts. Begin per cast, Update per frame, Emit once per depth (0 near, 1 mid, 2 far).</summary>
+/// <summary>Phrases spoken into a breeze: where each hangs, how it arrives and leaves, and how it drifts. Begin per cast, Update per frame, Emit once per depth (0 near, 1 mid, 2 far). Opacity scales their strength; belowVeil draws them under the Veil regions.</summary>
 internal sealed class WhisperField
 {
     private const int Max = 3, Calm = 2;                              // never more than Max on screen; Calm is the usual ceiling, a chorus may reach Max
@@ -16,6 +16,8 @@ internal sealed class WhisperField
     private struct Whisper { public bool On; public int Phrase, Seed, Depth; public Vector2 At, Half, Breath; public float Size, Tilt, Spin, Born, Life; public int In, Out; }
 
     private readonly string[] _phrases;
+    private readonly float _opacity;
+    private readonly bool _belowVeil;
     private readonly Whisper[] _w = new Whisper[Max];
     private readonly int[] _bag;
     private int _seed, _bagAt, _spawned, _ticks, _lastIn, _lastOut;
@@ -23,9 +25,11 @@ internal sealed class WhisperField
     private float _nextWhisper, _nextChorus, _chorusEnds;
     private Vector2 _chorusAt;
 
-    public WhisperField(string[] phrases)
+    public WhisperField(string[] phrases, float opacity = 1f, bool belowVeil = false)
     {
         _phrases = phrases;
+        _opacity = opacity;
+        _belowVeil = belowVeil;
         _bag = new int[phrases.Length];
     }
 
@@ -34,13 +38,6 @@ internal sealed class WhisperField
 
     /// <summary>Drops every phrase on screen (after a resize, say).</summary>
     public void Clear() => Array.Clear(_w);
-
-    /// <summary>Lets go of every phrase on screen: each begins to leave over the time it has left.</summary>
-    public void LetGo(float age)
-    {
-        for (int i = 0; i < Max; i++)
-            if (_w[i].On && age - _w[i].Born < 0.62f * _w[i].Life) _w[i].Born = age - 0.62f * _w[i].Life;
-    }
 
     public void Begin(int seed, float firstAt)
     {
@@ -195,8 +192,8 @@ internal sealed class WhisperField
             scene.AddParticle(new ParticlePrimitive
             {
                 Position = w.At + drift + rock, Velocity = w.Breath, Size = w.Size, AgeRatio = age / w.Life,
-                Brightness = f.Alpha * DepthAlpha[depth] * intro * (1f - f.Leave), Seed = w.Seed, Rotation = w.Tilt + w.Spin * age + 0.03f * MathF.Sin(age * 0.41f + w.Seed * 1.3f),
-                Variant = (w.Phrase + 1) | (depth << ParticleWhisper.DepthShift) | (w.In << ParticleWhisper.ArriveShift) | (w.Out << ParticleWhisper.DepartShift), Role = PrimitiveRole.Whisper, ColorOverride = f.Color,
+                Brightness = f.Alpha * DepthAlpha[depth] * intro * (1f - f.Leave) * _opacity, Seed = w.Seed, Rotation = w.Tilt + w.Spin * age + 0.03f * MathF.Sin(age * 0.41f + w.Seed * 1.3f),
+                Variant = (w.Phrase + 1) | (depth << ParticleWhisper.DepthShift) | (w.In << ParticleWhisper.ArriveShift) | (w.Out << ParticleWhisper.DepartShift), Role = PrimitiveRole.Whisper, ColorOverride = f.Color, BelowVeil = _belowVeil,
             });
         }
     }

@@ -1,12 +1,13 @@
 using System.Numerics;
+using System.Runtime.InteropServices;
 using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Draws a scene back to front: vignette, regions, strokes (each followed by the particles clinging to it), then free particles.</summary>
+/// <summary>Draws a scene back to front: vignette, regions, strokes (each followed by the particles clinging to it), then free particles. A vignette that asks to be Over goes after the regions; BelowVeil particles go between the plain regions and the Veil ones.</summary>
 public sealed class SceneRenderer
 {
-    // Per particle: the stroke it is drawn after (-1 = free) and its resolved material.
+    // Per particle: the stroke it is drawn after (-1 = free, -2 = already drawn below the veil) and its resolved material.
     private int[] _host = new int[2048];
     private IParticleMaterial?[] _material = new IParticleMaterial?[2048];
 
@@ -14,8 +15,11 @@ public sealed class SceneRenderer
     {
         var ctx = new MaterialContext(time, DrawHelpers.PixelScale(screenSize), globalAlpha, (int)screenSize.X, (int)screenSize.Y);
 
-        DrawVignette(dl, scene, screenSize, globalAlpha);
-        DrawRegions(dl, scene, in ctx);
+        if (!scene.Vignette.Over) DrawVignette(dl, scene, screenSize, globalAlpha);
+        DrawRegions(dl, scene, in ctx, veil: false);
+        DrawBelowVeil(dl, scene, in ctx);
+        DrawRegions(dl, scene, in ctx, veil: true);
+        if (scene.Vignette.Over) DrawVignette(dl, scene, screenSize, globalAlpha);
         DrawStrokesAndParticles(dl, scene, in ctx);
     }
 
@@ -29,14 +33,21 @@ public sealed class SceneRenderer
         finally { DrawHelpers.PopColorOverride(); }
     }
 
-    private static void DrawRegions(ImDrawListPtr dl, EffectScene scene, in MaterialContext ctx)
+    private static void DrawRegions(ImDrawListPtr dl, EffectScene scene, in MaterialContext ctx, bool veil)
     {
         foreach (var r in scene.Regions)
         {
+            if (r.Veil != veil) continue;
             DrawHelpers.PushColorOverride(r.ColorOverride);
             try { scene.Materials.Region(r.Owner, r.Kind)?.Draw(dl, in r, in ctx); }
             finally { DrawHelpers.PopColorOverride(); }
         }
+    }
+
+    private static void DrawBelowVeil(ImDrawListPtr dl, EffectScene scene, in MaterialContext ctx)
+    {
+        foreach (ref readonly var p in CollectionsMarshal.AsSpan(scene.Particles))
+            if (p.BelowVeil) DrawParticle(dl, in p, scene.Materials.Particle(in p), in ctx);
     }
 
     private void DrawStrokesAndParticles(ImDrawListPtr dl, EffectScene scene, in MaterialContext ctx)
@@ -55,8 +66,8 @@ public sealed class SceneRenderer
             var p = scene.Particles[j];
             var mat = scene.Materials.Particle(in p);
             _material[j] = mat;
-            _host[j] = -1;
-            if (!p.HasHost || mat is null || !mat.DrawsWithHost) continue;
+            _host[j] = p.BelowVeil ? -2 : -1;
+            if (p.BelowVeil || !p.HasHost || mat is null || !mat.DrawsWithHost) continue;
 
             for (int i = scene.Strokes.Count - 1; i >= 0; i--)
                 if (scene.Strokes[i].Owner == p.Owner && scene.Strokes[i].Seed == p.HostSeed) { _host[j] = i; anyHosted = true; break; }
@@ -75,7 +86,7 @@ public sealed class SceneRenderer
         }
 
         for (int j = 0; j < pc; j++)
-            if (_host[j] < 0) DrawParticle(dl, scene.Particles[j], _material[j], in ctx);
+            if (_host[j] == -1) DrawParticle(dl, scene.Particles[j], _material[j], in ctx);
     }
 
     private static void DrawParticle(ImDrawListPtr dl, in ParticlePrimitive p, IParticleMaterial? mat, in MaterialContext ctx)

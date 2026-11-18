@@ -1,8 +1,0 @@
-C:\Users\Justi\Downloads\FPSBooster\bin\Release\FPSBooster.deps.json
-C:\Users\Justi\Downloads\FPSBooster\bin\Release\FPSBooster.dll
-C:\Users\Justi\Downloads\FPSBooster\obj\Release\FPSBooster.csproj.AssemblyReference.cache
-C:\Users\Justi\Downloads\FPSBooster\obj\Release\FPSBooster.GeneratedMSBuildEditorConfig.editorconfig
-C:\Users\Justi\Downloads\FPSBooster\obj\Release\FPSBooster.AssemblyInfoInputs.cache
-C:\Users\Justi\Downloads\FPSBooster\obj\Release\FPSBooster.AssemblyInfo.cs
-C:\Users\Justi\Downloads\FPSBooster\obj\Release\FPSBooster.csproj.CoreCompileInputs.cache
-C:\Users\Justi\Downloads\FPSBooster\obj\Release\FPSBooster.dll

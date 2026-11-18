@@ -1,0 +1,22 @@
+{
+  "Author": "Meowmeowmeow Cat",
+  "Name": "FPSBooster",
+  "Punchline": "Reduce unnecessary rendering work for smoother gameplay.",
+  "Description": "A performance-focused plugin that reduces unnecessary rendering work. The Housing tab manages housing-furniture culling. The Players and NPCs tabs provide read-only diagnostics for character object counts, draw objects, skeletons, loaded model slots, visibility state, and the game's drawable-object limit. Character visibility changes are not enabled yet. Commands: /fpsbooster, /fpsbooster on, /fpsbooster off.",
+  "Tags": [
+    "performance",
+    "fps",
+    "optimization",
+    "rendering",
+    "culling",
+    "housing",
+    "players",
+    "npcs"
+  ],
+  "InternalName": "FPSBooster",
+  "AssemblyVersion": "0.2.7.1",
+  "ApplicableVersion": "any",
+  "DalamudApiLevel": 15,
+  "RepoUrl": "https://github.com/JTayGang/MeowyUtils",
+  "LoadPriority": 0
+}

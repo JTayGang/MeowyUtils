@@ -116,6 +116,9 @@ public sealed class ConfigWindow : Window
                 DrawActorStats("Minions / companions", diagnostics.Snapshot.Companions);
                 DrawActorStats("Ornaments", diagnostics.Snapshot.Ornaments);
                 ImGui.Separator();
+                DrawDistanceDistribution("Other players by distance", diagnostics.Snapshot.PlayerDistances,
+                    "Straight-line 3D distance from your character. Your own character is excluded from this table.");
+                ImGui.Separator();
                 DrawGameDrawBudget(diagnostics.Snapshot);
                 ImGui.EndTabItem();
             }
@@ -131,6 +134,9 @@ public sealed class ConfigWindow : Window
                 DrawActorStats("Event NPCs", diagnostics.Snapshot.EventNpcs);
                 ImGui.Separator();
                 DrawActorStats("Retainers", diagnostics.Snapshot.Retainers);
+                ImGui.Separator();
+                DrawDistanceDistribution("NPCs by distance", diagnostics.Snapshot.NpcDistances,
+                    "Straight-line 3D distance from your character. Includes Battle NPCs, Event NPCs, and retainers.");
                 ImGui.Separator();
                 DrawGameDrawBudget(diagnostics.Snapshot);
                 ImGui.EndTabItem();
@@ -152,16 +158,77 @@ public sealed class ConfigWindow : Window
     {
         ImGui.TextDisabled(label);
         ImGui.Columns(2, $"{label}Stats", false);
-        ImGui.SetColumnWidth(0, 190f);
+        ImGui.SetColumnWidth(0, 220f);
         ImGui.Text("Objects in game"); ImGui.NextColumn(); ImGui.Text(stats.Objects.ToString()); ImGui.NextColumn();
-        ImGui.Text("Have a draw object"); ImGui.NextColumn(); ImGui.Text($"{stats.DrawObjects} / {stats.Objects}"); ImGui.NextColumn();
+        ImGui.Text("Have a DrawObject"); ImGui.NextColumn(); ImGui.Text($"{stats.DrawObjects} / {stats.Objects}"); ImGui.NextColumn();
         ImGui.Text("Have a character skeleton"); ImGui.NextColumn(); ImGui.Text($"{stats.Skeletons} / {stats.CharacterBases}"); ImGui.NextColumn();
-        ImGui.Text("Loaded model pieces"); ImGui.NextColumn(); ImGui.Text($"{stats.LoadedModelSlots} / {stats.ModelSlots}"); ImGui.NextColumn();
-        ImGui.Text("Draw object marked visible"); ImGui.NextColumn(); ImGui.Text($"{stats.DrawObjectsVisible} / {stats.DrawObjects}"); ImGui.NextColumn();
-        ImGui.Text("Draw object marked hidden"); ImGui.NextColumn(); ImGui.Text($"{stats.DrawObjectsNotVisible} / {stats.DrawObjects}"); ImGui.NextColumn();
-        ImGui.Text("Game visibility flag hidden"); ImGui.NextColumn(); ImGui.Text(stats.GameVisibilityHidden.ToString()); ImGui.NextColumn();
-        ImGui.Text("No draw object yet"); ImGui.NextColumn(); ImGui.Text(stats.WithoutDrawObject.ToString()); ImGui.NextColumn();
+        ImGui.Text("Populated model slots"); ImGui.NextColumn(); ImGui.Text($"{stats.PopulatedModelSlots} / {stats.ModelSlots}"); ImGui.NextColumn();
+        ImGui.Text("Flags: neither 0x01 nor 0x08"); ImGui.NextColumn(); ImGui.Text($"{stats.DrawFlagsNeitherBitSet} / {stats.DrawObjects}"); ImGui.NextColumn();
+        ImGui.Text("Flags: only 0x01 set"); ImGui.NextColumn(); ImGui.Text($"{stats.DrawFlagBit0Only} / {stats.DrawObjects}"); ImGui.NextColumn();
+        ImGui.Text("Flags: only 0x08 set"); ImGui.NextColumn(); ImGui.Text($"{stats.DrawFlagBit3Only} / {stats.DrawObjects}"); ImGui.NextColumn();
+        ImGui.Text("Flags: both set (0x09)"); ImGui.NextColumn(); ImGui.Text($"{stats.DrawFlagBits0And3Set} / {stats.DrawObjects}"); ImGui.NextColumn();
+        ImGui.Text("GameObject.Visibility = 1"); ImGui.NextColumn(); ImGui.Text(stats.GameVisibilityHidden.ToString()); ImGui.NextColumn();
+        if (stats.GameVisibilityOther > 0)
+        {
+            ImGui.Text("Other visibility byte values"); ImGui.NextColumn(); ImGui.Text(stats.GameVisibilityOther.ToString()); ImGui.NextColumn();
+        }
+        ImGui.Text("No DrawObject"); ImGui.NextColumn(); ImGui.Text(stats.WithoutDrawObject.ToString()); ImGui.NextColumn();
         ImGui.Columns(1);
+    }
+
+    private static void DrawDistanceDistribution(string label, DistanceDistribution stats, string description)
+    {
+        ImGui.TextDisabled(label);
+        ImGui.Columns(4, $"{label}Table", false);
+        ImGui.SetColumnWidth(0, 115f);
+        ImGui.SetColumnWidth(1, 65f);
+        ImGui.SetColumnWidth(2, 105f);
+        ImGui.Text("Distance"); ImGui.NextColumn();
+        ImGui.Text("Objects"); ImGui.NextColumn();
+        ImGui.Text("With DrawObject"); ImGui.NextColumn();
+        ImGui.Text("Without"); ImGui.NextColumn();
+        DrawDistanceBand("0–10 yalms", stats.Under10);
+        DrawDistanceBand("10–20 yalms", stats.From10To20);
+        DrawDistanceBand("20–30 yalms", stats.From20To30);
+        DrawDistanceBand("30–50 yalms", stats.From30To50);
+        DrawDistanceBand("50+ yalms", stats.Over50);
+        ImGui.Columns(1);
+        if (stats.DistanceUnavailable > 0)
+            ImGui.TextDisabled($"World-position distance unavailable: {stats.DistanceUnavailable}");
+        ImGui.TextWrapped(description);
+        ImGui.TextWrapped("World-distance bands show correlation only; they do not explain why the game did or did not create a DrawObject.");
+        DrawClientDistanceValues(stats);
+    }
+
+
+    private static void DrawClientDistanceValues(DistanceDistribution stats)
+    {
+        ImGui.TextDisabled("Game CurrentDistance value (raw)");
+        ImGui.Columns(3, "ClientDistanceValues", false);
+        ImGui.SetColumnWidth(0, 125f);
+        ImGui.SetColumnWidth(1, 65f);
+        ImGui.Text("Object state"); ImGui.NextColumn();
+        ImGui.Text("Count"); ImGui.NextColumn();
+        ImGui.Text("Min / avg / max"); ImGui.NextColumn();
+        DrawClientDistanceRow("Has DrawObject", stats.CurrentDistanceWithDrawObject);
+        DrawClientDistanceRow("No DrawObject", stats.CurrentDistanceWithoutDrawObject);
+        ImGui.Columns(1);
+        ImGui.TextWrapped("CurrentDistance is the game's own distance-to-player byte value. Its units are not documented here, so these are raw values rather than yalms.");
+    }
+
+    private static void DrawClientDistanceRow(string label, ClientDistanceValueStats stats)
+    {
+        ImGui.Text(label); ImGui.NextColumn();
+        ImGui.Text(stats.Count.ToString()); ImGui.NextColumn();
+        ImGui.Text(stats.Count > 0 ? $"{stats.Minimum} / {stats.Average:F1} / {stats.Maximum}" : "—"); ImGui.NextColumn();
+    }
+
+    private static void DrawDistanceBand(string label, DistanceBandStats stats)
+    {
+        ImGui.Text(label); ImGui.NextColumn();
+        ImGui.Text(stats.Objects.ToString()); ImGui.NextColumn();
+        ImGui.Text(stats.WithDrawObject.ToString()); ImGui.NextColumn();
+        ImGui.Text(stats.WithoutDrawObject.ToString()); ImGui.NextColumn();
     }
 
     private static void DrawGameDrawBudget(CharacterDiagnosticsSnapshot snapshot)
@@ -170,15 +237,17 @@ public sealed class ConfigWindow : Window
         if (!snapshot.HasObjectManager)
         {
             ImGui.TextDisabled("The game's object manager is not available yet.");
-            return;
+        }
+        else
+        {
+            ImGui.Columns(2, "GameDrawBudget", false);
+            ImGui.SetColumnWidth(0, 190f);
+            ImGui.Text("Game draw limit"); ImGui.NextColumn();
+            ImGui.Text(snapshot.HasDrawLimit ? snapshot.DrawLimit.ToString() : "Unavailable"); ImGui.NextColumn();
+            ImGui.Columns(1);
         }
 
-        ImGui.Columns(2, "GameDrawBudget", false);
-        ImGui.SetColumnWidth(0, 190f);
-        ImGui.Text("Game draw limit"); ImGui.NextColumn();
-        ImGui.Text(snapshot.HasDrawLimit ? snapshot.DrawLimit.ToString() : "Unavailable"); ImGui.NextColumn();
-        ImGui.Columns(1);
-        ImGui.TextWrapped("The draw limit is the game's current allowance, not a count of objects hidden. The category counts above come from the live object table. Visibility values show current render state; they do not reveal why an object is hidden.");
+        ImGui.TextWrapped("The draw limit is the game's current allowance, not a count of objects hidden. Counts come from the live object table. GameObject.Visibility = 1 is the documented hidden value. DrawObject flags are shown as four raw combinations of bits 0x01 and 0x08: FFXIVClientStructs' IsVisible helper requires both bits, but its source notes that their exact meaning is uncertain.");
     }
 
     private static string GetSimpleStatus(bool enabled, string status)

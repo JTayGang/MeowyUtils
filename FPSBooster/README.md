@@ -1,4 +1,4 @@
-# FPSBooster 0.2.7.1
+# FPSBooster 0.2.7.2
 
 A performance-focused FFXIV Dalamud plugin. Indoors, it reduces unnecessary housing-furniture rendering with camera-view culling and optional distance/height limits. Outdoors, it defers to the game's native background-culling pipeline when available, and can add optional distance/height limits without repeating the game's view-culling pass.
 
@@ -74,7 +74,9 @@ Maximum distance and maximum height difference are hard limits. They are checked
 
 - The **Players** tab reports live player objects, mounts, companions, and ornaments.
 - The **NPCs** tab reports Battle NPCs, Event NPCs, and retainers.
-- Each category shows object count, whether a draw object is present, whether the character render object has a skeleton, non-null model slots, draw-object visibility state, and the GameObject visibility byte.
-- The footer shows the game's current drawable-object limit. The limit is a budget for drawable candidates, not a count of objects hidden. Category counts above come from Dalamud's live object table.
+- Each category shows object count, whether a `DrawObject` is present, whether its `CharacterBase` has a skeleton, and the number of model slots with non-null model pointers. A populated model slot does not guarantee all GPU resources are resident.
+- The diagnostics show the four raw combinations of `DrawObject.Flags` bits `0x01` and `0x08`. The current `DrawObject.IsVisible` helper returns true when both bits are set, but FFXIVClientStructs explicitly says the purpose of these two bits is uncertain. FPSBooster therefore does not label those combinations as definitively visible or hidden.
+- `GameObject.Visibility = 1` is the documented hidden value; `0` is shown. Other non-zero values are counted separately rather than assumed to mean the same thing.
+- The world-distance tables use straight-line 3D distance between each object's world position and the local player's world position, grouped into 0–10, 10–20, 20–30, 30–50, and 50+ yalm ranges. This uses object origins (not model bounds), so it is intended for broad correlation rather than exact render-range measurements. The player distance table excludes the local player; the NPC table combines Battle NPCs, Event NPCs, and retainers. Each table also reports min/average/max of the game's own `CurrentDistance` byte, separately for objects with and without a `DrawObject`. FFXIVClientStructs documents `CurrentDistance` as distance to the local player, but these diagnostics display its raw values because the units are not specified. These measurements show correlation; they do not prove why the game did or did not create a `DrawObject`.
+- The footer shows the game's current drawable-object limit. The limit is a budget for drawable candidates, not a count of objects hidden. Category counts come from Dalamud's live object table.
 - Diagnostics refresh at most once per second and only while the Players or NPCs tab is open. They are read-only and do not modify character visibility.
-- A hidden visibility flag or non-visible draw object reports current state only; it does not establish that the native distance/display-limit system caused that state.

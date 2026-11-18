@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Plugin.Services;
@@ -82,24 +83,20 @@ public sealed unsafe class CullingService : IDisposable
         public SpotlightProtectionSphere[]? SpotlightSpheres;
     }
 
-    // A small spherical protection zone around each active spotlight. Furniture bounds are
-    // expanded against this radius so the actual geometry stays protected when it comes within
-    // 0.75 yalms of the light, even when the furniture's center is farther away.
+    // Zone around an active spotlight; furniture within 0.75 yalms (plus its own radius) stays visible.
     private struct SpotlightProtectionSphere
     {
         public Vector3 Center;
     }
 
-    // Used only when an active spotlight's graphics object or position cannot be read safely.
-    // In that case we conservatively protect the possible spotlight furnishing's local area.
+    // Fallback zone for when an active spotlight's position cannot be read safely.
     private struct SpotlightProtectionArea
     {
         public Vector3 Center;
         public float Radius;
     }
 
-    // Indoor housing furniture is commonly rendered by a SharedGroupLayoutInstance rather than
-    // GameObject.DrawObject. Remember only groups that were active before we disabled them.
+    // Indoor furniture renders via SharedGroupLayoutInstance; tracks only groups that were active before we disabled them.
     private struct HiddenGroup
     {
         public ulong Seen;
@@ -127,9 +124,7 @@ public sealed unsafe class CullingService : IDisposable
     private uint _terrId;
     private DateTime _nextErrorLog = DateTime.MinValue;
 
-    // When the camera is steady, a full furniture pass is only needed periodically.
-    // This still catches newly loaded/moved furniture, but avoids repeating the same
-    // bounds, spotlight, and frustum work every framework update.
+    // While the camera is steady, a full pass runs only periodically to catch newly loaded or moved furniture.
     private bool _hasStablePass;
     private bool _lastPassWasTest;
     private bool _lastPassUseView;
@@ -240,8 +235,7 @@ public sealed unsafe class CullingService : IDisposable
 
         if (nativeOutdoorCulling != _nativeOutdoorCulling)
         {
-            // These cached spotlight positions are only needed by FPSBooster's own culling
-            // path. The game's native outdoor background-culling pipeline takes over when it is active.
+            // Spotlight caches serve only our own culling path, not the game's native outdoor pipeline.
             _spotlightScans.Clear();
             _spotlightProtectionSpheres.Clear();
             _unknownSpotlightProtectionAreas.Clear();
@@ -252,9 +246,7 @@ public sealed unsafe class CullingService : IDisposable
         NativeOutdoorExtraLimitsActive = false;
         NativeOutdoorExtraLimitsWaitingForCamera = false;
 
-        // The native outdoor background-culling pipeline already performs object visibility/occlusion tests for the
-        // BG render objects used by housing furnishings. If no extra distance/height rule is
-        // configured, do not enumerate or cull those groups a second time.
+        // With no extra distance/height limits the native outdoor pipeline handles visibility, so skip our own pass.
         bool nativeOutdoorNoExtraWork = nativeOutdoorCulling && !hasOutdoorLimits;
 
         if (cull && !nativeOutdoorNoExtraWork)
@@ -262,9 +254,7 @@ public sealed unsafe class CullingService : IDisposable
             if (ViewFrustum.TryCreate(_cfg.FovMarginDeg, out var fr, out var failure))
             {
                 _fr = fr;
-                // The game's native outdoor path already handles visibility. When FPSBooster
-                // adds only distance/height limits, camera orientation and player-in-view safety
-                // are irrelevant; we only need the camera position from the view-projection matrix.
+                // Native outdoor mode with only distance/height limits needs just the camera position, not orientation or player-in-view.
                 if (!test && !nativeOutdoorCulling && _cfg.RequirePlayerInView && !PlayerInView(fr))
                 {
                     cull = false;
@@ -311,9 +301,7 @@ public sealed unsafe class CullingService : IDisposable
 
         if (nativeOutdoorNoExtraWork)
         {
-            // If FPSBooster had hidden anything before native background culling became available,
-            // restore it once through the live object array. Thereafter, only refresh the
-            // simple furniture count occasionally; the game owns outdoor visibility.
+            // Restore anything we hid before native culling took over, then only refresh the furniture count.
             _cull = false;
             _force = false;
             _forceExceptSpotlights = false;
@@ -340,8 +328,7 @@ public sealed unsafe class CullingService : IDisposable
             return;
         }
 
-        // When culling is paused/off, restore immediately if needed. Otherwise refresh the
-        // displayed furniture total only occasionally while there is nothing to restore.
+        // When paused or off, restore immediately if needed; otherwise refresh the furniture total only occasionally.
         if (!cull)
         {
             _hasStablePass = false;
@@ -353,9 +340,7 @@ public sealed unsafe class CullingService : IDisposable
             }
         }
 
-        // Camera movement/settings changes trigger an immediate pass. When the view is
-        // effectively unchanged, poll the housing object list at 10 Hz so furniture that
-        // loads, moves, or changes groups is still picked up promptly.
+        // Camera or setting changes force a pass; a still camera polls at 10 Hz to catch loading or moved furniture.
         if (cull && CanSkipStablePass(test))
         {
             Stats.Hidden = _hidden.Count + _hiddenGroups.Count;
@@ -381,15 +366,12 @@ public sealed unsafe class CullingService : IDisposable
             if (culling == null)
                 return false;
 
-            // The native grid/callback pipeline handles background-object view culling. Defer
-            // to it even when this particular scene has no occluders for the depth-buffer pass.
+            // Defer to the native grid/callback culling even when there are no occluders for the depth pass.
             var grid = culling->CullingGrid;
             if (grid != null && grid->CellCount > 0 && grid->Cells != null)
                 return true;
 
-            // Some scenes may have the depth-occlusion path available before the grid is ready.
-            // GraphicsConfig gates OcclusionTestJobs, and those tests are skipped when there are
-            // no registered occluders.
+            // Depth occlusion can be ready before the grid; it is skipped when no occluders are registered.
             var graphics = GraphicsConfig.Instance();
             return graphics != null && graphics->OcclusionCulling
                 && culling->Occluders.Count > 0;
@@ -488,8 +470,7 @@ public sealed unsafe class CullingService : IDisposable
 
     private void Sweep(HousingFurnitureManager* fm, HousingTerritoryType territoryType)
     {
-        // The object array is the authoritative list of live housing objects. Each HousingObject
-        // carries HousingFurnitureIndex, which points back into this territory's FurnitureMemory.
+        // The object array is the authoritative live list; HousingFurnitureIndex points back into FurnitureMemory.
         var slots = fm->FurnitureMemory;
         var objects = fm->ObjectManager.ObjectArray.Objects;
         int count = Math.Min((int)fm->ObjectManager.ObjectArray.ObjectCount, objects.Length);
@@ -498,8 +479,7 @@ public sealed unsafe class CullingService : IDisposable
             ? HousingObjectType.Furniture
             : HousingObjectType.YardObject;
 
-        // Gather all loaded furniture spotlights before culling any furniture. This makes the
-        // 0.75-yalm radial shadow-protection check independent of object-array order.
+        // Gather all spotlights first so the protection check does not depend on object-array order.
         _spotlightProtectionSpheres.Clear();
         _unknownSpotlightProtectionAreas.Clear();
         _spotlightProtectionKnown = true;
@@ -518,22 +498,18 @@ public sealed unsafe class CullingService : IDisposable
                 var group = go->SharedGroupLayoutInstance;
                 if (group == null) continue; // direct-render furniture has no shared-group spotlight tree
 
-                // A group disabled by the game cannot currently contribute light. A group hidden
-                // by this plugin is still scanned so its cached spotlight data remains available.
+                // Skip groups the game disabled; groups we hid are still scanned so their cached spotlight data stays available.
                 nint key = (nint)go;
                 if (!group->IsActive && !_hiddenGroups.ContainsKey(key))
                     continue;
 
                 if (!go->IsSharedGroupLoaded())
                 {
-                    // An unloaded group cannot currently emit a shadow. Wait until its prefab
-                    // is ready before deciding whether it contains a spotlight to protect.
+                    // An unloaded group emits no shadow yet; wait for its prefab before scanning.
                     continue;
                 }
 
-                // A spotlight only protects nearby furniture while its own furnishing is
-                // eligible to remain rendered. If the owning furnishing is beyond an enabled
-                // maximum-distance or maximum-height limit, don't create a protection zone for it.
+                // A spotlight beyond an enabled max distance/height limit creates no protection zone.
                 if ((_maxDist > 0f || _maxHeight > 0f)
                     && TryGetSharedGroupBound(go, group, out var ownerBound)
                     && ExceedsMaximumDistanceOrHeight(in ownerBound))
@@ -542,8 +518,7 @@ public sealed unsafe class CullingService : IDisposable
                 var scan = ScanForSpotlightsCached(key, group, go->Position, go->Rotation, go->Scale, out var spotlightSpheres);
                 if (scan == SpotlightScanResult.Unknown)
                 {
-                    // If the child tree is not inspectable, protect the group's bounds as a
-                    // possible spotlight location instead of disabling culling across the whole room.
+                    // Uninspectable child tree: protect the group's bounds instead of disabling culling room-wide.
                     if (!AddUnknownSpotlightProtectionArea(group, go->Position))
                         _spotlightProtectionKnown = false;
                     continue;
@@ -574,8 +549,7 @@ public sealed unsafe class CullingService : IDisposable
             var group = go->SharedGroupLayoutInstance;
             if (group != null)
             {
-                // Indoor furniture commonly renders through a shared layout group instead of a
-                // direct DrawObject. Cull the complete group using its own bounding sphere.
+                // Indoor furniture usually renders via a shared group; cull it whole using its bounding sphere.
                 ProcessSharedGroup(go, group);
             }
             else
@@ -591,8 +565,7 @@ public sealed unsafe class CullingService : IDisposable
             return;
         }
 
-        // Anything hidden earlier that was not re-confirmed this frame is gone; forget it without
-        // writing through a potentially stale pointer.
+        // Anything not re-confirmed this pass is gone; forget it without writing through a stale pointer.
         if (_hidden.Count > 0)
         {
             _scratch.Clear();
@@ -628,10 +601,7 @@ public sealed unsafe class CullingService : IDisposable
             return;
         }
 
-        // The press-and-hold test deliberately bypasses normal safety rules, including the
-        // spotlight exception, so the user can verify that every loaded furnishing is hideable.
-        // This only lasts while the button is physically held; normal culling restores spotlights
-        // and nearby shadow-casting geometry immediately after release.
+        // The hold-to-test button bypasses normal safety rules (spotlights included) and lasts only while held.
         if (_force)
         {
             if (!group->IsActive && !_hiddenGroups.ContainsKey(key))
@@ -644,8 +614,7 @@ public sealed unsafe class CullingService : IDisposable
         if (!group->IsActive && !_hiddenGroups.ContainsKey(key))
             return;
 
-        // Prefab contents are static while loaded. Cache the recursive spotlight scan so we do not
-        // walk every child instance on every framework update. Unknown results are never cached.
+        // Prefab contents are static while loaded, so cache the spotlight scan; Unknown results are never cached.
         var spotlightScan = _nativeOutdoorCulling
             ? SpotlightScanResult.NoSpotlight
             : ScanForSpotlightsCached(key, group, go->Position, go->Rotation, go->Scale, out _);
@@ -668,8 +637,7 @@ public sealed unsafe class CullingService : IDisposable
 
         if (spotlightScan != SpotlightScanResult.NoSpotlight)
         {
-            // A spotlight can cast shadows even when its furnishing is outside the camera view,
-            // but configured maximum distance/height limits still take priority.
+            // Spotlight furniture can cast shadows off screen, but enabled max distance/height limits still win.
             if (ExceedsMaximumDistanceOrHeight(in bound))
                 HideGroup(group, key);
             else
@@ -699,7 +667,8 @@ public sealed unsafe class CullingService : IDisposable
         nint first = (nint)children.First;
         nint last = (nint)children.Last;
 
-        if (_spotlightScans.TryGetValue(key, out var cached)
+        ref var cached = ref CollectionsMarshal.GetValueRefOrNullRef(_spotlightScans, key);
+        if (!Unsafe.IsNullRef(ref cached)
             && cached.Group == (nint)group
             && cached.First == first
             && cached.Last == last
@@ -709,7 +678,6 @@ public sealed unsafe class CullingService : IDisposable
             && cached.ParentScale == parentScale)
         {
             cached.Seen = _frame;
-            _spotlightScans[key] = cached;
             spotlightSpheres = cached.SpotlightSpheres ?? Array.Empty<SpotlightProtectionSphere>();
             return cached.Result;
         }
@@ -770,8 +738,7 @@ public sealed unsafe class CullingService : IDisposable
             {
                 case LayoutInstanceType.Light:
                 {
-                    // Only spotlights cast shadows for vanilla furniture lighting. Ignore
-                    // point, directional, line, plane, specular, and None lights entirely.
+                    // Only spotlights cast furniture shadows; other light types are ignored.
                     if (!instance->IsActive)
                         break;
 
@@ -779,13 +746,11 @@ public sealed unsafe class CullingService : IDisposable
                     if (lightInstance->LightType != LayoutLightType.Spot)
                         break;
 
-                    // A spotlight whose graphics object is not ready may still cast a shadow.
-                    // Use the conservative furnishing-bounds fallback until its position is known.
+                    // A spotlight with no graphics object yet may still cast shadows, so use the bounds fallback.
                     if (!instance->IsPrimaryLoaded() || lightInstance->GraphicsObject == null)
                         return SpotlightScanResult.Unknown;
 
-                    // Only the spotlight's position is needed for the small radial protection zone.
-                    // We deliberately do not read its rotation, beam angle, or attenuation range.
+                    // Only the spotlight's position is read; rotation, beam angle and range are deliberately ignored.
                     Vector3 position = lightInstance->GraphicsObject->Position;
                     if (!float.IsFinite(position.X) || !float.IsFinite(position.Y) || !float.IsFinite(position.Z))
                         return SpotlightScanResult.Unknown;
@@ -799,8 +764,7 @@ public sealed unsafe class CullingService : IDisposable
 
                 case LayoutInstanceType.SharedGroup:
                 {
-                    // Inactive nested groups cannot contribute light. An active nested group
-                    // that is not loaded yet is unknown, so fail open for this culling pass.
+                    // Inactive nested groups emit no light; an active but unloaded one is Unknown, so fail open.
                     if (!instance->IsActive)
                         break;
                     if (!instance->IsPrimaryLoaded())
@@ -821,25 +785,25 @@ public sealed unsafe class CullingService : IDisposable
 
     private void HideGroup(SharedGroupLayoutInstance* group, nint key)
     {
-        if (!_hiddenGroups.TryGetValue(key, out var h) || h.Group != (nint)group)
+        ref var tracked = ref CollectionsMarshal.GetValueRefOrNullRef(_hiddenGroups, key);
+        if (!Unsafe.IsNullRef(ref tracked) && tracked.Group == (nint)group)
         {
-            _hiddenGroups.Remove(key);
-
-            // Do not take ownership of groups that the game had already deactivated.
-            if (!group->IsActive) return;
-
-            h = new HiddenGroup { Group = (nint)group, WasActive = true };
+            tracked.Seen = _frame;
+            if (group->IsActive) group->SetActive(false);
+            return;
         }
 
-        h.Seen = _frame;
-        // Use the layout engine's own active-state API to hide the complete furniture prefab,
-        // including all of its BG parts and any nested shared groups.
-        if (group->IsActive) group->SetActive(false);
+        _hiddenGroups.Remove(key);
+        if (!group->IsActive) return; // never take ownership of a group the game already deactivated
+
+        var h = new HiddenGroup { Group = (nint)group, WasActive = true, Seen = _frame };
+        group->SetActive(false); // hides the whole prefab, BG parts and nested groups included
         _hiddenGroups[key] = h;
     }
 
     private void UnhideGroup(nint key, SharedGroupLayoutInstance* currentGroup)
     {
+        if (_hiddenGroups.Count == 0) return;
         if (!_hiddenGroups.Remove(key, out var h)) return;
         if (currentGroup == null || (nint)currentGroup != h.Group) return;
         if (h.WasActive && !currentGroup->IsActive)
@@ -860,17 +824,14 @@ public sealed unsafe class CullingService : IDisposable
         var draw = go->DrawObject;
         if (_force)
         {
-            // The all-furniture test hides direct-render housing objects regardless of camera
-            // position or whether their draw object is ready.
+            // The hide-all test hides direct-render objects regardless of camera position or draw-object readiness.
             Hide(go, draw, key);
             return;
         }
 
         if (draw == null)
         {
-            // The spotlight-aware test still needs usable bounds to decide whether a direct
-            // object is near a spotlight. Without a DrawObject, leave it
-            // alone rather than risk hiding shadow-supporting geometry we cannot locate.
+            // Without a DrawObject there are no bounds to check against spotlights, so leave the object alone.
             Unhide(go, key);
             return;
         }
@@ -966,16 +927,13 @@ public sealed unsafe class CullingService : IDisposable
     {
         if (_force) return true;
 
-        // Maximum distance and height are hard limits. Apply them before the nearby-player
-        // and spotlight exceptions so those protections cannot override explicit user limits.
+        // Max distance/height are hard limits, checked before the nearby and spotlight exceptions.
         if (ExceedsMaximumDistanceOrHeight(in b)) return true;
 
-        // If a possible spotlight could not be located safely, preserve furniture for this pass.
-        // Otherwise keep furniture whose bounds come within 0.75 yalms of a known spotlight.
+        // Keep furniture if a possible spotlight is unlocated or this item is within 0.75 yalms of a known one.
         if (!_spotlightProtectionKnown || IsNearSpotlightProtectionArea(in b)) return false;
 
-        // The spotlight-aware test behaves as though every furnishing were outside the camera,
-        // but still honors enabled maximum-distance/height limits and spotlight protection.
+        // The spotlight-aware test acts as if everything were off screen but still honors limits and spotlight protection.
         if (_forceExceptSpotlights) return true;
 
         var d = b.Center - _fr.Pos;
@@ -1008,9 +966,7 @@ public sealed unsafe class CullingService : IDisposable
         return false;
     }
 
-    // Reuse the cached shared-group bounds during the spotlight prepass. This ensures lights
-    // belonging to furniture beyond an enabled hard limit do not protect other furniture, while
-    // avoiding a second bounding-sphere query when the object is processed later in this pass.
+    // Reuses cached bounds in the prepass so lights beyond a hard limit protect nothing, without a second sphere query.
     private bool TryGetSharedGroupBound(GameObject* go, SharedGroupLayoutInstance* group, out Bound result)
     {
         nint key = (nint)go;
@@ -1056,8 +1012,7 @@ public sealed unsafe class CullingService : IDisposable
         if (!float.IsFinite(parentPos.X) || !float.IsFinite(parentPos.Y) || !float.IsFinite(parentPos.Z))
             return false;
 
-        // If the group's bounds are not ready, protect a small area around the housing-object
-        // origin. This is intentionally wider than the normal 0.75-yalm spotlight radius.
+        // Bounds not ready: protect a small area around the object origin, wider than the normal 0.75-yalm radius.
         _unknownSpotlightProtectionAreas.Add(new SpotlightProtectionArea
         {
             Center = parentPos,
@@ -1068,8 +1023,7 @@ public sealed unsafe class CullingService : IDisposable
 
     private bool IsNearSpotlightProtectionArea(in Bound bound)
     {
-        // Unknown active spotlights retain a local spherical fallback. This is only used when
-        // their graphics or transform data cannot be inspected safely.
+        // Fallback zones for spotlights whose graphics or transform data could not be read.
         for (int i = 0; i < _unknownSpotlightProtectionAreas.Count; i++)
         {
             var area = _unknownSpotlightProtectionAreas[i];
@@ -1079,9 +1033,7 @@ public sealed unsafe class CullingService : IDisposable
                 return true;
         }
 
-        // For known spotlights, protect only furniture whose bounds come within 0.75 yalms
-        // of the light. Expanding the radius by the furniture's bounding-sphere radius protects
-        // actual geometry near the light without keeping large items safe based only on their center.
+        // Expanding by the furniture radius protects geometry near a light, not just items whose center is close.
         float protectionRadius = ShadowSpotlightProtectionRadius + bound.Radius;
         float protectionRadiusSquared = protectionRadius * protectionRadius;
         for (int i = 0; i < _spotlightProtectionSpheres.Count; i++)
@@ -1114,15 +1066,14 @@ public sealed unsafe class CullingService : IDisposable
         }
         h.Seen = _frame;
 
-        // Fixed combined method: apply both visibility mechanisms for direct-render furniture.
-        // During the temporary test, a missing DrawObject still gets the GameObject-level flag.
+        // Apply both visibility mechanisms; the hide-all test still sets the GameObject flag when the DrawObject is missing.
         go->RenderFlags = (VisibilityFlags)((ulong)go->RenderFlags | InvisibleBit);
         if (draw != null) draw->IsVisible = false;
     }
 
     private void Unhide(GameObject* go, nint key)
     {
-        if (_hidden.Remove(key, out var h)) Restore(go, in h);
+        if (_hidden.Count > 0 && _hidden.Remove(key, out var h)) Restore(go, in h);
     }
 
     private static void Restore(GameObject* go, in Hidden h)

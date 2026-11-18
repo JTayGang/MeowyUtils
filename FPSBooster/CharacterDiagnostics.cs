@@ -80,10 +80,7 @@ public struct CharacterDiagnosticsSnapshot
     public long UpdatedAt;
 }
 
-/// <summary>
-/// Collects lightweight, read-only character diagnostics. This service never changes object
-/// visibility or draw state. The snapshot is refreshed only while a diagnostics tab is viewed.
-/// </summary>
+/// <summary>Read-only character diagnostics, refreshed only while a diagnostics tab is open.</summary>
 public sealed unsafe class CharacterDiagnostics
 {
     private const long RefreshIntervalMs = 1000;
@@ -129,9 +126,7 @@ public sealed unsafe class CharacterDiagnostics
                 }
             }
 
-            // Use the local player's native position so every category is measured in the same
-            // 3D world-space coordinate system. The local player itself is omitted from the
-            // player distance table, but remains included in the Players object count.
+            // Measure every category from the local player's world position; the player is left out of the player distance table but still counted.
             var localPlayerWrapper = _objectTable.LocalPlayer;
             nint localPlayerAddress = localPlayerWrapper != null ? localPlayerWrapper.Address : nint.Zero;
             FfxGameObject* localPlayer = (FfxGameObject*)localPlayerAddress;
@@ -140,8 +135,7 @@ public sealed unsafe class CharacterDiagnostics
             float localY = hasLocalPlayer ? localPlayer->Position.Y : 0f;
             float localZ = hasLocalPlayer ? localPlayer->Position.Z : 0f;
 
-            // Dalamud's object table is a sparse list of currently spawned game objects.
-            // Indexing avoids allocating an enumerator and keeps this scan bounded by its length.
+            // Index the sparse object table directly to avoid enumerator allocations.
             for (int i = 0; i < _objectTable.Length; i++)
             {
                 var wrapper = _objectTable[i];
@@ -210,8 +204,7 @@ public sealed unsafe class CharacterDiagnostics
     {
         stats.Objects++;
 
-        // FFXIVClientStructs documents 0 as shown and 1 as hidden. Preserve any other raw values
-        // separately instead of silently treating every non-zero value as the same state.
+        // Visibility is 0 shown, 1 hidden per FFXIVClientStructs; other raw values are counted separately.
         if (go->Visibility == 1)
             stats.GameVisibilityHidden++;
         else if (go->Visibility != 0)
@@ -223,9 +216,7 @@ public sealed unsafe class CharacterDiagnostics
 
         stats.DrawObjects++;
 
-        // DrawObject.IsVisible currently checks both bits (0x01 and 0x08), but the struct source
-        // explicitly says their meaning is uncertain. Report the raw bits rather than calling
-        // either state visible/hidden or attributing it to native distance culling.
+        // IsVisible checks bits 0x01 and 0x08 but their meaning is uncertain, so report the raw bits instead.
         byte flags = draw->Flags;
         bool bit0 = (flags & 0x01) != 0;
         bool bit3 = (flags & 0x08) != 0;
@@ -238,8 +229,7 @@ public sealed unsafe class CharacterDiagnostics
         else
             stats.DrawFlagsNeitherBitSet++;
 
-        // CharacterBase is the render-side character model container. A skeleton and non-null
-        // model slots tell us more than simply having a GameObject.DrawObject pointer.
+        // A skeleton and non-null model slots are a better signal than a bare DrawObject pointer.
         CharacterBase* characterBase = go->GetCharacterBase();
         if (characterBase == null)
             return true;
@@ -258,8 +248,7 @@ public sealed unsafe class CharacterDiagnostics
 
         for (int slot = 0; slot < slotCount; slot++)
         {
-            // Non-null means the model slot is populated; it does not prove every GPU resource
-            // for that model is resident, so the UI deliberately avoids calling it "loaded".
+            // Non-null means populated, not that every GPU resource is resident.
             if (characterBase->Models[slot] != null)
                 stats.PopulatedModelSlots++;
         }
@@ -278,9 +267,7 @@ public sealed unsafe class CharacterDiagnostics
 
     private static void AddDistance(ref DistanceDistribution distribution, bool hasDistance, float distanceSquared, bool hasDrawObject, byte currentDistance)
     {
-        // CurrentDistance is the game's own byte-sized distance-to-player value. Keep it raw:
-        // its units are not documented, and it can still be inspected when world coordinates
-        // are temporarily unavailable.
+        // CurrentDistance is the game's raw distance-to-player byte; units are undocumented, so keep it raw.
         if (hasDrawObject)
             AddClientDistance(ref distribution.CurrentDistanceWithDrawObject, currentDistance);
         else

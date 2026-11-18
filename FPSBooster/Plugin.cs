@@ -39,7 +39,7 @@ public sealed class Plugin : IDalamudPlugin
 
         cmd.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Opens settings. Add: on or off. The Housing tab has two press-and-hold tests: hide all furniture, or keep spotlight-protected furniture visible.",
+            HelpMessage = "Opens settings. Add 'on' or 'off' to toggle culling.",
         });
 
         pi.UiBuilder.Draw += _ws.Draw;
@@ -79,7 +79,7 @@ public sealed class Plugin : IDalamudPlugin
             case "off": SetEnabled(false); break;
             case "test":
                 _cfgWin.IsOpen = true;
-                _chat.Print(ChatPrefix + "The Housing tab has two hold-to-test buttons: hide everything, or keep spotlight-protected furniture visible. Release to restore normal culling.");
+                _chat.Print(ChatPrefix + "Hold a test button on the Housing tab to preview culling; release to restore.");
                 break;
             default: _chat.Print(ChatPrefix + "Try /fpsbooster, /fpsbooster on or /fpsbooster off."); break;
         }

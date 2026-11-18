@@ -2,7 +2,7 @@
   "Author": "Meowmeowmeow Cat",
   "Name": "FPSBooster",
   "Punchline": "Reduce unnecessary rendering work for smoother gameplay.",
-  "Description": "A performance-focused plugin that reduces unnecessary rendering work. The Housing tab manages housing-furniture culling. The Players and NPCs tabs provide read-only diagnostics for object counts, draw objects, skeletons, populated model slots, raw draw flags, game visibility bytes, world-distance ranges, raw client distance values, and the game's drawable-object limit. Character visibility changes are not enabled yet. Commands: /fpsbooster, /fpsbooster on, /fpsbooster off.",
+  "Description": "Hides housing furniture outside your camera view to cut rendering work. The Players and NPCs tabs are read-only diagnostics. Commands: /fpsbooster, /fpsbooster on, /fpsbooster off.",
   "Tags": [
     "performance",
     "fps",

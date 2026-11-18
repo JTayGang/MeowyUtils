@@ -69,15 +69,15 @@ public sealed class ConfigWindow : Window
 
                 ImGui.Separator();
                 changed |= Toggle("Hide furniture outside the screen", ref cfg.CullOutsideView,
-                    "Uses FPSBooster's own camera-view culling indoors or when the game's native outdoor background-culling system is unavailable. Outdoors, FPSBooster defers to the game when its culling grid is active.");
+                    "Hides furniture outside the camera view. Outdoors, the game's own culling is used when available.");
                 changed |= Slider("Extra room around the screen", ref cfg.FovMarginDeg, 0f, 45f, "%.0f°",
-                    "Keeps furniture just beyond the screen edge visible during FPSBooster camera-view culling. This setting is not used when the game handles outdoor visibility.");
+                    "Keeps furniture just past the screen edge visible to avoid pop-in. Unused when the game handles outdoor culling.");
                 changed |= DistanceSlider("Always show nearby furniture", ref cfg.AlwaysShowRadius, 0f, 30f,
-                    "Adds extra space around the player where furniture will stay visible. Off removes this extra distance.");
+                    "Furniture within this distance of the camera stays visible. Off disables it.");
                 changed |= DistanceSlider("Maximum distance", ref cfg.MaxDistance, 0f, 200f,
-                    "Hides furniture farther away than this, even if it is on screen or protected by a spotlight. This limit takes priority over nearby-item protection. Off disables it.");
+                    "Hides furniture farther than this from the camera, even if on screen or spotlight-protected. Off disables it.");
                 changed |= DistanceSlider("Maximum height difference", ref cfg.MaxHeightDelta, 0f, 30f,
-                    "Can help keep furniture on other floors from being drawn, even if a spotlight would normally protect it. Off disables this limit.");
+                    "Hides furniture this far above or below the camera, even if spotlight-protected. Useful for other floors. Off disables it.");
                 changed |= Toggle("Show all furniture in GPose", ref cfg.PauseInGpose,
                     "Temporarily stops hiding furniture while you are in GPose.");
                 changed |= Toggle("Pause if my character is off screen", ref cfg.RequirePlayerInView,
@@ -86,11 +86,11 @@ public sealed class ConfigWindow : Window
                 ImGui.Separator();
                 ImGui.Button("Hold to hide ALL furniture", new Vector2(-1f, 0f));
                 hideAllTestActive = ImGui.IsItemActive();
-                Tip("Hides every loaded furnishing, including spotlights and nearby shadow-protected objects. Release to restore everything.");
+                Tip("Hides every loaded furnishing, spotlights included. Release to restore.");
 
                 ImGui.Button("Hold to hide ALL (keep spotlight protection)", new Vector2(-1f, 0f));
                 spotlightAwareTestActive = ImGui.IsItemActive();
-                Tip("Hides furniture as if it were all outside the screen, but keeps spotlight furnishings and nearby shadow-protected objects visible. Release to restore everything.");
+                Tip("Hides furniture as if all were off screen, but keeps spotlight protection. Release to restore.");
 
                 if (hideAllTestActive || spotlightAwareTestActive)
                 {
@@ -117,7 +117,7 @@ public sealed class ConfigWindow : Window
                 DrawActorStats("Ornaments", diagnostics.Snapshot.Ornaments);
                 ImGui.Separator();
                 DrawDistanceDistribution("Other players by distance", diagnostics.Snapshot.PlayerDistances,
-                    "Straight-line 3D distance from your character. Your own character is excluded from this table.");
+                    "3D distance from your character; you are excluded.");
                 ImGui.Separator();
                 DrawGameDrawBudget(diagnostics.Snapshot);
                 ImGui.EndTabItem();
@@ -136,7 +136,7 @@ public sealed class ConfigWindow : Window
                 DrawActorStats("Retainers", diagnostics.Snapshot.Retainers);
                 ImGui.Separator();
                 DrawDistanceDistribution("NPCs by distance", diagnostics.Snapshot.NpcDistances,
-                    "Straight-line 3D distance from your character. Includes Battle NPCs, Event NPCs, and retainers.");
+                    "3D distance from your character. Battle NPCs, Event NPCs and retainers.");
                 ImGui.Separator();
                 DrawGameDrawBudget(diagnostics.Snapshot);
                 ImGui.EndTabItem();
@@ -145,8 +145,7 @@ public sealed class ConfigWindow : Window
             ImGui.EndTabBar();
         }
 
-        // Tests only remain active while their button is visible and physically held.
-        // Switching tabs, releasing the mouse, or closing the window stops both.
+        // Tests stay active only while their button is visible and held; switching tabs or closing ends them.
         svc.ForceHideAll = hideAllTestActive;
         svc.ForceHideAllExceptSpotlights = spotlightAwareTestActive;
 
@@ -196,7 +195,7 @@ public sealed class ConfigWindow : Window
         if (stats.DistanceUnavailable > 0)
             ImGui.TextDisabled($"World-position distance unavailable: {stats.DistanceUnavailable}");
         ImGui.TextWrapped(description);
-        ImGui.TextWrapped("World-distance bands show correlation only; they do not explain why the game did or did not create a DrawObject.");
+        ImGui.TextWrapped("Correlation only; this does not explain why a DrawObject exists or not.");
         DrawClientDistanceValues(stats);
     }
 
@@ -213,7 +212,7 @@ public sealed class ConfigWindow : Window
         DrawClientDistanceRow("Has DrawObject", stats.CurrentDistanceWithDrawObject);
         DrawClientDistanceRow("No DrawObject", stats.CurrentDistanceWithoutDrawObject);
         ImGui.Columns(1);
-        ImGui.TextWrapped("CurrentDistance is the game's own distance-to-player byte value. Its units are not documented here, so these are raw values rather than yalms.");
+        ImGui.TextWrapped("Raw byte from the game; units are undocumented, so these are not yalms.");
     }
 
     private static void DrawClientDistanceRow(string label, ClientDistanceValueStats stats)
@@ -247,7 +246,7 @@ public sealed class ConfigWindow : Window
             ImGui.Columns(1);
         }
 
-        ImGui.TextWrapped("The draw limit is the game's current allowance, not a count of objects hidden. Counts come from the live object table. GameObject.Visibility = 1 is the documented hidden value. DrawObject flags are shown as four raw combinations of bits 0x01 and 0x08: FFXIVClientStructs' IsVisible helper requires both bits, but its source notes that their exact meaning is uncertain.");
+        ImGui.TextWrapped("The draw limit is the game's allowance, not a count of hidden objects. Visibility 1 = hidden. Draw flags 0x01/0x08 are shown raw because their meaning is uncertain.");
     }
 
     private static string GetSimpleStatus(bool enabled, string status)

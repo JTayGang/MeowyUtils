@@ -22,8 +22,7 @@ public readonly struct ViewFrustum
         _nt = -u * cv + fwd * sv;
     }
 
-    // Avoids re-running the furniture pass for tiny camera changes. Compare against the
-    // last full culling pass (not the previous frame), so slow movement accumulates.
+    // Compares against the last full pass (not the last frame) so slow camera drift accumulates.
     public bool IsPositionMeaningfullyDifferent(in ViewFrustum other)
     {
         const float positionThresholdSquared = 0.0025f; // 0.05 yalms

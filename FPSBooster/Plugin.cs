@@ -14,7 +14,10 @@ public sealed class Plugin : IDalamudPlugin
     public IDalamudPluginInterface PluginInterface { get; }
     public Configuration Config { get; }
     public CullingService Culling { get; }
-    public CharacterDiagnostics Characters { get; }
+    public TextureStreamingService TextureStreaming { get; }
+    public TextureGpuUploadProbe TextureGpuUpload { get; }
+    public NativeTextureHandleProbe NativeTextureHandle { get; }
+    public PenumbraTextureSourceProbe PenumbraTextureSource { get; }
 
     private readonly ICommandManager _cmd;
     private readonly IChatGui _chat;
@@ -23,7 +26,7 @@ public sealed class Plugin : IDalamudPlugin
 
     public Plugin(
         IDalamudPluginInterface pi, ICommandManager cmd, IChatGui chat,
-        IClientState cs, ICondition cond, IFramework fw, IObjectTable ot, IPluginLog log)
+        IClientState cs, ICondition cond, IFramework fw, IObjectTable ot, IDataManager data, IPluginLog log)
     {
         PluginInterface = pi;
         _cmd = cmd;
@@ -33,7 +36,10 @@ public sealed class Plugin : IDalamudPlugin
         Config.Sanitize();
 
         Culling = new CullingService(fw, cs, cond, ot, log, Config);
-        Characters = new CharacterDiagnostics(ot, log);
+        TextureStreaming = new TextureStreamingService(data);
+        TextureGpuUpload = new TextureGpuUploadProbe(pi);
+        NativeTextureHandle = new NativeTextureHandleProbe();
+        PenumbraTextureSource = new PenumbraTextureSourceProbe(pi);
         _cfgWin = new ConfigWindow(this);
         _ws.AddWindow(_cfgWin);
 
@@ -53,9 +59,14 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenConfigUi -= OpenConfig;
         PluginInterface.UiBuilder.OpenMainUi -= OpenConfig;
         _cmd.RemoveHandler(CommandName);
+        _cfgWin.Shutdown();
         _ws.RemoveAllWindows();
         Config.Save(PluginInterface);
         Culling.Dispose();
+        TextureStreaming.Dispose();
+        TextureGpuUpload.Dispose();
+        NativeTextureHandle.Dispose();
+        PenumbraTextureSource.Clear();
     }
 
     private static Configuration LoadConfig(IDalamudPluginInterface pi, IPluginLog log)

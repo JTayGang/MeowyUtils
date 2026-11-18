@@ -1,58 +1,45 @@
-# MeowyUtils
+# FPSBooster
 
-A small collection of [Dalamud](https://github.com/goatcorp/Dalamud) plugins for FFXIV, formerly
-published as separate repos and now merged into one so there's a single place to grab any of
-them from.
+Dalamud plugin that cuts rendering work in FFXIV housing by hiding furniture you can't see.
 
-| Plugin | What it does |
-|---|---|
-| [**Skyrim Compass**](./SkyrimCompass) | Fully fixes Loci+Moodle compatibility in its own way. Has a Skyrim-style horizontal compass bar, limit break display, and full target info display (Healthbar, casting, statuses etc) |
-| [**StatusBridge**](./StatusBridge) | *BROKEN, DONT INSTALL* First attempt at a Loci+Moodles fix, only fixed half the problem and was full of issues and experimental stuff that did nothing. |
+## Use
 
-Each plugin has its own README (linked above) with full feature lists, requirements, and
-build/usage instructions specific to that plugin.
+- `/fpsbooster` opens settings.
+- `/fpsbooster on` / `off` toggles culling. Off restores all furniture.
+- `/fpsbooster test` opens settings and points to the hold-to-test buttons.
 
-## Installing
+## Settings
 
-Add this repo to Dalamud's plugin installer.
+| Setting | Default | Effect |
+|---|---:|---|
+| Enable furniture culling | On | Master switch. |
+| Hide furniture outside the screen | On | Hides furniture outside the camera view. |
+| Extra room around the screen | 12° | Keeps furniture just off screen visible to avoid pop-in. |
+| Always show nearby furniture | 6 yalms | Keeps furniture close to the camera visible. |
+| Maximum distance | Off | Hides furniture farther than this from the camera. |
+| Maximum height difference | Off | Hides furniture this far above or below the camera (other floors). |
+| Show all furniture in GPose | On | Pauses culling in GPose. |
+| Pause if my character is off screen | On | Safety check. Turn off when using a free camera. |
 
-```
-https://raw.githubusercontent.com/JTayGang/MeowyUtils/main/repo.json
-```
+Distances are measured from the camera. A value of 0 shows as Off.
 
-In-game: `/xlsettings` → **Experimental** → **Custom Plugin Repositories** → paste the URL above
-→ restart or reload the plugin installer. Both plugins will then show up in `/xlplugins.
+## Good to know
 
-## Building from source
+- Indoors, each furnishing is hidden whole using its bounding sphere. Outdoors, the game's own culling is used when available and FPSBooster only adds your distance/height limits.
+- Furniture with an active spotlight, and furniture within 0.75 yalms of one, stays visible so shadows don't disappear. Maximum distance/height override this.
+- Culling is camera-view only, so furniture behind a wall stays visible while in view. Use the distance/height limits to cut other floors.
+- The hold-to-test buttons on the Housing tab hide furniture only while held and are never saved.
+- Anything hidden is restored when culling is off, paused, or the plugin unloads.
 
-Each plugin is a self-contained project, so building one doesn't require the other:
+## Players / NPCs tabs
 
-```
-dotnet build SkyrimCompass/SkyrimCompass.csproj -c Release
-dotnet build StatusBridge/StatusBridge.csproj -c Release
-```
+Read-only diagnostics, refreshed once a second while the tab is open. They change nothing.
 
-Or open `MeowyUtils.sln` in Visual Studio / Rider to work on both at once.
+- Players tab: players, mounts, minions, ornaments. NPCs tab: Battle NPCs, Event NPCs, retainers.
+- Per category: object count, `DrawObject`s, skeletons, populated model slots, raw `DrawObject.Flags` bits (`0x01`/`0x08`) and `GameObject.Visibility` values.
+- Distance tables group objects by 3D distance from your character (0–10, 10–20, 20–30, 30–50, 50+ yalms) and show the game's raw `CurrentDistance` byte. They use object origins, so treat them as rough correlation, not exact render ranges.
+- The game's draw limit is an allowance, not a count of hidden objects. Flag bits and distances show state, not why the game hid or skipped an object.
 
-## Repo layout
+## Build
 
-```
-MeowyUtils/
-├── repo.json              master list read by Dalamud — one entry per plugin
-├── MeowyUtils.sln         solution referencing both plugin projects
-├── SkyrimCompass/         plugin source + its own README
-└── StatusBridge/          plugin source + its own README
-```
-
-## License
-
-MIT — see [LICENSE](./LICENSE). Applies to everything in this repo unless a subfolder says
-otherwise.
-
----
-
-*This repo was previously named `SkyrimCompass` and held only that one plugin. GitHub
-automatically redirects the old URL (including raw file links) to this one, so existing
-installs of Skyrim Compass keep updating without any action needed — but if you're on the old
-custom-repo URL, switching to the one above is a good idea since it's the one that'll actually
-show StatusBridge too.*
+.NET 10 SDK with Dalamud dev hooks (`DALAMUD_HOME`), then `dotnet build -c Release`.

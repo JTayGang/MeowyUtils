@@ -1,0 +1,22 @@
+{
+  "Author": "Meowmeowmeow Cat",
+  "Name": "FPSBooster",
+  "Punchline": "Reduce unnecessary rendering work for smoother gameplay.",
+  "Description": "Hides housing furniture outside your camera view to cut rendering work. The Players and NPCs tabs are read-only diagnostics. Commands: /fpsbooster, /fpsbooster on, /fpsbooster off.",
+  "Tags": [
+    "performance",
+    "fps",
+    "optimization",
+    "rendering",
+    "culling",
+    "housing",
+    "players",
+    "npcs"
+  ],
+  "InternalName": "FPSBooster",
+  "AssemblyVersion": "0.2.7.2",
+  "ApplicableVersion": "any",
+  "DalamudApiLevel": 15,
+  "RepoUrl": "https://github.com/JTayGang/MeowyUtils",
+  "LoadPriority": 0
+}

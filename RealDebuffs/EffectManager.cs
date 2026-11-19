@@ -71,6 +71,7 @@ public sealed class EffectManager
         _chatBlocker = chatBlocker;
         _customStatuses = customStatuses;
         _log = log;
+        DrawGuard.Log = msg => _log.Warning(msg);
 
         foreach (var effect in _order)
             _currentAlpha[effect.Kind] = 0f;

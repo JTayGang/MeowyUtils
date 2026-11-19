@@ -17,8 +17,7 @@ public sealed class DropsyEffect : SceneEffect, IHasSwappableSlots
     private const float PoolDepth = 0.135f;  // of the screen height
     private const float SideZone = 0.20f;  // leaks may also start this far down the side edges
     private const int Leaks = 9, Drips = 12;
-    private const float FluxRef = 3300f;  // typical inflow, in (stream radius at 1080p)^2 x flow
-    private const float FillSecs = 3.2f;  // the pool takes this long to rise at the typical inflow
+    private const float FluxRef = 215000f;  // the inflow a typical cast delivers at 1080p (px²/s, measured: streams' width x speed plus drops); the pool holds its full depth against it
 
     private enum Size { Gusher, Medium, Pinhole }
 
@@ -38,10 +37,11 @@ public sealed class DropsyEffect : SceneEffect, IHasSwappableSlots
     private struct Burst { public Vector2 At; public float Angle, Spread, Speed, Radius, Left, Owed, Rate; }
 
     private readonly LiquidField _field = new();
+    internal LiquidField Field => _field;
     private readonly Leak[] _leaks = new Leak[Leaks];
     private readonly float[] _dripEnd = new float[Drips];
     private Burst _burst;
-    private float _nextLeak, _nextEvent, _nextDrip, _fill, _volume;
+    private float _nextLeak, _nextEvent, _nextDrip, _fill;
     private int _target, _spawned;
 
     public DropsyEffect() : base(DebuffKind.Dropsy, "Dropsy",
@@ -82,10 +82,10 @@ public sealed class DropsyEffect : SceneEffect, IHasSwappableSlots
         _spawned = 0;
         _target = 4 + (int)(_field.Rand() * 3f);
         _fill = _field.Rand(0.88f, 1.12f);
+        _field.Reservoir = true;
         _nextLeak = 0f;
         _nextEvent = _field.Rand(2.4f, 4f);
         _nextDrip = 0f;
-        _volume = 0f;
     }
 
     /// <summary>Runs the cast: opens and closes leaks, sets each one's flow and aim, fires the odd spray, and sets the pool's depth.</summary>
@@ -108,12 +108,10 @@ public sealed class DropsyEffect : SceneEffect, IHasSwappableSlots
         if (open) Events(in f);
         Spritz(dt);
 
-        // the pool rises with the water that lands in it: fast under a gusher, slow on a trickle, and not at all before the first water arrives
-        float flux = 0f;
-        foreach (var l in _leaks) if (l.Jet.Wet) flux += l.Jet.Flow * MathF.Pow(l.Jet.Radius / f.Px, 2f);
-        _volume += dt * (Math.Clamp(flux / FluxRef, 0f, 2f) + (t > 1.5f ? 0.2f : 0f));  // the 0.2 is drips and spray
-        float rise = 1f - MathF.Exp(-_volume / (FillSecs * 0.45f));
-        _field.Level = f.Size.Y * PoolDepth * _fill * rise * (0.55f + 0.45f * keep);
+        // the pool is the water that has actually landed in it (see LiquidField.Reservoir); this only says how deep it settles and when it should drain
+        _field.PoolDepthRef = f.Size.Y * PoolDepth * _fill;
+        _field.PoolFluxRef = FluxRef * f.Px * f.Px;
+        _field.Leaving = f.Leave;
         _field.Chop = 0.35f + 1.2f * MathF.Exp(-t / 1.8f);
     }
 

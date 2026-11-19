@@ -309,9 +309,63 @@ internal static unsafe partial class MeshDraw
         return _whiteUv;
     }
 
+    // Batching: drawing that follows one another in a pass (hundreds of small drops) is staged here and handed to the draw list in one reservation, in the order it was drawn. Only mesh primitives may be drawn between BeginBatch and EndBatch; anything drawn another way would land out of order.
+    private const int BatchVerts = 12_000, BatchIdx = 48_000;
+    private static bool _batching;
+    private static ImDrawVert* _bv;
+    private static ushort* _bi;
+    private static int _bn, _bin;
+
+    public static void BeginBatch()
+    {
+        if (_batching) return;
+        if (_bv == null)
+        {
+            _bv = (ImDrawVert*)System.Runtime.InteropServices.NativeMemory.Alloc((nuint)(BatchVerts * sizeof(ImDrawVert)));
+            _bi = (ushort*)System.Runtime.InteropServices.NativeMemory.Alloc((nuint)(BatchIdx * sizeof(ushort)));
+        }
+        _bn = _bin = 0; _batching = true;
+    }
+
+    /// <summary>Drops anything staged without drawing it (a frame that was cut short).</summary>
+    public static void AbortBatch() { _batching = false; _bn = _bin = 0; }
+
+    /// <summary>Hands everything staged to the draw list and goes back to drawing directly.</summary>
+    public static void EndBatch(ImDrawListPtr dl)
+    {
+        if (!_batching) return;
+        FlushBatch(dl);
+        _batching = false;
+    }
+
+    private static void FlushBatch(ImDrawListPtr dl)
+    {
+        if (_bn == 0) return;
+        int vn = _bn, inn = _bin;
+        _bn = _bin = 0;
+        bool was = _batching; _batching = false;  // reserve for real
+        Begin(dl, inn, vn, out ImDrawVert* v, out ushort* ix, out uint b);
+        Buffer.MemoryCopy(_bv, v, (long)vn * sizeof(ImDrawVert), (long)vn * sizeof(ImDrawVert));
+        AddDelta(_bi, ix, inn, unchecked((ushort)b));
+        h_End(dl, v, ix, vn, inn, b);
+        _batching = was;
+    }
+
+    private static bool Staged(ImDrawVert* v) => _bv != null && v >= _bv && v < _bv + BatchVerts;
+
     private static void Begin(ImDrawListPtr dl, int idxCount, int vtxCount,
                               out ImDrawVert* v, out ushort* ix, out uint b)
     {
+        if (_batching)
+        {
+            if (_bn + vtxCount > BatchVerts || _bin + idxCount > BatchIdx) FlushBatch(dl);
+            if (vtxCount <= BatchVerts && idxCount <= BatchIdx)
+            {
+                v = _bv + _bn; ix = _bi + _bin; b = (uint)_bn;
+                return;
+            }
+            // larger than the staging area: after the flush above, it goes straight to the draw list, still in order
+        }
         dl.PrimReserve(idxCount, vtxCount);
         ImDrawList* h = dl.Handle;
         v = h->VtxWritePtr;
@@ -321,6 +375,12 @@ internal static unsafe partial class MeshDraw
 
     private static void End(ImDrawListPtr dl, ImDrawVert* v, ushort* ix, int vtxCount, int idxCount, uint b)
     {
+        if (_batching && Staged(v))
+        {
+            _bn += vtxCount; _bin += idxCount;
+            if (_rec != null) Record(v, ix, vtxCount, idxCount, b);
+            return;
+        }
         ImDrawList* h = dl.Handle;
         h->VtxWritePtr = v + vtxCount;
         h->IdxWritePtr = ix + idxCount;

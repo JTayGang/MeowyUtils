@@ -4,7 +4,7 @@ using Dalamud.Bindings.ImGui;
 namespace RealDebuffs.Effects.Framework.Materials;
 
 /// <summary>Iron chain: oval links rolled about the strand, matcap-shaded, far halves first so edge-on links interlock.</summary>
-public sealed class StrokeChain : IStrokeMaterial
+public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfaceProvider
 {
     public string Name => "stroke.chain";
     public string[] NaturalLanguageWords { get; } = { "chain", "chains", "links" };
@@ -25,13 +25,14 @@ public sealed class StrokeChain : IStrokeMaterial
     private static readonly Matcap Aged  = new(SurfacePresets.AgedIron);
     private static readonly Matcap Rust  = new(SurfacePresets.Rust);
 
-    private sealed class RingTable
+    internal sealed class RingTable
     {
         public int M;
         public float[] X = null!, Y = null!, NX = null!, NY = null!, Cap = null!;
+        public float[] Arc = null!, Frac = null!;  // distance along the ring to each station, in link lengths; and as a fraction of the whole half
     }
 
-    private static readonly RingTable[] Rings = { null!, null!, BuildRing(2), BuildRing(3), BuildRing(4) };
+    internal static readonly RingTable[] Rings = { null!, null!, BuildRing(2), BuildRing(3), BuildRing(4) };
 
     private static RingTable BuildRing(int k)
     {
@@ -60,6 +61,9 @@ public sealed class StrokeChain : IStrokeMaterial
             float q = MathF.Abs(t.X[i]) / HalfAxis;
             t.Cap[i] = DrawHelpers.Smooth((q - 0.55f) / 0.45f);
         }
+        t.Arc = new float[m]; t.Frac = new float[m];
+        for (int i = 1; i < m; i++) t.Arc[i] = t.Arc[i - 1] + MathF.Sqrt((t.X[i] - t.X[i - 1]) * (t.X[i] - t.X[i - 1]) + (t.Y[i] - t.Y[i - 1]) * (t.Y[i] - t.Y[i - 1]));
+        for (int i = 0; i < m; i++) t.Frac[i] = t.Arc[i] / t.Arc[m - 1];
         return t;
     }
 
@@ -77,33 +81,70 @@ public sealed class StrokeChain : IStrokeMaterial
         return r;
     }
 
-    private struct Link
+    internal struct Link
     {
         public Vector2 C, T, N;
         public float Cos, Sin, Tone, Rust, Alpha;
         public int   Index;
         public int   BucketPlus, BucketMinus;
+        public float Arc, Span;  // where along the strand this link sits and how much of it it covers
     }
 
-    private readonly Link[] _links = new Link[MaxLinks];
+    /// <summary>One chain stroke's geometry at one moment: its links (pose, roll, depth buckets) and the level of detail. Built once a frame; the host draws from it and the coat's charts are cut from it, so the two cannot disagree.</summary>
+    internal sealed class Snapshot
+    {
+        public readonly Link[] Links = new Link[MaxLinks];
+        public StrandPath? Path; public float Time, Reveal, Width;  // what it was built from: a memo, rebuilt if any of these differ
+        public bool Built, Valid;
+        public int Count, LinkCount, RingK, Tier, Seed;  // Count: links laid; LinkCount: links the strand has, laid or not
+        public float L, Total, Pitch, VisibleLen, Bar, Feather, Depth, Agit;
+        public bool Closed, FullyRevealed;
+        public float[] Cols = Cols7, ColsSq = Cols7Sq;
+        public Matcap Body = Iron;
+    }
 
-    public void Draw(ImDrawListPtr dl, in StrokePrimitive s, in MaterialContext ctx)
+    private readonly record struct SnapKey(DebuffKind Owner, int Seed, PrimitiveRole Role);
+    private readonly Dictionary<SnapKey, Snapshot> _snaps = new();
+    private readonly List<SnapKey> _dead = new();
+
+    private Snapshot? Acquire(in StrokePrimitive s, float shortSide, float px, float time, float screenW, float screenH)
+    {
+        var key = new SnapKey(s.Owner, s.Seed, s.Role);
+        if (!_snaps.TryGetValue(key, out var sn))
+        {
+            if (_snaps.Count >= 32) Prune(time);
+            _snaps[key] = sn = new Snapshot();
+        }
+        if (!(sn.Built && sn.Time == time && ReferenceEquals(sn.Path, s.Path) && sn.Reveal == s.Reveal && sn.Width == s.WidthHint))
+        {
+            sn.Built = true; sn.Time = time; sn.Path = s.Path; sn.Reveal = s.Reveal; sn.Width = s.WidthHint;
+            sn.Valid = Build(in s, shortSide, px, time, screenW, screenH, sn);
+        }
+        return sn.Valid ? sn : null;
+    }
+
+    private void Prune(float time)
+    {
+        _dead.Clear();
+        foreach (var kv in _snaps) if (time - kv.Value.Time > 2f) _dead.Add(kv.Key);
+        foreach (var k in _dead) _snaps.Remove(k);
+    }
+
+    /// <summary>Lays out the links of a strand: where each sits, how it is rolled, which depth buckets its halves paint in. False if there is nothing to draw.</summary>
+    private bool Build(in StrokePrimitive s, float shortSide, float px, float time, float screenW, float screenH, Snapshot sn)
     {
         var path = s.Path;
-        float alpha = s.Brightness * ctx.Alpha;
-        if (path.Count < 2 || alpha <= 0.004f) return;
+        if (path.Count < 2) return false;
 
         float reveal = Math.Clamp(s.Reveal, 0f, 1f);
-        if (reveal <= 0.001f) return;
+        if (reveal <= 0.001f) return false;
 
         float total = path.Length;
-        float L = Math.Clamp(s.WidthHint, ctx.ShortSide * MinLinkFrac, ctx.ShortSide * MaxLinkFrac);
-        if (total < L) return;
+        float L = Math.Clamp(s.WidthHint, shortSide * MinLinkFrac, shortSide * MaxLinkFrac);
+        if (total < L) return false;
 
-        float px = ctx.ScreenScale;
         float depth = Math.Clamp(s.Depth, 0f, 1f);
         float agit = Math.Clamp(s.Agitation, 0f, 1f);
-        float time = ctx.Time;
         int seed = s.Seed;
 
         // Bar width is fixed per chain; the LOD tier and far-half cull both key off it.
@@ -135,12 +176,10 @@ public sealed class StrokeChain : IStrokeMaterial
             float spanEnd = reveal >= 1f ? total + L : total * reveal;
             count = Math.Clamp((int)((spanEnd - firstCentre) / pitch) + 2, 0, MaxLinks);
         }
-        if (count <= 0) return;
+        if (count <= 0) return false;
 
         float visibleLen = total * reveal;
         bool fullyRevealed = reveal >= 1f;
-
-        StrandShading.DrawShadow(dl, path, L, depth, alpha, ctx, closed, visibleLen);
 
         int linkCount = 0;
         float margin = L * 1.2f;
@@ -162,7 +201,7 @@ public sealed class StrokeChain : IStrokeMaterial
             if (cl < 1e-3f) continue;
 
             Vector2 c = (a + b) * 0.5f;
-            if (c.X < -margin || c.Y < -margin || c.X > ctx.ScreenW + margin || c.Y > ctx.ScreenH + margin) continue;
+            if (c.X < -margin || c.Y < -margin || c.X > screenW + margin || c.Y > screenH + margin) continue;
 
             Vector2 T = chord / cl;
             int idx = i;
@@ -174,18 +213,19 @@ public sealed class StrokeChain : IStrokeMaterial
                         + agit * 0.30f * MathF.Sin(time * 21f + idx * 1.9f);
             float roll = twist + ((idx & 1) == 0 ? 0f : MathF.PI * 0.5f);
 
-            float cs = MathF.Cos(roll), sn = MathF.Sin(roll);
+            float cs = MathF.Cos(roll), sn2 = MathF.Sin(roll);
             int ls = unchecked(seed + idx * 7919);
 
-            ref Link lk = ref _links[linkCount++];
+            ref Link lk = ref sn.Links[linkCount++];
             lk.C = c; lk.T = T; lk.N = new Vector2(-T.Y, T.X);
-            lk.Cos = cs; lk.Sin = sn;
+            lk.Cos = cs; lk.Sin = sn2;
             lk.Tone = DrawHelpers.HashRange(ls + 3, 0.86f, 1.10f);
             lk.Rust = Math.Clamp(rustLevel * DrawHelpers.HashRange(ls + 5, 0.25f, 1.45f), 0f, 1f);
             lk.Alpha = tipFrac;
             lk.Index = idx;
+            lk.Arc = sc; lk.Span = pitch;
 
-            float zPlus = sn;
+            float zPlus = sn2;
             lk.BucketPlus = (int)MathF.Round(zPlus * 2f) + 2;
             lk.BucketMinus = (int)MathF.Round(-zPlus * 2f) + 2;
 
@@ -196,30 +236,282 @@ public sealed class StrokeChain : IStrokeMaterial
             }
         }
 
-        int ringK = bar < 9.5f * px ? 2 : (bar < 14.5f * px ? 3 : 4);
-        float[] cols   = bar < 9.5f * px ? Cols5 : Cols7;
-        float[] colsSq = bar < 9.5f * px ? Cols5Sq : Cols7Sq;
-        float feather = (1.0f + 2.4f * depth) * px;
+        sn.Count = linkCount; sn.LinkCount = count; sn.L = L; sn.Total = total; sn.Pitch = pitch; sn.VisibleLen = visibleLen; sn.Bar = bar;
+        sn.Depth = depth; sn.Agit = agit; sn.Closed = closed; sn.FullyRevealed = fullyRevealed; sn.Seed = seed; sn.Body = body;
+        sn.RingK = bar < 9.5f * px ? 2 : (bar < 14.5f * px ? 3 : 4);
+        sn.Cols = smallBar ? Cols5 : Cols7; sn.ColsSq = smallBar ? Cols5Sq : Cols7Sq;
+        sn.Feather = (1.0f + 2.4f * depth) * px;
+        return true;
+    }
+
+    public void Draw(ImDrawListPtr dl, in StrokePrimitive s, in MaterialContext ctx)
+    {
+        var path = s.Path;
+        float alpha = s.Brightness * ctx.Alpha;
+        if (path.Count < 2 || alpha <= 0.004f) return;
+
+        var sn = Acquire(in s, ctx.ShortSide, ctx.ScreenScale, ctx.Time, ctx.ScreenW, ctx.ScreenH);
+        if (sn == null) return;
+
+        StrandShading.DrawShadow(dl, path, sn.L, sn.Depth, alpha, ctx, sn.Closed, sn.VisibleLen);
+
+        int ringK = sn.RingK;
+        float[] cols = sn.Cols, colsSq = sn.ColsSq;
 
         // Paint back to front by depth bucket.
         for (int bucket = 0; bucket <= 4; bucket++)
         {
-            for (int i = 0; i < linkCount; i++)
+            for (int i = 0; i < sn.Count; i++)
             {
-                ref Link lk = ref _links[i];
+                ref Link lk = ref sn.Links[i];
                 if (lk.BucketPlus == bucket)
-                    DrawHalf(dl, in lk, +1, L, ringK, cols, colsSq, body, seed, depth, agit, feather, alpha, ctx);
+                {
+                    DrawHalf(dl, in lk, +1, sn.L, ringK, cols, colsSq, sn.Body, sn.Seed, sn.Depth, sn.Agit, sn.Feather, alpha, ctx);
+                    if (_coatOn) DrawCoatHalf(dl, in lk, +1, sn, ringK, cols, colsSq, in ctx);
+                }
                 if (lk.BucketMinus == bucket)
-                    DrawHalf(dl, in lk, -1, L, ringK, cols, colsSq, body, seed, depth, agit, feather, alpha, ctx);
+                {
+                    DrawHalf(dl, in lk, -1, sn.L, ringK, cols, colsSq, sn.Body, sn.Seed, sn.Depth, sn.Agit, sn.Feather, alpha, ctx);
+                    if (_coatOn) DrawCoatHalf(dl, in lk, -1, sn, ringK, cols, colsSq, in ctx);
+                }
             }
         }
 
-        if (s.TipFlare > 0.001f && !closed)
+        if (s.TipFlare > 0.001f && !sn.Closed)
         {
-            float tipS = fullyRevealed ? total : visibleLen;
+            float tipS = sn.FullyRevealed ? sn.Total : sn.VisibleLen;
             path.SampleAtArc(tipS, out Vector2 tip, out _);
-            StrandShading.DrawFlare(dl, tip, bar, Math.Clamp(s.TipFlare, 0f, 1f) * alpha, ctx);
+            StrandShading.DrawFlare(dl, tip, sn.Bar, Math.Clamp(s.TipFlare, 0f, 1f) * alpha, ctx);
         }
+    }
+
+    /// <summary>One station of a link half's ring: where its bar centre is on screen, the outward direction, and the frame the bar's cross-section lives in. The body, the coat's charts and the film all take it from here, so they cannot disagree about the shape.</summary>
+    internal static void Station(in Link lk, int h, RingTable ring, int j, float L, ref Vector3 prevN, ref Vector3 prevT,
+                                out Vector2 pos2, out Vector3 o, out Vector3 nStar, out Vector3 tStar)
+    {
+        float cos = lk.Cos, sin = lk.Sin;
+        float x = ring.X[j] * L;
+        float y = h * ring.Y[j] * L;
+        float nx = ring.NX[j];
+        float ny = h * ring.NY[j];
+
+        pos2 = lk.C + lk.T * x + lk.N * (y * cos);
+
+        o = new(lk.T.X * nx + lk.N.X * (ny * cos), lk.T.Y * nx + lk.N.Y * (ny * cos), ny * sin);
+        Vector3 m = new(-lk.N.X * sin, -lk.N.Y * sin, cos);
+
+        float oz = o.Z, mz = m.Z;
+        float r = MathF.Sqrt(oz * oz + mz * mz);
+        if (r > 1e-3f)
+        {
+            nStar = (o * oz + m * mz) / r;
+            tStar = (m * oz - o * mz) / r;
+            prevN = nStar; prevT = tStar;
+        }
+        else { nStar = prevN; tStar = prevT; }
+    }
+
+    // ---- the coat: one chart per drawn link half, cut from the same stations the half is drawn from
+
+    // rows x sectors a half's chart may have, finest first; a crowded frame takes a coarser one before it skips any link
+    private static readonly (int rows, int sectors)[] Ladder = { (6, 5), (5, 5), (5, 3), (4, 3), (3, 3), (3, 2), (2, 2) };
+
+    public bool Charts(CoatMatter matter) => matter is LiquidMatter;
+
+    // which stations / columns of the ring a chart of r rows / v sectors sits on: always both ends
+    private static void PickRows(int stations, int rows, Span<int> st) { for (int r = 0; r < rows; r++) st[r] = (int)MathF.Round(r * (stations - 1f) / (rows - 1f)); }
+    private static void PickCols(int columns, int sectors, Span<int> ct) { for (int s = 0; s < sectors; s++) ct[s] = (int)MathF.Round(s * (columns - 1f) / (sectors - 1f)); }
+
+    public void BuildCoatSurfaces(in StrokePrimitive s, in CoatBuildContext ctx, CoatCharts charts)
+    {
+        int sw = (int)ctx.Screen.X, sh = (int)ctx.Screen.Y;
+        var sn = Acquire(in s, sw < sh ? sw : sh, ctx.Px, ctx.Time, sw, sh);
+        if (sn == null) return;
+
+        int halves = 0;
+        for (int i = 0; i < sn.Count; i++) { if (sn.Links[i].BucketPlus >= 0) halves++; if (sn.Links[i].BucketMinus >= 0) halves++; }
+        if (halves == 0) return;
+
+        var ring = Rings[sn.RingK];
+        int M = ring.M, nc = sn.Cols.Length - 2;
+
+        // the finest tier this stroke's share of the frame's cells affords; it only gets finer again with room to spare, so it does not flicker
+        int want = Ladder.Length - 1;
+        for (int t = 0; t < Ladder.Length; t++)
+            if (Ladder[t].rows <= M && Ladder[t].sectors <= nc && Ladder[t].rows * Ladder[t].sectors * halves <= charts.Share) { want = t; break; }
+        bool fits = Ladder[sn.Tier].rows <= M && Ladder[sn.Tier].sectors <= nc;
+        if (!fits || want > sn.Tier || Ladder[want].rows * Ladder[want].sectors * halves * 1.3f <= charts.Share) sn.Tier = want;
+        var (R, Vn) = Ladder[sn.Tier];
+
+        Span<int> st = stackalloc int[R], ct = stackalloc int[Vn];
+        PickRows(M, R, st); PickCols(nc, Vn, ct);
+        Span<Vector2> p2 = stackalloc Vector2[M];
+        Span<Vector3> ns = stackalloc Vector3[M], ts = stackalloc Vector3[M];
+        float half = sn.L * BarDiameter * 0.5f;
+        for (int i = 0; i < sn.Count * 2; i++) _laid[i] = null;
+
+        for (int i = 0; i < sn.Count; i++)
+        {
+            ref readonly Link lk = ref sn.Links[i];
+            for (int h = 1; h >= -1; h -= 2)
+            {
+                if ((h > 0 ? lk.BucketPlus : lk.BucketMinus) < 0) continue;
+                var ch = charts.Add(1 + lk.Index * 2 + (h > 0 ? 0 : 1), R, Vn);
+                if (ch == null) continue;
+                _laid[i * 2 + (h > 0 ? 0 : 1)] = ch;
+
+                Vector3 prevN = Vector3.UnitZ, prevT = Vector3.UnitX;
+                for (int j = 0; j < M; j++) Station(in lk, h, ring, j, sn.L, ref prevN, ref prevT, out p2[j], out _, out ns[j], out ts[j]);
+
+                float zHalf = h > 0 ? lk.Sin : -lk.Sin;
+                ch.Live = R;
+                for (int r = 0; r < R; r++) ch.UPos[r] = ring.Arc[st[r]] * sn.L;
+                float len = 0f;
+                for (int r = 0; r < R; r++)
+                {
+                    ch.UStep[r] = 0.5f * ((r < R - 1 ? ch.UPos[r + 1] : ch.UPos[r]) - (r > 0 ? ch.UPos[r - 1] : ch.UPos[r]));
+                    len += ch.UStep[r];
+                }
+                ch.Ds = len / R;
+                ch.SupplyScale = sn.Pitch * 0.5f / MathF.Max(len, 1e-3f);  // both halves together carry what the strand would along one pitch
+                for (int v = 0; v < Vn; v++)
+                {
+                    float th = MathF.Asin(sn.Cols[1 + ct[v]]);
+                    float lo = v > 0 ? 0.5f * (th + MathF.Asin(sn.Cols[ct[v - 1] + 1])) : -MathF.PI * 0.5f;
+                    float hi = v < Vn - 1 ? 0.5f * (th + MathF.Asin(sn.Cols[ct[v + 1] + 1])) : MathF.PI * 0.5f;
+                    ch.VAngle[v] = th; ch.VStep[v] = MathF.Max(0.25f, (hi - lo) * half);
+                }
+
+                for (int r = 0; r < R; r++)
+                    for (int v = 0; v < Vn; v++)
+                    {
+                        int j = st[r], col = 1 + ct[v];
+                        float u = sn.Cols[col], sq = sn.ColsSq[col];
+                        Vector3 n = ts[j] * u + ns[j] * sq;
+                        ref var q = ref ch.S[r * Vn + v];
+                        q.Pos = p2[j] + new Vector2(n.X, n.Y) * half;  // the very vertex DrawHalf puts there
+                        q.Normal = n; q.Side = Math.Clamp(zHalf, -1f, 1f); q.Radius = half; q.Visible = true; q.Holds = true;
+                        q.Z = h * ring.Y[j] * sn.L * lk.Sin + n.Z * half;  // the bar's own depth at that station (its plane is rolled by Sin), then out along the normal
+                    }
+
+                for (int r = 0; r < R; r++)
+                    for (int v = 0; v < Vn; v++)
+                    {
+                        ref var q = ref ch.S[r * Vn + v];
+                        Vector2 du = ch.S[Math.Min(r + 1, R - 1) * Vn + v].Pos - ch.S[Math.Max(r - 1, 0) * Vn + v].Pos;
+                        Vector2 dv = ch.S[r * Vn + Math.Min(v + 1, Vn - 1)].Pos - ch.S[r * Vn + Math.Max(v - 1, 0)].Pos;
+                        q.Du = du.LengthSquared() > 1e-6f ? Vector2.Normalize(du) : Vector2.UnitX;
+                        q.Dv = dv.LengthSquared() > 1e-6f ? Vector2.Normalize(dv) : new Vector2(-q.Du.Y, q.Du.X);  // an edge-on link has no across: take the side of the along
+
+                        // one downhill rule: the edge of the chart that faces most squarely down is where a drop hangs
+                        float best = 0f; Vector2 outw = default;
+                        void Edge(bool on, Vector2 o) { if (on && o.Y > best) { best = o.Y; outw = o; } }
+                        Edge(v == 0, -q.Dv); Edge(v == Vn - 1, q.Dv); Edge(r == 0, -q.Du); Edge(r == R - 1, q.Du);
+                        q.GravityDown = best; q.Anchor = q.Pos;
+                    }
+            }
+        }
+
+        // what may touch what is the chain's own business: a link's two halves are one bar cut in two (they share both tips), and its +T tip hooks through the next link's -T tip. The coat only accepts what the geometry confirms.
+        for (int i = 0; i < sn.Count; i++)
+        {
+            CoatChart? a = _laid[i * 2], b = _laid[i * 2 + 1];
+            if (a != null && b != null) { a.AddContact(CoatEdge.UStart, b.ChartId, CoatEdge.UStart, true); a.AddContact(CoatEdge.UEnd, b.ChartId, CoatEdge.UEnd, true); }
+            int nx = i + 1 < sn.Count && sn.Links[i + 1].Index == sn.Links[i].Index + 1 ? i + 1
+                   : (sn.Closed && i == sn.Count - 1 && sn.Links[i].Index == sn.LinkCount - 1 && sn.Links[0].Index == 0 ? 0 : -1);
+            if (nx < 0 || nx == i) continue;
+            for (int x = 0; x < 2; x++)
+                for (int y = 0; y < 2; y++)
+                {
+                    CoatChart? from = _laid[i * 2 + x], to = _laid[nx * 2 + y];
+                    if (from != null && to != null) from.AddContact(CoatEdge.UStart, to.ChartId, CoatEdge.UEnd, false);
+                }
+        }
+    }
+
+    private readonly CoatChart?[] _laid = new CoatChart?[2 * MaxLinks];  // this frame's charts by link slot and half
+    private readonly Coat?[] _byId = new Coat?[2 * MaxLinks + 2];
+    private List<Coat>? _sib;
+    private float _coatAlpha;
+    private bool _coatOn;
+
+    /// <summary>Liquid only: it is drawn as a film on each link's own bar, in that link half's depth order; other matters keep the generic band.</summary>
+    public bool Layers(Coat coat) => coat.Matter is LiquidMatter && coat.Siblings != null;
+
+    public void DrawWithCoat(ImDrawListPtr dl, in StrokePrimitive s, in MaterialContext ctx, Coat coat, float alpha)
+    {
+        _coatAlpha = alpha; _sib = coat.Siblings;
+        if (_sib != null) foreach (var c in _sib) if ((uint)c.ChartId < (uint)_byId.Length) _byId[c.ChartId] = c;
+        _coatOn = true;
+        try { Draw(dl, in s, in ctx); }
+        finally
+        {
+            _coatOn = false;
+            if (_sib != null) foreach (var c in _sib) if ((uint)c.ChartId < (uint)_byId.Length) _byId[c.ChartId] = null;
+            _sib = null;
+        }
+    }
+
+    /// <summary>The film on one link half, from its chart's field: its mesh is the half's own stations and columns, so it covers the bar and nothing else (holes and gaps stay empty) and is painted in the half's own depth bucket. The chart's coarse cells are interpolated onto the mesh.</summary>
+    private void DrawCoatHalf(ImDrawListPtr dl, in Link lk, int h, Snapshot sn, int ringK, float[] cols, float[] colsSq, in MaterialContext ctx)
+    {
+        var coat = _byId[1 + lk.Index * 2 + (h > 0 ? 0 : 1)];
+        if (coat == null || coat.Matter is not LiquidMatter lm) return;
+        int R = coat.N, Vn = coat.V;
+        if (R < 2 || Vn < 2 || R * Vn > 64) return;
+        float px = coat.Px;
+
+        Span<float> thick = stackalloc float[R * Vn];
+        float maxTh = 0f;
+        for (int c = 0; c < R * Vn; c++) { thick[c] = coat.M[c] / coat.A[c]; maxTh = MathF.Max(maxTh, thick[c]); }
+        if (maxTh < 0.25f * lm.Physics.Hold * px) return;
+
+        float L = sn.L, zHalf = h > 0 ? lk.Sin : -lk.Sin;
+        if (zHalf < -0.35f) { ringK = Math.Max(2, ringK - 1); cols = Cols5; colsSq = Cols5Sq; }
+        var ring = Rings[ringK];
+        int M = ring.M, nc = cols.Length - 2;  // real columns; the fringe is the body's anti-aliasing
+        if (M * nc > MeshDraw.MaxVerts) return;
+
+        // where the chart's rows and sectors sit along the ring and across the bar, to interpolate between
+        var cring = Rings[sn.RingK];
+        int cnc = sn.Cols.Length - 2;
+        Span<int> st = stackalloc int[R], ct = stackalloc int[Vn];
+        PickRows(cring.M, R, st); PickCols(cnc, Vn, ct);
+        Span<float> fr = stackalloc float[R], uc = stackalloc float[Vn];
+        for (int r = 0; r < R; r++) fr[r] = cring.Frac[st[r]];
+        for (int v = 0; v < Vn; v++) uc[v] = sn.Cols[1 + ct[v]];
+
+        Span<Vector2> p2 = stackalloc Vector2[M];
+        Span<Vector3> ns = stackalloc Vector3[M], ts = stackalloc Vector3[M];
+        Vector3 prevN = Vector3.UnitZ, prevT = Vector3.UnitX;
+        for (int j = 0; j < M; j++) Station(in lk, h, ring, j, L, ref prevN, ref prevT, out p2[j], out _, out ns[j], out ts[j]);
+
+        float half = L * BarDiameter * 0.5f, a = MathF.Min(1f, _coatAlpha * ctx.Alpha) * lk.Alpha;
+        var mb = CoatDraw.Mb;
+        mb.Reserve(M * nc, M * nc * 6);
+        int first = mb.Vertices;
+        DrawHelpers.PushColorOverride(coat.Color);
+        try
+        {
+            for (int j = 0; j < M; j++)
+            {
+                float fj = ring.Frac[j];
+                int r0 = 0; while (r0 < R - 2 && fj > fr[r0 + 1]) r0++;
+                float tr = fr[r0 + 1] > fr[r0] ? Math.Clamp((fj - fr[r0]) / (fr[r0 + 1] - fr[r0]), 0f, 1f) : 0f;
+                for (int c = 1; c <= nc; c++)
+                {
+                    float u = cols[c], sq = colsSq[c];
+                    int v0 = 0; while (v0 < Vn - 2 && u > uc[v0 + 1]) v0++;
+                    float tv = uc[v0 + 1] > uc[v0] ? Math.Clamp((u - uc[v0]) / (uc[v0 + 1] - uc[v0]), 0f, 1f) : 0f;
+                    float th = DrawHelpers.Lerp(DrawHelpers.Lerp(thick[r0 * Vn + v0], thick[r0 * Vn + v0 + 1], tv), DrawHelpers.Lerp(thick[(r0 + 1) * Vn + v0], thick[(r0 + 1) * Vn + v0 + 1], tv), tr);
+                    Vector3 n = ts[j] * u + ns[j] * sq;
+                    mb.VertexReserved(p2[j] + new Vector2(n.X, n.Y) * (half + th * 0.9f), lm.FilmShade(n, th, px, a, CoatDraw.Soft(u, 0.3f)));
+                }
+            }
+        }
+        finally { DrawHelpers.PopColorOverride(); }
+        mb.StitchGrid(first, M, nc);
+        mb.Flush(dl, MeshDraw.WhiteUv(ctx.Time));
     }
 
     private static void DrawHalf(ImDrawListPtr dl, in Link lk, int h, float L, int ringK,
@@ -257,24 +549,7 @@ public sealed class StrokeChain : IStrokeMaterial
         {
             float x = ring.X[j] * L;
             float y = h * ring.Y[j] * L;
-            float nx = ring.NX[j];
-            float ny = h * ring.NY[j];
-
-            Vector2 pos2 = lk.C + lk.T * x + lk.N * (y * cos);
-
-            Vector3 o = new(lk.T.X * nx + lk.N.X * (ny * cos), lk.T.Y * nx + lk.N.Y * (ny * cos), ny * sin);
-            Vector3 m = new(-lk.N.X * sin, -lk.N.Y * sin, cos);
-
-            float oz = o.Z, mz = m.Z;
-            float r = MathF.Sqrt(oz * oz + mz * mz);
-            Vector3 nStar, tStar;
-            if (r > 1e-3f)
-            {
-                nStar = (o * oz + m * mz) / r;
-                tStar = (m * oz - o * mz) / r;
-                prevN = nStar; prevT = tStar;
-            }
-            else { nStar = prevN; tStar = prevT; }
+            Station(in lk, h, ring, j, L, ref prevN, ref prevT, out Vector2 pos2, out Vector3 o, out Vector3 nStar, out Vector3 tStar);
 
             float cap = ring.Cap[j];
 

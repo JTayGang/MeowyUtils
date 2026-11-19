@@ -300,23 +300,10 @@ public sealed class StrokeBlood : IStrokeMaterial
 
     public ReadOnlySpan<StrokeEmission> Emissions => Shed;
 
-    /// <summary>Runs, hanging off the underside of the paint and letting go.</summary>
+    /// <summary>Blood that runs and pools along the paint and hangs off the underside; its matter is whatever the Goop slot holds.</summary>
     private static readonly StrokeEmission[] Shed =
     {
-        new(Role: PrimitiveRole.Goop,
-            DensityPer100px: 0f,
-            SpeedMin: 70f, SpeedMax: 150f,
-            LifespanMin: 2.0f, LifespanMax: 2.8f,
-            SizeMin: 5.0f, SizeMax: 8.5f,
-            SpreadRadians: 0f,
-            BiasVelocity: Vector2.Zero,
-            Gravity: new Vector2(0f, 1800f),
-            Drip: new StrokeDripOptions(
-                SiteSpacingPx: 120f,
-                CycleSecondsMin: 1.8f, CycleSecondsMax: 3.6f,
-                MinSlope: 0.40f,
-                Stringiness: 0.50f,
-                SatelliteChance: 0.30f)),
+        StrokeEmission.Coated(PrimitiveRole.Goop, supply: 1.0f, clump: 0.5f, skin: 0.3f),
     };
 
     public ReadOnlySpan<ImpactEmission> ImpactEmissions => Hit;

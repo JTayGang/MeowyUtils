@@ -26,6 +26,16 @@ public interface IMaterial
     string[] NaturalLanguageWords => Array.Empty<string>();
 }
 
+/// <summary>A stroke drawn in several passes that places a coat between them, so the coat is covered and uncovered by the host's own parts instead of lying over the whole object.</summary>
+public interface ICoatLayeredHost : IStrokeMaterial
+{
+    /// <summary>True if this host draws that coat itself (it then must, in DrawWithCoat); false leaves it to be drawn over the finished stroke.</summary>
+    bool Layers(Coat coat);
+
+    /// <summary>Draws the stroke and, at the right points of its own order, the coat.</summary>
+    void DrawWithCoat(ImDrawListPtr dl, in StrokePrimitive s, in MaterialContext ctx, Coat coat, float alpha);
+}
+
 public interface IStrokeMaterial : IMaterial
 {
     void Draw(ImDrawListPtr dl, in StrokePrimitive s, in MaterialContext ctx);
@@ -42,6 +52,9 @@ public interface IStrokeMaterial : IMaterial
     /// <summary>False where a strand can't hold a drip, such as a tapered end with no surface left to hang from.</summary>
     bool CanDripAt(in StrokePrimitive s, float arc, float shortSide) => true;
 }
+
+/// <summary>A particle material that draws only through MeshDraw's mesh primitives, so a run of its particles can be staged and handed to the draw list in one reservation, in the same order. Anything that draws another way must not carry this.</summary>
+public interface IBatchedParticleMaterial { }
 
 public interface IParticleMaterial : IMaterial
 {
@@ -110,7 +123,15 @@ public readonly record struct StrokeEmission(
     string? RenderMaterial = null,
     float ClusterWindowSeconds = 0f,
     float ClusterConeRadians = 0f,
-    StrokeDripOptions? Drip = null);
+    CoatOptions? Coat = null)
+{
+    /// <summary>A coat: the matter clings to the strand, runs, pools and lets go (see Coat); only the role and options matter.</summary>
+    public static StrokeEmission Coated(PrimitiveRole role, float supply = 1f, float clump = 0.6f, float skin = 1f) =>
+        new(role, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, Vector2.Zero, Coat: new CoatOptions(supply, clump, skin));
+}
+
+/// <summary>How a coat emission loads its strand: a multiplier on the matter's own supply, how patchy it lies (0 even, 1 clumped), and how much of the host a thin wet skin covers (0 none; a host that is already glossy wants little).</summary>
+public readonly record struct CoatOptions(float Supply = 1f, float Clump = 0.6f, float Skin = 1f);
 
 /// <summary>One burst a stroke material throws when hit.</summary>
 public readonly record struct ImpactEmission(
@@ -137,12 +158,3 @@ public readonly record struct StrokeFlowOptions(
     float ObstacleSpacingPx,
     float LateralOffsetFrac);
 
-/// <summary>Viscous emission: grows drops (Size = radius px at 1080p, Gravity = px/s^2, Drag = 1/s; DensityPer100px is ignored).</summary>
-public readonly record struct StrokeDripOptions(
-    float SiteSpacingPx,
-    float CycleSecondsMin,
-    float CycleSecondsMax,
-    float MinSlope,
-    float Stringiness,
-    float SatelliteChance,
-    float Drag = 1.6f);

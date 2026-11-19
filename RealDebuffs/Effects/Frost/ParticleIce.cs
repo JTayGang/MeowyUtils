@@ -4,8 +4,9 @@ using Dalamud.Bindings.ImGui;
 namespace RealDebuffs.Effects.Framework.Materials;
 
 /// <summary>Snow speck: dot with pale halo, a glint cross on ~1/4, and a comet streak when wind-blown.</summary>
-public sealed class ParticleSnow : IParticleMaterial
+public sealed class ParticleSnow : IParticleMaterial, ICoatMatter
 {
+    private GranularMatter? _matter;
     public string Name => "particle.snow";
     public string[] NaturalLanguageWords { get; } = { "snow", "frost", "hoarfrost", "rime", "ice", "icy", "frozen", "frosty", "snowy", "wintry", "icicle", "icicles" };
 
@@ -72,8 +73,12 @@ public sealed class ParticleSnow : IParticleMaterial
 
     public ReadOnlySpan<StrokeEmission> Emissions => Shed;
 
+    public CoatMatter Matter => _matter ??= new GranularMatter(Name);
+
     private static readonly StrokeEmission[] Shed =
     {
+        StrokeEmission.Coated(PrimitiveRole.Snow),
+
         new(Role: PrimitiveRole.Snow,
             DensityPer100px: 4f,
             SpeedMin: 18f, SpeedMax: 45f,

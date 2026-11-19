@@ -154,6 +154,16 @@ public struct RegionPrimitive
     public readonly RegionKind Kind => HasEdge ? RegionKind.EdgeGlow : RegionKind.FlatFill;
 }
 
+/// <summary>A coat to draw right after its host stroke: the film of matter lying on it.</summary>
+public struct CoatPrimitive
+{
+    public DebuffKind Owner;
+    public int HostSeed;
+    public Coat Coat;
+    public float Alpha;
+    public Vector4? ColorOverride;
+}
+
 /// <summary>A one-frame impact: the effect says where and how hard; the stroke material decides what it throws.</summary>
 public struct ImpactPrimitive
 {

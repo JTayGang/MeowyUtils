@@ -8,6 +8,7 @@ public sealed class EffectScene
     public readonly List<ParticlePrimitive> Particles = new(2048);
     public readonly List<RegionPrimitive>   Regions   = new(64);
     public readonly List<ImpactPrimitive>   Impacts   = new(8);
+    public readonly List<CoatPrimitive>     Coats     = new(16);
 
     /// <summary>Display size in pixels, set by the host each frame. Zero means unknown.</summary>
     public Vector2 ScreenSize;
@@ -59,6 +60,7 @@ public sealed class EffectScene
         Particles.Clear();
         Regions.Clear();
         Impacts.Clear();
+        Coats.Clear();
         Vignette = default;
         CurrentOwner = default;
     }
@@ -72,6 +74,7 @@ public sealed class EffectScene
         Particles.Add(c);
     }
     public void AddRegion(in RegionPrimitive r) { var c = r; c.Owner = CurrentOwner; Regions.Add(c); }
+    public void AddCoat(in CoatPrimitive c) => Coats.Add(c);
     public void AddImpact(in ImpactPrimitive i) { var c = i; c.Owner = CurrentOwner; Impacts.Add(c); }
 
     /// <summary>For post-effect emission passes where CurrentOwner isn't the right effect anymore.</summary>

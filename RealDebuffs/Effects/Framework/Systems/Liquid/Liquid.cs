@@ -3,7 +3,7 @@ using RealDebuffs.Effects.Framework.Materials;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>How a liquid moves, from one thickness axis (0 water, BloodAt blood, 1 slime); slime and blood reproduce their hand-tuned drips exactly.</summary>
+/// <summary>How a liquid moves, from one thickness axis (0 water, BloodAt blood, 1 slime); each number is calibrated at the three liquids and blended between.</summary>
 public readonly struct LiquidPhysics
 {
     public const float BloodAt = 0.45f;
@@ -33,6 +33,20 @@ public readonly struct LiquidPhysics
     public readonly float Cling;  // how fast a bead runs down glass, px/s
     public readonly float Churn;  // how much a falling stream writhes and aerates
 
+    // a film on a strand (Coat): px² per second per 100 px of strand, px of thickness, px/s, 1/s, seconds
+    public readonly float Supply;  // matter arriving
+    public readonly float DropArea;  // area a hanging drop holds before it necks (surface tension vs weight)
+    public readonly float Hold;  // film thinner than this clings and does not run
+    public readonly float MaxThick;  // most a film piles up before it bulges
+    public readonly float Run;  // how fast a film at twice Hold runs down a vertical strand
+    public readonly float Feed;  // how fast the underside hands matter to a hanging drop
+    public readonly float Thread;  // how long a neck takes to thin to nothing under a full load
+    public readonly float Stretch;  // how fast it lengthens meanwhile
+    public readonly float Level;  // how fast a lump spreads out along a strand (1/s, per cell)
+    public readonly float Index;  // power-law index n: 1 flows like water; below 1 it thins under strain (runs only on steep slopes, strings out long)
+    public readonly float Absorb;  // how fast light is lost through a film (1/px of thickness): thick blood goes dark
+    public readonly float Bridge;  // chance a lengthening drop that touches another wet host sticks to it instead of falling
+
     public LiquidPhysics(float v)
     {
         v = Math.Clamp(v, 0f, 1f);
@@ -60,19 +74,21 @@ public readonly struct LiquidPhysics
         Rise = At(v, 150f, 85f, 22f);
         Cling = At(v, 70f, 28f, 5f);
         Churn = At(v, 1f, 0.6f, 0.15f);
+
+        Supply = At(v, 26f, 46f, 70f);
+        DropArea = At(v, 40f, 80f, 170f);
+        Hold = At(v, 1.1f, 2.2f, 4.5f);
+        MaxThick = At(v, 3.0f, 6.0f, 14.0f);
+        Run = At(v, 150f, 60f, 16f);
+        Feed = At(v, 1.6f, 1.0f, 0.6f);
+        Thread = At(v, 0.10f, 0.55f, 1.9f);
+        Stretch = At(v, 90f, 55f, 34f);
+        Bridge = At(v, 0f, 0.1f, 0.4f);
+        Level = At(v, 3f, 1.5f, 0.6f);
+        Index = At(v, 1f, 0.7f, 0.25f);
+        Absorb = At(v, 0f, 0.20f, 0.07f);
     }
 
-    /// <summary>The drip emission this liquid sheds from a strand.</summary>
-    public StrokeEmission Shed() => new(
-        Role: PrimitiveRole.Goop,
-        DensityPer100px: 0f,  // ignored: a drip block spaces its own sites
-        SpeedMin: ReleaseMin, SpeedMax: ReleaseMax,
-        LifespanMin: LifeMin, LifespanMax: LifeMax,
-        SizeMin: SizeMin, SizeMax: SizeMax,
-        SpreadRadians: 0f,
-        BiasVelocity: Vector2.Zero,
-        Gravity: new Vector2(0f, Gravity),
-        Drip: new StrokeDripOptions(Spacing, CycleMin, CycleMax, MinSlope, Stringiness, Satellites, Drag));
 }
 
 /// <summary>A liquid: look, physics, and the shading table baked from the look.</summary>
@@ -96,7 +112,7 @@ public sealed class Liquid
         scene.Materials.Particle(owner, role) is ParticleGoop g ? g.Liquid : Water;
 }
 
-/// <summary>Falling drops, each optionally trailing the thread it let go of; shared by GoopEmitter and LiquidField.</summary>
+/// <summary>Falling drops, each optionally trailing the thread it let go of; shared by Coat and LiquidField.</summary>
 internal sealed class DropPool
 {
     public struct Drop
@@ -106,6 +122,7 @@ internal sealed class DropPool
         public Vector2 Anchor, Pinch;  // where the string was fixed, and where it broke
         public float Born, Life;
         public float Size, Brightness;
+        public float Amount;  // the liquid it carries (px²); 0 for drops that don't track it
         public float Tether;  // thickness of the string at the moment of release, fraction of Size
         public float RecoilTime;  // how long the string takes to snap back; 0 = no string
         public float Drag;
@@ -128,7 +145,16 @@ internal sealed class DropPool
 
     public bool Full => Count >= Items.Length;
 
-    public void Add(in Drop d) { if (Count < Items.Length) Items[Count++] = d; }
+    /// <summary>What expired or fell past the floor, by amount: a sink the owner can book.</summary>
+    public double Left;
+
+    /// <summary>False when the pool is full; the caller keeps the liquid.</summary>
+    public bool Add(in Drop d)
+    {
+        if (Count >= Items.Length) return false;
+        Items[Count++] = d;
+        return true;
+    }
 
     /// <summary>Retires expired drops, then moves the rest.</summary>
     public void Advance<T>(float time, float dt, float floor, ref T hook) where T : struct, IHook
@@ -137,11 +163,12 @@ internal sealed class DropPool
         for (int i = 0; i < Count; i++)
         {
             ref Drop d = ref Items[i];
-            if (time - d.Born >= d.Life) continue;
+            if (time - d.Born >= d.Life) { Left += d.Amount; continue; }
             d.Vel += d.Gravity * dt;
             d.Vel *= MathF.Exp(-d.Drag * dt);
             d.Pos += d.Vel * dt;
-            if (d.Pos.Y > floor || hook.Hit(ref d)) continue;
+            if (d.Pos.Y > floor) { Left += d.Amount; continue; }
+            if (hook.Hit(ref d)) continue;
             Items[w++] = d;
         }
         Count = w;

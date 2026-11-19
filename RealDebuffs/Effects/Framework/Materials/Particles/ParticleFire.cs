@@ -4,8 +4,9 @@ using Dalamud.Bindings.ImGui;
 namespace RealDebuffs.Effects.Framework.Materials;
 
 /// <summary>One flame tongue as a CPU-shaded mesh: noise-eroded density drives alpha and temperature.</summary>
-public sealed class ParticleEmber : IParticleMaterial
+public sealed class ParticleEmber : IParticleMaterial, ICoatMatter
 {
+    private FlameMatter? _matter;
     // Straight alpha: a dim dark fringe would ink an outline round every tongue
     private const float RimLo = 0.12f, RimHi = 0.52f;
     private const float TempFloor = 0.20f;
@@ -142,19 +143,11 @@ public sealed class ParticleEmber : IParticleMaterial
         MeshDraw.Grid(dl, cols, rows + 1, MeshDraw.WhiteUv(t));
     }
 
-    public ReadOnlySpan<StrokeEmission> Emissions => Shed;
+    public ReadOnlySpan<StrokeEmission> Emissions => Coat;
 
-    private static readonly StrokeEmission[] Shed =
-    {
-        new(Role: PrimitiveRole.Ember,
-            DensityPer100px: 5f,
-            SpeedMin: 18f, SpeedMax: 50f,
-            LifespanMin: 0.65f, LifespanMax: 1.30f,
-            SizeMin: 3.5f, SizeMax: 7.5f,
-            SpreadRadians: 0.55f,
-            BiasVelocity: new Vector2(0f, -14f),
-            PrimaryDirection: new Vector2(0f, -1f)),
-    };
+    private static readonly StrokeEmission[] Coat = { StrokeEmission.Coated(PrimitiveRole.Ember) };
+
+    public CoatMatter Matter => _matter ??= new FlameMatter(_name, _ramp);
 }
 
 /// <summary>A fleck thrown off a fire: cools along the heat ramp as it ages, flickers, smears a streak from its velocity.</summary>

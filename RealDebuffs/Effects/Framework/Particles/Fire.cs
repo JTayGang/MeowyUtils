@@ -13,7 +13,7 @@ internal static class Flames
 {
     /// <summary>Stateless tongues at a site; each cycles birth to fade on its own phase, so nothing is stored.</summary>
     public static void Tongues(EffectScene scene, in FlameLayer layer, Vector2 at, int siteSeed, float time, float sizeMul,
-                               Vector2 spread, float lean, float rise, float brightness, Vector4? color)
+                               Vector2 spread, float lean, float rise, float brightness, Vector4? color, string? material = null)
     {
         for (int t = 0; t < layer.PerSite; t++)
         {
@@ -28,7 +28,7 @@ internal static class Flames
                 Position = at + new Vector2(DrawHelpers.HashRange(seed + 2, -1f, 1f) * spread.X, DrawHelpers.HashRange(seed + 5, -1f, 1f) * spread.Y - size * rise),
                 Velocity = new Vector2(DrawHelpers.HashRange(seed + 3, -12f, 12f) + lean, -30f),
                 AgeRatio = life, Size = size, Brightness = ParticleSystem.FadeFor(life) * brightness,
-                Seed = seed, Role = PrimitiveRole.Ember, Variant = layer.Variant, ColorOverride = color,
+                Seed = seed, Role = PrimitiveRole.Ember, Variant = layer.Variant, ColorOverride = color, MaterialName = material,
             });
         }
     }

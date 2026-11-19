@@ -44,6 +44,7 @@ public sealed class ParticleSystem
     }
 
     public bool Full => _count >= _pool.Length;
+    public int Count => _count;
 
     /// <summary>0 at spawn/despawn, 1 in the steady middle.</summary>
     public static float FadeFor(float age01) =>

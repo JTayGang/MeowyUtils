@@ -159,23 +159,10 @@ public sealed class StrokeGash : IStrokeMaterial
 
     public ReadOnlySpan<StrokeEmission> Emissions => Shed;
 
-    /// <summary>Blood running over the lower lip and letting go.</summary>
+    /// <summary>Blood running over the lower lip and letting go; only where the opening can hold it (CanDripAt), and a cut has no skin to gloss.</summary>
     private static readonly StrokeEmission[] Shed =
     {
-        new(Role: PrimitiveRole.Goop,
-            DensityPer100px: 0f,
-            SpeedMin: 70f, SpeedMax: 150f,
-            LifespanMin: 2.0f, LifespanMax: 2.8f,
-            SizeMin: 5.0f, SizeMax: 8.5f,
-            SpreadRadians: 0f,
-            BiasVelocity: Vector2.Zero,
-            Gravity: new Vector2(0f, 1800f),
-            Drip: new StrokeDripOptions(
-                SiteSpacingPx: 120f,
-                CycleSecondsMin: 1.8f, CycleSecondsMax: 3.6f,
-                MinSlope: 0.40f,
-                Stringiness: 0.50f,
-                SatelliteChance: 0.30f)),
+        StrokeEmission.Coated(PrimitiveRole.Goop, supply: 1.0f, clump: 0.5f, skin: 0f),
     };
 
     public ReadOnlySpan<ImpactEmission> ImpactEmissions => Hit;

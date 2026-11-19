@@ -151,14 +151,14 @@ public sealed class ParticleFibre : IParticleMaterial
 }
 
 /// <summary>Base for liquid particles (water, blood, slime): a GoopDraw drop shaded by its LiquidSpec, dripping as its viscosity dictates.</summary>
-public abstract class ParticleGoop : IParticleMaterial
+public abstract class ParticleGoop : IParticleMaterial, ICoatMatter, IBatchedParticleMaterial
 {
-    private readonly StrokeEmission[] _emissions;
+    private static readonly StrokeEmission[] Coat = { StrokeEmission.Coated(PrimitiveRole.Goop) };
+    private LiquidMatter? _matter;
 
     protected ParticleGoop(in LiquidSpec look)
     {
         Liquid = new Liquid(in look);
-        _emissions = new[] { Liquid.Phys.Shed() };
     }
 
     public abstract string Name { get; }
@@ -169,7 +169,9 @@ public abstract class ParticleGoop : IParticleMaterial
     public void Draw(ImDrawListPtr dl, in ParticlePrimitive p, in MaterialContext ctx) =>
         GoopDraw.Draw(dl, in p, Liquid, in ctx);
 
-    public ReadOnlySpan<StrokeEmission> Emissions => _emissions;
+    public ReadOnlySpan<StrokeEmission> Emissions => Coat;
+
+    public CoatMatter Matter => _matter ??= new LiquidMatter(Name, Liquid);
 
     public bool DrawsWithHost => true;
 }

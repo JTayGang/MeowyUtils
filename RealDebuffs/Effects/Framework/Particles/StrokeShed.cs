@@ -2,7 +2,7 @@ using System.Numerics;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Owns what strokes shed: free-flying and path-following particles, drips, and impact bursts. Update once per frame after the effects have emitted.</summary>
+/// <summary>Owns what strokes shed and carry: free-flying and path-following particles, coats of matter (drips, flames, snow), and impact bursts. Update once per frame after the effects have emitted.</summary>
 public sealed class StrokeShed
 {
     private const int FreeCapacity = 2000;
@@ -35,14 +35,15 @@ public sealed class StrokeShed
 
     private readonly ParticleSystem _free = new(FreeCapacity);
     private readonly FlowingParticle[] _flows = new FlowingParticle[FlowCapacity];
-    private readonly GoopEmitter _drips = new();
+    private readonly CoatSet _coats = new();
+    internal CoatSet Coats => _coats;
     private int _flowCount;
     private Vector2 _screen;
 
     public void Update(EffectScene scene, float time, float dt)
     {
         _screen = scene.ScreenSize;
-        _drips.Advance(time, dt, _screen);
+        _coats.Advance(time, dt, _screen);
         _free.Step(time, dt);
 
         CullFlows(time);
@@ -70,7 +71,10 @@ public sealed class StrokeShed
 
                 var specs = route.Emitter.Emissions;
                 for (int e = 0; e < specs.Length; e++)
-                    SpawnFromStroke(in s, in specs[e], route.EmitName, time, dt, strokeMaterial: null);
+                {
+                    if (specs[e].Coat is not null) _coats.Tend(scene, in s, in specs[e], route.EmitName, route.Material, time, dt);
+                    else SpawnFromStroke(in s, in specs[e], route.EmitName, time, dt, strokeMaterial: null);
+                }
                 continue;
             }
 
@@ -78,7 +82,10 @@ public sealed class StrokeShed
 
             var emissions = material.Emissions;
             for (int e = 0; e < emissions.Length; e++)
-                SpawnFromStroke(in s, in emissions[e], forcedMaterial: null, time, dt, material);
+            {
+                if (emissions[e].Coat is not null) _coats.Tend(scene, in s, in emissions[e], null, material, time, dt);
+                else SpawnFromStroke(in s, in emissions[e], forcedMaterial: null, time, dt, material);
+            }
         }
 
         // Impacts are spawned after the strokes so a burst born this frame is drawn this frame.
@@ -86,18 +93,11 @@ public sealed class StrokeShed
             SpawnImpact(scene, scene.Impacts[i], time);
 
         _free.EmitOwned(scene, time);
-        _drips.Emit(scene, time);
+        _coats.Emit(scene, time);
     }
 
     private void SpawnFromStroke(in StrokePrimitive s, in StrokeEmission e, string? forcedMaterial, float time, float dt, IStrokeMaterial? strokeMaterial)
     {
-        // A drip emission grows drops rather than scattering particles: it has its own simulation.
-        if (e.Drip is { } drip)
-        {
-            _drips.Tend(in s, in e, in drip, strokeMaterial, e.RenderMaterial ?? forcedMaterial, time, dt, _screen);
-            return;
-        }
-
         float visibleLen = s.Path.Length * s.Reveal;
         if (visibleLen < 8f) return;
 

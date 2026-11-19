@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Numerics;
+using System.Text;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Windowing;
 
@@ -16,9 +17,10 @@ public sealed class ConfigWindow : Window
     private readonly Plugin _plugin;
     private DateTime _lastSave = DateTime.MinValue;
     private bool _dirty;
+    private string? _diagnosticsCopyStatus;
+    private string? _performanceCopyStatus;
     private string _texturePath = string.Empty;
-    private bool _manualFilePathInput;
-    private int _readMipIndex = -1;
+    private string? _textureInputError;
     private int _resolvedReadMipIndex = -1;
     private bool _gpuSequenceActive;
     private TextureMipPrefetchQueue? _gpuSequencePrefetchQueue;
@@ -78,7 +80,7 @@ public sealed class ConfigWindow : Window
     public ConfigWindow(Plugin plugin) : base("FPSBooster##fpsboosterconfig", ImGuiWindowFlags.AlwaysAutoResize)
     {
         _plugin = plugin;
-        SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(380, 180), MaximumSize = new Vector2(700, 820) };
+        SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(380, 180), MaximumSize = new Vector2(620, 700) };
     }
 
     /// <summary>Stops background sequence work when the plugin is unloaded, even if the window stays open.</summary>
@@ -95,9 +97,11 @@ public sealed class ConfigWindow : Window
         StopProgressiveSequence("Stopped because the configuration window closed.", clearResults: true);
         _plugin.TextureStreaming.Clear();
         _plugin.TextureGpuUpload.Reset();
+        _plugin.NativeTextureLifecycle.StopCapture();
+        _plugin.NativeTextureLifecycle.CancelNativeMipPayloadCapture();
+        _plugin.NativeProgressiveTexturePreview.Reset();
         _plugin.NativeTextureHandle.Release();
         _plugin.PenumbraTextureSource.Clear();
-        _manualFilePathInput = false;
         Flush();
     }
 
@@ -111,6 +115,12 @@ public sealed class ConfigWindow : Window
 
         if (ImGui.BeginTabBar("FPSBoosterTabs"))
         {
+            if (ImGui.BeginTabItem("Performance"))
+            {
+                DrawPerformance();
+                ImGui.EndTabItem();
+            }
+
             if (ImGui.BeginTabItem("Housing"))
             {
                 changed |= Toggle("Enable furniture culling", ref cfg.Enabled,
@@ -156,27 +166,32 @@ public sealed class ConfigWindow : Window
                 changed |= Toggle("Pause if my character is off screen", ref cfg.RequirePlayerInView,
                     "A safety check. Turn this off when using a free camera.");
 
-                ImGui.Separator();
-                ImGui.Button("Hold to hide ALL furniture", new Vector2(-1f, 0f));
-                hideAllTestActive = ImGui.IsItemActive();
-                Tip("Hides every loaded furnishing, spotlights included. Release to restore.");
-
-                ImGui.Button("Hold to hide ALL (keep spotlight protection)", new Vector2(-1f, 0f));
-                spotlightAwareTestActive = ImGui.IsItemActive();
-                Tip("Hides furniture as if all were off screen, but keeps spotlight protection. Release to restore.");
-
-                if (hideAllTestActive || spotlightAwareTestActive)
+                if (ImGui.TreeNode("Temporary furniture test controls"))
                 {
-                    string testStatus = hideAllTestActive
-                        ? "Test active — hiding ALL furniture"
-                        : "Test active — keeping spotlight protection";
-                    ImGui.TextColored(new Vector4(1f, .65f, .35f, 1f), testStatus);
+                    ImGui.TextDisabled("Hold either button to temporarily override furniture visibility. Releasing restores normal culling.");
+                    ImGui.Button("Hold to hide ALL furniture", new Vector2(-1f, 0f));
+                    hideAllTestActive = ImGui.IsItemActive();
+                    Tip("Hides every loaded furnishing, spotlights included. Release to restore.");
+
+                    ImGui.Button("Hold to hide ALL (keep spotlight protection)", new Vector2(-1f, 0f));
+                    spotlightAwareTestActive = ImGui.IsItemActive();
+                    Tip("Hides furniture as if all were off screen, but keeps spotlight protection. Release to restore.");
+
+                    if (hideAllTestActive || spotlightAwareTestActive)
+                    {
+                        string testStatus = hideAllTestActive
+                            ? "Test active — hiding ALL furniture"
+                            : "Test active — keeping spotlight protection";
+                        ImGui.TextColored(new Vector4(1f, .65f, .35f, 1f), testStatus);
+                    }
+
+                    ImGui.TreePop();
                 }
 
                 ImGui.EndTabItem();
             }
 
-            if (ImGui.BeginTabItem("Textures"))
+            if (ImGui.BeginTabItem("Native Textures"))
             {
                 DrawTextures();
                 ImGui.EndTabItem();
@@ -193,298 +208,172 @@ public sealed class ConfigWindow : Window
         if (_dirty && ((DateTime.UtcNow - _lastSave).TotalSeconds >= SaveDebounceSeconds || !IsOpen)) Flush();
     }
 
+    private void DrawPerformance()
+    {
+        var profiler = _plugin.PerformanceProfiler;
+        var snapshot = profiler.GetSnapshot();
+
+        ImGui.TextWrapped("Capture frame pacing and FPSBooster's own housing-culling CPU cost. This profiler samples the time between Dalamud framework updates; it is not a direct CPU/GPU frame-time profiler.");
+        ImGui.Separator();
+
+        if (profiler.IsCapturing)
+        {
+            ImGui.TextColored(Green, $"Recording · {profiler.SampleCount:N0}/{profiler.MaximumSampleCount:N0} samples · {profiler.CaptureElapsedSeconds:F1} s");
+            if (ImGui.Button("Stop capture", new Vector2(145f, 0f)))
+                profiler.StopCapture();
+        }
+        else
+        {
+            if (ImGui.Button(snapshot.HasSamples ? "Start new capture" : "Start capture", new Vector2(160f, 0f)))
+                profiler.StartCapture();
+            ImGui.SameLine();
+            if (ImGui.Button("Clear results", new Vector2(125f, 0f)))
+            {
+                profiler.ClearResults();
+                _performanceCopyStatus = null;
+            }
+        }
+
+        if (snapshot.HasSamples)
+        {
+            ImGui.SameLine();
+            if (ImGui.Button("Copy performance report", new Vector2(190f, 0f)))
+            {
+                try
+                {
+                    var report = new ImU8String(profiler.BuildReport());
+                    ImGui.SetClipboardText(report.Span);
+                    _performanceCopyStatus = "Copied. Paste the report into your reply.";
+                }
+                catch (Exception ex)
+                {
+                    _performanceCopyStatus = $"Clipboard copy failed: {ex.Message}";
+                }
+            }
+        }
+
+        if (!string.IsNullOrEmpty(_performanceCopyStatus))
+            ImGui.TextDisabled(_performanceCopyStatus);
+
+        if (!snapshot.HasSamples)
+        {
+            ImGui.Separator();
+            ImGui.TextDisabled("No performance capture yet. Start a capture, reproduce the activity you want to measure, then stop and copy the report.");
+        }
+        else
+        {
+            ImGui.Separator();
+            ImGui.TextDisabled($"Samples {snapshot.SampleCount:N0} · sampled interval {snapshot.SampledDurationSeconds:F2} s · capture started {profiler.CaptureStartedUtc.ToLocalTime():T}");
+
+            ImGui.TextDisabled("Frame pacing — framework update interval");
+            ImGui.Text($"Average: {snapshot.AverageFps:F1} FPS · {snapshot.AverageFrameMilliseconds:F2} ms/frame");
+            ImGui.Text($"P50 {snapshot.P50FrameMilliseconds:F2} ms · P95 {snapshot.P95FrameMilliseconds:F2} ms · P99 {snapshot.P99FrameMilliseconds:F2} ms · worst {snapshot.WorstFrameMilliseconds:F2} ms");
+            ImGui.Text($"1% low {snapshot.OnePercentLowFps:F1} FPS · 0.1% low {snapshot.OneTenthPercentLowFps:F1} FPS");
+            ImGui.Text($"Slow frames: >33.3 ms {snapshot.FramesOver33Milliseconds:N0} · >50 ms {snapshot.FramesOver50Milliseconds:N0} · >100 ms {snapshot.FramesOver100Milliseconds:N0}");
+            ImGui.TextDisabled($"Distribution: <16.7 ms {snapshot.FramesUnder16Milliseconds:N0} · 16.7–33.3 ms {snapshot.Frames16To33Milliseconds:N0} · 33.3–50 ms {snapshot.Frames33To50Milliseconds:N0} · 50–100 ms {snapshot.Frames50To100Milliseconds:N0} · ≥100 ms {snapshot.FramesAtLeast100Milliseconds:N0}");
+
+            ImGui.Separator();
+            ImGui.TextDisabled("FPSBooster housing-culling CPU time");
+            double activePercent = snapshot.SampleCount > 0 ? snapshot.CullingActiveFrames * 100d / snapshot.SampleCount : 0d;
+            ImGui.Text($"Culling active: {snapshot.CullingActiveFrames:N0}/{snapshot.SampleCount:N0} frames ({activePercent:F1}%)");
+            ImGui.Text($"Update average {snapshot.AverageCullingUpdateMilliseconds:F4} ms · P95 {snapshot.P95CullingUpdateMilliseconds:F4} ms · max {snapshot.MaximumCullingUpdateMilliseconds:F4} ms");
+            ImGui.TextDisabled($"Total measured culling work: {snapshot.TotalCullingUpdateMilliseconds:F2} ms");
+
+            if (snapshot.NativeTextureCaptureFrames > 0)
+            {
+                ImGui.Separator();
+                ImGui.TextColored(new Vector4(1f, .65f, .35f, 1f), $"Native texture lifecycle hooks were enabled for {snapshot.NativeTextureCaptureFrames:N0} sampled frames. This capture is instrumented and may include hook overhead.");
+            }
+        }
+
+        ImGui.Separator();
+        ImGui.TextWrapped("Recommended test: capture 30–60 seconds in a repeatable scene with the same camera and character state. Keep Native Textures lifecycle capture disabled for the clean baseline. Copy one report with housing culling off and another with it on to measure the feature's actual cost/benefit.");
+        ImGui.TextWrapped("For texture-loading investigations, run a separate pass with Native Textures hooks enabled. Those per-operation timings are useful for diagnosis but should not be mixed with an uninstrumented frame-pacing baseline.");
+        ImGui.TextDisabled("Capture continues while this window is closed. Reopen it with /fpsbooster to stop and copy the report.");
+        ImGui.TextDisabled("Capture limit: 18,000 framework updates (about 5 minutes at 60 FPS). The capture stops automatically at the limit.");
+    }
+
     private void DrawTextures()
     {
         var inspector = _plugin.TextureStreaming;
-        ImGui.TextWrapped("Enter either a game-relative .tex path (for vanilla SqPack inspection and optional Penumbra resolution) or an absolute filesystem path to a loose .tex file (inspected directly, without Penumbra IPC).");
-        ImGui.TextWrapped("Vanilla mip reads decompress one selected SqPack group. Loose .tex files use their own TexHeader OffsetToSurface entries for direct raw mip reads. The optional GPU experiment always uses a separate plugin-owned test texture.");
-        ImGui.Separator();
+
+        ImGui.Text("Native texture capture");
+        ImGui.TextDisabled("Inspect a game-relative .tex path, acquire its native handle, then capture fresh loads.");
 
         ImGui.SetNextItemWidth(-1f);
-        ImGui.InputText("Game path or absolute .tex path", ref _texturePath, 512);
-        if (ImGui.Button("Inspect .tex", new Vector2(130f, 0f)))
+        ImGui.InputText("Game resource path (.tex)", ref _texturePath, 512);
+
+        if (ImGui.Button("Inspect path", new Vector2(130f, 0f)))
         {
             StopProgressiveSequence("Stopped because a different texture was inspected.", clearResults: true);
             inspector.Clear();
             _plugin.TextureGpuUpload.Reset();
+            _plugin.NativeTextureLifecycle.StopCapture();
+            _plugin.NativeTextureLifecycle.CancelNativeMipPayloadCapture();
+            _plugin.NativeProgressiveTexturePreview.Reset();
             _plugin.NativeTextureHandle.Release();
             _plugin.PenumbraTextureSource.Clear();
 
             string inputPath = _texturePath.Trim().Trim('"');
             _texturePath = inputPath;
-            _manualFilePathInput = Path.IsPathRooted(inputPath);
-            try
+            _textureInputError = null;
+
+            if (string.IsNullOrWhiteSpace(inputPath))
             {
-                if (_manualFilePathInput)
-                    _plugin.PenumbraTextureSource.InspectFilePath(inputPath);
-                else
-                    inspector.Inspect(inputPath);
+                _textureInputError = "Enter a game-relative FFXIV .tex resource path.";
             }
-            catch (Exception ex)
+            else if (Path.IsPathRooted(inputPath))
             {
-                ImGui.TextColored(new Vector4(1f, .35f, .3f, 1f), ex.Message);
+                _textureInputError = "Use the game-relative resource path here, not the mod's absolute disk path.";
+            }
+            else
+            {
+                try
+                {
+                    inspector.Inspect(inputPath);
+                }
+                catch (Exception ex)
+                {
+                    _textureInputError = ex.Message;
+                }
             }
         }
+
         ImGui.SameLine();
         if (ImGui.Button("Clear", new Vector2(90f, 0f)))
         {
             StopProgressiveSequence("Stopped because the texture inspection was cleared.", clearResults: true);
             inspector.Clear();
             _plugin.TextureGpuUpload.Reset();
+            _plugin.NativeTextureLifecycle.StopCapture();
+            _plugin.NativeTextureLifecycle.CancelNativeMipPayloadCapture();
+            _plugin.NativeProgressiveTexturePreview.Reset();
             _plugin.NativeTextureHandle.Release();
             _plugin.PenumbraTextureSource.Clear();
             _texturePath = string.Empty;
-            _manualFilePathInput = false;
+            _textureInputError = null;
         }
 
-        var selectedSource = _plugin.PenumbraTextureSource.Result;
-        bool manualFilePath = _manualFilePathInput || selectedSource?.IsManualFilePath == true;
-        if (manualFilePath)
-        {
-            ImGui.TextDisabled(_plugin.PenumbraTextureSource.Status);
-            if (!string.IsNullOrEmpty(_plugin.PenumbraTextureSource.Error))
-                ImGui.TextColored(new Vector4(1f, .35f, .3f, 1f), _plugin.PenumbraTextureSource.Error);
-        }
-        else
-        {
-            ImGui.TextDisabled(inspector.Status);
-            if (inspector.IsLoading)
-                ImGui.TextColored(new Vector4(1f, .75f, .35f, 1f), "Reading archive metadata only...");
-            if (!string.IsNullOrEmpty(inspector.Error))
-                ImGui.TextWrapped(inspector.Error);
-        }
+        if (!string.IsNullOrEmpty(_textureInputError))
+            ImGui.TextColored(new Vector4(1f, .55f, .35f, 1f), _textureInputError);
+        else if (!string.IsNullOrEmpty(inspector.Error))
+            ImGui.TextColored(new Vector4(1f, .55f, .35f, 1f), inspector.Error);
+        else if (inspector.IsLoading)
+            ImGui.TextDisabled("Reading vanilla SqPack reference metadata...");
+        else if (inspector.Report == null)
+            ImGui.TextDisabled("Workflow: 1) Inspect path  2) Acquire handle  3) Start capture  4) Trigger a fresh texture load.");
 
-        var report = inspector.Report ?? (manualFilePath ? selectedSource?.TextureReport : null);
+        var report = inspector.Report;
         if (report == null)
-        {
-            if (manualFilePath)
-            {
-                if (selectedSource != null && !string.IsNullOrEmpty(selectedSource.FileInspectionError))
-                    ImGui.TextWrapped(selectedSource.FileInspectionError);
-                else if (string.IsNullOrEmpty(_plugin.PenumbraTextureSource.Error))
-                    ImGui.TextDisabled("No valid texture header is available for this local file.");
-            }
             return;
-        }
-
-        if (!manualFilePath)
-        {
-            ImGui.Separator();
-            ImGui.TextDisabled("Selective SqPack mip read — archive only");
-        }
-        else
-        {
-            ImGui.Separator();
-            ImGui.TextDisabled("Selected local TEX file — direct mip reads");
-            ImGui.TextWrapped("This report came from the absolute path entered above. No game-path lookup or Penumbra IPC was performed. Mip reads use the loose file's explicit OffsetToSurface entries.");
-        }
-        if (!manualFilePath && report.MipCount > 0)
-        {
-            if (_readMipIndex < 0 || _readMipIndex >= report.MipCount)
-                _readMipIndex = report.MipCount - 1;
-
-            ImGui.SetNextItemWidth(110f);
-            ImGui.InputInt("Mip index", ref _readMipIndex);
-            _readMipIndex = Math.Clamp(_readMipIndex, 0, report.MipCount - 1);
-            ImGui.SameLine();
-            if (_gpuSequenceActive)
-                ImGui.BeginDisabled();
-            if (ImGui.Button("Read mip only", new Vector2(140f, 0f)))
-                inspector.ReadMip(_readMipIndex);
-            if (_gpuSequenceActive)
-                ImGui.EndDisabled();
-        }
-        else if (report.MipCount <= 0)
-        {
-            ImGui.TextDisabled("This texture has no mip levels available for reading.");
-        }
-
-        if (!manualFilePath)
-        {
-            if (inspector.IsReadingMip && ReferenceEquals(inspector.MipReadSourceReport, report))
-                ImGui.TextColored(new Vector4(1f, .75f, .35f, 1f), $"Reading SqPack Group {_readMipIndex} only...");
-
-            var currentMipRead = inspector.MipRead;
-            if (ReferenceEquals(inspector.MipReadSourceReport, report))
-            {
-                string? mipReadError = inspector.MipReadError;
-                if (!string.IsNullOrEmpty(mipReadError))
-                    ImGui.TextColored(new Vector4(1f, .65f, .35f, 1f), mipReadError);
-
-                if (currentMipRead != null)
-                    DrawMipReadResult(currentMipRead, isLooseFile: false);
-            }
-        }
 
         ImGui.Separator();
-        if (!manualFilePath)
-        {
-            DrawNativeTextureHandleProbe(report);
-            ImGui.Separator();
-        }
-        else
-        {
-            ImGui.TextDisabled("The native FFXIV ResourceHandle probe is only available for game-relative paths; an arbitrary local file path is not a game resource key.");
-        }
-        DrawPenumbraTextureSourceProbe(report);
+        ImGui.TextDisabled("Vanilla SqPack reference");
+        ImGui.TextWrapped(report.Path);
+        ImGui.TextDisabled($"{report.Width} × {report.Height} · {report.Format} · {report.MipCount} mips · {FormatBytes(report.TotalMipBytes)} mip payload");
 
-        // When a validated loose-file source is available (user-selected or Penumbra-resolved),
-        // make that asset the GPU experiment target. Otherwise retain the game-relative SqPack report.
-        var resolvedSource = _plugin.PenumbraTextureSource.Result;
-        TextureFileReport gpuReport = report;
-        string? looseSourcePath = null;
-        long loosePayloadOffset = 0;
-        long looseFileLength = 0;
-        DateTime looseLastWriteUtc = default;
-        bool looseMipChainComplete = false;
-        if (resolvedSource is { TextureReport: not null }
-            && (resolvedSource.HasAnyValidLooseMipRanges
-                || (resolvedSource.IsManualFilePath && !resolvedSource.IsType4Container)))
-        {
-            // Even a partial replacement is the correct target for individual manual mip
-            // reads/uploads. The automated full-chain sequence remains separately gated.
-            gpuReport = resolvedSource.TextureReport;
-            looseSourcePath = resolvedSource.ResolvedPath;
-            loosePayloadOffset = resolvedSource.MipPayloadStartOffset;
-            looseFileLength = resolvedSource.FileLength;
-            looseLastWriteUtc = resolvedSource.FileLastWriteUtc;
-            looseMipChainComplete = resolvedSource.HasValidLooseMipRanges;
-        }
-
-        TextureMipReadReport? gpuMipRead = ReferenceEquals(inspector.MipReadSourceReport, gpuReport)
-            ? inspector.MipRead
-            : null;
-        ImGui.Separator();
-        DrawGpuUploadProbe(gpuReport, gpuMipRead, looseSourcePath, loosePayloadOffset, looseFileLength, looseLastWriteUtc, looseMipChainComplete);
-        ImGui.Separator();
-        ImGui.TextDisabled(report.Path);
-        ImGui.Columns(2, "TextureSummary", false);
-        ImGui.SetColumnWidth(0, 190f);
-        ImGui.Text("Base resolution"); ImGui.NextColumn(); ImGui.Text($"{report.Width} × {report.Height}"); ImGui.NextColumn();
-        ImGui.Text("Mip levels"); ImGui.NextColumn(); ImGui.Text(report.MipCount.ToString()); ImGui.NextColumn();
-        ImGui.Text("Format"); ImGui.NextColumn(); ImGui.Text(report.Format); ImGui.NextColumn();
-        ImGui.Text("Texture type"); ImGui.NextColumn(); ImGui.Text(report.Type); ImGui.NextColumn();
-        ImGui.Text("Total mip data"); ImGui.NextColumn(); ImGui.Text(FormatBytes(report.TotalMipBytes)); ImGui.NextColumn();
-        ImGui.Text(manualFilePath ? "Header bytes inspected" : "Archive metadata requested"); ImGui.NextColumn(); ImGui.Text($"{FormatBytes(report.MetadataBytesRequested)} · {report.MetadataReadMilliseconds:F2} ms"); ImGui.NextColumn();
-        ImGui.Columns(1);
-
-        ImGui.Separator();
-        ImGui.TextDisabled("LOD start points");
-        ImGui.Columns(3, "TextureLods", false);
-        foreach (var lod in report.Lods)
-        {
-            ImGui.Text(lod.Name);
-            ImGui.NextColumn();
-            ImGui.Text(lod.IsValid ? $"Mip {lod.StartMip}" : $"Unavailable ({lod.StartMip})");
-            ImGui.NextColumn();
-            ImGui.Text(lod.IsValid ? $"{lod.Width} × {lod.Height}" : "—");
-            ImGui.NextColumn();
-        }
-        ImGui.Columns(1);
-
-        ImGui.Separator();
-        ImGui.TextDisabled("Smallest-first upload plan (estimated payload)");
-        ImGui.TextWrapped($"The coarsest mip alone is {FormatBytes(report.CoarsestMipBytes)} ({report.CoarsestMipPercent:F1}% of the mip payload). The remaining, larger mips would be scheduled afterward.");
-        ImGui.Columns(4, "TextureMipPlan", false);
-        ImGui.SetColumnWidth(0, 55f);
-        ImGui.SetColumnWidth(1, 55f);
-        ImGui.SetColumnWidth(2, 130f);
-        ImGui.Text("Step"); ImGui.NextColumn();
-        ImGui.Text("Mip"); ImGui.NextColumn();
-        ImGui.Text("Resolution"); ImGui.NextColumn();
-        ImGui.Text("Payload"); ImGui.NextColumn();
-        ImGui.Separator();
-
-        long cumulativeBytes = 0;
-        for (int step = 0; step < report.Mips.Count; step++)
-        {
-            var mip = report.Mips[report.Mips.Count - 1 - step];
-            cumulativeBytes += mip.Bytes;
-            ImGui.Text((step + 1).ToString()); ImGui.NextColumn();
-            ImGui.Text(mip.Index.ToString()); ImGui.NextColumn();
-            ImGui.Text($"{mip.Width} × {mip.Height}"); ImGui.NextColumn();
-            ImGui.Text($"{FormatBytes(mip.Bytes)}  ({FormatBytes(cumulativeBytes)} total)"); ImGui.NextColumn();
-        }
-        ImGui.Columns(1);
-
-        var sqPack = report.SqPack;
-        if (sqPack != null)
-        {
-            ImGui.Separator();
-            ImGui.TextDisabled("SqPack archive layout");
-            if (!string.IsNullOrEmpty(sqPack.Note))
-                ImGui.TextWrapped(sqPack.Note);
-
-            if (!string.IsNullOrEmpty(sqPack.DatFileName))
-            {
-                ImGui.Columns(2, "TextureSqPackSummary", false);
-                ImGui.SetColumnWidth(0, 190f);
-                ImGui.Text("Archive file"); ImGui.NextColumn(); ImGui.Text(sqPack.DatFileName); ImGui.NextColumn();
-                ImGui.Text("Entry offset"); ImGui.NextColumn(); ImGui.Text($"0x{sqPack.FileOffset:X}"); ImGui.NextColumn();
-                ImGui.Text("Entry header size"); ImGui.NextColumn(); ImGui.Text(FormatBytes(sqPack.FileHeaderSize)); ImGui.NextColumn();
-                ImGui.Text("Raw file size"); ImGui.NextColumn(); ImGui.Text(FormatBytes(sqPack.RawFileSize)); ImGui.NextColumn();
-                ImGui.Text("Group payload totals"); ImGui.NextColumn(); ImGui.Text($"{FormatBytes(sqPack.TotalCompressedBytes)} stored / {FormatBytes(sqPack.TotalDecompressedBytes)} expanded"); ImGui.NextColumn();
-                ImGui.Columns(1);
-            }
-
-            if (sqPack.Groups.Count > 0)
-            {
-                ImGui.TextDisabled("LOD-group records (SqPack storage order)");
-                ImGui.Columns(8, "TextureSqPackGroups", false);
-                ImGui.SetColumnWidth(0, 46f);
-                ImGui.SetColumnWidth(1, 100f);
-                ImGui.SetColumnWidth(2, 76f);
-                ImGui.SetColumnWidth(3, 76f);
-                ImGui.SetColumnWidth(4, 76f);
-                ImGui.SetColumnWidth(5, 78f);
-                ImGui.SetColumnWidth(6, 48f);
-                ImGui.SetColumnWidth(7, 48f);
-                ImGui.Text("Group"); ImGui.NextColumn();
-                ImGui.Text("Mip match"); ImGui.NextColumn();
-                ImGui.Text("Comp. offset"); ImGui.NextColumn();
-                ImGui.Text("Comp. size"); ImGui.NextColumn();
-                ImGui.Text("Raw size"); ImGui.NextColumn();
-                ImGui.Text("Block offset"); ImGui.NextColumn();
-                ImGui.Text("Blocks"); ImGui.NextColumn();
-                ImGui.Text("Range"); ImGui.NextColumn();
-                ImGui.Separator();
-
-                foreach (var group in sqPack.Groups)
-                {
-                    ImGui.Text(group.Index.ToString()); ImGui.NextColumn();
-                    ImGui.Text(group.MatchedMipIndex.HasValue
-                        ? $"Mip {group.MatchedMipIndex.Value} ({group.MatchedMipWidth}×{group.MatchedMipHeight})"
-                        : "Unmatched"); ImGui.NextColumn();
-                    ImGui.Text($"0x{group.CompressedOffset:X}");
-                    if (ImGui.IsItemHovered()) ImGui.SetTooltip($"Absolute .dat offset: 0x{group.AbsoluteDataOffset:X}");
-                    ImGui.NextColumn();
-                    ImGui.Text(FormatBytes(group.CompressedSize)); ImGui.NextColumn();
-                    ImGui.Text(FormatBytes(group.DecompressedSize)); ImGui.NextColumn();
-                    ImGui.Text($"0x{group.BlockOffset:X}"); ImGui.NextColumn();
-                    ImGui.Text(group.BlockCount.ToString()); ImGui.NextColumn();
-                    if (group.IsDataRangeValid)
-                        ImGui.Text("OK");
-                    else
-                        ImGui.TextColored(new Vector4(1f, .35f, .3f, 1f), "Invalid");
-                    ImGui.NextColumn();
-                }
-
-                ImGui.Columns(1);
-                if (!string.IsNullOrEmpty(sqPack.MipMappingNote))
-                {
-                    if (sqPack.HasStrictMipGroupMapping)
-                        ImGui.TextWrapped(sqPack.MipMappingNote);
-                    else
-                        ImGui.TextColored(new Vector4(1f, .75f, .35f, 1f), sqPack.MipMappingNote);
-                }
-            }
-        }
-
-        ImGui.Separator();
-        ImGui.TextWrapped("Important: Inspect now reads only the SqPack entry header, LOD-group descriptors, and the .tex header. Read mip separately reads the selected group's stride-table entries and blocks, then validates the decompressed byte count and reports a SHA-256 hash. It does not load other mips, call Lumina's full GetFileAsync<TexFile> path, modify game-owned texture resources, or report game texture residency. The optional GPU experiment creates a separate plugin-owned BC7 test texture. Byte-for-byte Lumina comparison was already confirmed for Mips 0, 5, and 9 in the previous verification build.");
-        ImGui.TextWrapped("Byte counters represent logical bytes requested by this reader, not guaranteed physical disk I/O; the operating system's filesystem cache and read-ahead can change actual device traffic.");
+        DrawNativeTextureHandleProbe(report);
     }
-
 
     private static void DrawMipReadResult(TextureMipReadReport mipRead, bool isLooseFile)
     {
@@ -507,12 +396,14 @@ public sealed class ConfigWindow : Window
     private void DrawNativeTextureHandleProbe(TextureFileReport report)
     {
         var probe = _plugin.NativeTextureHandle;
-        ImGui.TextDisabled("Native FFXIV texture-resource handle (manual observation)");
-        ImGui.TextWrapped("Acquire calls the game's normal asynchronous ResourceHandle.GetAsync API for this .tex path. It may reuse a cached native handle or initiate the game's normal load. FPSBooster holds the returned reference until Release. This is not a passive lookup. The SqPack inspector reads the vanilla archive entry; this native handle reports the effective resource after active redirection hooks (including Penumbra). The probe only reads persistent handle/header/Texture fields; it never writes ChangeLod or accesses the temporary TextureWhileLoading/DataWhileLoading pointers.");
+
+        ImGui.Separator();
+        ImGui.Text("Native resource");
+        ImGui.TextDisabled("Acquire uses FFXIV's normal asynchronous resource request. It may reuse a cached handle or begin a load.");
 
         if (!probe.IsAcquired)
         {
-            if (ImGui.Button("Acquire native async texture handle", new Vector2(250f, 0f)))
+            if (ImGui.Button("Acquire native handle", new Vector2(190f, 0f)))
             {
                 try { probe.Acquire(report.Path); }
                 catch (Exception ex) { probe.SetError(ex.Message); }
@@ -520,8 +411,13 @@ public sealed class ConfigWindow : Window
         }
         else
         {
-            if (ImGui.Button("Release native handle reference", new Vector2(220f, 0f)))
+            if (ImGui.Button("Release native handle", new Vector2(190f, 0f)))
+            {
+                _plugin.NativeTextureLifecycle.StopCapture();
+                _plugin.NativeTextureLifecycle.CancelNativeMipPayloadCapture();
+                _plugin.NativeProgressiveTexturePreview.Reset();
                 probe.Release();
+            }
         }
 
         if (!string.IsNullOrEmpty(probe.Error))
@@ -530,47 +426,658 @@ public sealed class ConfigWindow : Window
             ImGui.TextDisabled(probe.Status);
 
         var snapshot = probe.Refresh();
-        if (snapshot == null)
-            return;
-
-        ImGui.Columns(2, "NativeTextureHandleSummary", false);
-        ImGui.SetColumnWidth(0, 205f);
-        ImGui.Text("Handle address"); ImGui.NextColumn(); ImGui.Text($"0x{(nuint)snapshot.HandleAddress:X}"); ImGui.NextColumn();
-        ImGui.Text("Runtime handle size"); ImGui.NextColumn(); ImGui.Text($"0x{snapshot.RuntimeHandleSize:X} ({snapshot.RuntimeHandleSize} B)"); ImGui.NextColumn();
-        ImGui.Text("Native refcount (raw)"); ImGui.NextColumn(); ImGui.Text(snapshot.ReferenceCount.ToString()); ImGui.NextColumn();
-        ImGui.Text("File sizes (raw)"); ImGui.NextColumn(); ImGui.Text($"{snapshot.FileSize:N0} / {snapshot.FileSize2:N0} / {snapshot.FileSize3:N0}"); ImGui.NextColumn();
-        ImGui.Text("Last I/O result (raw)"); ImGui.NextColumn(); ImGui.Text($"{snapshot.LastIoResult} (0x{snapshot.LastIoResult:X2})"); ImGui.NextColumn();
-        ImGui.Text("ChangeLod field byte +0x104"); ImGui.NextColumn(); ImGui.Text($"0x{snapshot.LodFlagByte:X2} · bit 0 = {snapshot.ChangeLodBit}"); ImGui.NextColumn();
-        ImGui.Text("Native .tex header"); ImGui.NextColumn(); ImGui.Text($"{snapshot.HeaderWidth} × {snapshot.HeaderHeight} · {snapshot.HeaderFormat}"); ImGui.NextColumn();
-        ImGui.Text("Header type / depth"); ImGui.NextColumn(); ImGui.Text($"{snapshot.HeaderType} · depth {snapshot.HeaderDepth}"); ImGui.NextColumn();
-        ImGui.Text("MipCountAndFlag (raw)"); ImGui.NextColumn(); ImGui.Text($"{snapshot.HeaderMipCountAndFlag} (0x{snapshot.HeaderMipCountAndFlag:X2}) · array {snapshot.HeaderArraySize}"); ImGui.NextColumn();
-        ImGui.Columns(1);
-
-        if (!snapshot.HasTextureObject)
+        if (snapshot != null)
         {
-            ImGui.TextColored(new Vector4(1f, .75f, .35f, 1f), "The persistent Texture pointer is not available yet. The native async request may still be in progress.");
+            if (snapshot.HasTextureObject)
+            {
+                string gpuState = snapshot.D3D11TextureAddress != 0 ? "GPU texture ready" : "GPU texture pending";
+                ImGui.TextColored(Green,
+                    $"{snapshot.ActualWidth} × {snapshot.ActualHeight} · {snapshot.TextureFormat} · {snapshot.TextureMipLevelRaw} mips · {gpuState}");
+            }
+            else
+            {
+                ImGui.TextDisabled("Waiting for the persistent native Texture object...");
+            }
+
+            if (ImGui.TreeNode("Native handle details"))
+            {
+                ImGui.TextDisabled($"Handle 0x{(nuint)snapshot.HandleAddress:X} · resource ID {snapshot.ResourceId} · size 0x{snapshot.RuntimeHandleSize:X} · refcount {snapshot.ReferenceCount}");
+                ImGui.TextDisabled($"File sizes {snapshot.FileSize:N0} / {snapshot.FileSize2:N0} / {snapshot.FileSize3:N0} · last I/O {snapshot.LastIoResult}");
+                ImGui.TextDisabled($"Header {snapshot.HeaderWidth} × {snapshot.HeaderHeight} · {snapshot.HeaderFormat} · {snapshot.HeaderMipCountAndFlag} mips/flags · {snapshot.HeaderType}");
+                ImGui.TextDisabled($"ChangeLod raw byte +0x104: 0x{snapshot.LodFlagByte:X2} (read-only; semantics not established)");
+
+                if (snapshot.HasTextureObject)
+                {
+                    ImGui.Separator();
+                    ImGui.TextDisabled($"Texture object 0x{(nuint)snapshot.TextureObjectAddress:X} · actual {snapshot.ActualWidth} × {snapshot.ActualHeight} · allocated {snapshot.AllocatedWidth} × {snapshot.AllocatedHeight}");
+                    ImGui.TextDisabled($"Depth {snapshot.Depth} · array {snapshot.ArraySize} · flags {snapshot.TextureFlags}");
+                    ImGui.TextDisabled($"D3D11 texture 0x{(nuint)snapshot.D3D11TextureAddress:X} · SRV 0x{(nuint)snapshot.D3D11ShaderResourceViewAddress:X}");
+                }
+
+                ImGui.TreePop();
+            }
+        }
+
+        DrawNativeTextureLifecycleProbe(probe, snapshot, report);
+    }
+
+    private void DrawNativeTextureLifecycleProbe(
+        NativeTextureHandleProbe handleProbe,
+        NativeTextureHandleSnapshot? handleSnapshot,
+        TextureFileReport? inspectedReport)
+    {
+        var lifecycle = _plugin.NativeTextureLifecycle;
+        lifecycle.ObserveUiThread();
+        lifecycle.DrainEvents();
+
+        ImGui.Separator();
+        ImGui.Text("Lifecycle capture");
+
+        if (ImGui.Button("Copy diagnostics", new Vector2(150f, 0f)))
+        {
+            var clipboardText = new ImU8String(BuildDiagnosticsClipboardText(handleProbe, handleSnapshot, inspectedReport, lifecycle, _plugin.NativeProgressiveTexturePreview));
+            try
+            {
+                ImGui.SetClipboardText(clipboardText.Span);
+                _diagnosticsCopyStatus = "Copied. Paste the report into your reply.";
+            }
+            catch (Exception ex)
+            {
+                _diagnosticsCopyStatus = $"Clipboard copy failed: {ex.Message}";
+            }
+            finally
+            {
+                clipboardText.Recycle();
+            }
+        }
+        ImGui.SameLine();
+        if (ImGui.SmallButton("Clear events"))
+            lifecycle.ClearEvents();
+        if (!string.IsNullOrEmpty(_diagnosticsCopyStatus))
+            ImGui.TextDisabled(_diagnosticsCopyStatus);
+        else
+            ImGui.TextDisabled("Copies the handle snapshot, hook status, and all retained lifecycle events.");
+
+        if (!handleProbe.IsAcquired)
+        {
+            ImGui.TextDisabled("Acquire the native handle before starting capture.");
             return;
         }
 
-        ImGui.Separator();
-        ImGui.TextDisabled("Persistent native Texture object");
-        ImGui.Columns(2, "NativeTextureObjectSummary", false);
-        ImGui.SetColumnWidth(0, 205f);
-        ImGui.Text("Texture object"); ImGui.NextColumn(); ImGui.Text($"0x{(nuint)snapshot.TextureObjectAddress:X}"); ImGui.NextColumn();
-        ImGui.Text("Actual dimensions"); ImGui.NextColumn(); ImGui.Text($"{snapshot.ActualWidth} × {snapshot.ActualHeight}"); ImGui.NextColumn();
-        ImGui.Text("Allocated dimensions"); ImGui.NextColumn(); ImGui.Text($"{snapshot.AllocatedWidth} × {snapshot.AllocatedHeight}"); ImGui.NextColumn();
-        ImGui.Text("Depth / MipLevel raw"); ImGui.NextColumn(); ImGui.Text($"{snapshot.Depth} / {snapshot.TextureMipLevelRaw}"); ImGui.NextColumn();
-        ImGui.Text("Texture format / flags"); ImGui.NextColumn(); ImGui.Text($"{snapshot.TextureFormat} / {snapshot.TextureFlags}"); ImGui.NextColumn();
-        ImGui.Text("Array size"); ImGui.NextColumn(); ImGui.Text(snapshot.ArraySize.ToString()); ImGui.NextColumn();
-        ImGui.Text("D3D11 texture pointer"); ImGui.NextColumn(); ImGui.Text(snapshot.D3D11TextureAddress == 0 ? "null" : $"0x{(nuint)snapshot.D3D11TextureAddress:X}"); ImGui.NextColumn();
-        ImGui.Text("D3D11 SRV pointer"); ImGui.NextColumn(); ImGui.Text(snapshot.D3D11ShaderResourceViewAddress == 0 ? "null" : $"0x{(nuint)snapshot.D3D11ShaderResourceViewAddress:X}"); ImGui.NextColumn();
-        ImGui.Columns(1);
+        if (!lifecycle.IsInstalled || !lifecycle.CaptureEnabled)
+        {
+            string buttonText = lifecycle.IsInstalled ? "Resume capture" : "Start capture";
+            if (ImGui.Button(buttonText, new Vector2(150f, 0f)))
+            {
+                try
+                {
+                    // NativeHandle is a pointer; keep the unsafe boundary limited to this call.
+                    unsafe { lifecycle.StartCapture(handleProbe.NativeHandle); }
+                }
+                catch (Exception ex) { lifecycle.SetError(ex.Message); }
+            }
+        }
+        else if (ImGui.Button("Stop capture", new Vector2(150f, 0f)))
+        {
+            lifecycle.StopCapture();
+        }
 
-        DrawSqPackNativeComparison(report, snapshot);
+        if (!string.IsNullOrEmpty(lifecycle.Error))
+            ImGui.TextColored(new Vector4(1f, .55f, .35f, 1f), lifecycle.Error);
+        else
+            ImGui.TextDisabled(lifecycle.Status);
 
-        ImGui.TextWrapped("These D3D11 addresses belong to the native game resource. FPSBooster only displays their values; it does not wrap, AddRef, release, replace, map, or update them. ChangeLod is shown as a raw bit observation only; its semantics remain unknown and it is never modified.");
+        string readHook = lifecycle.FileDescriptorReadHookInstalled
+            ? "FileDescriptor.Read: installed"
+            : lifecycle.FileDescriptorReadStatus.StartsWith("Unavailable", StringComparison.OrdinalIgnoreCase)
+                ? "FileDescriptor.Read: unavailable (optional hook)"
+                : "FileDescriptor.Read: not installed";
+        ImGui.TextDisabled($"Events {lifecycle.CapturedEventCount:N0} · queued {lifecycle.PendingEventCount:N0} · dropped {lifecycle.DroppedEventCount:N0} · errors {lifecycle.CaptureErrorCount:N0}");
+        ImGui.TextDisabled(readHook);
+        ImGui.TextDisabled(lifecycle.TextureInitializeContentsHookInstalled
+            ? "Texture.InitializeContents: installed"
+            : lifecycle.TextureInitializeContentsStatus.StartsWith("Unavailable", StringComparison.OrdinalIgnoreCase)
+                ? "Texture.InitializeContents: unavailable (optional hook)"
+                : "Texture.InitializeContents: not installed");
+        ImGui.TextDisabled(lifecycle.D3D11CreateTexture2DHookInstalled
+            ? "D3D11 CreateTexture2D: installed (initialization scope only)"
+            : lifecycle.D3D11CreateTexture2DStatus.StartsWith("Unavailable", StringComparison.OrdinalIgnoreCase)
+                ? "D3D11 CreateTexture2D: unavailable (optional hook)"
+                : "D3D11 CreateTexture2D: not installed");
+        ImGui.TextDisabled(lifecycle.D3D11CreateShaderResourceViewHookInstalled
+            ? "D3D11 CreateShaderResourceView: installed (matching texture only)"
+            : lifecycle.D3D11CreateShaderResourceViewStatus.StartsWith("Unavailable", StringComparison.OrdinalIgnoreCase)
+                ? "D3D11 CreateShaderResourceView: unavailable (optional hook)"
+                : "D3D11 CreateShaderResourceView: not installed");
+
+        if (lifecycle.IsInstalled && ImGui.TreeNode("Hook details"))
+        {
+            ImGui.TextDisabled($"VTable 0x{(nuint)lifecycle.VtableAddress:X}");
+            ImGui.TextDisabled($"Read 0x{(nuint)lifecycle.ReadAddress:X} · Load 0x{(nuint)lifecycle.LoadAddress:X} · Reread 0x{(nuint)lifecycle.RereadAddress:X}");
+            ImGui.TextDisabled($"FileJob 0x{(nuint)lifecycle.FileJobAddress:X} · FinishLoad 0x{(nuint)lifecycle.FinishLoadAddress:X}");
+            ImGui.TextDisabled($"FileDescriptor.Read 0x{(nuint)lifecycle.FileDescriptorReadAddress:X} · {lifecycle.FileDescriptorReadStatus}");
+            ImGui.TextDisabled($"Texture.InitializeContents 0x{(nuint)lifecycle.TextureInitializeContentsAddress:X} · {lifecycle.TextureInitializeContentsStatus}");
+            ImGui.TextDisabled($"D3D11 CreateTexture2D 0x{(nuint)lifecycle.D3D11CreateTexture2DAddress:X} · {lifecycle.D3D11CreateTexture2DStatus}");
+            ImGui.TextDisabled($"D3D11 CreateShaderResourceView 0x{(nuint)lifecycle.D3D11CreateShaderResourceViewAddress:X} · {lifecycle.D3D11CreateShaderResourceViewStatus}");
+            ImGui.TextDisabled($"UI draw thread {lifecycle.LastObservedUiThreadId} · Read/Reread shared target: {lifecycle.ReadAndRereadShareTarget}");
+            ImGui.TreePop();
+        }
+
+        DrawNativeProgressiveTexturePreview(lifecycle, handleSnapshot);
+
+        if (lifecycle.RecentEvents.Count == 0)
+        {
+            ImGui.TextDisabled("No events yet. Start capture, then change gear or enter an area that loads new textures.");
+            return;
+        }
+
+        if (ImGui.TreeNode($"Recent events ({lifecycle.RecentEvents.Count})"))
+        {
+            int shown = Math.Min(12, lifecycle.RecentEvents.Count);
+            for (int i = 0; i < shown; i++)
+            {
+                var item = lifecycle.RecentEvents[i];
+                string fileName = string.IsNullOrEmpty(item.ResourceFileName)
+                    ? "(unknown resource)"
+                    : Path.GetFileName(item.ResourceFileName.Replace('\\', '/')) ?? item.ResourceFileName;
+                string label = $"#{item.Sequence} · {item.Operation} · {item.ElapsedMilliseconds:F3} ms · {fileName}##LifecycleEvent{item.Sequence}";
+                if (!ImGui.TreeNode(label))
+                    continue;
+
+                ImGui.TextWrapped(item.ResourceFileName);
+                ImGui.TextDisabled($"Handle 0x{(nuint)item.HandleAddress:X} · resource {item.ResourceId} · thread {item.ThreadId} · result {item.Result}");
+                ImGui.TextDisabled($"File mode {item.FileModeName} → {item.ExitFileModeName} · offset 0x{item.FileOffset:X} · requested {item.RequestedLength:N0} → {item.ExitRequestedLength:N0}");
+
+                if (item.Operation == "FileJob")
+                {
+                    bool sameAsUiThread = lifecycle.LastObservedUiThreadId != 0 && item.ThreadId == lifecycle.LastObservedUiThreadId;
+                    ImGui.TextDisabled($"Priority {item.Priority} · synchronous {item.InputFlag != 0} · same thread as UI draw: {sameAsUiThread}");
+                }
+                else if (item.Operation == "FinishLoad")
+                {
+                    ImGui.TextDisabled($"Open-file result {item.InputFlag} · secondary argument {item.SecondaryInput}");
+                }
+
+                if (item.FileDescriptorAddress != 0)
+                    ImGui.TextDisabled($"FileDescriptor 0x{(nuint)item.FileDescriptorAddress:X}");
+
+                ImGui.TextDisabled($"ReadState {item.StateBefore.ReadState} → {item.StateAfter.ReadState} · LoadState {item.StateBefore.LoadState} → {item.StateAfter.LoadState}");
+                ImGui.TextDisabled($"Blob 0x{(nuint)item.StateBefore.BlobAddress:X} → 0x{(nuint)item.StateAfter.BlobAddress:X} · GetData 0x{(nuint)item.StateBefore.DataAddress:X}/{item.StateBefore.DataLength:N0} → 0x{(nuint)item.StateAfter.DataAddress:X}/{item.StateAfter.DataLength:N0}");
+
+                if (item.Operation == "FileDescriptor.Read")
+                {
+                    ImGui.TextDisabled($"Output 0x{(nuint)item.IoOutputBufferAddress:X} · length {item.IoLength:N0} · offset 0x{item.IoStart:X} · reset {item.IoResetPosition != 0}");
+                    if (item.TextureHeaderLayout is { } headerLayout)
+                    {
+                        ImGui.TextDisabled($"Header output offset +0x{(nuint)item.OutputOffsetFromHandle:X} · field offset +0x{(nuint)headerLayout.HeaderOffsetFromHandle:X} · {headerLayout.HeaderSize} bytes · matches {item.OutputMatchesTextureHeader}");
+                        ImGui.TextWrapped($"LOD offsets: {headerLayout.LodOffsets}");
+                        ImGui.TextWrapped($"Surface offsets: {headerLayout.OffsetsToSurfaces}");
+                    }
+                }
+
+                if (item.Operation == "Load")
+                {
+                    ImGui.TextDisabled($"Contents 0x{(nuint)item.LoadContentsAddress:X} · matches descriptor: {item.LoadContentsMatchesDescriptor}");
+                    ImGui.TextDisabled($"TextureWhileLoading 0x{(nuint)item.TextureWhileLoadingAddress:X} · DataWhileLoading 0x{(nuint)item.DataWhileLoadingAddress:X}");
+                }
+
+                if (item.Operation is "Load" or "FinishLoad" or "FileDescriptor.Read")
+                {
+                    if (item.Width != 0 || item.Height != 0)
+                        ImGui.TextDisabled($"Header {item.Width} × {item.Height} × {item.Depth} · {item.Format} · {item.MipCountAndFlag} mip/flag · Texture 0x{(nuint)item.TextureAddress:X}");
+                }
+
+                if (item.TextureInitialization is { } initialization)
+                {
+                    ImGui.TextDisabled($"InitializeContents object 0x{(nuint)initialization.TextureObjectAddress:X} · input 0x{(nuint)initialization.ContentsAddress:X}");
+                    ImGui.TextDisabled($"Payload buffer 0x{(nuint)initialization.PayloadBufferAddress:X} · {initialization.PayloadLength:N0} bytes at 0x{initialization.PayloadOffset:X} · input matches: {initialization.ContentsMatchesPayloadBuffer} · delta {(initialization.PayloadBufferAddress == 0 ? "n/a" : FormatSignedOffset(initialization.ContentsOffsetFromPayloadBuffer))}");
+                    ImGui.TextDisabled($"Texture matches active handle: {initialization.TextureMatchesActiveHandle}");
+                    ImGui.TextDisabled($"D3D11 texture {FormatPointer(initialization.Before.D3D11TextureAddress)} → {FormatPointer(initialization.After.D3D11TextureAddress)} · SRV {FormatPointer(initialization.Before.D3D11ShaderResourceViewAddress)} → {FormatPointer(initialization.After.D3D11ShaderResourceViewAddress)}");
+                    ImGui.TextWrapped($"Native association audit: {initialization.ResourceRelationship.Status}");
+                    ImGui.TextDisabled($"SRV backing resource: {FormatPointer(initialization.ResourceRelationship.ViewGetResourceAddress)} · same COM texture: {initialization.ResourceRelationship.ViewResourceIdentityCheckSucceeded && initialization.ResourceRelationship.ViewResourceIdentityMatchesTexture}");
+                    ImGui.TextDisabled($"Texture/SRV share device: {initialization.ResourceRelationship.TextureViewDeviceIdentityCheckSucceeded && initialization.ResourceRelationship.TextureAndViewShareDevice}");
+                    ImGui.TextDisabled($"Nested D3D11 CreateTexture2D calls: {initialization.D3D11TextureCreateCalls.Length}");
+                }
+
+                ImGui.TreePop();
+            }
+
+            if (lifecycle.RecentEvents.Count > shown)
+                ImGui.TextDisabled($"Showing newest {shown} of {lifecycle.RecentEvents.Count} events.");
+
+            ImGui.TreePop();
+        }
     }
 
+    private void DrawNativeProgressiveTexturePreview(
+        NativeTextureLifecycleProbe lifecycle,
+        NativeTextureHandleSnapshot? selectedHandle)
+    {
+        var preview = _plugin.NativeProgressiveTexturePreview;
+        bool createdThisFrame = false;
+
+        if (lifecycle.TryTakeNativeMipPayloadCapture(out NativeTextureMipPayloadCapture? capture) && capture != null)
+        {
+            try
+            {
+                preview.Create(capture);
+                createdThisFrame = true;
+            }
+            catch (Exception ex)
+            {
+                preview.Reset();
+                preview.SetError(ex.Message);
+            }
+        }
+
+        ImGui.Separator();
+        ImGui.Text("Progressive shadow preview");
+        ImGui.TextDisabled("One-shot diagnostic: copies the selected native resource's BC7 payload, then builds a separate DEFAULT texture. Other BC7 resources are ignored. This temporarily adds a CPU copy and a second GPU texture; the live FFXIV texture is never replaced or modified.");
+
+        if (!preview.IsCreated)
+        {
+            if (lifecycle.NativeMipPayloadCaptureArmed)
+            {
+                ImGui.TextColored(new Vector4(1f, .75f, .35f, 1f), lifecycle.NativeMipPayloadCaptureStatus);
+                if (ImGui.Button("Cancel native mip capture", new Vector2(190f, 0f)))
+                    lifecycle.CancelNativeMipPayloadCapture();
+            }
+            else
+            {
+                bool canArm = lifecycle.CaptureEnabled && lifecycle.D3D11CreateTexture2DHookInstalled
+                    && selectedHandle != null && selectedHandle.ResourceId != 0
+                    && !lifecycle.HasPendingNativeMipPayloadCapture;
+                if (!canArm)
+                    ImGui.BeginDisabled();
+                if (ImGui.Button("Arm selected resource capture", new Vector2(230f, 0f)))
+                {
+                    try { lifecycle.ArmNativeMipPayloadCapture(selectedHandle!.ResourceId); }
+                    catch (Exception ex) { lifecycle.SetError(ex.Message); }
+                }
+                if (!canArm)
+                    ImGui.EndDisabled();
+
+                if (selectedHandle != null)
+                ImGui.TextDisabled($"Capture target: selected resource ID {selectedHandle.ResourceId}. Other BC7 textures will be ignored.");
+                else
+                    ImGui.TextDisabled("Refresh the selected native handle before arming a progressive capture.");
+                ImGui.TextDisabled(lifecycle.NativeMipPayloadCaptureStatus);
+                if (!lifecycle.CaptureEnabled || !lifecycle.D3D11CreateTexture2DHookInstalled)
+                    ImGui.TextDisabled("Start lifecycle capture first. This copies up to 64 MiB only after you explicitly arm it.");
+            }
+
+            if (!string.IsNullOrEmpty(preview.Error))
+                ImGui.TextColored(new Vector4(1f, .55f, .35f, 1f), preview.Error);
+            return;
+        }
+
+        // Uploads and SRV changes happen here on the Dalamud UI draw thread, never inside a
+        // native resource callback. The coarsest mip was already uploaded when the capture arrived.
+        if (!createdThisFrame && !preview.IsComplete)
+            preview.AdvanceFrame();
+
+        ImGui.TextColored(preview.IsComplete ? Green : Muted,
+            preview.IsComplete ? "Shadow refinement complete" : "Coarse-to-fine refinement running");
+        ImGui.TextWrapped($"Source: {preview.ResourceFileName}");
+        ImGui.TextDisabled($"Resource ID {preview.ResourceId}");
+        ImGui.TextDisabled($"{preview.Width} × {preview.Height} BC7 · {preview.UploadedMipCount}/{preview.MipCount} mips · visible Mip {preview.FirstVisibleMip}–{preview.MipCount - 1}");
+        ImGui.TextDisabled($"Payload copied {FormatBytes(preview.TotalMipPayloadBytes)} · uploaded {FormatBytes(preview.UploadedBytes)} · remaining {FormatBytes(Math.Max(0L, preview.TotalMipPayloadBytes - preview.UploadedBytes))}");
+        ImGui.TextDisabled($"Payload copy {preview.CaptureCopyMilliseconds:F3} ms · capture → coarse SRV ready {FormatOptionalMilliseconds(preview.CaptureToFirstPreviewMilliseconds)} · capture → full-detail SRV ready {FormatOptionalMilliseconds(preview.CaptureToFullResolutionMilliseconds)}");
+        ImGui.TextDisabled($"Initial preview setup {preview.InitialPreviewSetupMilliseconds:F3} ms (coarsest mip {preview.InitialMipUploadMilliseconds:F3} ms · SRV {preview.InitialViewCreationMilliseconds:F3} ms)");
+        ImGui.TextDisabled($"Last frame: {preview.LastFrameMipCount} mip(s), {FormatBytes(preview.LastFrameBytes)}, {preview.LastFrameUploadMilliseconds:F3} ms submission · max {preview.MaximumFrameUploadMilliseconds:F3} ms");
+        ImGui.TextDisabled($"UI frames {preview.TotalUiFrameCount} total (initial + {preview.RefinementFrameCount} refinement) · budget deferrals {preview.BudgetDeferrals} · large-mip isolation deferrals {preview.LargeMipIsolationDeferrals}");
+        ImGui.TextWrapped(preview.Status);
+
+        float displayWidth = Math.Clamp(ImGui.GetWindowWidth() - 48f, 180f, 440f);
+        float aspect = preview.Height > 0 ? (float)preview.Width / preview.Height : 1f;
+        float displayHeight = Math.Clamp(displayWidth / Math.Max(0.01f, aspect), 96f, 280f);
+        ImGui.Image(preview.PreviewTextureId, new Vector2(displayWidth, displayHeight));
+
+        if (ImGui.Button("Discard shadow preview", new Vector2(190f, 0f)))
+        {
+            preview.Reset();
+            lifecycle.CancelNativeMipPayloadCapture();
+        }
+    }
+
+    private static string FormatOptionalMilliseconds(double milliseconds) =>
+        milliseconds < 0d ? "pending" : $"{milliseconds:F2} ms";
+
+    private static string BuildDiagnosticsClipboardText(
+        NativeTextureHandleProbe handleProbe,
+        NativeTextureHandleSnapshot? snapshot,
+        TextureFileReport? inspectedReport,
+        NativeTextureLifecycleProbe lifecycle,
+        NativeProgressiveTexturePreview preview)
+    {
+        var sb = new StringBuilder(32 * 1024);
+        string version = typeof(ConfigWindow).Assembly.GetName().Version?.ToString() ?? "unknown";
+        int uiThreadId = lifecycle.LastObservedUiThreadId;
+
+        sb.AppendLine("FPSBooster native texture diagnostics");
+        sb.AppendLine($"Generated UTC: {DateTime.UtcNow:O}");
+        sb.AppendLine($"Plugin version: {version}");
+        sb.AppendLine();
+
+        sb.AppendLine("=== Selected resource ===");
+        sb.AppendLine($"Game resource path: {(string.IsNullOrWhiteSpace(handleProbe.Path) ? "(none)" : handleProbe.Path)}");
+        sb.AppendLine($"Handle acquired: {handleProbe.IsAcquired}");
+        sb.AppendLine($"Handle status: {handleProbe.Status}");
+        sb.AppendLine($"Handle error: {handleProbe.Error ?? "(none)"}");
+        if (inspectedReport != null)
+        {
+            sb.AppendLine("Original SqPack reference metadata (logical game path; not the redirected disk replacement):");
+            sb.AppendLine($"  Path: {inspectedReport.Path}");
+            sb.AppendLine($"  Dimensions: {inspectedReport.Width} x {inspectedReport.Height}");
+            sb.AppendLine($"  Format: {inspectedReport.Format}");
+            sb.AppendLine($"  Mips: {inspectedReport.MipCount}");
+            sb.AppendLine($"  Total mip payload: {inspectedReport.TotalMipBytes:N0} bytes");
+        }
+        else
+        {
+            sb.AppendLine("SqPack reference metadata: unavailable");
+        }
+        sb.AppendLine();
+
+        sb.AppendLine("=== Current native handle snapshot ===");
+        if (snapshot == null)
+        {
+            sb.AppendLine("Snapshot unavailable (no handle or native texture object not yet inspectable).");
+        }
+        else
+        {
+            sb.AppendLine($"Handle: {FormatPointer(snapshot.HandleAddress)} · size 0x{snapshot.RuntimeHandleSize:X} · refcount {snapshot.ReferenceCount}");
+            sb.AppendLine($"Resource ID: {snapshot.ResourceId}");
+            sb.AppendLine($"File sizes: {snapshot.FileSize:N0} / {snapshot.FileSize2:N0} / {snapshot.FileSize3:N0}");
+            sb.AppendLine($"Last I/O result: {snapshot.LastIoResult} (0x{snapshot.LastIoResult:X2})");
+            sb.AppendLine($"TEX header: {snapshot.HeaderWidth} x {snapshot.HeaderHeight} x {snapshot.HeaderDepth} · {snapshot.HeaderFormat} · mip/flag byte {snapshot.HeaderMipCountAndFlag} (0x{snapshot.HeaderMipCountAndFlag:X2}) · {snapshot.HeaderType} · array size {snapshot.HeaderArraySize}");
+            sb.AppendLine($"ChangeLod raw byte (+0x104): 0x{snapshot.LodFlagByte:X2}; bit 0={snapshot.ChangeLodBit} (semantics not established; read-only)");
+            sb.AppendLine($"Persistent Texture object: {FormatPointer(snapshot.TextureObjectAddress)} · available {snapshot.HasTextureObject}");
+            if (snapshot.HasTextureObject)
+            {
+                sb.AppendLine($"  Actual dimensions: {snapshot.ActualWidth} x {snapshot.ActualHeight}");
+                sb.AppendLine($"  Allocated dimensions: {snapshot.AllocatedWidth} x {snapshot.AllocatedHeight}");
+                sb.AppendLine($"  Depth: {snapshot.Depth} · array size {snapshot.ArraySize} · raw mip level {snapshot.TextureMipLevelRaw}");
+                sb.AppendLine($"  Texture format: {snapshot.TextureFormat}");
+                sb.AppendLine($"  Texture flags: {snapshot.TextureFlags}");
+                sb.AppendLine($"  D3D11 texture: {FormatPointer(snapshot.D3D11TextureAddress)}");
+                sb.AppendLine($"  D3D11 SRV: {FormatPointer(snapshot.D3D11ShaderResourceViewAddress)}");
+            }
+        }
+        sb.AppendLine();
+
+        sb.AppendLine("=== Native lifecycle capture ===");
+        sb.AppendLine($"Hooks installed: {lifecycle.IsInstalled}");
+        sb.AppendLine($"Capture enabled: {lifecycle.CaptureEnabled}");
+        sb.AppendLine($"Status: {lifecycle.Status}");
+        sb.AppendLine($"Error: {lifecycle.Error ?? "(none)"}");
+        sb.AppendLine($"Events captured: {lifecycle.CapturedEventCount}");
+        sb.AppendLine($"Events queued: {lifecycle.PendingEventCount}");
+        sb.AppendLine($"Events dropped: {lifecycle.DroppedEventCount}");
+        sb.AppendLine($"Capture errors: {lifecycle.CaptureErrorCount}");
+        sb.AppendLine($"UI draw thread: {(uiThreadId == 0 ? "unknown" : uiThreadId.ToString())}");
+        sb.AppendLine($"Read/Reread share target: {lifecycle.ReadAndRereadShareTarget}");
+        sb.AppendLine($"FileDescriptor.Read hook installed: {lifecycle.FileDescriptorReadHookInstalled}");
+        sb.AppendLine($"FileDescriptor.Read status: {lifecycle.FileDescriptorReadStatus}");
+        sb.AppendLine($"Texture.InitializeContents hook installed: {lifecycle.TextureInitializeContentsHookInstalled}");
+        sb.AppendLine($"Texture.InitializeContents status: {lifecycle.TextureInitializeContentsStatus}");
+        sb.AppendLine($"D3D11 CreateTexture2D hook installed: {lifecycle.D3D11CreateTexture2DHookInstalled}");
+        sb.AppendLine($"D3D11 CreateTexture2D status: {lifecycle.D3D11CreateTexture2DStatus}");
+        sb.AppendLine($"D3D11 CreateShaderResourceView hook installed: {lifecycle.D3D11CreateShaderResourceViewHookInstalled}");
+        sb.AppendLine($"D3D11 CreateShaderResourceView status: {lifecycle.D3D11CreateShaderResourceViewStatus}");
+        sb.AppendLine($"Native progressive mip capture armed: {lifecycle.NativeMipPayloadCaptureArmed}");
+        sb.AppendLine($"Native progressive mip capture pending: {lifecycle.HasPendingNativeMipPayloadCapture}");
+        sb.AppendLine($"Native progressive mip capture target resource ID: {lifecycle.NativeMipPayloadCaptureTargetResourceId?.ToString() ?? "(none)"}");
+        sb.AppendLine($"Native progressive mip capture status: {lifecycle.NativeMipPayloadCaptureStatus}");
+        sb.AppendLine();
+        sb.AppendLine("=== Progressive shadow preview ===");
+        sb.AppendLine($"Created: {preview.IsCreated}");
+        sb.AppendLine($"Complete: {preview.IsComplete}");
+        sb.AppendLine($"Status: {preview.Status}");
+        sb.AppendLine($"Error: {preview.Error ?? "(none)"}");
+        sb.AppendLine($"Captured resource ID: {preview.ResourceId}");
+        sb.AppendLine($"Resource filename: {(string.IsNullOrWhiteSpace(preview.ResourceFileName) ? "(none)" : preview.ResourceFileName)}");
+        sb.AppendLine($"Dimensions: {(preview.Width == 0 ? "n/a" : $"{preview.Width}x{preview.Height}")}");
+        sb.AppendLine($"Mips uploaded/total: {preview.UploadedMipCount}/{preview.MipCount}");
+        sb.AppendLine($"First visible mip: {preview.FirstVisibleMip}");
+        sb.AppendLine($"Payload bytes copied: {preview.TotalMipPayloadBytes}");
+        sb.AppendLine($"Payload bytes uploaded: {preview.UploadedBytes}");
+        sb.AppendLine($"Payload copy: {preview.CaptureCopyMilliseconds:F3} ms");
+        sb.AppendLine($"Capture-to-coarse-SRV-ready: {FormatOptionalMilliseconds(preview.CaptureToFirstPreviewMilliseconds)}");
+        sb.AppendLine($"Capture-to-full-detail-SRV-ready: {FormatOptionalMilliseconds(preview.CaptureToFullResolutionMilliseconds)}");
+        sb.AppendLine($"Initial preview setup (allocation + initial mip + SRV): {preview.InitialPreviewSetupMilliseconds:F3} ms");
+        sb.AppendLine($"Initial mip upload: {preview.InitialMipUploadMilliseconds:F3} ms");
+        sb.AppendLine($"Initial SRV creation: {preview.InitialViewCreationMilliseconds:F3} ms");
+        sb.AppendLine($"Total UI frames including initial preview: {preview.TotalUiFrameCount}");
+        sb.AppendLine($"Additional refinement frames: {preview.RefinementFrameCount}");
+        sb.AppendLine($"Last frame: {preview.LastFrameMipCount} mips, {preview.LastFrameBytes} bytes, {preview.LastFrameUploadMilliseconds:F3} ms");
+        sb.AppendLine($"Maximum frame upload submission: {preview.MaximumFrameUploadMilliseconds:F3} ms");
+        sb.AppendLine($"Budget deferrals: {preview.BudgetDeferrals}");
+        sb.AppendLine($"Largest-mip isolation deferrals: {preview.LargeMipIsolationDeferrals}");
+        sb.AppendLine($"Last deferred estimate / remaining budget: {preview.LastDeferredEstimateMilliseconds:F3} / {preview.LastDeferredRemainingMilliseconds:F3} ms");
+        sb.AppendLine("Hook addresses:");
+        sb.AppendLine($"  VTable: {FormatPointer(lifecycle.VtableAddress)}");
+        sb.AppendLine($"  Read: {FormatPointer(lifecycle.ReadAddress)}");
+        sb.AppendLine($"  Load: {FormatPointer(lifecycle.LoadAddress)}");
+        sb.AppendLine($"  Reread: {FormatPointer(lifecycle.RereadAddress)}");
+        sb.AppendLine($"  FileJob: {FormatPointer(lifecycle.FileJobAddress)}");
+        sb.AppendLine($"  FinishLoad: {FormatPointer(lifecycle.FinishLoadAddress)}");
+        sb.AppendLine($"  FileDescriptor.Read: {FormatPointer(lifecycle.FileDescriptorReadAddress)}");
+        sb.AppendLine($"  Texture.InitializeContents: {FormatPointer(lifecycle.TextureInitializeContentsAddress)}");
+        sb.AppendLine($"  D3D11 CreateTexture2D: {FormatPointer(lifecycle.D3D11CreateTexture2DAddress)}");
+        sb.AppendLine($"  D3D11 CreateShaderResourceView: {FormatPointer(lifecycle.D3D11CreateShaderResourceViewAddress)}");
+        sb.AppendLine();
+
+        var events = lifecycle.RecentEvents;
+        sb.AppendLine($"=== Recent lifecycle events ({events.Count}; all retained events included, newest first) ===");
+        if (events.Count == 0)
+        {
+            sb.AppendLine("(no retained events)");
+        }
+        else
+        {
+            for (int i = 0; i < events.Count; i++)
+            {
+                var item = events[i];
+                sb.AppendLine();
+                sb.AppendLine($"--- Event #{item.Sequence}: {item.Operation} ---");
+                sb.AppendLine($"Timestamp UTC: {item.TimestampUtc:O}");
+                sb.AppendLine($"Duration: {item.ElapsedMilliseconds:F3} ms");
+                sb.AppendLine($"Resource filename: {item.ResourceFileName}");
+                sb.AppendLine($"Handle: {FormatPointer(item.HandleAddress)} · resource ID {item.ResourceId}");
+                sb.AppendLine($"Thread: {item.ThreadId} · same as UI draw thread: {(uiThreadId == 0 ? "unknown" : (item.ThreadId == uiThreadId).ToString())}");
+                sb.AppendLine($"Result: {item.Result} (0x{item.Result:X2}) · input flag: {item.InputFlag} (0x{item.InputFlag:X2}) · secondary input: {item.SecondaryInput}");
+                sb.AppendLine($"File mode: {item.FileModeName} [{item.FileModeValue}] -> {item.ExitFileModeName} [{(item.ExitFileModeValue == byte.MaxValue ? "n/a" : item.ExitFileModeValue.ToString())}]");
+                sb.AppendLine($"File offset: 0x{item.FileOffset:X} -> 0x{item.ExitFileOffset:X}");
+                sb.AppendLine($"Requested length: {item.RequestedLength:N0} -> {item.ExitRequestedLength:N0}");
+                sb.AppendLine($"FileDescriptor: {FormatPointer(item.FileDescriptorAddress)}");
+                sb.AppendLine($"FileBuffer: {FormatPointer(item.FileBufferAddress)} -> {FormatPointer(item.ExitFileBufferAddress)}");
+
+                if (item.Operation == "FileJob")
+                    sb.AppendLine($"FileJob: priority {item.Priority} · synchronous {item.InputFlag != 0}");
+                if (item.Operation == "FinishLoad")
+                    sb.AppendLine($"FinishLoad arguments: open-file result {item.InputFlag} · secondary argument {item.SecondaryInput}");
+
+                AppendStateSnapshot(sb, "State before", item.StateBefore);
+                AppendStateSnapshot(sb, "State after", item.StateAfter);
+
+                if (item.Operation == "FileDescriptor.Read")
+                {
+                    sb.AppendLine($"Read output buffer: {FormatPointer(item.IoOutputBufferAddress)}");
+                    sb.AppendLine($"Read length: {item.IoLength:N0} bytes · file offset 0x{item.IoStart:X} · reset position {item.IoResetPosition != 0}");
+                    if (item.TextureHeaderLayout is { } headerLayout)
+                    {
+                        sb.AppendLine($"Output matches TextureResourceHandle.Header: {item.OutputMatchesTextureHeader} · observed output offset +0x{(nuint)item.OutputOffsetFromHandle:X} · field offset +0x{(nuint)headerLayout.HeaderOffsetFromHandle:X} · size {headerLayout.HeaderSize}");
+                        sb.AppendLine($"TEX LOD offsets: {headerLayout.LodOffsets}");
+                        sb.AppendLine($"TEX offsets-to-surfaces: {headerLayout.OffsetsToSurfaces}");
+                        sb.AppendLine($"Raw 80-byte TEX header: {headerLayout.RawHeaderHex}");
+                    }
+                }
+
+                if (item.Operation == "Load")
+                {
+                    sb.AppendLine($"Load contents: {FormatPointer(item.LoadContentsAddress)} · matches descriptor {item.LoadContentsMatchesDescriptor}");
+                    sb.AppendLine($"Load descriptor mode: {(item.LoadDescriptorFileModeValue == byte.MaxValue ? "n/a" : item.LoadDescriptorFileModeValue.ToString())}");
+                    sb.AppendLine($"Load descriptor FileBuffer: {FormatPointer(item.LoadDescriptorFileBufferAddress)}");
+                    sb.AppendLine($"TextureWhileLoading: {FormatPointer(item.TextureWhileLoadingAddress)}");
+                    sb.AppendLine($"DataWhileLoading: {FormatPointer(item.DataWhileLoadingAddress)}");
+                }
+
+                if (item.Operation is "Load" or "FinishLoad" or "FileDescriptor.Read")
+                {
+                    if (item.Width != 0 || item.Height != 0)
+                    {
+                        sb.AppendLine($"Texture header: {item.Width} x {item.Height} x {item.Depth} · {item.Format} · mip/flag {item.MipCountAndFlag}");
+                        sb.AppendLine($"Texture pointer: {FormatPointer(item.TextureAddress)}");
+                    }
+                }
+
+                if (item.TextureInitialization is { } initialization)
+                {
+                    sb.AppendLine($"Texture.InitializeContents object: {FormatPointer(initialization.TextureObjectAddress)}");
+                    sb.AppendLine($"InitializeContents contents: {FormatPointer(initialization.ContentsAddress)}");
+                    sb.AppendLine($"Candidate payload buffer: {FormatPointer(initialization.PayloadBufferAddress)} · length {initialization.PayloadLength:N0} · file offset 0x{initialization.PayloadOffset:X}");
+                    sb.AppendLine($"Contents matches captured payload buffer: {initialization.ContentsMatchesPayloadBuffer}");
+                    sb.AppendLine($"Contents pointer delta from payload buffer: {(initialization.PayloadBufferAddress == 0 ? "n/a" : FormatSignedOffset(initialization.ContentsOffsetFromPayloadBuffer))}");
+                    sb.AppendLine($"Texture object matches active TextureResourceHandle: {initialization.TextureMatchesActiveHandle}");
+                    if (item.TextureHeaderLayout is { } headerBefore)
+                    {
+                        sb.AppendLine($"Header at InitializeContents entry: LOD [{headerBefore.LodOffsets}] · surfaces [{headerBefore.OffsetsToSurfaces}]");
+                        sb.AppendLine($"Raw header at InitializeContents entry: {headerBefore.RawHeaderHex}");
+                    }
+                    if (item.TextureHeaderLayoutAfter is { } headerAfter)
+                    {
+                        sb.AppendLine($"Header after InitializeContents: LOD [{headerAfter.LodOffsets}] · surfaces [{headerAfter.OffsetsToSurfaces}]");
+                        sb.AppendLine($"Raw header after InitializeContents: {headerAfter.RawHeaderHex}");
+                    }
+                    AppendTextureObjectSnapshot(sb, "Texture before InitializeContents", initialization.Before);
+                    AppendTextureObjectSnapshot(sb, "Texture after InitializeContents", initialization.After);
+                    var relationship = initialization.ResourceRelationship;
+                    sb.AppendLine($"Native D3D11 association audit inspected: {relationship.Inspected}");
+                    sb.AppendLine($"  Audit status: {relationship.Status}");
+                    sb.AppendLine($"  Persistent texture matches CreateTexture2D output: {relationship.TexturePointerMatchesCreateResult}");
+                    sb.AppendLine($"  Persistent SRV matches CreateShaderResourceView output: {relationship.ViewPointerMatchesCreateResult}");
+                    sb.AppendLine($"  CreateShaderResourceView resource argument matches Texture.D3D11Texture2D pointer: {relationship.ViewCreateResourcePointerMatchesTexture}");
+                    sb.AppendLine($"  SRV GetResource succeeded: {relationship.ViewGetResourceSucceeded} · returned resource {FormatPointer(relationship.ViewGetResourceAddress)}");
+                    sb.AppendLine($"  SRV resource COM identity check: {relationship.ViewResourceIdentityCheckSucceeded} · same texture object: {relationship.ViewResourceIdentityMatchesTexture}");
+                    sb.AppendLine($"  Texture GetDevice: {relationship.TextureGetDeviceSucceeded} · device {FormatPointer(relationship.TextureDeviceAddress)}");
+                    sb.AppendLine($"  SRV GetDevice: {relationship.ViewGetDeviceSucceeded} · device {FormatPointer(relationship.ViewDeviceAddress)}");
+                    sb.AppendLine($"  Texture/SRV device identity check: {relationship.TextureViewDeviceIdentityCheckSucceeded} · same device: {relationship.TextureAndViewShareDevice}");
+                    sb.AppendLine($"  Texture/CreateTexture2D device identity check: {relationship.CreateTextureDeviceIdentityCheckSucceeded} · same device: {relationship.TextureSharesCreateTextureDevice}");
+                    sb.AppendLine($"  SRV/CreateShaderResourceView device identity check: {relationship.CreateViewDeviceIdentityCheckSucceeded} · same device: {relationship.ViewSharesCreateViewDevice}");
+                    sb.AppendLine($"Nested D3D11 CreateTexture2D calls: {initialization.D3D11TextureCreateCalls.Length}");
+                    for (int createIndex = 0; createIndex < initialization.D3D11TextureCreateCalls.Length; createIndex++)
+                    {
+                        var create = initialization.D3D11TextureCreateCalls[createIndex];
+                        sb.AppendLine($"  CreateTexture2D #{createIndex + 1}: HRESULT 0x{create.HResult:X8} · device {FormatPointer(create.DeviceAddress)} · created texture {FormatPointer(create.CreatedTextureAddress)} · matches Texture object after init {create.CreatedTextureAddress != 0 && create.CreatedTextureAddress == initialization.After.D3D11TextureAddress}");
+                        sb.AppendLine($"    Desc {create.Width}x{create.Height} · mips {create.MipLevels} · array {create.ArraySize} · format {DescribeDxgiFormatForReport(create.Format)} · usage {DescribeD3D11UsageForReport(create.Usage)} ({create.Usage}) · bind 0x{create.BindFlags:X} · CPU 0x{create.CPUAccessFlags:X} · misc 0x{create.MiscFlags:X} · samples {create.SampleCount}/{create.SampleQuality}");
+                        sb.AppendLine($"    InitialData array {FormatPointer(create.InitialDataArrayAddress)} · null {create.InitialDataWasNull} · payload {FormatPointer(create.PayloadBufferAddress)} / {create.PayloadLength:N0} bytes · subresource metadata captured {create.SubresourceMetadataCaptured}");
+                        foreach (var subresource in create.Subresources)
+                        {
+                            string payloadOffsetText = create.PayloadBufferAddress == 0 ? "n/a" : FormatSignedOffset(subresource.OffsetFromPayloadBuffer);
+                            string fileOffsetText = subresource.WithinPayloadBuffer && subresource.OffsetFromPayloadBuffer >= 0
+                                ? $" · candidate file offset 0x{(ulong)initialization.PayloadOffset + (ulong)subresource.OffsetFromPayloadBuffer:X}"
+                                : string.Empty;
+                            string expectedBc7Text = subresource.ExpectedBc7SliceBytes == 0
+                                ? "BC7 size n/a"
+                                : $"BC7 expected row/slice {subresource.ExpectedBc7RowPitch:N0}/{subresource.ExpectedBc7SliceBytes:N0}";
+                            sb.AppendLine($"    Subresource {subresource.Index} (array {subresource.ArraySlice}, mip {subresource.MipIndex}, {subresource.Width}x{subresource.Height}): SysMem {FormatPointer(subresource.SystemMemoryAddress)} · payload delta {payloadOffsetText}{fileOffsetText} · within payload {subresource.WithinPayloadBuffer} · row/slice pitch {subresource.SystemMemoryPitch:N0}/{subresource.SystemMemorySlicePitch:N0} · {expectedBc7Text}");
+                        }
+                    }
+
+                    sb.AppendLine($"Nested D3D11 CreateShaderResourceView calls: {initialization.D3D11ShaderResourceViewCalls.Length}");
+                    for (int viewIndex = 0; viewIndex < initialization.D3D11ShaderResourceViewCalls.Length; viewIndex++)
+                    {
+                        var view = initialization.D3D11ShaderResourceViewCalls[viewIndex];
+                        sb.AppendLine($"  CreateShaderResourceView #{viewIndex + 1}: HRESULT 0x{view.HResult:X8} · device {FormatPointer(view.DeviceAddress)} · resource {FormatPointer(view.ResourceAddress)} · created SRV {FormatPointer(view.CreatedViewAddress)}");
+                        sb.AppendLine($"    Input desc null: {view.InputDescriptionWasNull} · actual desc captured: {view.ActualDescriptionCaptured}");
+                        if (!view.InputDescriptionWasNull)
+                            AppendShaderResourceViewDescription(sb, "Input descriptor", view.InputDescription);
+                        if (view.ActualDescriptionCaptured)
+                            AppendShaderResourceViewDescription(sb, "Actual descriptor", view.ActualDescription);
+                    }
+                }
+
+                sb.AppendLine($"Resource file sizes: {item.FileSize:N0} / {item.FileSize2:N0} / {item.FileSize3:N0}");
+            }
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("=== Notes ===");
+        sb.AppendLine("The selected game path and original SqPack metadata describe the logical/base asset; native Resource filename values describe the file path observed during the actual load and may identify a Penumbra replacement.");
+        sb.AppendLine("The manually acquired native handle snapshot is a separate probe reference; its handle address need not match the handles observed in lifecycle events.");
+        sb.AppendLine("Pointer values are numeric observations only, except for documented header/texture descriptor queries; payload buffer memory is never dereferenced or modified by this probe.");
+        sb.AppendLine("D3D11 texture descriptions and association checks use read-only COM queries. Temporary references returned by QueryInterface, SRV.GetResource, and DeviceChild.GetDevice are released immediately; the game's original texture/SRV references are not changed.");
+        sb.AppendLine("The association audit stores only copied numeric addresses and boolean results; temporary COM references have already been released when diagnostics are copied. It verifies COM identity between the persistent Texture resource, its SRV backing resource, and their D3D11 devices. It does not determine the game's ownership/refcount policy or establish that replacing either pointer would be safe.");
+        sb.AppendLine("The candidate payload-buffer address is held thread-locally only during its enclosing FileJob call to correlate a nested Texture.InitializeContents call.");
+        sb.AppendLine("ChangeLod is reported as a raw byte only; its semantics have not been established.");
+        sb.AppendLine("Event timings are individual nested native-call durations and must not be summed as independent wall-clock costs.");
+        return sb.ToString();
+    }
+
+    private static void AppendShaderResourceViewDescription(StringBuilder sb, string label, NativeD3D11ShaderResourceViewDescriptionSnapshot description)
+    {
+        string dimension = DescribeShaderResourceViewDimension(description.ViewDimension);
+        sb.AppendLine($"    {label}: format {DescribeDxgiFormatForReport(description.Format)} · dimension {dimension} ({description.ViewDimension})");
+        if (description.ViewDimension is 4 or 9) // TEXTURE2D / TEXTURECUBE
+            sb.AppendLine($"      MostDetailedMip {description.MipMostDetailedOrFirstElement} · MipLevels {description.MipLevelsOrNumElements}");
+        else if (description.ViewDimension is 5 or 10) // TEXTURE2DARRAY / TEXTURECUBEARRAY
+            sb.AppendLine($"      MostDetailedMip {description.MipMostDetailedOrFirstElement} · MipLevels {description.MipLevelsOrNumElements} · FirstArraySlice {description.FirstArraySliceOrFlags} · ArraySize {description.ArraySizeOrNumElements}");
+        else
+            sb.AppendLine($"      Union values {description.MipMostDetailedOrFirstElement}, {description.MipLevelsOrNumElements}, {description.FirstArraySliceOrFlags}, {description.ArraySizeOrNumElements}");
+    }
+
+    private static string DescribeShaderResourceViewDimension(uint dimension) => dimension switch
+    {
+        0 => "UNKNOWN",
+        1 => "BUFFER",
+        2 => "TEXTURE1D",
+        3 => "TEXTURE1DARRAY",
+        4 => "TEXTURE2D",
+        5 => "TEXTURE2DARRAY",
+        6 => "TEXTURE2DMS",
+        7 => "TEXTURE2DMSARRAY",
+        8 => "TEXTURE3D",
+        9 => "TEXTURECUBE",
+        10 => "TEXTURECUBEARRAY",
+        11 => "BUFFEREX",
+        _ => "UNKNOWN",
+    };
+
+    private static string DescribeDxgiFormatForReport(uint format) => format switch
+    {
+        98 => "BC7_UNORM (DXGI_FORMAT 98)",
+        99 => "BC7_UNORM_SRGB (DXGI_FORMAT 99)",
+        _ => $"DXGI_FORMAT {format}",
+    };
+
+    private static string DescribeD3D11UsageForReport(uint usage) => usage switch
+    {
+        0 => "Default",
+        1 => "Immutable",
+        2 => "Dynamic",
+        3 => "Staging",
+        _ => "Unknown",
+    };
+
+    private static void AppendTextureObjectSnapshot(StringBuilder sb, string label, NativeTextureObjectSnapshot texture)
+    {
+        sb.AppendLine($"{label}: object {FormatPointer(texture.TextureAddress)} · {texture.ActualWidth} x {texture.ActualHeight} · allocated {texture.AllocatedWidth} x {texture.AllocatedHeight} · depth {texture.Depth} · mips {texture.MipLevel} · array {texture.ArraySize}");
+        sb.AppendLine($"  Format {texture.Format} · flags {texture.Flags} · D3D11 texture {FormatPointer(texture.D3D11TextureAddress)} · SRV {FormatPointer(texture.D3D11ShaderResourceViewAddress)}");
+        sb.AppendLine($"  D3D11 texture description: {texture.D3D11Description}");
+    }
+
+    private static void AppendStateSnapshot(StringBuilder sb, string label, NativeTextureStateSnapshot state)
+    {
+        sb.AppendLine($"{label}: Blob {FormatPointer(state.BlobAddress)} · GetData {FormatPointer(state.DataAddress)} / {state.DataLength:N0} bytes · file sizes {state.FileSize:N0}/{state.FileSize2:N0}/{state.FileSize3:N0}");
+        sb.AppendLine($"  FileType 0x{state.FileType:X8} · last I/O {state.LastIoResult} · ReadState {state.ReadState} · LoadState {state.LoadState} · OtherState {state.OtherState} · ChangeLod 0x{state.ChangeLodRaw:X2} · Texture {FormatPointer(state.TextureAddress)}");
+    }
+
+    private static string FormatPointer(nint address) => $"0x{(nuint)address:X}";
+
+    private static string FormatSignedOffset(nint offset) => offset < 0
+        ? $"-0x{(nuint)(-offset):X}"
+        : $"+0x{(nuint)offset:X}";
 
     private void DrawPenumbraTextureSourceProbe(TextureFileReport report)
     {
@@ -607,8 +1114,6 @@ public sealed class ConfigWindow : Window
             _plugin.TextureGpuUpload.Reset();
             _plugin.TextureStreaming.ClearMipReadResult();
             probe.Clear();
-            if (manualFilePath)
-                _manualFilePathInput = false;
         }
         if (_gpuSequenceActive)
             ImGui.EndDisabled();

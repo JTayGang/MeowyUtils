@@ -17,7 +17,10 @@ public sealed class Plugin : IDalamudPlugin
     public TextureStreamingService TextureStreaming { get; }
     public TextureGpuUploadProbe TextureGpuUpload { get; }
     public NativeTextureHandleProbe NativeTextureHandle { get; }
+    public NativeTextureLifecycleProbe NativeTextureLifecycle { get; }
+    public NativeProgressiveTexturePreview NativeProgressiveTexturePreview { get; }
     public PenumbraTextureSourceProbe PenumbraTextureSource { get; }
+    public PerformanceProfiler PerformanceProfiler { get; }
 
     private readonly ICommandManager _cmd;
     private readonly IChatGui _chat;
@@ -26,7 +29,7 @@ public sealed class Plugin : IDalamudPlugin
 
     public Plugin(
         IDalamudPluginInterface pi, ICommandManager cmd, IChatGui chat,
-        IClientState cs, ICondition cond, IFramework fw, IObjectTable ot, IDataManager data, IPluginLog log)
+        IClientState cs, ICondition cond, IFramework fw, IObjectTable ot, IDataManager data, IGameInteropProvider interop, ISigScanner sigScanner, IPluginLog log)
     {
         PluginInterface = pi;
         _cmd = cmd;
@@ -39,7 +42,10 @@ public sealed class Plugin : IDalamudPlugin
         TextureStreaming = new TextureStreamingService(data);
         TextureGpuUpload = new TextureGpuUploadProbe(pi);
         NativeTextureHandle = new NativeTextureHandleProbe();
+        NativeTextureLifecycle = new NativeTextureLifecycleProbe(interop, sigScanner);
+        NativeProgressiveTexturePreview = new NativeProgressiveTexturePreview(pi);
         PenumbraTextureSource = new PenumbraTextureSourceProbe(pi);
+        PerformanceProfiler = new PerformanceProfiler(fw, Culling, NativeTextureLifecycle);
         _cfgWin = new ConfigWindow(this);
         _ws.AddWindow(_cfgWin);
 
@@ -61,12 +67,15 @@ public sealed class Plugin : IDalamudPlugin
         _cmd.RemoveHandler(CommandName);
         _cfgWin.Shutdown();
         _ws.RemoveAllWindows();
+        PerformanceProfiler.Dispose();
+        NativeTextureLifecycle.Dispose();
+        NativeProgressiveTexturePreview.Dispose();
+        NativeTextureHandle.Dispose();
+        PenumbraTextureSource.Clear();
         Config.Save(PluginInterface);
         Culling.Dispose();
         TextureStreaming.Dispose();
         TextureGpuUpload.Dispose();
-        NativeTextureHandle.Dispose();
-        PenumbraTextureSource.Clear();
     }
 
     private static Configuration LoadConfig(IDalamudPluginInterface pi, IPluginLog log)

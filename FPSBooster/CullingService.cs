@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -150,6 +151,8 @@ public sealed unsafe class CullingService : IDisposable
     public string Status = "Starting";
     public CullStats Stats;
     public bool Active;
+    public bool PerformanceTimingEnabled;
+    public double LastPerformanceUpdateMilliseconds { get; private set; }
     public bool UsingNativeOutdoorCulling { get; private set; }
     public bool NativeOutdoorExtraLimitsActive { get; private set; }
     public bool NativeOutdoorExtraLimitsWaitingForCamera { get; private set; }
@@ -180,14 +183,24 @@ public sealed unsafe class CullingService : IDisposable
 
     private void OnUpdate(IFramework _)
     {
+        long started = PerformanceTimingEnabled ? Stopwatch.GetTimestamp() : 0;
         try { Tick(); }
         catch (Exception ex)
         {
-            if (DateTime.UtcNow < _nextErrorLog) return;
-            _nextErrorLog = DateTime.UtcNow.AddSeconds(10);
-            _log.Error(ex, "FPSBooster: pass failed.");
+            if (DateTime.UtcNow >= _nextErrorLog)
+            {
+                _nextErrorLog = DateTime.UtcNow.AddSeconds(10);
+                _log.Error(ex, "FPSBooster: pass failed.");
+            }
+        }
+        finally
+        {
+            if (started != 0)
+                LastPerformanceUpdateMilliseconds = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
         }
     }
+
+    public void ResetPerformanceTiming() => LastPerformanceUpdateMilliseconds = 0d;
 
     private void Tick()
     {

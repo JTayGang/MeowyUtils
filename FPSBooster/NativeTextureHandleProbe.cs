@@ -19,6 +19,7 @@ public sealed unsafe class NativeTextureHandleProbe : IDisposable
     private string _path = string.Empty;
 
     public bool IsAcquired => _handle != null;
+    internal TextureResourceHandle* NativeHandle => _handle;
     public string Path => _path;
     public string Status { get; private set; } = "No native texture handle acquired.";
     public string? Error { get; private set; }
@@ -82,6 +83,7 @@ public sealed unsafe class NativeTextureHandleProbe : IDisposable
         {
             Path = _path,
             HandleAddress = (nint)_handle,
+            ResourceId = ((ResourceHandle*)_handle)->Id,
             RuntimeHandleSize = _handle->GetHandleSize(),
             ReferenceCount = _handle->RefCount,
             FileSize = _handle->FileSize,
@@ -164,6 +166,7 @@ public sealed class NativeTextureHandleSnapshot
 {
     public string Path { get; init; } = string.Empty;
     public nint HandleAddress { get; init; }
+    public uint ResourceId { get; init; }
     public ulong RuntimeHandleSize { get; init; }
     public uint ReferenceCount { get; init; }
     public uint FileSize { get; init; }

@@ -9,7 +9,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 
     <!-- Bump before every release so Dalamud offers the update. -->
-    <Version>0.2.9.9</Version>
+    <Version>0.3.0.19</Version>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Vortice.Direct3D11" Version="3.8.3" />

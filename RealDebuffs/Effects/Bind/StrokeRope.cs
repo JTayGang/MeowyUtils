@@ -5,7 +5,7 @@ using Dalamud.Bindings.ImGui;
 namespace RealDebuffs.Effects.Framework.Materials;
 
 /// <summary>Laid rope: three twisted strands, one ribbon shaded via the shared matcap.</summary>
-public sealed class StrokeRope : IStrokeMaterial
+public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurfaceProvider
 {
     public string Name => "stroke.rope";
     public string[] NaturalLanguageWords { get; } = { "rope", "ropes", "cord", "cords", "twine" };
@@ -106,31 +106,65 @@ public sealed class StrokeRope : IStrokeMaterial
         public float Dye;  // dye saturation under a chromatic override; 0 = the palette's own
     }
 
-    public void Draw(ImDrawListPtr dl, in StrokePrimitive s, in MaterialContext ctx)
+    public void Draw(ImDrawListPtr dl, in StrokePrimitive s, in MaterialContext ctx) => DrawCore(dl, in s, in ctx, null, 0f);
+
+    public void DrawWithCoat(ImDrawListPtr dl, in StrokePrimitive s, in MaterialContext ctx, Coat coat, float alpha) => DrawCore(dl, in s, in ctx, coat, alpha);
+
+    private void DrawCore(ImDrawListPtr dl, in StrokePrimitive s, in MaterialContext ctx, Coat? coat, float coatAlpha)
     {
         var path = s.Path;
         float alpha = s.Brightness * ctx.Alpha;
         if (path.Count < 2 || alpha <= 0.004f) return;
 
-        float reveal = Math.Clamp(s.Reveal, 0f, 1f);
-        if (reveal <= 0.001f) return;
+        int n = Prepare(in s, ctx.ScreenScale, ctx.ShortSide, ctx.Time, alpha, ctx.ScreenW, ctx.ScreenH,
+                        DrawHelpers.ColorOverrideActive, DrawHelpers.ColorOverrideChroma, false,
+                        out Tier tier, out Look look, out float visibleLen, out float diameter);
+        if (n < 2) return;
 
-        float px = ctx.ScreenScale;
+        float depth = Math.Clamp(s.Depth, 0f, 1f);
+        bool closed = s.Closed;
+        float radius = diameter * 0.5f;
+
+        StrandShading.DrawShadow(dl, path, diameter * 3f, depth, alpha, ctx, closed, visibleLen);
+
+        DrawMesh(dl, n, tier, in look, ctx);
+
+        if (coat != null) DrawFilm(dl, n, tier, in look, in ctx, coat, coatAlpha, closed, path.Length);
+
+        if (s.TipFlare > 0.001f && !closed)
+        {
+            path.SampleAtArc(visibleLen, out Vector2 tip, out _);
+            DrawKnot(dl, tip, radius * KnotSize, Math.Clamp(s.TipFlare, 0f, 1f), s.Seed, in look, ctx);
+        }
+    }
+
+    /// <summary>
+    /// What a rope's drawing and its coat's chart share: the level of detail, the look, and the cross-sections cut from the path (the count, 0 if there is nothing to draw).
+    /// allRows lays every cross-section's lay and width, not only those near the screen, and none of the shading inputs: the chart needs the whole rope's geometry.
+    /// </summary>
+    private int Prepare(in StrokePrimitive s, float px, float shortSide, float time, float alpha, int screenW, int screenH, bool overridden, float dye, bool allRows,
+                        out Tier tier, out Look look, out float visibleLen, out float diameter)
+    {
+        tier = Full; look = default; visibleLen = 0f; diameter = 0f;
+        var path = s.Path;
+        float reveal = Math.Clamp(s.Reveal, 0f, 1f);
+        if (reveal <= 0.001f) return 0;
+
         float depth = Math.Clamp(s.Depth, 0f, 1f);
         float agit = Math.Clamp(s.Agitation, 0f, 1f);
         bool closed = s.Closed;
         int seed = s.Seed;
 
-        float diameter = Math.Clamp(s.WidthHint, ctx.ShortSide * MinDiameterFrac, ctx.ShortSide * MaxDiameterFrac)
+        diameter = Math.Clamp(s.WidthHint, shortSide * MinDiameterFrac, shortSide * MaxDiameterFrac)
                          * (1f - 0.18f * depth);
         float radius = diameter * 0.5f;
 
         float total = path.Length;
-        float visibleLen = total * reveal;
-        if (visibleLen < diameter) return;
+        visibleLen = total * reveal;
+        if (visibleLen < diameter) return 0;
 
         // level of detail, by how many pixels the rope is wide
-        Tier tier = diameter >= 21f * px ? Full : (diameter >= 15f * px ? Fine : (diameter >= 8f * px ? Medium : Coarse));
+        tier = diameter >= 21f * px ? Full : (diameter >= 15f * px ? Fine : (diameter >= 8f * px ? Medium : Coarse));
 
         // this rope's own character, reseeded from the stroke's seed
         float pick = DrawHelpers.Hash01(seed + 41);
@@ -143,7 +177,7 @@ public sealed class StrokeRope : IStrokeMaterial
 
         float detail = tier.Detail * Math.Clamp(diameter / (16f * px), 0.5f, 1f);
 
-        var look = new Look
+        look = new Look
         {
             Body = body,
             Radius = radius,
@@ -159,28 +193,224 @@ public sealed class StrokeRope : IStrokeMaterial
             ToneTertiary = DrawHelpers.HashRange(seed + 50, 1.02f, 1.08f),
             Agit = agit,
             Alpha = alpha,
-            Overridden = DrawHelpers.ColorOverrideActive,
-            Dye = DrawHelpers.ColorOverrideChroma,
+            Overridden = overridden,
+            Dye = dye,
             AlphaBits = DrawHelpers.AlphaBits(alpha),
         };
 
-        _screenW = ctx.ScreenW;
-        _screenH = ctx.ScreenH;
+        _screenW = screenW;
+        _screenH = screenH;
 
         // cut the rope into cross-sections
-        int n = BuildRows(path, total, visibleLen, closed, s.FlushStart, diameter, radius, tier, layLen,
-                          psi0, ph1, ph2, ph3, agit, ctx.Time, px, depth, s.Twist / MathF.Tau, in look);
+        return BuildRows(path, total, visibleLen, closed, s.FlushStart, diameter, radius, tier, layLen,
+                          psi0, ph1, ph2, ph3, agit, time, px, depth, s.Twist / MathF.Tau, in look, allRows);
+    }
+
+    // ---- the coat: one chart over the whole rope, cut from the same cross-sections and the same surface function the rope is drawn from
+
+    // Twelve sectors round the rope, always: a multiple of six, because the lay has three strands and crowns and valleys alternate round it. The coat re-cuts a chart by
+    // overlap when its rows change, scratch for MaxCells cells, so twelve sectors leave 48 rows; only the rows ever vary, so a re-cut never meets another sector count.
+    private const int Sectors = 12, MaxChartRows = Coat.MaxCells / Sectors;
+    private const float RowStep = 0.6f;  // diameters per chart row, at the finest
+
+    private readonly Dictionary<int, int> _rowsPrev = new();  // by stroke seed: the row count last frame, so a length that wobbles by a row does not re-cut the film every frame
+
+    public bool Charts(CoatMatter matter) => matter is LiquidMatter;
+
+    /// <summary>Liquid only: it is drawn as a film on the rope's own surface, between the body and the knot; other matters keep the generic band.</summary>
+    public bool Layers(Coat coat) => coat.Matter is LiquidMatter && coat.Siblings != null && coat.V > 1;
+
+    /// <summary>Which body row chart row r sits on (an offset from the body's first): the first and last always, the rest evenly; a closed rope's seam row is its first again, so none repeats.</summary>
+    private static int PickRow(int r, int rows, int bodyRows, bool closed)
+        => closed ? (int)((long)r * bodyRows / rows) : (rows == 1 ? 0 : (int)MathF.Round(r * (bodyRows - 1f) / (rows - 1f)));
+
+    /// <summary>
+    /// The chart is laid in the lay frame: U is arc along the rope, V the angle phi round it, and a cell is seen at theta = phi + tau * Psi. So the strands are straight along U,
+    /// the grooves run helically, and when the rope twists the cells turn in view with the strands instead of the braid sliding under the coat.
+    /// </summary>
+    public void BuildCoatSurfaces(in StrokePrimitive s, in CoatBuildContext ctx, CoatCharts charts)
+    {
+        if (s.Path.Count < 2) return;
+        int n = Prepare(in s, ctx.Px, ctx.ShortSide, ctx.Time, 1f, (int)ctx.Screen.X, (int)ctx.Screen.Y, false, 0f, true, out _, out Look look, out _, out float diameter);
         if (n < 2) return;
 
-        StrandShading.DrawShadow(dl, path, diameter * 3f, depth, alpha, ctx, closed, visibleLen);
+        bool closed = s.Closed;
+        float total = s.Path.Length;
+        int nb = _bodyEnd - _bodyFirst - (closed ? 1 : 0);  // distinct body rows
+        if (nb < 2) return;
+        float bodyLen = closed ? total : _rows[_bodyEnd - 1].Arc - _rows[_bodyFirst].Arc;
 
-        DrawMesh(dl, n, tier, in look, ctx);
+        // as many rows as this stroke's share of the frame's cells affords, no finer than RowStep; a count within a fifth of last frame's is kept
+        int V = Sectors, cap = Math.Min(Math.Min(MaxChartRows, charts.Share / V), nb);
+        if (cap < 2) return;
+        int want = Math.Clamp((int)MathF.Round(bodyLen / (RowStep * diameter)) + (closed ? 0 : 1), 2, cap);
+        _rowsPrev.TryGetValue(s.Seed, out int last);
+        int R = last >= 2 && last <= cap && want <= last * 5 / 4 && want >= last * 4 / 5 ? last : want;
+        if (_rowsPrev.Count > 64) _rowsPrev.Clear();
+        _rowsPrev[s.Seed] = R;
+        var ch = charts.Add(1, R, V);
+        if (ch == null) return;
+        ch.SeamU = closed; ch.SeamV = true; ch.Live = R; ch.SupplyScale = 1f;
 
-        if (s.TipFlare > 0.001f && !closed)
+        Span<int> pick = stackalloc int[R];
+        for (int r = 0; r < R; r++) { pick[r] = _bodyFirst + PickRow(r, R, nb, closed); ch.UPos[r] = _rows[pick[r]].Arc; }
+        float len = 0f;
+        for (int r = 0; r < R; r++)
         {
-            path.SampleAtArc(visibleLen, out Vector2 tip, out _);
-            DrawKnot(dl, tip, radius * KnotSize, Math.Clamp(s.TipFlare, 0f, 1f), seed, in look, ctx);
+            float prev = r > 0 ? ch.UPos[r - 1] : (closed ? ch.UPos[R - 1] - total : ch.UPos[0]);
+            float next = r < R - 1 ? ch.UPos[r + 1] : (closed ? ch.UPos[0] + total : ch.UPos[r]);
+            ch.UStep[r] = 0.5f * (next - prev); len += ch.UStep[r];
         }
+        ch.Ds = len / R;
+        for (int v = 0; v < V; v++) { ch.VAngle[v] = MathF.Tau * v / V; ch.VStep[v] = look.Radius * MathF.Tau / V; }
+
+        float margin = 20f * ctx.Px;
+        for (int r = 0; r < R; r++)
+        {
+            ref readonly Row row = ref _rows[pick[r]];
+            var f = new Frame(in row, in look);
+            for (int v = 0; v < V; v++)
+            {
+                float phi = (float)v / V;  // body angle, in turns
+                float theta = MathF.Tau * (phi + row.Psi);
+                float sn = MathF.Sin(theta), cs = MathF.Cos(theta);
+                ref var q = ref ch.S[r * V + v];
+                Column(in f, 3f * phi + f.Psi3, sn, cs, out q.Pos, out float nx, out float ny, out float nz, out float g, out _);
+                q.Normal = new Vector3(nx, ny, nz);
+                q.Side = Math.Clamp(cs, -1f, 1f);
+                q.Radius = f.Rad;
+                q.Z = cs * f.Rad * (1f + f.Shape * (g - 0.5f));  // the surface point's depth, as its screen offset is sin theta
+                float m = f.Rad + margin;
+                q.Visible = ctx.Screen.X <= 0f || (q.Pos.X > -m && q.Pos.X < ctx.Screen.X + m && q.Pos.Y > -m && q.Pos.Y < ctx.Screen.Y + m);
+                q.Holds = true;
+                q.Anchor = q.Pos;
+            }
+        }
+
+        // Du and Dv: the screen direction of rising U and V, scaled by what the step really covers in 3D. The flow reads their Y as a slope, so this is the true slope:
+        // round the rope it falls to nothing at the silhouette, and along a helical groove it is eased by the lay.
+        for (int r = 0; r < R; r++)
+            for (int v = 0; v < V; v++)
+            {
+                ref var q = ref ch.S[r * V + v];
+                int rp = r > 0 ? r - 1 : (closed ? R - 1 : r), rn = r < R - 1 ? r + 1 : (closed ? 0 : r);
+                int vp = v > 0 ? v - 1 : V - 1, vn = v < V - 1 ? v + 1 : 0;
+                q.Du = Slope(in ch.S[rp * V + v], in ch.S[rn * V + v], _rows[pick[r]].T);
+                q.Dv = Slope(in ch.S[r * V + vp], in ch.S[r * V + vn], default);
+
+                // a drop hangs where the surface faces down; an open rope's end that points down is the chart's downhill edge, as for a chain's
+                float best = MathF.Max(0f, q.Normal.Y);
+                if (!closed) { if (r == 0 && -q.Du.Y > best) best = -q.Du.Y; if (r == R - 1 && q.Du.Y > best) best = q.Du.Y; }
+                q.GravityDown = best;
+            }
+    }
+
+    private static Vector2 Slope(in CoatSurfaceSample a, in CoatSurfaceSample b, Vector2 fallback)
+    {
+        Vector2 d = b.Pos - a.Pos;
+        float dz = b.Z - a.Z, len = MathF.Sqrt(d.X * d.X + d.Y * d.Y + dz * dz);
+        return len > 1e-4f ? d / len : fallback;
+    }
+
+    /// <summary>
+    /// How far a film of thickness th stands off the surface, for the mesh. Up to one and a half times the liquid's hold thickness it is th itself; beyond that it eases toward maxDraw and never exceeds it,
+    /// because a pool that deep is a drop and the coat's drops draw it. Without this a rope's underside, where round-flowing liquid gathers, throws fins out of the mesh. Shading still sees the real thickness.
+    /// </summary>
+    internal static float FilmOffset(float th, float hold, float maxDraw)
+    {
+        float knee = MathF.Min(1.5f * hold, 0.8f * maxDraw);
+        if (th <= knee) return th;
+        float room = maxDraw - knee;
+        return knee + room * (1f - MathF.Exp(-(th - knee) / room));
+    }
+
+    /// <summary>The film: a second mesh on the rope's own cross-sections and columns, its thickness the chart's cells interpolated along the rope and round it (round the way the strands turn, so it follows the lay).</summary>
+    private void DrawFilm(ImDrawListPtr dl, int rowCount, Tier tier, in Look look, in MaterialContext ctx, Coat coat, float coatAlpha, bool closed, float total)
+    {
+        if (coat.Matter is not LiquidMatter lm) return;
+        int R = coat.N, V = coat.V;
+        if (R < 2 || V != Sectors || R > MaxChartRows) return;
+        float px = coat.Px;
+
+        Span<float> thick = stackalloc float[R * V];
+        float maxTh = 0f;
+        for (int c = 0; c < R * V; c++) { thick[c] = coat.M[c] / coat.A[c]; maxTh = MathF.Max(maxTh, thick[c]); }
+        if (maxTh < 0.25f * lm.Physics.Hold * px) return;
+
+        int nb = _bodyEnd - _bodyFirst - (closed ? 1 : 0);
+        if (nb < 2) return;
+        Span<float> arc = stackalloc float[R];
+        for (int r = 0; r < R; r++) arc[r] = _rows[_bodyFirst + PickRow(r, R, nb, closed)].Arc;
+
+        int nc = tier.Cols;
+        int chunkRows = MeshDraw.MaxVerts / nc;
+        Vector2 uv = MeshDraw.WhiteUv(ctx.Time);
+        float a = MathF.Min(1f, coatAlpha * ctx.Alpha);
+        Span<float> rowTh = stackalloc float[V];
+        float hold = lm.Physics.Hold * px, maxDraw = MathF.Min(lm.Physics.MaxThick, 2.5f * lm.Physics.Hold) * px;
+        Vector2[] outP = MeshDraw.P;
+        uint[] outC = MeshDraw.C;
+
+        DrawHelpers.PushColorOverride(coat.Color);
+        try
+        {
+            // the film varies slowly, so it needs about 0.42 diameters between rows, not the host's finest; the last row is always one
+            int fs = Math.Max(1, (int)MathF.Round(0.42f / tier.StepFrac));
+            int m = (rowCount - 1 + fs - 1) / fs + 1;
+            int rr = 0;
+            int j0 = 0;
+            while (j0 < m - 1)
+            {
+                int j1 = Math.Min(j0 + chunkRows - 1, m - 1);
+                bool any = false;
+                for (int j = j0; j <= j1; j++) if (_rows[Math.Min(j * fs, rowCount - 1)].On) { any = true; break; }
+
+                if (any)
+                {
+                    int vb = 0;
+                    for (int j = j0; j <= j1; j++, vb += nc)
+                    {
+                        ref readonly Row row = ref _rows[Math.Min(j * fs, rowCount - 1)];
+                        if (!row.On)
+                        {
+                            for (int c = 0; c < nc; c++) { outP[vb + c] = row.P; outC[vb + c] = 0u; }
+                            continue;
+                        }
+
+                        // the chart rows either side of this cross-section, by arc
+                        while (rr < R - 2 && row.Arc > arc[rr + 1]) rr++;
+                        int ra = rr, rb = rr + 1;
+                        float span = arc[rb] - arc[ra], t = span > 1e-4f ? Math.Clamp((row.Arc - arc[ra]) / span, 0f, 1f) : 0f;
+                        if (closed && row.Arc > arc[R - 1])
+                        {
+                            ra = R - 1; rb = 0;
+                            span = arc[0] + total - arc[R - 1];
+                            t = span > 1e-4f ? Math.Clamp((row.Arc - arc[R - 1]) / span, 0f, 1f) : 0f;
+                        }
+                        for (int k = 0; k < V; k++) rowTh[k] = DrawHelpers.Lerp(thick[ra * V + k], thick[rb * V + k], t);
+
+                        var f = new Frame(in row, in look);
+                        for (int c = 0; c < nc; c++)
+                        {
+                            Column(in f, tier.Turns3[c], tier.Sin[c], tier.Cos[c], out Vector2 pos, out float nx, out float ny, out float nz, out _, out _);
+
+                            float q = (tier.Turns3[c] / 3f - row.Psi) * V;  // this column's body angle, in sectors
+                            q -= MathF.Floor(q / V) * V;
+                            int k0 = Math.Min((int)q, V - 1), k1 = k0 + 1 == V ? 0 : k0 + 1;
+                            float th = DrawHelpers.Lerp(rowTh[k0], rowTh[k1], q - k0);
+
+                            outP[vb + c] = pos + new Vector2(nx, ny) * (FilmOffset(th, hold, maxDraw) * 0.9f);
+                            outC[vb + c] = lm.FilmShade(new Vector3(nx, ny, nz), th, px, a, CoatDraw.Soft(tier.Sin[c], 0.6f));
+                        }
+                    }
+                    MeshDraw.Grid(dl, nc - 1, j1 - j0, uv);
+                }
+
+                if (j1 == j0) break;
+                j0 = j1;  // the seam row is shared, so chunks join exactly
+            }
+        }
+        finally { DrawHelpers.PopColorOverride(); }
     }
 
     // the knot
@@ -259,7 +489,7 @@ public sealed class StrokeRope : IStrokeMaterial
 
     private int BuildRows(StrandPath path, float total, float visibleLen, bool closed, bool flushStart,
                           float diameter, float radius, Tier tier, float layLen,
-                          float psi0, float ph1, float ph2, float ph3, float agit, float time, float px, float depth, float twistTurns, in Look look)
+                          float psi0, float ph1, float ph2, float ph3, float agit, float time, float px, float depth, float twistTurns, in Look look, bool allRows)
     {
         int pn = Math.Min(path.Count, MaxPathPoints);
         _path.Prepare(path, pn, closed);
@@ -296,8 +526,10 @@ public sealed class StrokeRope : IStrokeMaterial
 
         // The body; a closed loop's last row lands on its first (same position and lay) so the seam closes.
         int bodyRows = Math.Max(1, (int)MathF.Ceiling((bodyEnd - bodyStart) / step));
+        _bodyFirst = count;
         for (int i = 0; i <= bodyRows; i++)
             AddRow(path, pn, ref seg, ref count, bodyStart + (bodyEnd - bodyStart) * i / bodyRows, 0f, 0f);
+        _bodyEnd = count;
 
         if (domeEnd)
         {
@@ -312,7 +544,7 @@ public sealed class StrokeRope : IStrokeMaterial
             float sArc = r.Arc;
 
             Vector2 c = r.P;
-            r.On = c.X > -margin && c.Y > -margin && c.X < _screenW + margin && c.Y < _screenH + margin;
+            r.On = allRows || (c.X > -margin && c.Y > -margin && c.X < _screenW + margin && c.Y < _screenH + margin);
             if (!r.On) continue;  // everything below is only ever read for rows that get drawn
 
             float psi = psi0 + sArc * layRate;
@@ -324,6 +556,7 @@ public sealed class StrokeRope : IStrokeMaterial
 
             float wobble = 1f + 0.035f * MathF.Sin(MathF.Tau * sArc * wobbleRate + ph2);
             r.Width = wobble * r.CapW;
+            if (allRows) continue;  // the chart reads only the lay and the width, not the shading inputs below
 
             float tone = 1f + 0.075f * MathF.Sin(MathF.Tau * sArc * toneRateA + ph3)
                             + 0.055f * MathF.Sin(MathF.Tau * sArc * toneRateB + ph1 * 1.7f);
@@ -346,6 +579,7 @@ public sealed class StrokeRope : IStrokeMaterial
 
 
     private float _screenW, _screenH;
+    private int _bodyFirst, _bodyEnd;  // the body's rows among _rows: [first, end); a closed rope's last body row is its first again
 
     private void AddRow(StrandPath path, int pn, ref int seg, ref int count, float s, float endSign, float domeT)
     {

@@ -37,7 +37,7 @@ public sealed class LiquidMatter : CoatMatter
         Vector4 lit = _liq.Matcap.Sample(n.X, n.Y);
         float show = DrawHelpers.Smooth(th / (_liq.Phys.Hold * px * 0.9f));
         float dark = 0.5f + 0.5f * MathF.Exp(-_liq.Phys.Absorb * th / px);
-        float spec = MathF.Pow(MathF.Max(0f, lit.X + lit.Y + lit.Z - 1.9f), 1f) * 1.4f;  // the matcap's highlights read as a wet sheen
+        float spec = MathF.Max(0f, lit.X + lit.Y + lit.Z - 1.9f) * 1.4f;  // the matcap's highlights read as a wet sheen
         float a = Math.Clamp(lit.W * (0.45f + 0.55f * show) * 0.85f + spec * 0.35f, 0f, 1f) * alpha * soft * soft;
         return CoatDraw.Pack(Vector3.Min(new Vector3(lit.X, lit.Y, lit.Z) * dark + new Vector3(spec * 0.35f), Vector3.One), a);
     }

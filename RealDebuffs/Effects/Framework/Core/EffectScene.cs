@@ -56,6 +56,7 @@ public sealed class EffectScene
 
     public void Clear()
     {
+        FrameProbe.BeginFrame();
         Strokes.Clear();
         Particles.Clear();
         Regions.Clear();

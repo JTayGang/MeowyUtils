@@ -31,6 +31,13 @@ internal sealed class Palette
         int i = (int)(t * (N - 1) + 0.5f);
         return DrawHelpers.ColorOverrideActive ? _lutTint[i] : _lut[i];
     }
+
+    /// <summary>Sample without the override lift, for a colour baked at construction (the override is whatever happens to be pushed then).</summary>
+    public uint SampleBase(float t)
+    {
+        t = t > 0f ? (t < 1f ? t : 1f) : 0f;
+        return _lut[(int)(t * (N - 1) + 0.5f)];
+    }
 }
 
 /// <summary>Black-body fire ramp: 0 = dull ember red, 1 = near-white.</summary>

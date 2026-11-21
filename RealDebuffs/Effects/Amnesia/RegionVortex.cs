@@ -109,7 +109,6 @@ internal sealed class RegionVortex : RegionMaterial<VortexField>
     // The spiral: Archimedean arms, alternately ink and pearl with clear gaps between, so it reads over a dark scene and a bright one.
     private const int SpiralCols = 4, MaxSamples = 1600;
     private const float Duty = 0.5f, SpiralAlpha = 0.15f, Step = 0.06f;   // Step: radians between samples, small enough that no corner shows
-    private static readonly uint Pearl = MemoryColor.Glow.Sample(0.90f);
     private static readonly MeshBuilder Mb = new();
 
     private static void DrawSpiral(ImDrawListPtr dl, VortexField f, float a, Vector2 centre, Vector2 size, Vector2 uv)
@@ -122,13 +121,14 @@ internal sealed class RegionVortex : RegionMaterial<VortexField>
         float hw0 = pitch * Duty * 0.5f, hole = 0.9f * pitch;                      // arms are pointed at both ends: they grow from the middle over one hole's radius
         float k = a * SpiralAlpha;
 
-        uint inkClear = DrawHelpers.WithAlpha(MemoryColor.Ink, 0f), pearlClear = DrawHelpers.WithAlpha(Pearl, 0f);
+        uint pearl = MemoryColor.Glow.Sample(0.90f);  // sampled per draw: a static would bake whichever override was active at first use
+        uint inkClear = DrawHelpers.WithAlpha(MemoryColor.Ink, 0f), pearlClear = DrawHelpers.WithAlpha(pearl, 0f);
         Mb.Reserve(f.SpiralArms * MaxSamples * SpiralCols, f.SpiralArms * MaxSamples * 6 * (SpiralCols - 1));
 
         for (int arm = 0; arm < f.SpiralArms; arm++)
         {
             bool ink = arm % 2 == 0;
-            uint clear = ink ? inkClear : pearlClear, solid = DrawHelpers.WithAlpha(ink ? MemoryColor.Ink : Pearl, k);
+            uint clear = ink ? inkClear : pearlClear, solid = DrawHelpers.WithAlpha(ink ? MemoryColor.Ink : pearl, k);
             float offset = MathF.Tau * arm / f.SpiralArms + f.SpiralTurn;
             int first = Mb.Vertices, rows = 0;
 

@@ -42,6 +42,7 @@ public sealed class StrokeShed
 
     public void Update(EffectScene scene, float time, float dt)
     {
+        FrameProbe.Mark(FrameProbe.Phase.Shed);
         _screen = scene.ScreenSize;
         _coats.Advance(time, dt, _screen);
         _free.Step(time, dt);
@@ -94,6 +95,7 @@ public sealed class StrokeShed
 
         _free.EmitOwned(scene, time);
         _coats.Emit(scene, time);
+        FrameProbe.Mark(FrameProbe.Phase.Gap);
     }
 
     private void SpawnFromStroke(in StrokePrimitive s, in StrokeEmission e, string? forcedMaterial, float time, float dt, IStrokeMaterial? strokeMaterial)

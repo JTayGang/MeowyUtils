@@ -341,6 +341,7 @@ internal static unsafe partial class MeshDraw
     private static void FlushBatch(ImDrawListPtr dl)
     {
         if (_bn == 0) return;
+        int probe = FrameProbe.Enter();
         int vn = _bn, inn = _bin;
         _bn = _bin = 0;
         bool was = _batching; _batching = false;  // reserve for real
@@ -349,6 +350,7 @@ internal static unsafe partial class MeshDraw
         AddDelta(_bi, ix, inn, unchecked((ushort)b));
         h_End(dl, v, ix, vn, inn, b);
         _batching = was;
+        FrameProbe.Leave(probe);
     }
 
     private static bool Staged(ImDrawVert* v) => _bv != null && v >= _bv && v < _bv + BatchVerts;
@@ -366,6 +368,7 @@ internal static unsafe partial class MeshDraw
             }
             // larger than the staging area: after the flush above, it goes straight to the draw list, still in order
         }
+        FrameProbe.Reserve(vtxCount, idxCount);
         dl.PrimReserve(idxCount, vtxCount);
         ImDrawList* h = dl.Handle;
         v = h->VtxWritePtr;

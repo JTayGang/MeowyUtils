@@ -47,7 +47,7 @@ internal sealed class CharmMaterials : IMaterialPack
                 BiasVelocity: new Vector2(0f, -6f),
                 PrimaryDirection: new Vector2(0f, -1f))),
         new ParticleWhisper("particle.whisper", CharmColor.Glow, CharmColor.Vignette, CharmWhispers.Phrases, "whisper", "whispers", "murmur", "murmurs", "words", "script"),
-        new ParticleGlint("particle.twinkle", CharmColor.Glow.Sample(0.99f), CharmColor.Glow.Sample(0.62f), "twinkle", "twinkles", "starlight"),
+        new ParticleGlint("particle.twinkle", CharmColor.Glow.SampleBase(0.99f), CharmColor.Glow.SampleBase(0.62f), "twinkle", "twinkles", "starlight"),
         new ParticleMote("particle.stardust", CharmColor.Glow, true, "stardust", "pixie", "pixies", "faerie", "faeries"),
     };
 }

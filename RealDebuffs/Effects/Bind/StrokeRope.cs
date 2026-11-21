@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework.Materials;
@@ -391,49 +392,67 @@ public sealed class StrokeRope : IStrokeMaterial
         }
     }
 
+    /// <summary>What every point of one cross-section shares: the frame its surface is cut in.</summary>
+    private readonly struct Frame
+    {
+        public readonly Vector2 P, T, Perp;
+        public readonly float Rad, Psi3, CapW, CapAxial, TiltAround, TiltAlong, Shape;
+
+        public Frame(in Row row, in Look look)
+        {
+            P = row.P; T = row.T; Perp = new Vector2(-row.T.Y, row.T.X);
+            Rad = look.Radius * row.Width; Psi3 = 3f * row.Psi; CapW = row.CapW; CapAxial = row.CapAxial;
+            Shape = look.Shape;
+            // Tilting the normal along the rope turns round ridges diagonal; relative to the tilt round it
+            TiltAround = look.Tilt; TiltAlong = look.Tilt * (MathF.PI / LayLength);
+        }
+    }
+
+    /// <summary>
+    /// The rope's surface at one angle of a cross-section: where it is, which way it faces (unit, z toward the viewer), the strand's height there (1 crown, 0 valley)
+    /// and which strand turn it is on. turns3 = 3 theta / tau, u = sin theta, co = cos theta (negative on the far side). Shading and the coat's charts both cut the surface here.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void Column(in Frame f, float turns3, float u, float co, out Vector2 pos, out float nx, out float ny, out float nz, out float g, out float fl)
+    {
+        float x = turns3 - f.Psi3;
+        fl = MathF.Floor(x);
+        float fr = x - fl;
+        int li = (int)(fr * RidgeN) & (RidgeN - 1);
+        g = RidgeH[li];
+        float gd = RidgeD[li];
+
+        // Position: the silhouette is pushed in and out by the strand passing beneath it.
+        pos = f.P + f.Perp * (u * (f.Rad * (1f + f.Shape * (g - 0.5f))));
+
+        // Normal: r (the cylinder's) + tilt around (theta-hat) + tilt along (the tangent).
+        float tAround = -f.TiltAround * gd;
+        float tAlong = f.TiltAlong * gd;
+        float a = (u + tAround * co) * f.CapW;
+        nx = f.Perp.X * a + f.T.X * (tAlong + f.CapAxial);
+        ny = f.Perp.Y * a + f.T.Y * (tAlong + f.CapAxial);
+        nz = (co - tAround * u) * f.CapW;
+        float inv = 1f / MathF.Sqrt(nx * nx + ny * ny + nz * nz + 1e-6f);
+        nx *= inv; ny *= inv; nz *= inv;
+    }
+
     private static void ShadeRow(in Row row, Tier tier, in Look look, int vb)
     {
         Vector2[] outP = MeshDraw.P;
         uint[] outC = MeshDraw.C;
 
         int nc = tier.Cols;
-        Vector2 T = row.T;
-        Vector2 perp = new(-T.Y, T.X);
-        float rad = look.Radius * row.Width;
-        float psi3 = 3f * row.Psi;
-        float capW = row.CapW, capAxial = row.CapAxial;
-        float tilt = look.Tilt, shape = look.Shape;
+        var f = new Frame(in row, in look);
+        Vector2 perp = f.Perp;
         Matcap body = look.Body;
-
-        // Tilting the normal along the rope turns round ridges diagonal; relative to the tilt round it
-        float tiltAround = tilt;
-        float tiltAlong = tilt * (MathF.PI / LayLength);
 
         float[] turns3 = tier.Turns3, sinT = tier.Sin, cosT = tier.Cos;
 
         for (int c = 0; c < nc; c++)
         {
-            float x = turns3[c] - psi3;
-            float fl = MathF.Floor(x);
-            float f = x - fl;
-            int li = (int)(f * RidgeN) & (RidgeN - 1);
-            float g = RidgeH[li], gd = RidgeD[li];
+            Column(in f, turns3[c], sinT[c], cosT[c], out Vector2 pos, out float nx, out float ny, out _, out float g, out float fl);
 
-            float u = sinT[c], co = cosT[c];
-
-            // Position: the silhouette is pushed in and out by the strand passing beneath it.
-            Vector2 pos = row.P + perp * (u * (rad * (1f + shape * (g - 0.5f))));
-
-            // Normal: r (the cylinder's) + tilt around (theta-hat) + tilt along (the tangent).
-            float tAround = -tiltAround * gd;
-            float tAlong = tiltAlong * gd;
-            float a = (u + tAround * co) * capW;
-            float nx = perp.X * a + T.X * (tAlong + capAxial);
-            float ny = perp.Y * a + T.Y * (tAlong + capAxial);
-            float nz = (co - tAround * u) * capW;
-            float inv = 1f / MathF.Sqrt(nx * nx + ny * ny + nz * nz + 1e-6f);
-
-            Vector3 col = body.Sample(nx * inv, ny * inv);
+            Vector3 col = body.Sample(nx, ny);
 
             // Valleys between strands are shadowed by the ridges either side of them.
             float vg = 1f - g;

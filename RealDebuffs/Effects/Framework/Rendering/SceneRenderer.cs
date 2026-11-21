@@ -23,6 +23,7 @@ public sealed class SceneRenderer
         DrawRegions(dl, scene, in ctx, veil: true);
         if (scene.Vignette.Over) DrawVignette(dl, scene, screenSize, globalAlpha);
         DrawStrokesAndParticles(dl, scene, in ctx);
+        FrameProbe.EndFrame(scene);
     }
 
     private static void DrawVignette(ImDrawListPtr dl, EffectScene scene, Vector2 screenSize, float globalAlpha)
@@ -30,6 +31,7 @@ public sealed class SceneRenderer
         ref readonly var v = ref scene.Vignette;
         if (!v.Active || v.Alpha <= 0.001f) return;
 
+        FrameProbe.Mark(FrameProbe.Phase.Vignette);
         DrawHelpers.PushColorOverride(v.ColorOverride);
         try { DrawHelpers.DrawVignette(dl, screenSize, v.Tint, v.ThicknessFrac, globalAlpha * v.Alpha); }
         finally { DrawHelpers.PopColorOverride(); }
@@ -37,9 +39,11 @@ public sealed class SceneRenderer
 
     private static void DrawRegions(ImDrawListPtr dl, EffectScene scene, in MaterialContext ctx, bool veil)
     {
+        FrameProbe.Mark(FrameProbe.Phase.Regions);
         foreach (var r in scene.Regions)
         {
             if (r.Veil != veil) continue;
+            FrameProbe.Owner(r.Owner);
             IRegionMaterial? mat = null;
             DrawHelpers.PushColorOverride(r.ColorOverride);
             try
@@ -54,13 +58,15 @@ public sealed class SceneRenderer
 
     private static void DrawBelowVeil(ImDrawListPtr dl, EffectScene scene, in MaterialContext ctx)
     {
+        FrameProbe.Mark(FrameProbe.Phase.BelowVeil);
         foreach (ref readonly var p in CollectionsMarshal.AsSpan(scene.Particles))
-            if (p.BelowVeil) DrawParticle(dl, in p, scene.Materials.Particle(in p), in ctx);
+            if (p.BelowVeil) { FrameProbe.Owner(p.Owner); DrawParticle(dl, in p, scene.Materials.Particle(in p), in ctx); }
         MeshDraw.EndBatch(dl);
     }
 
     private void DrawStrokesAndParticles(ImDrawListPtr dl, EffectScene scene, in MaterialContext ctx)
     {
+        FrameProbe.Mark(FrameProbe.Phase.Resolve);
         int pc = scene.Particles.Count;
         if (_host.Length < pc)
         {
@@ -79,22 +85,41 @@ public sealed class SceneRenderer
                 if (scene.Strokes[i].Owner == co.Owner && scene.Strokes[i].Seed == co.HostSeed) { _coatHost[c] = i; break; }
         }
 
+        // Consecutive particles mostly come from one stroke and share a material key, and the answer for the same key is the same, so the last answer of each is kept.
         bool anyHosted = false;
+        var parts = CollectionsMarshal.AsSpan(scene.Particles);
+        var strokes = CollectionsMarshal.AsSpan(scene.Strokes);
+        bool mValid = false, hValid = false;
+        DebuffKind mOwner = default, hOwner = default; PrimitiveRole mRole = default; string? mName = null; IParticleMaterial? mMat = null; int hSeed = 0, hIdx = -1;
         for (int j = 0; j < pc; j++)
         {
-            var p = scene.Particles[j];
-            var mat = scene.Materials.Particle(in p);
-            _material[j] = mat;
+            ref readonly var p = ref parts[j];
             _host[j] = p.BelowVeil ? -2 : -1;
-            if (p.BelowVeil || !p.HasHost || mat is null || !mat.DrawsWithHost) continue;
+            if (p.BelowVeil) { _material[j] = null; continue; }  // drawn above, before the veil; never looked at again
 
-            for (int i = scene.Strokes.Count - 1; i >= 0; i--)
-                if (scene.Strokes[i].Owner == p.Owner && scene.Strokes[i].Seed == p.HostSeed) { _host[j] = i; anyHosted = true; break; }
+            IParticleMaterial? mat;
+            if (mValid && p.Owner == mOwner && p.Role == mRole && ReferenceEquals(p.MaterialName, mName)) mat = mMat;
+            else { mat = scene.Materials.Particle(in p); mOwner = p.Owner; mRole = p.Role; mName = p.MaterialName; mMat = mat; mValid = true; }
+            _material[j] = mat;
+            if (!p.HasHost || mat is null || !mat.DrawsWithHost) continue;
+
+            int h;
+            if (hValid && p.Owner == hOwner && p.HostSeed == hSeed) h = hIdx;
+            else
+            {
+                h = -1;  // the last stroke with this owner and seed wins
+                for (int i = strokes.Length - 1; i >= 0; i--)
+                    if (strokes[i].Owner == p.Owner && strokes[i].Seed == p.HostSeed) { h = i; break; }
+                hOwner = p.Owner; hSeed = p.HostSeed; hIdx = h; hValid = true;
+            }
+            if (h >= 0) { _host[j] = h; anyHosted = true; }
         }
 
+        FrameProbe.Mark(FrameProbe.Phase.Strokes);
         for (int i = 0; i < scene.Strokes.Count; i++)
         {
             var s = scene.Strokes[i];
+            FrameProbe.Owner(s.Owner);
             var stroke = scene.Materials.Stroke(s.Owner, s.Role).Material;
             int layered = -1;  // a host that places the coat among its own passes draws it itself
             if (stroke is ICoatLayeredHost lh)
@@ -115,16 +140,17 @@ public sealed class SceneRenderer
             finally { DrawHelpers.PopColorOverride(); }
 
             for (int c = 0; c < cc; c++)
-                if (_coatHost[c] == i && c != layered) DrawCoat(dl, scene.Coats[c], in ctx);
+                if (_coatHost[c] == i && c != layered) { FrameProbe.Owner(scene.Coats[c].Owner); DrawCoat(dl, scene.Coats[c], in ctx); }
 
             if (!anyHosted) continue;
             for (int j = 0; j < pc; j++)
-                if (_host[j] == i) DrawParticle(dl, scene.Particles[j], _material[j], in ctx);
+                if (_host[j] == i) { FrameProbe.Owner(scene.Particles[j].Owner); DrawParticle(dl, scene.Particles[j], _material[j], in ctx); }
             MeshDraw.EndBatch(dl);  // the next stroke draws on its own
         }
 
+        FrameProbe.Mark(FrameProbe.Phase.Free);
         for (int j = 0; j < pc; j++)
-            if (_host[j] == -1) DrawParticle(dl, scene.Particles[j], _material[j], in ctx);
+            if (_host[j] == -1) { FrameProbe.Owner(scene.Particles[j].Owner); DrawParticle(dl, scene.Particles[j], _material[j], in ctx); }
         MeshDraw.EndBatch(dl);
     }
 

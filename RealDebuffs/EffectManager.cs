@@ -185,7 +185,9 @@ public sealed class EffectManager
                 if (effect is IReceivesStacks stacked)
                     stacked.SetStacks(DebugTester.IsForced(effect.Kind) ? DebugTester.GetForcedStacks(effect.Kind) : Math.Max(1, _stacks.GetValueOrDefault(effect.Kind)));
 
+                long probe = FrameProbe.Start();
                 effect.Emit(_scene, screenSize, current * strength, time, dt, color);
+                FrameProbe.Emit(effect.Kind, probe);
             }
             catch (Exception ex)
             {

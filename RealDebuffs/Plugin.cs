@@ -69,11 +69,12 @@ public sealed class Plugin : IDalamudPlugin
             HelpMessage = "Opens Real Debuffs settings. '/realdebuffs toggle' to enable/disable everything, '/realdebuffs statuses' to log your current statuses (including custom Moodles/Loci ones) for troubleshooting.",
         });
 
-        _pi.UiBuilder.Draw += OnDraw;
-        _pi.UiBuilder.OpenConfigUi += OnOpenConfig;
-
+        // The audit builds the material registry, so it runs before a draw callback can reach it first.
         foreach (var problem in RegistryAudit.Run(effects))
             _log.Warning($"RealDebuffs: {problem}");
+
+        _pi.UiBuilder.Draw += OnDraw;
+        _pi.UiBuilder.OpenConfigUi += OnOpenConfig;
 
         _log.Information($"RealDebuffs loaded. {effects.Count} effect(s) discovered.");
     }
@@ -98,6 +99,18 @@ public sealed class Plugin : IDalamudPlugin
                 break;
             case "statuses":
                 _effects.LogCurrentStatuses();
+                break;
+            case "probe":  // first call starts recording frame costs, the second stops and logs them
+                if (FrameProbe.Armed)
+                {
+                    FrameProbe.Disarm();
+                    foreach (var line in FrameProbe.Report()) _log.Information($"RealDebuffs: {line}");
+                }
+                else
+                {
+                    FrameProbe.Arm();
+                    _log.Information("RealDebuffs: frame probe armed (last 600 frames). Run '/realdebuffs probe' again to stop and log the report.");
+                }
                 break;
             default:
                 _configWindow.IsOpen = !_configWindow.IsOpen;

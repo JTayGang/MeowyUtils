@@ -17,7 +17,7 @@ public sealed class DropsyEffect : SceneEffect, IHasSwappableSlots
     private const float PoolDepth = 0.135f;  // of the screen height
     private const float SideZone = 0.20f;  // leaks may also start this far down the side edges
     private const int Leaks = 9, Drips = 12;
-    private const float FluxRef = 215000f;  // the inflow a typical cast delivers at 1080p (px²/s, measured: streams' width x speed plus drops); the pool holds its full depth against it
+    private const float FluxRef = 215000f;  // typical inflow at 1080p (px²/s, measured: stream width x speed plus drops); the pool holds full depth against it
 
     private enum Size { Gusher, Medium, Pinhole }
 
@@ -108,14 +108,14 @@ public sealed class DropsyEffect : SceneEffect, IHasSwappableSlots
         if (open) Events(in f);
         Spritz(dt);
 
-        // the pool is the water that has actually landed in it (see LiquidField.Reservoir); this only says how deep it settles and when it should drain
+        // the pool holds the water that landed (LiquidField.Reservoir); this sets only its settled depth and drain
         _field.PoolDepthRef = f.Size.Y * PoolDepth * _fill;
         _field.PoolFluxRef = FluxRef * f.Px * f.Px;
         _field.Leaving = f.Leave;
         _field.Chop = 0.35f + 1.2f * MathF.Exp(-t / 1.8f);
     }
 
-    /// <summary>Where a leak can start: anywhere along the top, favouring the corners, or the top fifth of a side edge. down is +1 if the water should head right.</summary>
+    /// <summary>Where a leak can start: along the top (favouring corners) or the top fifth of a side edge; down is +1 if the water heads right.</summary>
     private Vector2 Origin(in CastFrame f, bool corner, out bool side, out float toward)
     {
         float W = f.Size.X, H = f.Size.Y, px = f.Px;

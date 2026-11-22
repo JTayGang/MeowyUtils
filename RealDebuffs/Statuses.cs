@@ -175,7 +175,7 @@ public sealed class CustomStatusSnapshot
             .ThenBy(s => s.Key, StringComparer.Ordinal)
             .ToArray();
 
-        // One Look per effect: the one that says the most wins, ties go to the earlier name, so the result never depends on dictionary order.
+        // one Look per effect: the most informative wins, ties to the earlier name, so dictionary order never matters
         var chosen = new Dictionary<DebuffKind, Look>();
         foreach (var status in statuses)
             foreach (var look in status.Language.Looks)

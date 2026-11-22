@@ -108,7 +108,7 @@ public sealed class TooltipKeywordRule
             .ToArray();
     }
 
-    /// <summary>Version 1 seeded each effect's words into editable rules; carry over deleted/disabled rules as switched off, removed words as muted, added words as extras.</summary>
+    /// <summary>Migrates v1 rules: deleted/disabled rules become switched off, removed words muted, added words extras.</summary>
     public static bool Migrate(Configuration config, IReadOnlyList<ISceneEffect> effects)
     {
         if (config.Version >= 2) return false;

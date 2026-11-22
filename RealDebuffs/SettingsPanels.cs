@@ -300,7 +300,7 @@ internal sealed class CustomStatusPanel
     }
 }
 
-/// <summary>"Tooltip keywords" section: master toggle, each effect's built-in words (switch off a whole effect or single words), and the user's extra words.</summary>
+/// <summary>"Tooltip keywords" section: master toggle, each effect's built-in words (switch off an effect or single words) and the user's extra words.</summary>
 internal sealed class TooltipKeywordPanel
 {
     private const float KeywordWidth = 240f;

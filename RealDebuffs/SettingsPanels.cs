@@ -90,10 +90,8 @@ public sealed class ConfigWindow : Window
         bool blockChat = _config.SilenceBlocksChat;
         if (ImGui.Checkbox("Silence also blocks sending chat", ref blockChat)) { _config.SilenceBlocksChat = blockChat; changed = true; }
         ImGui.TextWrapped(
-            "Hooks the game's chat-send function so messages don't actually go out while you're " +
-            "silenced, rather than only showing the visual effect. This is a deeper game hook than " +
-            "any of the effects above need, so if a game update ever breaks something, this is the " +
-            "first setting to try turning off - everything else is unaffected by it.");
+            "Uses a deeper game hook to block chat while silenced. Disable it first if a game update " +
+            "causes issues; visual effects are unaffected.");
 
         DebugTester.DrawUi(kind => _config.Enabled && _config.IsEnabled(kind), _effects);
 
@@ -195,7 +193,7 @@ internal sealed class CustomStatusPanel
         try
         {
             ImGui.TextDisabled("Custom statuses");
-            ImGui.TextWrapped("Show an effect while a Moodles or Loci status is on you.");
+            ImGui.TextWrapped("Show an effect when a matching Moodles/Loci status is active.");
 
             if (!_watcher.MoodlesAvailable || !_watcher.LociAvailable)
             {
@@ -339,8 +337,7 @@ internal sealed class TooltipKeywordPanel
                 changed = true;
             }
 
-            ImGui.TextWrapped("Look for words inside a status's tooltip - useful when the title alone isn't telling enough. " +
-                              "Every effect already understands its own words (and their plurals, -ed and -ing forms); add your own below.");
+            ImGui.TextWrapped("Scan status tooltips for trigger words. Effects include built-in words and common forms; add extras below.");
 
             ImGui.Spacing();
 
@@ -357,7 +354,7 @@ internal sealed class TooltipKeywordPanel
                 ImGui.SameLine();
                 if (ImGui.Button("Reset all word settings##rulesreset")) _resetDefaultsRequested = true;
                 if (ImGui.IsItemHovered())
-                    ImGui.SetTooltip("Removes your extra words and turns every built-in word back on.");
+                    ImGui.SetTooltip("Removes extra words and re-enables built-in words.");
 
                 ImGui.Spacing();
 
@@ -418,7 +415,7 @@ internal sealed class TooltipKeywordPanel
                 ImGui.EndDisabled();
 
                 if (duplicate)
-                    ImGui.TextDisabled("  One of those words is already in your extras for this effect.");
+                    ImGui.TextDisabled("  A word is already assigned to this effect.");
             }
 
             if (_clearAllRequested)
@@ -562,8 +559,7 @@ internal sealed class EffectStylePanel
             ImGui.SetNextItemOpen(true, ImGuiCond.FirstUseEver);
             if (ImGui.CollapsingHeader("Effect generator###effectstyles"))
             {
-                ImGui.TextWrapped("Paste a status description to see what it triggers, or build a look: what an effect is made of, " +
-                                  "what's on it, and up to two colours. Changes apply live.");
+                ImGui.TextWrapped("Paste a status description to test parsing, or edit an effect's materials and colours. Changes apply live.");
 
                 DrawTester();
 
@@ -612,7 +608,7 @@ internal sealed class EffectStylePanel
         {
             _selectedKind = KindValues[idx];
             _testText = ExportText(_selectedKind);
-        };
+        }
 
         var kind = _selectedKind;
         var lex = TooltipLanguage.For(_config);
@@ -630,8 +626,8 @@ internal sealed class EffectStylePanel
         ImGui.EndDisabled();
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip(phrase is null
-                ? "This look uses settings words can't say - copy the code instead."
-                : $"Copies to clipboard and fills the tester above:\n\n\"{phrase}\"");
+                ? "Settings words can't express this look; copy the code instead."
+                : $"Copies the phrase and fills the tester:\n\n{phrase}");
 
         ImGui.SameLine();
         ImGui.BeginDisabled(code is null);
@@ -643,8 +639,8 @@ internal sealed class EffectStylePanel
         ImGui.EndDisabled();
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip(code is null
-                ? "A material or slot in this look has no short-code number yet (see CodeIds); the audit names it."
-                : $"Exact and always works, even for advanced slots. Paste it anywhere in a status description, exactly as copied (it is case-sensitive; {code.Length} characters):\n\n{code}");
+                ? "A slot has no short-code ID yet; see CodeIds and the registry audit."
+                : $"Copies the exact, case-sensitive code ({code.Length} characters) for use in a status description.");
 
         // Wide gap before Reset so a misclick on Copy can't land on the destructive button.
         ImGui.SameLine(0f, 32f);
@@ -660,7 +656,7 @@ internal sealed class EffectStylePanel
         }
         ImGui.PopStyleColor();
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip($"Returns {kind} to its built-in defaults.\n\nOnly affects the currently-selected effect.");
+            ImGui.SetTooltip($"Restores {kind}'s built-in defaults.");
 
         ImGui.Spacing();
         ImGui.TextDisabled(phrase is null ? "Phrase" : $"Phrase ({phrase.Length})");
@@ -695,7 +691,7 @@ internal sealed class EffectStylePanel
         ImGui.Spacing();
         ImGui.Checkbox("Advanced: every material slot##advanced", ref _advanced);
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Shows the remaining slots. Words can't reach these - copy the code to share a look that uses them.");
+            ImGui.SetTooltip("Shows all slots. Use the code to share looks that include them.");
 
         if (_advanced)
         {
@@ -782,7 +778,7 @@ internal sealed class EffectStylePanel
             }
             ImGui.EndDisabled();
             if (ImGui.IsItemHovered())
-                ImGui.SetTooltip("Shows the matched effects on screen for 15 seconds, with their materials and colours.");
+                ImGui.SetTooltip("Previews matched effects for 15s with their materials and colours.");
         }
         finally { ImGui.PopID(); }
     }
@@ -1049,9 +1045,7 @@ internal static class DebugTester
         ImGui.PushID("TestTools");
         try
         {
-            ImGui.TextWrapped(
-                $"Shows an effect for {Seconds:0}s as if you had the debuff. Visual only - it never " +
-                "triggers the chat lockout. Effects switched off above still won't show.");
+            ImGui.TextWrapped($"Previews each effect for {Seconds:0}s. Visual only; effects disabled above stay hidden.");
 
             long now = Environment.TickCount64;
             foreach (var effect in effects)

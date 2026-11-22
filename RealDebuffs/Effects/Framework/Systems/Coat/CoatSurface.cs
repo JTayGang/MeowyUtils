@@ -2,7 +2,7 @@ using System.Numerics;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>One point of a chart this frame: position, which way the chart runs, how it faces; Du and Dv are unit screen directions of rising U and V.</summary>
+/// <summary>One point of a chart this frame: position, which way the chart runs, how it faces. Du and Dv are the screen directions of rising U and V, no longer than 1: the flow reads their Y as a slope, so a foreshortened host (a rope round its silhouette) scales them by what a step covers in 3D; a flat host gives unit vectors.</summary>
 public struct CoatSurfaceSample
 {
     public Vector2 Pos, Du, Dv, Anchor;  // Anchor: where a drop hangs from if one forms here
@@ -10,6 +10,7 @@ public struct CoatSurfaceSample
     public float Side, GravityDown, Radius;  // painter key -1 back..+1 front; how squarely the exposed downhill edge faces down (0 inside); host half-thickness
     public float Z;  // depth of Pos toward the viewer, px (0 on a flat host); with Normal and Radius it fixes the host's axis, which contact is judged on
     public bool Visible, Holds;  // on screen; the host can hold matter here
+    public float Pool;  // -1..1, 0 if the host has none: +1 a groove (concave), -1 a ridge (convex); liquid settles thicker where it is higher, by the matter's PoolDepth in hold thicknesses per unit
 }
 
 public enum CoatEdge : byte { UStart, UEnd, VStart, VEnd }  // a chart's four sides: the first and last row, the first and last sector

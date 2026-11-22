@@ -16,6 +16,7 @@ public abstract class CoatMatter
     internal float Run;  // px/s down a vertical strand at twice Hold; 0 = stays put
     internal float Dry;  // 1/s
     internal float Level;  // how fast a lump spreads along the strand (1/s per cell); 0 = it stays where it is
+    internal float PoolDepth;  // how much thicker the film settles, in hold thicknesses, per unit of the host's pooling potential (groove against ridge is two units); 0 = it does not pool
     internal float Index = 1f;  // power-law index n (see LiquidPhysics.Index)
     internal bool Settles;  // arrives from above and lies on the upper side
 
@@ -46,7 +47,7 @@ public sealed class LiquidMatter : CoatMatter
     {
         _liq = liquid;
         var p = liquid.Phys;
-        Supply = p.Supply; Hold = p.Hold; MaxThick = p.MaxThick; Run = p.Run; Dry = 0.01f; Level = p.Level; Index = index ?? p.Index;
+        Supply = p.Supply; Hold = p.Hold; MaxThick = p.MaxThick; Run = p.Run; Dry = 0.01f; Level = p.Level; PoolDepth = 0.5f; Index = index ?? p.Index;
     }
 
     internal override void Seed(Coat c)

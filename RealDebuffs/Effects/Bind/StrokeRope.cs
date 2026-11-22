@@ -276,6 +276,7 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
                 q.Visible = ctx.Screen.X <= 0f || (q.Pos.X > -m && q.Pos.X < ctx.Screen.X + m && q.Pos.Y > -m && q.Pos.Y < ctx.Screen.Y + m);
                 q.Holds = true;
                 q.Anchor = q.Pos;
+                q.Pool = 1f - 2f * g;  // the strand's height turned over: a groove (0) pools, a crown (1) sheds
             }
         }
 

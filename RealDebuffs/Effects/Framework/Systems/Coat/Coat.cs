@@ -37,6 +37,8 @@ public sealed class Coat
     internal float[] CW = Array.Empty<float>();  // scratch: the weights of one touch, cell pairs of its two sides
     internal bool[] Vis = Array.Empty<bool>();  // on screen: matter that runs off the edge is gone
     internal bool[] Holds = Array.Empty<bool>();  // the host can hold matter here (a tapered end, say, can't): no supply, no drops
+    internal float[] Pool = Array.Empty<float>();  // per cell, the host's pooling potential (see CoatSurfaceSample)
+    internal bool HasPool;  // some cell of this frame's chart has one; if none does, levelling is exactly what it always was
     internal readonly float[] VStep = new float[12];  // width of each sector, px
     internal Vector2 TipP, TipT, HeadP, HeadT;  // both ends of a strand: either can be the low one
     internal int Salt => unchecked(Seed + ChartId * 40503);  // the stroke's seed, told apart per chart so every link doesn't repeat the same stamp (a strand is chart 0: unchanged)
@@ -89,7 +91,7 @@ public sealed class Coat
         M = new float[n]; Heat = new float[n]; Char = new float[n]; Patch = new float[n]; R = new float[n]; Face = new float[n]; A = new float[n]; Dc = new float[n];
         P = new Vector2[n]; T = new Vector2[n]; Nm = new Vector2[n]; Sd = new Vector2[n]; Anch = new Vector2[n];
         Ctr = new Vector3[n];
-        Vis = new bool[n]; Holds = new bool[n]; PendAt = new sbyte[n]; Array.Fill(PendAt, (sbyte)-1);
+        Vis = new bool[n]; Holds = new bool[n]; Pool = new float[n]; PendAt = new sbyte[n]; Array.Fill(PendAt, (sbyte)-1);
         _v = new float[n]; _w = new float[n]; _dm = new double[n]; Rem = new float[n];
     }
 
@@ -106,14 +108,17 @@ public sealed class Coat
         for (int s = 0; s < v; s++) { VStep[s] = ch.VStep[s]; tot += VStep[s]; }
         for (int i = 0; i < n; i++)
             for (int s = 0; s < v; s++) { Dc[i * v + s] = ch.UStep[i]; A[i * v + s] = ch.UStep[i] * (VStep[s] / tot); }
+        bool pooled = false;
         for (int i = 0; i < Live; i++)
             for (int s = 0; s < v; s++)
             {
                 int c = i * v + s;
                 ref readonly var q = ref ch.S[c];
+                Pool[c] = q.Pool; pooled |= q.Pool != 0f;
                 P[c] = q.Pos; T[c] = q.Du; Sd[c] = q.Dv; Nm[c] = new Vector2(q.Normal.X, q.Normal.Y);
                 R[c] = q.Radius; Face[c] = q.GravityDown; Vis[c] = q.Visible; Holds[c] = q.Holds; Anch[c] = q.Anchor;
             }
+        HasPool = pooled;
         Vector2 lo = new(float.MaxValue), hi = new(float.MinValue); float rr = 0f;
         for (int c = 0, cells = Live * v; c < cells; c++) { lo = Vector2.Min(lo, P[c]); hi = Vector2.Max(hi, P[c]); rr = MathF.Max(rr, R[c]); }
         BoundsMin = lo; BoundsMax = hi; BoundsR = rr;
@@ -371,13 +376,19 @@ public sealed class Coat
         // levelling: a lump spreads over the chart, thick faster than thin; flux between neighbours, so nothing is made or lost
         if (mt.Level > 0f && cells > 1)
         {
+            // pooling: the film levels toward a thickness offset by the host's potential, so a groove holds more than a ridge. Still a flux between neighbours, so the books balance.
+            // A pool can ask for more than a cell has: with one, no cell gives up more than a quarter of what it holds in a step.
+            float pk = HasPool ? mt.PoolDepth * hold : 0f;
             int lastRow = wrapU ? rows : rows - 1;
             for (int s = 0; s < V; s++)
                 for (int i = 0; i < lastRow; i++)
                 {
                     int j = i + 1 == rows ? 0 : i + 1, ca = i * V + s, cb = j * V + s;
                     float w = Math.Clamp(0.5f * (M[ca] + M[cb]) / (0.5f * (A[ca] + A[cb])) / MathF.Max(hold, 1e-3f), 0.3f, 3f);
-                    float amt = MathF.Min(0.25f, mt.Level * w * w * h) * Diff(M[ca], M[cb], A[ca], A[cb]);
+                    float diff = Diff(M[ca], M[cb], A[ca], A[cb]);
+                    if (pk > 0f) diff -= pk * 0.5f * (A[ca] + A[cb]) * (Pool[ca] - Pool[cb]);
+                    float amt = MathF.Min(0.25f, mt.Level * w * w * h) * diff;
+                    if (pk > 0f) amt = amt > 0f ? MathF.Min(amt, 0.25f * M[ca]) : MathF.Max(amt, -0.25f * M[cb]);
                     _dm[ca] -= amt; _dm[cb] += amt;
                 }
             if (V > 1)
@@ -386,7 +397,10 @@ public sealed class Coat
                     {
                         int ca = i * V + s, cb = i * V + (s + 1 == V ? 0 : s + 1);
                         float w = Math.Clamp(0.5f * (M[ca] + M[cb]) / (0.5f * (A[ca] + A[cb])) / MathF.Max(hold, 1e-3f), 0.3f, 3f);
-                        float amt = MathF.Min(0.25f, mt.Level * w * w * h) * Diff(M[ca], M[cb], A[ca], A[cb]);
+                        float diff = Diff(M[ca], M[cb], A[ca], A[cb]);
+                        if (pk > 0f) diff -= pk * 0.5f * (A[ca] + A[cb]) * (Pool[ca] - Pool[cb]);
+                        float amt = MathF.Min(0.25f, mt.Level * w * w * h) * diff;
+                        if (pk > 0f) amt = amt > 0f ? MathF.Min(amt, 0.25f * M[ca]) : MathF.Max(amt, -0.25f * M[cb]);
                         _dm[ca] -= amt; _dm[cb] += amt;
                     }
             Apply(cells);

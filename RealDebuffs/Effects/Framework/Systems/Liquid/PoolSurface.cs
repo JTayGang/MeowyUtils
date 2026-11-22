@@ -42,13 +42,13 @@ internal sealed class PoolSurface
         _cDepth = -1f;
     }
 
-    /// <summary>Strikes the surface under a Gaussian of width reach at x; positive push (px/s) is up. A blow is a pressure impulse, so long swells barely feel it.</summary>
+    /// <summary>Strikes the surface under a Gaussian of width reach at x (push px/s, positive up); a pressure impulse, so long swells barely feel it.</summary>
     public void Kick(float x, float reach, float push) => Spread(_v, x, reach, push, reach);
 
-    /// <summary>Presses the surface down under a Gaussian of width reach at x for this step only (negative lifts it); it settles to depth px, as water under a steady pressure does.</summary>
+    /// <summary>Presses the surface under a Gaussian of width reach at x for this step only (negative lifts); it settles to depth px.</summary>
     public void Press(float x, float reach, float depth) => Spread(_t, x, reach, -depth, 0f);
 
-    // adds amount * Gaussian to a per-mode array as cosine-series coefficients; with a nonzero blow, mode m is weighted by blow * k tanh(k depth)
+    // adds amount * Gaussian to the per-mode cosine coefficients; a nonzero blow weights mode m by blow * k tanh(k depth)
     private void Spread(float[] into, float x, float reach, float amount, float blow)
     {
         if (_modes == 0 || reach <= 0f || amount == 0f) return;
@@ -92,7 +92,7 @@ internal sealed class PoolSurface
         Array.Copy(_acc, H, _n);
     }
 
-    // each mode is a damped oscillator, w^2 = g k tanh(k depth), damping d; over dt it moves by exactly e * (cos, sin / wd) (cosh, sinh when overdamped)
+    // each mode is a damped oscillator (w^2 = g k tanh(k depth)), advanced exactly over dt: e * (cos, sin / wd), cosh/sinh if overdamped
     private void Rebuild(float dt, float depth, float g, float nu, float drag)
     {
         (_cDepth, _cDt, _cG, _cNu, _cDrag) = (depth, dt, g, nu, drag);

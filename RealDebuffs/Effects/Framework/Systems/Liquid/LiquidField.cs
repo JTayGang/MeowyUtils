@@ -2,7 +2,7 @@ using System.Numerics;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>A stream as a chain of launched parcels, each flying its own parabola: it thins as it speeds up, ripples grow until it pinches into beads (a thick liquid stays a rope), and a fast one sheds spray.</summary>
+/// <summary>A stream of launched parcels on parabolas: thins as it speeds, ripples pinch it into beads (thick stays a rope), fast ones shed spray.</summary>
 public sealed class LiquidJet
 {
     internal const int Cap = 192, Bead = 7;  // parcels kept; parcels per bead (one ripple wavelength)
@@ -76,7 +76,7 @@ public sealed class LiquidJet
     {
         var ph = f.Liquid.Phys;
         float e0 = ph.Ripple * (1f + 0.6f * Churn) * (0.55f + 0.9f * DrawHelpers.Hash01(Seed + (int)(i / Bead) * 31));
-        // stretching slows the ripples' growth as thinning speeds it up, so the stream's own radius is a mean of where it began and where it is
+        // stretching slows ripple growth as thinning speeds it, so the stream's radius is the mean of its launch and local radius
         float rEff = MathF.Sqrt(MathF.Max(rLaunch, 0.5f * f.Px) * MathF.Max(rLoc, 0.5f * f.Px));
         float sigma = ph.Breakup * MathF.Pow(8f * f.Px / rEff, 1.5f);
         return MathF.Min(1f, e0 * MathF.Exp(MathF.Min(sigma * a, 30f)));
@@ -297,7 +297,7 @@ public sealed class LiquidSeep
     internal int Cycles, Seed;
 }
 
-/// <summary>Jets and seeps feeding a wave-equation pool, with drops, splashes, bubbles, foam and lens beads; the liquid's physics drive all of it.</summary>
+/// <summary>Jets and seeps feeding a wave-equation pool, with drops, splashes, bubbles, foam and lens beads, all driven by the liquid's physics.</summary>
 public sealed class LiquidField : IRegionState
 {
     private const int MaxDrops = 360, MaxBubbles = 64, MaxHits = 48, MaxRebounds = 12, MaxBeads = 44, MaxTrails = 56, TrailPoints = 26, MaxCrowns = 14;
@@ -348,14 +348,14 @@ public sealed class LiquidField : IRegionState
     {
         var ph = Liquid.Phys;
         float w = ColW;
-        // a mound relaxes toward the pool's mean at twice the rate a long wave crosses a column (c = sqrt(g h)); thick liquid is slower. Every column gives or takes in proportion, so nothing is made or lost.
+        // a mound relaxes to the pool mean at twice the long-wave rate (c = sqrt(g h); slower if thick), mass-conserving
         double sum = 0;
         for (int i = 0; i < PoolCols; i++) sum += _vol[i];
         float mean = (float)(sum / PoolCols), c = MathF.Sqrt(Gravity * MathF.Max(Level, 4f * Px));
         float r = 1f - MathF.Exp(-2f * c / w * (1f - 0.85f * ph.Viscosity) * dt);  // a point source sends waves out both ways: the standing mound is S / 2c
         for (int i = 0; i < PoolCols; i++) _vol[i] -= r * (_vol[i] - mean);
 
-        // it drains as it deepens (an orifice: outflow ~ depth^1.5, sized so the typical inflow holds the reference depth), and spills over a weir above that
+        // drains as it deepens (orifice: outflow ~ depth^1.5, sized so typical inflow holds the reference depth), spilling over a weir above that
         float hr = MathF.Max(PoolDepthRef, 1f), kd = PoolFluxRef / PoolCols / MathF.Pow(hr, 1.5f), boost = 1f + 4f * Leaving;
         double total = 0;
         for (int i = 0; i < PoolCols; i++)
@@ -442,7 +442,7 @@ public sealed class LiquidField : IRegionState
         ApplyGravity();
     }
 
-    /// <summary>Starts a stream from at (px): speed in px/s at 1080p, angle in radians from straight down (positive toward +x), radius in px at 1080p. The jet must be Idle.</summary>
+    /// <summary>Starts a stream at (px): speed px/s and radius px at 1080p, angle in radians from straight down (+ toward +x); the jet must be Idle.</summary>
     public void Launch(LiquidJet j, Vector2 at, float speed, float angle, float radius, int seed)
     {
         j.X = at.X; j.Y = at.Y; j.Speed = speed * Px; j.Angle = angle; j.Radius = radius * Px; j.Seed = seed;
@@ -568,7 +568,7 @@ public sealed class LiquidField : IRegionState
         });
     }
 
-    /// <summary>Flings droplets from at in a cone (angle from straight down, spread in radians, speed px/s at 1080p, radius px at 1080p): one call is one puff, so call it over a few frames for a burst.</summary>
+    /// <summary>Flings droplets in a cone (angle from straight down, spread rad, speed and radius at 1080p): one call is one puff, repeat for a burst.</summary>
     public void Spray(Vector2 at, float angle, float spread, float speed, int count, float radius)
     {
         var ph = Liquid.Phys;

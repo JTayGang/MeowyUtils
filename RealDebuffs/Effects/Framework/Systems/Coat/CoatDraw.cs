@@ -6,7 +6,7 @@ namespace RealDebuffs.Effects.Framework;
 /// <summary>One band of film along a coat: where it lies across the strand and what colour each point is.</summary>
 internal interface IBand
 {
-    /// <summary>For cell i: which side (+1 underside, -1 upper side), how far in px from the strand's centre the band starts and ends along it, and how strongly it shows (0..1).</summary>
+    /// <summary>For cell i: side (+1 underside, -1 upper), where the band starts and ends in px from the strand's centre, and how strongly it shows (0..1).</summary>
     float Extent(Coat c, int i, out float uIn, out float uOut, out float sign);
 
     /// <summary>Colour at x across the band (-1 inner edge .. 1 outer edge); dir is the screen direction of the side.</summary>
@@ -48,7 +48,7 @@ internal static class CoatDraw
         Mb.Flush(dl, MeshDraw.WhiteUv(ctx.Time));
     }
 
-    /// <summary>The strand is a coarse polyline whose corners its own material hides; a band cut straight off it would show them. This smooths what is drawn (positions, then the side and underside from them) and leaves the simulation's own samples on the host path.</summary>
+    /// <summary>Smooths the drawn strand (positions, then side and underside) so bands don't show polyline corners; the simulation keeps the host's samples.</summary>
     internal static void Interpolate(Coat c, int n, bool wrap, Span<Vector2> p, Span<Vector2> sd, Span<Vector2> nm)
     {
         for (int i = 0; i < n; i++) p[i] = c.P[i];

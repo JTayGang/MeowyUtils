@@ -6,7 +6,7 @@ namespace RealDebuffs.Effects.Framework;
 /// <summary>A particle material that can be swapped onto a strand as what it is made of.</summary>
 public interface ICoatMatter { CoatMatter Matter { get; } }
 
-/// <summary>Matter lying on one chart of a host: an amount per cell (U rows x V sectors, V = 1 for a strand), run by gravity, topped up by supply, and handed to the matter's own rules (drips, burning, shedding).</summary>
+/// <summary>Matter on one host chart: an amount per cell (U rows x V sectors; V = 1 for a strand), run by gravity and supply, then the matter's rules.</summary>
 public sealed class Coat
 {
     public const int MaxCells = 576, MaxPendants = 14;  // 48 rows x 12 sectors; a strand may have up to TubeChart.MaxU rows of one sector
@@ -147,7 +147,7 @@ public sealed class Coat
     /// <summary>The chart-space anchor of a cell: its row and sector as fractions of the chart, stable under regridding.</summary>
     internal void AnchorFor(int cell, out float u, out float v) { u = (cell / V + 0.5f) / N; v = (cell % V + 0.5f) / V; }
 
-    /// <summary>The point on a cell's exposed edge a drop hangs from, and how squarely that edge faces down. A strand takes its underside, or an end that points down (whichever end that is); a chart takes the downhill edge its host gave the cell.</summary>
+    /// <summary>The edge point a drop hangs from and how squarely it faces down: a strand's underside or downward end, a chart's host-given downhill edge.</summary>
     internal float AnchorOf(int i, out Vector2 anchor)
     {
         if (V > 1) { anchor = Anch[i]; return Face[i]; }
@@ -195,7 +195,7 @@ public sealed class Coat
         }
     }
 
-    /// <summary>Re-cuts the chart into n rows of v sectors: matter is shared out by overlap, along U by row and across V by sector share, so the total is unchanged; heat and char average; drops keep their place on the chart.</summary>
+    /// <summary>Re-cuts the chart to n rows x v sectors, sharing matter by overlap so totals hold (heat and char average, drops keep their place).</summary>
     private void Regrid(int n, int v, float[] step)
     {
         int old = N, oldV = V;
@@ -281,7 +281,7 @@ public sealed class Coat
         for (int k = 0; k < steps; k++) Step(h);
     }
 
-    /// <summary>Puts mass into (or takes it out of) a cell exactly: the cell is a float and keeps its rounding remainder, so nothing is absorbed or invented.</summary>
+    /// <summary>Exact mass in or out of a cell: the float keeps its rounding remainder, so nothing is absorbed or invented.</summary>
     internal void Credit(int cell, double amount)
     {
         double want = (double)M[cell] + Rem[cell] + amount;
@@ -291,7 +291,7 @@ public sealed class Coat
 
     internal void Debit(int cell, double amount) => Credit(cell, -amount);
 
-    /// <summary>Folds the step's net flux into the cells. A float cell can't hold every sum, so what rounding leaves is kept per cell and carried into the next step: mass moved between cells is neither lost nor made.</summary>
+    /// <summary>Folds the step's net flux into the cells, carrying each cell's float rounding remainder forward so moved mass is neither lost nor made.</summary>
     private void Apply(int cells)
     {
         for (int i = 0; i < cells; i++)
@@ -303,7 +303,7 @@ public sealed class Coat
         }
     }
 
-    // What a cell holds less its neighbour's, scaled to thickness: with equal cells it is plain mass difference (the old strand law, bit for bit); with unequal ones it is what moving would level.
+    // a cell less its neighbour, scaled to thickness: mass difference for equal cells (old strand law, bit for bit), else what moving would level
     internal static float Diff(float mi, float mj, float ai, float aj) => ai == aj ? mi - mj : (mi - mj * (ai / aj)) * (2f * aj / (ai + aj));
 
     private void Step(float h)
@@ -335,7 +335,7 @@ public sealed class Coat
                 float th = M[i] / A[i];
                 float run = DrawHelpers.Smooth((th - hold) / (hold * 1.2f + 0.3f * px));
                 float rf = mt.Run * px * run * Math.Clamp(th / (2f * hold), 0.4f, 2.2f);
-                // a power-law film runs as slope^(1/n): n = 1 is the old linear law; a thinning liquid barely creeps on a gentle slope and runs on a steep one (same speed at slope 0.7)
+                // power-law film runs as slope^(1/n): n = 1 is linear; a thinning liquid creeps on gentle slopes and runs on steep ones (same speed at 0.7)
                 float sl = T[i].Y, law = sl * MathF.Pow(MathF.Max(MathF.Abs(sl), 1e-4f) / 0.7f, 1f / mt.Index - 1f);
                 float lim = 0.45f * Dc[i] / h, v = rf * law;
                 _v[i] = Math.Clamp(v, -lim, lim);
@@ -478,7 +478,7 @@ internal sealed class CoatSet
             if (c.Pend[k].Live && !lm.Release(c, k)) c.Retire(k);  // no room to fall: it stays in the film
     }
 
-    internal const float ChartGrace = 8f;  // a chart whose part of the host is hidden or out of frame keeps its film, frozen, this long (a link rolls back into view with its film); a whole strand has no such part
+    internal const float ChartGrace = 8f;  // a hidden or off-frame chart keeps its film frozen this long (a link rolls back in with it); whole strands have no such part
     internal const int CellBudget = 4096;  // cells a frame may spend on charts, all hosts together
     private readonly CoatCharts _charts = new();
     private sealed class Group { public readonly List<Coat> Parts = new(); public readonly Dictionary<int, Coat> ById = new(); public float Time = -1f; }
@@ -486,7 +486,7 @@ internal sealed class CoatSet
     internal int ChartsSkipped;  // chart requests the budget refused this frame (diagnostic)
     private int _groupsNow, _groupsLast;  // strokes that used charts this frame and last: the budget is shared among them
 
-    /// <summary>Grows this frame's coat on one stroke for one coat emission; does nothing if the material it is made of can't coat. A host that offers charts for the matter is coated on each; every other stroke is coated as a tube along its path.</summary>
+    /// <summary>Grows one emission's coat on a stroke (no-op if its material can't coat): per chart for chart hosts, else as a tube along the path.</summary>
     public void Tend(EffectScene scene, in StrokePrimitive s, in StrokeEmission e, string? forcedMaterial,
                      IStrokeMaterial? strokeMaterial, float time, float dt)
     {
@@ -562,7 +562,7 @@ internal sealed class CoatSet
     internal long XCand, XAct, XTicks;  // contact search: cell pairs looked at, pairs in contact, stopwatch ticks (harness builds only)
     internal double XMass;  // matter that has crossed from one chart to another, ever (diagnostic: the books see only each coat's In and Out)
 
-    /// <summary>Matter crosses between the charts of one stroke where their surfaces really touch. The host only proposes which sides might (its topology); each cell pair is accepted by the geometry itself, in 3D: the host's axes under the two cells must lie within their radii of each other, so a gap, or one surface passing in front of another, passes nothing. Contact fades in and out with distance so charts moving together or apart never snap. Across it the film obeys the same law as inside a chart (slope, yield, power law, levelling); the transfer is exact in both coats' books.</summary>
+    /// <summary>Cross-chart transfer: the host proposes sides, a cell pair passes only if the host's axes are within their radii in 3D; exact in both books.</summary>
     private const int MaxEdge = 64;
 
     private void Transfer(Group g, float dt)
@@ -611,7 +611,7 @@ internal sealed class CoatSet
 #endif
     }
 
-    /// <summary>0..1: how much two cells touch. Touching means the host's axes under them lie within their radii of each other (and a little for the cells' own spacing); it fades out over half a radius.</summary>
+    /// <summary>0..1 contact between two cells: the host's axes within their radii (plus a little for cell spacing), fading out over half a radius.</summary>
     private float Weight(Coat a, int ca, Coat b, int cb)
     {
         XCand++;
@@ -694,7 +694,7 @@ internal sealed class CoatSet
 
     internal long BridgeCalls, BridgeCells, BridgeTicks;  // broadphase cost: searches made, cells looked at, stopwatch ticks (harness builds only)
 
-    /// <summary>A drop that is stretching sticks to another wet host of the same liquid if its bead touches it (and the liquid is the sticky kind); true if it did.</summary>
+    /// <summary>A stretching drop sticks to another wet host of the same (sticky) liquid if its bead touches it; true if it did.</summary>
     internal bool TryBridge(Coat a, int k, Vector2 anchor, Vector2 bead, float rb, float chance, float wet)
     {
         ref var p = ref a.Pend[k];

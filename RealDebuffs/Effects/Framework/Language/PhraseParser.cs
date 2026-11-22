@@ -22,7 +22,7 @@ public sealed class ParseResult
     }
 }
 
-/// <summary>Turns status text into Looks: a colour sticks to the next noun, an adjective or linked noun modifies its effect noun, leftovers trigger their own effect.</summary>
+/// <summary>Status text to Looks: a colour sticks to the next noun, modifiers bind to their effect noun, leftovers trigger their own effect.</summary>
 public static class PhraseParser
 {
     private enum IK { Word, Colour, Link, Comma, And, Stop }

@@ -4,7 +4,7 @@ using RealDebuffs.Effects.Framework.Materials;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>A cut, flat not tubular: a pointed slit with torn lips around a dark opening, blood pooled along its lower wall and a bruise spreading round it.</summary>
+/// <summary>A flat cut: pointed slit, torn lips, dark opening with blood pooled on its lower wall and a spreading bruise.</summary>
 public sealed class StrokeGash : IStrokeMaterial
 {
     public string Name => "stroke.gash";
@@ -130,7 +130,7 @@ public sealed class StrokeGash : IStrokeMaterial
         Mb.VertexReserved(pos, DrawHelpers.VertexColor(rgb, k, DrawHelpers.AlphaBits(k), overridden));
     }
 
-    /// <summary>A point in the opening at u (-1 to 1 across it): dark and deep in the middle, lit on the wall that faces the light, blood pooled below.</summary>
+    /// <summary>A point in the opening at u (-1..1 across): dark and deep centrally, lit on the wall facing the light, blood pooled below.</summary>
     private static Vector3 Inside(float u, float sD, float sL, float fill, float agit, float sheenGain)
     {
         float m = MathF.Abs(u);

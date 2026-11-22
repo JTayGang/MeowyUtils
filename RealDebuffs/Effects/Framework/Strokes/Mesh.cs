@@ -309,7 +309,7 @@ internal static unsafe partial class MeshDraw
         return _whiteUv;
     }
 
-    // Batching: drawing that follows one another in a pass (hundreds of small drops) is staged here and handed to the draw list in one reservation, in the order it was drawn. Only mesh primitives may be drawn between BeginBatch and EndBatch; anything drawn another way would land out of order.
+    // Batching: small draws in a run are staged and handed over in one ordered reservation; only mesh primitives between BeginBatch and EndBatch.
     private const int BatchVerts = 12_000, BatchIdx = 48_000;
     private static bool _batching;
     private static ImDrawVert* _bv;

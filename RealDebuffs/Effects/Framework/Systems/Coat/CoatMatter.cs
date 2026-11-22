@@ -25,7 +25,7 @@ public abstract class CoatMatter
     internal abstract void Draw(ImDrawListPtr dl, Coat c, float alpha, in MaterialContext ctx);
 }
 
-/// <summary>Water, blood, slime: a film that clings, runs, pools at low points, hangs from the underside as a drop on a thinning neck, and lets go.</summary>
+/// <summary>Water, blood, slime: a film that clings, runs, pools, hangs as a drop on a thinning neck and lets go.</summary>
 public sealed class LiquidMatter : CoatMatter
 {
     private readonly Liquid _liq;
@@ -117,7 +117,7 @@ public sealed class LiquidMatter : CoatMatter
             {
                 for (int d = Math.Max(0, i - gap); d <= Math.Min(c.N - 1, i + gap) && !crowded; d++) crowded = c.PendAt[d] >= 0;
             }
-            else crowded = c.M[i] / c.A[i] < 1.5f * ph.MaxThick * px && CrowdedOnChart(c, c.Anch[i], 0.5f * ph.Spacing * px);  // a chart is a small part of its host: drops keep their distance from those of the charts beside it too, unless the film is overloaded and has nowhere else to go
+            else crowded = c.M[i] / c.A[i] < 1.5f * ph.MaxThick * px && CrowdedOnChart(c, c.Anch[i], 0.5f * ph.Spacing * px);  // drops also keep their distance from neighbouring charts' drops, unless the film is overloaded and has nowhere else to go
             if (crowded) continue;
             int slot = -1;
             for (int s = 0; s < Coat.MaxPendants; s++) if (!c.Pend[s].Live) { slot = s; break; }
@@ -337,7 +337,7 @@ public sealed class LiquidMatter : CoatMatter
     }
 }
 
-/// <summary>Fire: fuel clings to the strand; heat catches from neighbours and burns the fuel, throwing flames, cinders and smoke and leaving char that keeps glowing.</summary>
+/// <summary>Fire: fuel clings to the strand; heat spreads between neighbours and burns it, throwing flames, cinders and smoke and leaving glowing char.</summary>
 public sealed class FlameMatter : CoatMatter
 {
     private const float BurnRate = 0.30f, CharRate = 0.06f, CharMax = 0.85f;  // px/s of fuel at full heat; 1/s

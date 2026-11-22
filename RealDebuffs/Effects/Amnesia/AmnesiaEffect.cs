@@ -39,7 +39,7 @@ public sealed class AmnesiaEffect : SceneEffect, IHasSwappableSlots
     private const float IntroSecs = 2.4f, IntroSpin = 2.4f;     // the cast rushes in and slows; the view whips round this many radians
     private const float FirstWhisper = 1.4f;
 
-    // The spiral behind the fog: how fast it flows outward (fraction of the short side per second, matching the fall), and how fast the cast first sends it.
+    // Spiral outflow speed (short side/s, matches the fall) and the cast's initial rush.
     private const float SpiralFlow = 0.045f, SpiralRush = 4f;
 
     // What drifts down the tunnel, and how strongly the words show through the fog over them.

@@ -4,7 +4,7 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Draws a scene back to front: vignette, regions, strokes (each followed by the particles clinging to it), then free particles. A vignette that asks to be Over goes after the regions; BelowVeil particles go between the plain regions and the Veil ones.</summary>
+/// <summary>Back to front: vignette, regions, strokes + their particles, free particles; Over vignettes follow regions, BelowVeil sits between plain and Veil.</summary>
 public sealed class SceneRenderer
 {
     // Per particle: the stroke it is drawn after (-1 = free, -2 = already drawn below the veil) and its resolved material.
@@ -85,7 +85,7 @@ public sealed class SceneRenderer
                 if (scene.Strokes[i].Owner == co.Owner && scene.Strokes[i].Seed == co.HostSeed) { _coatHost[c] = i; break; }
         }
 
-        // Consecutive particles mostly come from one stroke and share a material key, and the answer for the same key is the same, so the last answer of each is kept.
+        // consecutive particles mostly share one stroke and material key, so the last answer per key is kept
         bool anyHosted = false;
         var parts = CollectionsMarshal.AsSpan(scene.Particles);
         var strokes = CollectionsMarshal.AsSpan(scene.Strokes);

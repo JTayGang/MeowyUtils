@@ -11,7 +11,7 @@ internal static class ScriptFont
     /// <summary>Space between letters, in x-heights.</summary>
     public const float Tracking = 0.14f;
 
-    /// <summary>One letter, flattened: per stroke the points, the outward normals, a width factor (broad-nib pen, tapered ends) and the radius of the curve at each point.</summary>
+    /// <summary>One flattened letter: per stroke the points, outward normals, a width factor (broad nib, tapered ends) and the curve radius at each point.</summary>
     public sealed class Glyph
     {
         public float Advance;

@@ -3,7 +3,7 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>A whispered phrase in glowing script. Size = x-height px; Variant = phrase + 1 (10 bits) | depth (2: near, mid, far) | arrival (3) | departure (3); Velocity = the way it is breathed off.</summary>
+/// <summary>A whispered phrase in glowing script: Size = x-height px; Variant = phrase+1 (10 bits) | depth 2 | arrival 3 | departure 3; Velocity = breath-off.</summary>
 public sealed class ParticleWhisper : IParticleMaterial
 {
     private readonly string _name;
@@ -22,7 +22,7 @@ public sealed class ParticleWhisper : IParticleMaterial
 
     public const int PhraseBits = 10, DepthShift = 10, ArriveShift = 12, DepartShift = 15;
 
-    // Arrival and departure: letter order, how far it spreads over the phrase's life, and each letter's duration (Spread + Span is the whole move).
+    // arrival/departure: letter order, spread over the phrase's life, and each letter's duration (Spread + Span = whole move)
     public const int Arrivals = 6, Departures = 6;
     private enum Order { Forward, Backward, CentreOut, EdgesIn, Random, Together }
     private static readonly (Order Order, float Spread, float Span)[] Arrive =

@@ -3,13 +3,7 @@ using System.Runtime.CompilerServices;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>
-/// Opt-in per-frame cost recorder shared by the plugin and the harness, so both read the same numbers. Disarmed, every call is one static-bool test.
-/// Armed, it records phases (sequential, they sum to the frame), per-owner Emit and draw time, and the mesh path's vertices, indices and reservations,
-/// into a ring of the last N frames. A frame is recorded whole or not at all: arming takes effect at the next <see cref="BeginFrame"/>.
-/// Counts cover only what goes through <see cref="MeshDraw"/>; the ImDrawList convenience primitives (AddLine and friends) are not counted.
-/// Draw-thread only: every call, Arm and Report included, is expected on the thread that draws.
-/// </summary>
+/// <summary>Opt-in per-frame cost recorder shared by plugin and harness; arming applies at the next <see cref="BeginFrame"/>, counts cover only <see cref="MeshDraw"/>, draw-thread only.</summary>
 public static class FrameProbe
 {
     /// <summary>Emit runs from BeginFrame (the scene clear) to the shed; Gap is whatever the host does between shed and render.</summary>

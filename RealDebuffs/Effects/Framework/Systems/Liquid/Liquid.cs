@@ -3,7 +3,7 @@ using RealDebuffs.Effects.Framework.Materials;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>How a liquid moves, from one thickness axis (0 water, BloodAt blood, 1 slime); each number is calibrated at the three liquids and blended between.</summary>
+/// <summary>How a liquid moves, from one thickness axis (0 water, BloodAt blood, 1 slime); each value is calibrated at the three liquids and blended.</summary>
 public readonly struct LiquidPhysics
 {
     public const float BloodAt = 0.45f;

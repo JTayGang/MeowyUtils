@@ -16,7 +16,7 @@ public readonly record struct ParticleSpawn(Func<int, Vector2> Position, Func<in
 /// <summary>How a system is shown this frame: one role, dimmed and tinted by the effect.</summary>
 public readonly record struct ParticleStyle(PrimitiveRole Role, float Brightness = 1f, Vector4? Color = null, float Sway = 0f, int Variant = 0);
 
-/// <summary>A fixed-size pool of short-lived particles: spawn, integrate, retire, hand to the scene. Effects own one each; the stroke shed owns the shared one.</summary>
+/// <summary>Fixed-size pool of short-lived particles; effects own one each, the stroke shed the shared one.</summary>
 public sealed class ParticleSystem
 {
     public struct Particle

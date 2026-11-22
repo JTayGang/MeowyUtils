@@ -2,7 +2,7 @@ using System.Numerics;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Slot key for strokes and particles; values are pinned (they seed particle randomness), so give a new role an unused number. [Fallback] names the particle drawn when a slot has no material.</summary>
+/// <summary>Slot key; values are pinned (they seed particle randomness), so use an unused number. [Fallback] names the particle for an empty slot.</summary>
 public enum PrimitiveRole
 {
     MainStroke = 0,

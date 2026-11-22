@@ -2,7 +2,7 @@ using System.Reflection;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Every material by name, found by reflection: each IMaterialPack plus each material with a public parameterless constructor. Vocabulary maps a NaturalLanguageWord to a name.</summary>
+/// <summary>Materials by name, found by reflection (IMaterialPacks plus public parameterless materials); Vocabulary maps a NaturalLanguageWord to a name.</summary>
 public static class MaterialRegistry
 {
     public const string FallbackStroke = "stroke.simple";

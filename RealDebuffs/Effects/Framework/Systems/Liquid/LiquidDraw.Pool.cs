@@ -79,7 +79,7 @@ internal static partial class LiquidDraw
         Mb.StitchGrid(first, n, R);
     }
 
-    // light shafts: the key light is traced through the real surface to a few depth slices, so waves focus it into bright filaments and starve the gaps
+    // light shafts: the key light is traced through the real surface to a few depth slices, so waves focus bright filaments and starve gaps
 
     private static float[] _lux = new float[Planes * 800], _rayX = new float[800], _rayQ = new float[800], _rayW = new float[800], _rayE = new float[800], _row = new float[800];
     private static readonly float[] PlaneD = new float[Planes];

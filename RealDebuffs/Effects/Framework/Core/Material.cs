@@ -26,7 +26,7 @@ public interface IMaterial
     string[] NaturalLanguageWords => Array.Empty<string>();
 }
 
-/// <summary>A stroke drawn in several passes that places a coat between them, so the coat is covered and uncovered by the host's own parts instead of lying over the whole object.</summary>
+/// <summary>A stroke drawn in passes with a coat between them, so the host's own parts cover and uncover the coat.</summary>
 public interface ICoatLayeredHost : IStrokeMaterial
 {
     /// <summary>True if this host draws that coat itself (it then must, in DrawWithCoat); false leaves it to be drawn over the finished stroke.</summary>
@@ -53,7 +53,7 @@ public interface IStrokeMaterial : IMaterial
     bool CanDripAt(in StrokePrimitive s, float arc, float shortSide) => true;
 }
 
-/// <summary>A particle material that draws only through MeshDraw's mesh primitives, so a run of its particles can be staged and handed to the draw list in one reservation, in the same order. Anything that draws another way must not carry this.</summary>
+/// <summary>A particle material drawing only via MeshDraw mesh primitives, so runs can be batched in order; anything drawing another way must not carry this.</summary>
 public interface IBatchedParticleMaterial { }
 
 public interface IParticleMaterial : IMaterial
@@ -99,7 +99,7 @@ public abstract class RegionMaterial<TState> : IRegionMaterial where TState : cl
     }
 }
 
-/// <summary>Variants of a material family; every pack is found by reflection (alongside every material with a public parameterless constructor).</summary>
+/// <summary>Variants of a material family; packs are found by reflection like any material.</summary>
 public interface IMaterialPack
 {
     IEnumerable<IMaterial> Materials { get; }
@@ -130,7 +130,7 @@ public readonly record struct StrokeEmission(
         new(role, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, Vector2.Zero, Coat: new CoatOptions(supply, clump, skin));
 }
 
-/// <summary>How a coat emission loads its strand: a multiplier on the matter's own supply, how patchy it lies (0 even, 1 clumped), and how much of the host a thin wet skin covers (0 none; a host that is already glossy wants little).</summary>
+/// <summary>How an emission loads its strand: supply multiplier, patchiness (0 even, 1 clumped), thin-skin coverage (0 none; glossy hosts want little).</summary>
 public readonly record struct CoatOptions(float Supply = 1f, float Clump = 0.6f, float Skin = 1f);
 
 /// <summary>One burst a stroke material throws when hit.</summary>

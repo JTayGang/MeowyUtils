@@ -3,7 +3,7 @@ namespace RealDebuffs.Effects.Framework;
 /// <summary>How a stroke role is drawn and shed: its material, and the particle emitter that replaces what it sheds, if the user chose one.</summary>
 public readonly record struct StrokeRoute(IStrokeMaterial? Material, IParticleMaterial? Emitter, string? EmitName, bool Swapped);
 
-/// <summary>Resolves (owner, role) to a material: user override, then the effect's slot default, then the role fallback. Cached until the override set changes.</summary>
+/// <summary>Resolves (owner, role) to a material: user override, effect slot default, role fallback; cached until the override set changes.</summary>
 public sealed class MaterialResolver
 {
     private IReadOnlyDictionary<string, string>? _overrides;

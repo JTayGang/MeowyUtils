@@ -3,7 +3,7 @@ using RealDebuffs.Effects.Framework.Materials;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Phrases spoken into a breeze: where each hangs, how it arrives and leaves, and how it drifts. Begin per cast, Update per frame, Emit once per depth (0 near, 1 mid, 2 far). Opacity scales their strength; belowVeil draws them under the Veil regions.</summary>
+/// <summary>Phrases on a breeze: Begin per cast, Update per frame, Emit per depth (0 near, 1 mid, 2 far); belowVeil draws under Veil regions.</summary>
 internal sealed class WhisperField
 {
     private const int Max = 3, Calm = 2;                              // never more than Max on screen; Calm is the usual ceiling, a chorus may reach Max

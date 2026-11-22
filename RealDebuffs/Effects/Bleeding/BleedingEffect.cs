@@ -3,7 +3,7 @@ using RealDebuffs.Effects.Framework;
 
 namespace RealDebuffs.Effects;
 
-/// <summary>Bleeding: a claw rake of blood across the lens that pulses with a heartbeat, spurting, dripping and spattering beads that run down the glass.</summary>
+/// <summary>Bleeding: a claw rake of blood across the lens, pulsing with a heartbeat, spurting and dripping beads down the glass.</summary>
 public sealed class BleedingEffect : SceneEffect, IHasSwappableSlots
 {
     // The cuts are what a "made of X" phrase replaces; a particle in that phrase swaps the blood itself.

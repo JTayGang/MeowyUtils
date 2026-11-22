@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>The exact, copyable form of a Look: "RD" plus a few base62 characters (case-sensitive, checksummed); only ever pasted, never typed.</summary>
+/// <summary>Exact, copyable form of a Look: "RD" + base62 (case-sensitive, checksummed); only pasted, never typed.</summary>
 public static class LookCode
 {
     private const string Alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -27,12 +27,7 @@ public static class LookCode
         return (dot >= 0 ? materialName[(dot + 1)..] : materialName).Replace("-", "").ToLowerInvariant();
     }
 
-    // Layout, most significant bit first (a leading 1 marks where the number starts, so its length is exact):
-    //   kind 5 (31 = six more bits) | wide 1 | flags 5: body, modifier, body colour, modifier colour, slots
-    //   body (material) | modifier (material, all-ones = sheds nothing) | colours (id; all-ones = rainbow, one less = custom RGB follows)
-    //   slots: mode 1; list: count 5, then every address, then every material; bitmap: top address, a bit per address below it, then a material per set bit
-    //   check 6. The format version seeds the check, so a future layout is told apart without spending a bit.
-    // Ids are positions in CodeIds. Narrow widths (address 6, stroke 5, particle 6, region 4, colour 6) become 8 bits when any id outgrows them.
+    // MSB first, leading 1 marks the start: kind 5, wide 1, flags 5, body, modifier, colours, slots (list/bitmap), check 6; ids widen to 8 bits when outgrown.
 
     /// <summary>Null when a material, colour or slot has no number in CodeIds yet (the audit says which).</summary>
     public static string? Encode(Look look)
@@ -118,7 +113,7 @@ public static class LookCode
         return "RD" + ToBase62(w.Bits);
     }
 
-    /// <summary>Decodes one code. Look is null when the code is cut short, edited, or from a newer plugin; Warnings then explain, or hold what was skipped.</summary>
+    /// <summary>Decodes one code; Look is null if it is cut short, edited or from a newer plugin, and Warnings say why or what was skipped.</summary>
     public static (Look? Look, List<string> Warnings) Decode(string code)
     {
         var warn = new List<string>();

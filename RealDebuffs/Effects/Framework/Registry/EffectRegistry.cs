@@ -5,14 +5,14 @@ public enum SlotType { Stroke, Particle, Region }
 /// <summary>Which region layer a slot drives: regions with an edge mask are EdgeGlow, the rest FlatFill.</summary>
 public enum RegionKind { FlatFill, EdgeGlow }
 
-/// <summary>One material slot an effect exposes to the UI; Hero is the body "made of X" replaces, Modifier the one particle layer "with X" replaces.</summary>
+/// <summary>One material slot an effect exposes to the UI; Hero is what a "made of X" body replaces, Modifier the particle layer "with X" replaces.</summary>
 public readonly record struct SwappableSlot(SlotType Type, PrimitiveRole Role, string Label, string DefaultMaterial, RegionKind Region = default, bool Hero = false, bool Modifier = false)
 {
     /// <summary>Role for strokes and particles, region layer for regions.</summary>
     public int Key => Type == SlotType.Region ? (int)Region : (int)Role;
 }
 
-/// <summary>Slot declarations: Slot.Particle(PrimitiveRole.Ember, "Flames", "particle.ember", hero: true); at most one hero and one modifier per effect.</summary>
+/// <summary>E.g. Slot.Particle(PrimitiveRole.Ember, "Flames", "particle.ember", hero: true); at most one hero and one modifier per effect.</summary>
 public static class Slot
 {
     public static SwappableSlot Stroke(PrimitiveRole role, string label, string material, bool hero = false) => new(SlotType.Stroke, role, label, material, Hero: hero);

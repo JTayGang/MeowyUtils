@@ -5,7 +5,7 @@ internal enum AddrType { Stroke, Particle, Region, Emit }
 /// <summary>Where a slot override lands: a stroke or particle role, a region kind, or a stroke role's emit axis.</summary>
 internal readonly record struct Addr(AddrType Type, int Role);
 
-/// <summary>Append-only: a material's, colour's or slot address's position in these lists is its number in short codes, so never reorder, insert or remove; add new ones at the end (the audit names any that are missing).</summary>
+/// <summary>Append-only: a position here is the number in short codes, so never reorder, insert or remove; add at the end (the audit names any missing).</summary>
 internal static class CodeIds
 {
     public static readonly string[] Stroke =

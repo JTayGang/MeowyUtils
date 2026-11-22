@@ -1,6 +1,6 @@
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>A material whose Draw throws loses that one primitive, not the frame. After Strikes failures in a row it is quarantined for the session (per owner), logged once, and every other primitive keeps drawing.</summary>
+/// <summary>A material whose Draw throws loses that primitive, not the frame; after Strikes in a row it is quarantined per owner, logged once.</summary>
 internal static class DrawGuard
 {
     public const int Strikes = 3;

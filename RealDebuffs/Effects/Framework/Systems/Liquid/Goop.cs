@@ -11,7 +11,7 @@ internal static class GoopDraw
     private const int MaxRows = 30;  // profile samples: keeps Half+3 vertices per row under MeshDraw.MaxVerts
     private const float MinRadius = 0.45f;  // a thread thinner than this still draws as a hairline
 
-    // Level of detail by the pixels a drop covers. Most drops on a wet host are a few pixels across, where a mesh built for ten rows of shading has several times more vertices than the pixels it lights.
+    // Level of detail by pixels covered: most drops are a few pixels across, where a ten-row shaded mesh has far more vertices than pixels.
     private const float SpeckBelow = 1f;    // radius under this: the streak-and-glint fan, a sub-pixel pip
     private const float DotBelow = 2.5f;    // under this: a lit disc (a fan) if it is resting; moving ones keep their tail in the reduced tube
     private const float ReducedBelow = 4f;  // under this: the same tube with three columns and four bead rows; from here up, the full mesh
@@ -20,7 +20,7 @@ internal static class GoopDraw
     /// <summary>ParticlePrimitive.Variant for a droplet too small to be worth a mesh: a streak with a glint.</summary>
     public const int Speck = 1;
 
-    /// <summary>ParticlePrimitive.Variant for a drop in free fall: it wobbles long and flat, rounds up and flattens with speed, and keeps only the tail its liquid would (needs Age).</summary>
+    /// <summary>Variant for a drop in free fall: wobbles long and flat, rounds and flattens with speed, keeps the tail its liquid would (needs Age).</summary>
     public const int Free = 2;
 
     /// <summary>Everything about how this particle is coloured, resolved once.</summary>
@@ -71,7 +71,7 @@ internal static class GoopDraw
         else Bead(dl, in p, in look);
     }
 
-    /// <summary>A resting drop of a couple of pixels: a disc shaded by the same table (centre and eight rim points), its edge fading out. Nine vertices.</summary>
+    /// <summary>A resting drop of a couple of pixels: a nine-vertex disc shaded by the same table, edge fading out.</summary>
     private static void Dot(ImDrawListPtr dl, Vector2 at, float rb, in Look look)
     {
         const int n = 8;
@@ -89,7 +89,7 @@ internal static class GoopDraw
         GlintLite(dl, at, Vector2.UnitY, rb, rb, in look);
     }
 
-    /// <summary>A flying droplet at a few pixels: a soft streak along its motion (as a camera would blur it), lit by the same table, with a glint when big enough.</summary>
+    /// <summary>A flying droplet at a few pixels: a soft motion-blur streak lit by the same table, with a glint when big enough.</summary>
     private static void SpeckDraw(ImDrawListPtr dl, in ParticlePrimitive p, in Look look)
     {
         float rb = p.Size, speed = p.Velocity.Length();
@@ -213,7 +213,7 @@ internal static class GoopDraw
         Teardrop(dl, p.Position, d, a, rb, tail, 1f, in look);
     }
 
-    /// <summary>A drop in free fall: it wobbles between long and flat at its own pace (thick liquid soon stops), air squashes big fast ones, and its release tail draws back in.</summary>
+    /// <summary>A drop in free fall: wobbles long to flat at its own pace (thick liquid soon stops), big fast ones squash, the release tail draws back in.</summary>
     private static void FreeDrop(ImDrawListPtr dl, in ParticlePrimitive p, in Look look)
     {
         float rb = p.Size, speed = p.Velocity.Length(), age = p.Age, scale = look.Scale;
@@ -352,7 +352,7 @@ internal static class GoopDraw
         MeshDraw.Radial(dl, OnBead(FillHalfXY, 0.86f), look.Uv, cc[0], 8, rr, cc, 0f, 1f, 0, 0f);
     }
 
-    /// <summary>The key glint of a small drop: a hard bright core fading to nothing, five vertices. The fill glint is smaller than a pixel here and is left out.</summary>
+    /// <summary>Key glint of a small drop: a hard bright core fading out, five vertices; the fill glint is sub-pixel here and omitted.</summary>
     private static void GlintLite(ImDrawListPtr dl, Vector2 centre, Vector2 axis, float halfLen, float radius, in Look look)
     {
         if (radius < 1.1f) return;

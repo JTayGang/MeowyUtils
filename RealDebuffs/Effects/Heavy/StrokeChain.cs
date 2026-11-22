@@ -90,7 +90,7 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
         public float Arc, Span;  // where along the strand this link sits and how much of it it covers
     }
 
-    /// <summary>One chain stroke's geometry at one moment: its links (pose, roll, depth buckets) and the level of detail. Built once a frame; the host draws from it and the coat's charts are cut from it, so the two cannot disagree.</summary>
+    /// <summary>One chain stroke's geometry at one moment (links, pose, roll, depth buckets, LOD), built once a frame; drawing and charts both read it.</summary>
     internal sealed class Snapshot
     {
         public readonly Link[] Links = new Link[MaxLinks];
@@ -130,7 +130,7 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
         foreach (var k in _dead) _snaps.Remove(k);
     }
 
-    /// <summary>Lays out the links of a strand: where each sits, how it is rolled, which depth buckets its halves paint in. False if there is nothing to draw.</summary>
+    /// <summary>Lays out a strand's links: placement, roll and the depth buckets of each half; false if there is nothing to draw.</summary>
     private bool Build(in StrokePrimitive s, float shortSide, float px, float time, float screenW, float screenH, Snapshot sn)
     {
         var path = s.Path;
@@ -285,7 +285,7 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
         }
     }
 
-    /// <summary>One station of a link half's ring: where its bar centre is on screen, the outward direction, and the frame the bar's cross-section lives in. The body, the coat's charts and the film all take it from here, so they cannot disagree about the shape.</summary>
+    /// <summary>One station of a link half's ring: bar centre on screen, outward direction, cross-section frame; body, charts and film all read it.</summary>
     internal static void Station(in Link lk, int h, RingTable ring, int j, float L, ref Vector3 prevN, ref Vector3 prevT,
                                 out Vector2 pos2, out Vector3 o, out Vector3 nStar, out Vector3 tStar)
     {
@@ -335,7 +335,7 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
         var ring = Rings[sn.RingK];
         int M = ring.M, nc = sn.Cols.Length - 2;
 
-        // the finest tier this stroke's share of the frame's cells affords; it only gets finer again with room to spare, so it does not flicker
+        // the finest tier this stroke's cell share affords; it refines only with room to spare, so it does not flicker
         int want = Ladder.Length - 1;
         for (int t = 0; t < Ladder.Length; t++)
             if (Ladder[t].rows <= M && Ladder[t].sectors <= nc && Ladder[t].rows * Ladder[t].sectors * halves <= charts.Share) { want = t; break; }
@@ -412,7 +412,7 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
             }
         }
 
-        // what may touch what is the chain's own business: a link's two halves are one bar cut in two (they share both tips), and its +T tip hooks through the next link's -T tip. The coat only accepts what the geometry confirms.
+        // the chain proposes contacts: a link's halves share both tips (one bar cut in two), its +T tip hooks the next link's -T tip; the coat confirms
         for (int i = 0; i < sn.Count; i++)
         {
             CoatChart? a = _laid[i * 2], b = _laid[i * 2 + 1];
@@ -452,7 +452,7 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
         }
     }
 
-    /// <summary>The film on one link half, from its chart's field: its mesh is the half's own stations and columns, so it covers the bar and nothing else (holes and gaps stay empty) and is painted in the half's own depth bucket. The chart's coarse cells are interpolated onto the mesh.</summary>
+    /// <summary>The film on one link half: a mesh on its own stations and columns (holes and gaps stay empty), in its depth bucket, from the chart.</summary>
     private void DrawCoatHalf(ImDrawListPtr dl, in Link lk, int h, Snapshot sn, int ringK, float[] cols, float[] colsSq, in MaterialContext ctx)
     {
         var coat = _byId[1 + lk.Index * 2 + (h > 0 ? 0 : 1)];

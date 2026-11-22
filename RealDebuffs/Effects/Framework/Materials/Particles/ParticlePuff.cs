@@ -3,10 +3,10 @@ using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>A soft puff with no rim: smoke, mist, dust and miasma are the same mesh with different Looks; a Look with a Ramp is drawn as a lit, noise-shaped billow instead.</summary>
+/// <summary>A rimless soft puff: smoke, mist, dust and miasma are one mesh with different Looks; a Look with a Ramp draws as a lit, noise-shaped billow.</summary>
 public sealed class ParticlePuff : IParticleMaterial
 {
-    /// <summary>Colour runs Warm to Cool over CoolSpan (0 = stays Warm); radius = Size*(GrowFrom + GrowBy*smooth(age)). A Ramp makes it a lit billow: Variant is its squash in percent, Rotation its stretch.</summary>
+    /// <summary>Colour runs Warm to Cool over CoolSpan (0 = Warm); radius = Size*(GrowFrom + GrowBy*smooth(age)); with a Ramp, Variant = squash %, Rotation = stretch.</summary>
     internal readonly record struct Look(
         uint Warm, uint Cool, float CoolSpan,
         float GrowFrom, float GrowBy,

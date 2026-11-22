@@ -32,7 +32,7 @@ internal sealed class VortexField : IRegionState
     /// <summary>The fog thins to nothing inside the eye (EyeIn, a fraction of the short side from the centre), reaching full strength by EyeOut.</summary>
     public const float EyeIn = 0.24f, EyeOut = 0.62f, VeilMax = 0.60f;
 
-    /// <summary>The spiral behind the fog: an even number of arms, the radial gap between bands (fraction of the short side), which way it winds, how far round it has turned, and how much of it is drawn (0..1, from the centre out).</summary>
+    /// <summary>Spiral: even arm count, band gap (short side), wind direction, turn, and drawn extent (0..1 from the centre).</summary>
     public int SpiralArms = 2;
     public float SpiralPitch = 0.09f, SpiralHand = 1f, SpiralTurn, SpiralReach = 1f;
 
@@ -74,7 +74,7 @@ internal sealed class VortexField : IRegionState
     }
 }
 
-/// <summary>A flat spiral turning behind a tunnel of fog seen from inside: the fog is a mesh banded into helical arms, thinning to nothing at the centre. The spiral is drawn for a plain region and the fog for a Veil one; with no VortexField it is a flat fill.</summary>
+/// <summary>Flat spiral behind a banded fog tunnel: a plain region draws the spiral, a Veil one the fog; a flat fill without a VortexField.</summary>
 internal sealed class RegionVortex : RegionMaterial<VortexField>
 {
     public override string Name => "region.vortex";

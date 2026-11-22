@@ -1344,7 +1344,7 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
 
     public ReadOnlySpan<StrokeEmission> Emissions => Shed;
 
-    /// <summary>A thick coat of slime that runs and pools along the limb and hangs off the underside in long strings; its matter is whatever the Goop slot holds.</summary>
+    /// <summary>Thick slime that runs, pools and hangs in long strings; the matter is whatever the Goop slot holds.</summary>
     private static readonly StrokeEmission[] Shed =
     {
         StrokeEmission.Coated(PrimitiveRole.Goop, supply: 1.3f, clump: 0.7f),

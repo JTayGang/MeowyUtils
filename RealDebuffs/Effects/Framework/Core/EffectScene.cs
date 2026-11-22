@@ -27,7 +27,7 @@ public sealed class EffectScene
     private Vector4?[] _modColor = Array.Empty<Vector4?>();
     private ulong[] _modRoles = Array.Empty<ulong>();
 
-    /// <summary>A second colour per effect for its modifier layer; null or absent means the modifier keeps the effect's colour. Replace the instance to change it.</summary>
+    /// <summary>Second colour per effect for its modifier layer; absent means the effect's colour. Replace the instance to change it.</summary>
     public IReadOnlyDictionary<DebuffKind, Vector4>? ModifierColors
     {
         get => _modifierColors;

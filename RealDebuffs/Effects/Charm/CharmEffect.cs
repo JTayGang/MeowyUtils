@@ -100,7 +100,7 @@ public sealed class CharmEffect : SceneEffect, IHasSwappableSlots
 
     // atmosphere
 
-    /// <summary>A slow, deliberate heartbeat, 0..1: seconds since a beat began in, and two soft swells (the second half as strong) out; no sharp edges, so it breathes rather than flickers.</summary>
+    /// <summary>Slow heartbeat 0..1: seconds since a beat began, two soft swells (second half as strong), no sharp edges.</summary>
     internal static float Pulse(float since)
         => MathF.Max(Swell(since, 0.45f, 1.1f), 0.55f * Swell(since - 0.65f, 0.40f, 1.0f));
 

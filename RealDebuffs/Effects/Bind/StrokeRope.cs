@@ -82,8 +82,7 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
         public float Width;  // radius multiplier: wobble along the length, and the rounded end caps
         public float CapW;  // 1 on the body; the dome's radius factor on a rounded end
         public float CapAxial;  // 0 on the body; how far the normal leans along the rope on a rounded end
-        public float Tone0, Tone1, Tone2;  // brightness of each of the three strands at this cross-section:
-                                            // length-wise mottling x that strand's own tone x its fibre grain
+        public float Tone0, Tone1, Tone2;  // brightness of each strand here: mottling x its tone x its fibre grain
         public float Feather;  // soft edge, in pixels
         public bool  On;  // any part of this cross-section can be on screen
     }
@@ -138,10 +137,7 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
         }
     }
 
-    /// <summary>
-    /// What a rope's drawing and its coat's chart share: the level of detail, the look, and the cross-sections cut from the path (the count, 0 if there is nothing to draw).
-    /// allRows lays every cross-section's lay and width, not only those near the screen, and none of the shading inputs: the chart needs the whole rope's geometry.
-    /// </summary>
+    /// <summary>Cuts the path into cross-sections (count; 0 = none) shared by drawing and the chart; allRows covers the whole rope, geometry only.</summary>
     private int Prepare(in StrokePrimitive s, float px, float shortSide, float time, float alpha, int screenW, int screenH, bool overridden, float dye, bool allRows,
                         out Tier tier, out Look look, out float visibleLen, out float diameter)
     {
@@ -206,10 +202,9 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
                           psi0, ph1, ph2, ph3, agit, time, px, depth, s.Twist / MathF.Tau, in look, allRows);
     }
 
-    // ---- the coat: one chart over the whole rope, cut from the same cross-sections and the same surface function the rope is drawn from
+    // ---- coat: one chart over the whole rope, cut from the drawn cross-sections and surface function
 
-    // Twelve sectors round the rope, always: a multiple of six, because the lay has three strands and crowns and valleys alternate round it. The coat re-cuts a chart by
-    // overlap when its rows change, scratch for MaxCells cells, so twelve sectors leave 48 rows; only the rows ever vary, so a re-cut never meets another sector count.
+    // Always 12 sectors (multiple of six: three strands, alternating crowns/valleys), so MaxCells gives 48 rows and re-cuts keep the count.
     private const int Sectors = 12, MaxChartRows = Coat.MaxCells / Sectors;
     private const float RowStep = 0.6f;  // diameters per chart row, at the finest
 
@@ -220,14 +215,11 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
     /// <summary>Liquid only: it is drawn as a film on the rope's own surface, between the body and the knot; other matters keep the generic band.</summary>
     public bool Layers(Coat coat) => coat.Matter is LiquidMatter && coat.Siblings != null && coat.V > 1;
 
-    /// <summary>Which body row chart row r sits on (an offset from the body's first): the first and last always, the rest evenly; a closed rope's seam row is its first again, so none repeats.</summary>
+    /// <summary>Body row offset for chart row r: ends always, the rest even; a closed rope's seam reuses its first row, so none repeats.</summary>
     private static int PickRow(int r, int rows, int bodyRows, bool closed)
         => closed ? (int)((long)r * bodyRows / rows) : (rows == 1 ? 0 : (int)MathF.Round(r * (bodyRows - 1f) / (rows - 1f)));
 
-    /// <summary>
-    /// The chart is laid in the lay frame: U is arc along the rope, V the angle phi round it, and a cell is seen at theta = phi + tau * Psi. So the strands are straight along U,
-    /// the grooves run helically, and when the rope twists the cells turn in view with the strands instead of the braid sliding under the coat.
-    /// </summary>
+    /// <summary>Lay-frame chart: U along the rope, V angle phi, seen at theta = phi + tau * Psi, so cells turn with the strands under twist.</summary>
     public void BuildCoatSurfaces(in StrokePrimitive s, in CoatBuildContext ctx, CoatCharts charts)
     {
         if (s.Path.Count < 2) return;
@@ -240,7 +232,7 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
         if (nb < 2) return;
         float bodyLen = closed ? total : _rows[_bodyEnd - 1].Arc - _rows[_bodyFirst].Arc;
 
-        // as many rows as this stroke's share of the frame's cells affords, no finer than RowStep; a count within a fifth of last frame's is kept
+        // rows the stroke's cell share affords, no finer than RowStep; a count within a fifth of last frame's is kept
         int V = Sectors, cap = Math.Min(Math.Min(MaxChartRows, charts.Share / V), nb);
         if (cap < 2) return;
         int want = Math.Clamp((int)MathF.Round(bodyLen / (RowStep * diameter)) + (closed ? 0 : 1), 2, cap);
@@ -287,8 +279,7 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
             }
         }
 
-        // Du and Dv: the screen direction of rising U and V, scaled by what the step really covers in 3D. The flow reads their Y as a slope, so this is the true slope:
-        // round the rope it falls to nothing at the silhouette, and along a helical groove it is eased by the lay.
+        // Du, Dv: screen direction of rising U, V scaled by the true 3D step, so flow sees the true slope (0 at the silhouette, eased by the lay).
         for (int r = 0; r < R; r++)
             for (int v = 0; v < V; v++)
             {
@@ -312,10 +303,7 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
         return len > 1e-4f ? d / len : fallback;
     }
 
-    /// <summary>
-    /// How far a film of thickness th stands off the surface, for the mesh. Up to one and a half times the liquid's hold thickness it is th itself; beyond that it eases toward maxDraw and never exceeds it,
-    /// because a pool that deep is a drop and the coat's drops draw it. Without this a rope's underside, where round-flowing liquid gathers, throws fins out of the mesh. Shading still sees the real thickness.
-    /// </summary>
+    /// <summary>Mesh standoff of a film: th up to 1.5x hold, then eased to maxDraw (deeper is a drop), so the underside throws no fins; shading keeps th.</summary>
     internal static float FilmOffset(float th, float hold, float maxDraw)
     {
         float knee = MathF.Min(1.5f * hold, 0.8f * maxDraw);
@@ -324,7 +312,7 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
         return knee + room * (1f - MathF.Exp(-(th - knee) / room));
     }
 
-    /// <summary>The film: a second mesh on the rope's own cross-sections and columns, its thickness the chart's cells interpolated along the rope and round it (round the way the strands turn, so it follows the lay).</summary>
+    /// <summary>The film: a second mesh on the rope's cross-sections and columns, thickness interpolated from the chart along and round the lay.</summary>
     private void DrawFilm(ImDrawListPtr dl, int rowCount, Tier tier, in Look look, in MaterialContext ctx, Coat coat, float coatAlpha, bool closed, float total)
     {
         if (coat.Matter is not LiquidMatter lm) return;
@@ -642,10 +630,7 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
         }
     }
 
-    /// <summary>
-    /// The rope's surface at one angle of a cross-section: where it is, which way it faces (unit, z toward the viewer), the strand's height there (1 crown, 0 valley)
-    /// and which strand turn it is on. turns3 = 3 theta / tau, u = sin theta, co = cos theta (negative on the far side). Shading and the coat's charts both cut the surface here.
-    /// </summary>
+    /// <summary>Rope surface at one angle: position, unit normal (z to viewer), strand height (1 crown, 0 valley), turn; u = sin, co = cos theta, turns3 = 3 theta/tau.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static void Column(in Frame f, float turns3, float u, float co, out Vector2 pos, out float nx, out float ny, out float nz, out float g, out float fl)
     {

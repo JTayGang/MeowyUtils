@@ -2,7 +2,7 @@ using System.Numerics;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Owns what strokes shed and carry: free-flying and path-following particles, coats of matter (drips, flames, snow), and impact bursts. Update once per frame after the effects have emitted.</summary>
+/// <summary>Owns what strokes shed and carry: particles, coats (drips, flames, snow) and impact bursts; update once per frame after effects emit.</summary>
 public sealed class StrokeShed
 {
     private const int FreeCapacity = 2000;

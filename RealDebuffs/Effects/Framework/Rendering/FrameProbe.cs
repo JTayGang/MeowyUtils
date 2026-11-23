@@ -43,8 +43,6 @@ public static class FrameProbe
     /// <summary>Stops recording; what was recorded stays readable.</summary>
     public static void Disarm() => Armed = false;
 
-    public static int Frames => _count;
-
     // ---- hooks ----
 
     public static void BeginFrame()
@@ -144,7 +142,6 @@ public static class FrameProbe
         return new Stat(sum / n, P(.5), P(.95), P(.99), s[n - 1]);
     }
 
-    public static Stat PhaseStat(Phase p) => Of(_col![(int)p], _count);
     public static Stat FrameStat() => Of(_col![CFrame], _count);
     public static Stat Vertices() => Of(_col![CVert], _count);
     public static Stat Indices() => Of(_col![CIdx], _count);
@@ -153,8 +150,6 @@ public static class FrameProbe
     public static Stat Particles() => Of(_col![CPart], _count);
     public static Stat Coats() => Of(_col![CCoat], _count);
     public static Stat Regions() => Of(_col![CRegion], _count);
-    public static Stat EmitStat(DebuffKind k) => Of(_col![CEmit + (int)k], _count);
-    public static Stat DrawStat(DebuffKind k) => Of(_col![CDraw + (int)k], _count);
 
     public static string[] Report()
     {
@@ -178,5 +173,4 @@ public static class FrameProbe
         return o.ToArray();
     }
 
-    public static string ReportText() => string.Join("\n", Report());
 }

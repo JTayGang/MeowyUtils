@@ -205,8 +205,6 @@ public sealed class LiquidMatter : CoatMatter
         }
     }
 
-    private static readonly Vector2[] Dir = new Vector2[16];
-
     /// <summary>A string between two hosts: a lit tube along a drooping curve, thinnest in the middle where it is stretched.</summary>
     internal void DrawFilament(ImDrawListPtr dl, in CoatSet.Bridge br, Vector2[] pts, float alpha, in MaterialContext ctx)
     {

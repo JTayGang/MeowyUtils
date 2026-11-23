@@ -80,9 +80,6 @@ public static class ColorLexicon
     public static LookColor ApplyShade(string shade, LookColor c) =>
         c.Rainbow || !Shades.TryGetValue(shade, out var f) ? c : new LookColor(f(c.Rgb));
 
-    public static bool IsColorWord(string? token) =>
-        !string.IsNullOrWhiteSpace(token) && TryWord(token.Trim(), out _);
-
     /// <summary>Hex (# / 0x / bare 3-8 digits), a colour word, or rainbow: what [color=] tags and the settings store.</summary>
     public static bool TryToken(string? token, out Vector4 rgb)
     {

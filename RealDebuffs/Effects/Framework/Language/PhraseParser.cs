@@ -82,7 +82,7 @@ public static class PhraseParser
 
         var items = Tokenize(blank.ToString(), runs, lex);
         var looks = new Dictionary<DebuffKind, Look>();
-        Analyse(items, lex, looks, notes);
+        Analyse(items, looks, notes);
         SuggestTypos(items, lex, hints);
 
         foreach (var kv in coded) looks[kv.Key] = kv.Value;
@@ -179,7 +179,7 @@ public static class PhraseParser
 
     // ---- analysis --------------------------------------------------------------------------------------------------
 
-    private static void Analyse(List<Item> items, Lexicon lex, Dictionary<DebuffKind, Look> looks, List<string> notes)
+    private static void Analyse(List<Item> items, Dictionary<DebuffKind, Look> looks, List<string> notes)
     {
         AttachColours(items);
 

@@ -2,7 +2,7 @@ using System.Numerics;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>One point of a chart this frame: position, which way the chart runs, how it faces. Du and Dv are the screen directions of rising U and V, no longer than 1: the flow reads their Y as a slope, so a foreshortened host (a rope round its silhouette) scales them by what a step covers in 3D; a flat host gives unit vectors.</summary>
+/// <summary>One chart point: position, orientation, and screen directions of rising U/V scaled by each 3D step; flow reads their Y as slope.</summary>
 public struct CoatSurfaceSample
 {
     public Vector2 Pos, Du, Dv, Anchor;  // Anchor: where a drop hangs from if one forms here

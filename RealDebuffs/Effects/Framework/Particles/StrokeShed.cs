@@ -74,7 +74,7 @@ public sealed class StrokeShed
                 for (int e = 0; e < specs.Length; e++)
                 {
                     if (specs[e].Coat is not null) _coats.Tend(scene, in s, in specs[e], route.EmitName, route.Material, time, dt);
-                    else SpawnFromStroke(in s, in specs[e], route.EmitName, time, dt, strokeMaterial: null);
+                    else SpawnFromStroke(in s, in specs[e], route.EmitName, time, dt);
                 }
                 continue;
             }
@@ -85,7 +85,7 @@ public sealed class StrokeShed
             for (int e = 0; e < emissions.Length; e++)
             {
                 if (emissions[e].Coat is not null) _coats.Tend(scene, in s, in emissions[e], null, material, time, dt);
-                else SpawnFromStroke(in s, in emissions[e], forcedMaterial: null, time, dt, material);
+                else SpawnFromStroke(in s, in emissions[e], forcedMaterial: null, time, dt);
             }
         }
 
@@ -98,7 +98,7 @@ public sealed class StrokeShed
         FrameProbe.Mark(FrameProbe.Phase.Gap);
     }
 
-    private void SpawnFromStroke(in StrokePrimitive s, in StrokeEmission e, string? forcedMaterial, float time, float dt, IStrokeMaterial? strokeMaterial)
+    private void SpawnFromStroke(in StrokePrimitive s, in StrokeEmission e, string? forcedMaterial, float time, float dt)
     {
         float visibleLen = s.Path.Length * s.Reveal;
         if (visibleLen < 8f) return;

@@ -15,12 +15,12 @@ public sealed class ParticlePuff : IParticleMaterial
         uint Highlight = 0, float Thin = 0f, bool LitFromBelow = false, Palette? Ramp = null);
 
     public static readonly ParticlePuff Smoke = new("particle.smoke", new[] { "smoke", "smog", "soot" },
-        new Look(Warm: DrawHelpers.Pack(0.30f, 0.125f, 0.055f), Cool: DrawHelpers.Pack(0.055f, 0.050f, 0.055f), CoolSpan: 0.55f,
+        new Look(Warm: Pack(0.30f, 0.125f, 0.055f), Cool: Pack(0.055f, 0.050f, 0.055f), CoolSpan: 0.55f,
                  GrowFrom: 0.65f, GrowBy: 1.15f, FadeIn: 0f, FadeOutAt: 1f,
                  Alpha: 0.34f, Squash: 0.88f, Irregular: 0.55f, MinSize: 1f));
 
     public static readonly ParticlePuff Mist = new("particle.mist", new[] { "mist", "fog", "vapor", "vapour", "breath" },
-        new Look(Warm: DrawHelpers.Pack(0.74f, 0.86f, 0.98f), Cool: 0, CoolSpan: 0f,
+        new Look(Warm: Pack(0.74f, 0.86f, 0.98f), Cool: 0, CoolSpan: 0f,
                  GrowFrom: 0.55f, GrowBy: 0.45f, FadeIn: 0.25f, FadeOutAt: 0.45f,
                  Alpha: 0.20f, Squash: 0.80f, Irregular: 0.50f, MinSize: 2f),
         new StrokeEmission(Role: PrimitiveRole.Mist,
@@ -33,10 +33,10 @@ public sealed class ParticlePuff : IParticleMaterial
             PrimaryDirection: new Vector2(0f, -1f)));
 
     public static readonly ParticlePuff Dust = new("particle.dust", new[] { "dust", "dusty", "dirt", "grit" },
-        new Look(Warm: DrawHelpers.Pack(0.19f, 0.19f, 0.21f), Cool: 0, CoolSpan: 0f,
+        new Look(Warm: Pack(0.19f, 0.19f, 0.21f), Cool: 0, CoolSpan: 0f,
                  GrowFrom: 0.55f, GrowBy: 1.10f, FadeIn: 0f, FadeOutAt: 1f,
                  Alpha: 0.46f, Squash: 0.86f, Irregular: 0.55f, MinSize: 1f,
-                 Highlight: DrawHelpers.Pack(0.64f, 0.57f, 0.47f), Thin: 0.60f),
+                 Highlight: Pack(0.64f, 0.57f, 0.47f), Thin: 0.60f),
         new StrokeEmission(Role: PrimitiveRole.Dust,
             DensityPer100px: 0.55f,
             SpeedMin: 4f, SpeedMax: 18f,
@@ -48,10 +48,10 @@ public sealed class ParticlePuff : IParticleMaterial
             Gravity: new Vector2(0f, 22f)));
 
     public static readonly ParticlePuff Miasma = new("particle.miasma", new[] { "miasma", "murk" },
-        new Look(Warm: DrawHelpers.Pack(0.42f, 0.13f, 0.56f), Cool: DrawHelpers.Pack(0.07f, 0.015f, 0.12f), CoolSpan: 0.85f,
+        new Look(Warm: Pack(0.42f, 0.13f, 0.56f), Cool: Pack(0.07f, 0.015f, 0.12f), CoolSpan: 0.85f,
                  GrowFrom: 0.60f, GrowBy: 0.90f, FadeIn: 0.25f, FadeOutAt: 0.55f,
                  Alpha: 0.30f, Squash: 0.82f, Irregular: 0.55f, MinSize: 2f,
-                 Highlight: DrawHelpers.Pack(0.85f, 0.30f, 0.80f), Thin: 0.35f),
+                 Highlight: Pack(0.85f, 0.30f, 0.80f), Thin: 0.35f),
         new StrokeEmission(Role: PrimitiveRole.Miasma,
             DensityPer100px: 0.4f,
             SpeedMin: 5f, SpeedMax: 14f,
@@ -84,10 +84,10 @@ public sealed class ParticlePuff : IParticleMaterial
         if (k <= 0.003f || p.Size <= L.MinSize) return;
 
         float age = p.AgeRatio;
-        float radius = p.Size * (L.GrowFrom + L.GrowBy * DrawHelpers.Smooth(age));
+        float radius = p.Size * (L.GrowFrom + L.GrowBy * Smooth(age));
         float fade = (L.FadeIn > 0f ? MathF.Min(age / L.FadeIn, 1f) : 1f)
-                   * (L.FadeOutAt < 1f ? 1f - DrawHelpers.Smooth((age - L.FadeOutAt) / (1f - L.FadeOutAt)) : 1f);
-        float a = k * fade * L.Alpha * (1f - L.Thin * DrawHelpers.Smooth(age));
+                   * (L.FadeOutAt < 1f ? 1f - Smooth((age - L.FadeOutAt) / (1f - L.FadeOutAt)) : 1f);
+        float a = k * fade * L.Alpha * (1f - L.Thin * Smooth(age));
         if (a <= 0.002f || radius <= L.MinSize) return;
 
         if (L.Ramp is { } ramp)
@@ -96,10 +96,10 @@ public sealed class ParticlePuff : IParticleMaterial
             return;
         }
 
-        uint body = L.CoolSpan > 0f ? DrawHelpers.LerpColor(L.Warm, L.Cool, DrawHelpers.Smooth(age / L.CoolSpan)) : L.Warm;
+        uint body = L.CoolSpan > 0f ? LerpColor(L.Warm, L.Cool, Smooth(age / L.CoolSpan)) : L.Warm;
         Vector2 pos = p.DrawPos;
         Vector2 uv = MeshDraw.WhiteUv(ctx.Time);
-        float rot = DrawHelpers.Hash01(p.Seed + 9) * MathF.Tau;
+        float rot = Hash01(p.Seed + 9) * MathF.Tau;
 
         Blob(dl, pos, uv, body, a, 1f, radius, rot, L.Squash, p.Seed, L.Irregular);
 
@@ -129,10 +129,10 @@ public sealed class ParticlePuff : IParticleMaterial
         float cosR = MathF.Cos(p.Rotation), sinR = MathF.Sin(p.Rotation);
 
         // The turn of the pattern: it slowly swirls about the billow's heart, one way or the other.
-        float swirl = DrawHelpers.Hash01(p.Seed + 12) * MathF.Tau + time * DrawHelpers.HashRange(p.Seed + 13, -0.07f, 0.07f);
+        float swirl = Hash01(p.Seed + 12) * MathF.Tau + time * HashRange(p.Seed + 13, -0.07f, 0.07f);
         float cosP = MathF.Cos(swirl), sinP = MathF.Sin(swirl);
-        float ox = DrawHelpers.HashRange(p.Seed + 14, 0f, 200f) + time * 0.035f, oy = DrawHelpers.HashRange(p.Seed + 15, 0f, 200f);
-        float freq = DrawHelpers.HashRange(p.Seed + 16, 0.95f, 1.45f);
+        float ox = HashRange(p.Seed + 14, 0f, 200f) + time * 0.035f, oy = HashRange(p.Seed + 15, 0f, 200f);
+        float freq = HashRange(p.Seed + 16, 0.95f, 1.45f);
 
         // Light arrives from the middle of the screen: its direction in the billow's own frame, then in the noise's.
         Vector2 toLight = new(ctx.ScreenW * 0.5f - c.X, ctx.ScreenH * 0.5f - c.Y);
@@ -140,7 +140,7 @@ public sealed class ParticlePuff : IParticleMaterial
         toLight = tl > 1f ? toLight / tl : new Vector2(0f, -1f);
 
         // A billow right at the light is lit all round, not from one side.
-        float side = DrawHelpers.Saturate(tl / (radius * 1.2f));
+        float side = Saturate(tl / (radius * 1.2f));
         float lux = (toLight.X * cosR + toLight.Y * sinR), luy = (-toLight.X * sinR + toLight.Y * cosR) / squash;
         float ll = MathF.Sqrt(lux * lux + luy * luy);
         lux /= ll; luy /= ll;
@@ -161,17 +161,17 @@ public sealed class ParticlePuff : IParticleMaterial
                 float d0 = 0.70f + 0.80f * Noise.Fbm(qx, qy, 2);
                 float d1 = 0.70f + 0.80f * Noise.Fbm(qx + lnx, qy + lny, 2);
 
-                float edge = 1f - DrawHelpers.Smooth(0.28f, 1f, rr);
-                float dens = DrawHelpers.Saturate(d0);
-                float core = DrawHelpers.Smooth(0.75f, 0.05f, rr);
-                float lit = DrawHelpers.Saturate(0.46f + 0.95f * (d0 - d1) + 0.20f * side * (ux * lux + uy * luy) - 0.26f * core * dens);
+                float edge = 1f - Smooth(0.28f, 1f, rr);
+                float dens = Saturate(d0);
+                float core = Smooth(0.75f, 0.05f, rr);
+                float lit = Saturate(0.46f + 0.95f * (d0 - d1) + 0.20f * side * (ux * lux + uy * luy) - 0.26f * core * dens);
 
                 float wob = 1f + irregular * 0.5f * (d0 - 0.5f);
                 float sx = ux * wob, sy = uy * wob * squash;
                 Vector2 pos = c + new Vector2(sx * cosR - sy * sinR, sx * sinR + sy * cosR) * radius;
                 // Thin fog at a rim stays rosy instead of washing out to white.
                 float thick = edge * MathF.Pow(dens, 1.3f);
-                Mb.VertexReserved(pos, DrawHelpers.WithAlpha(ramp.Sample(lit * (0.72f + 0.28f * DrawHelpers.Saturate(thick * 1.8f))), a * thick));
+                Mb.VertexReserved(pos, WithAlpha(ramp.Sample(lit * (0.72f + 0.28f * Saturate(thick * 1.8f))), a * thick));
             }
         }
 
@@ -195,10 +195,10 @@ public sealed class ParticlePuff : IParticleMaterial
         Span<float> rr = stackalloc float[2] { radius * 0.5f, radius };
         Span<uint> cc = stackalloc uint[2]
         {
-            DrawHelpers.WithAlpha(color, a * centre * 0.65f),
-            DrawHelpers.WithAlpha(color, 0f),
+            WithAlpha(color, a * centre * 0.65f),
+            WithAlpha(color, 0f),
         };
-        MeshDraw.Radial(dl, pos, uv, DrawHelpers.WithAlpha(color, a * centre), Segs, rr, cc, rot, squash, seed, irregular);
+        MeshDraw.Radial(dl, pos, uv, WithAlpha(color, a * centre), Segs, rr, cc, rot, squash, seed, irregular);
     }
 }
 

@@ -93,18 +93,18 @@ public sealed class ParticleWhisper : IParticleMaterial
 
         var phrases = _phrases;
         int pick = (p.Variant & ((1 << PhraseBits) - 1)) - 1;
-        if (pick < 0) pick = (int)(DrawHelpers.Hash01(p.Seed + 3) * phrases.Length);
+        if (pick < 0) pick = (int)(Hash01(p.Seed + 3) * phrases.Length);
         string text = phrases[pick % phrases.Length];
         int depth = (p.Variant >> DepthShift) & 3;
         int n = Math.Min(text.Length, 40);
 
         float unit = p.Size, px = ctx.ScreenScale, t = p.AgeRatio;
         float width = ScriptFont.Width(text);
-        bool overridden = DrawHelpers.ColorOverrideActive;
+        bool overridden = ColorOverrideActive;
 
         int inS = ((p.Variant >> ArriveShift) & 7) % Arrivals, outS = ((p.Variant >> DepartShift) & 7) % Departures;
-        float seedPhase = DrawHelpers.Hash01(p.Seed + 4) * MathF.Tau;
-        bool flip = DrawHelpers.Hash01(p.Seed + 9) < 0.5f;
+        float seedPhase = Hash01(p.Seed + 4) * MathF.Tau;
+        bool flip = Hash01(p.Seed + 9) < 0.5f;
 
         Span<Letter> letters = stackalloc Letter[n];
         float cursor = -width * 0.5f;
@@ -117,11 +117,11 @@ public sealed class ParticleWhisper : IParticleMaterial
             var (ao, asp, adu) = Arrive[inS];
             if (inS == 4 && flip) ao = Order.Backward;
             float start = asp * OrderOf(ao, i, n, p.Seed);
-            float rise = DrawHelpers.Saturate((t - start) / adu);
-            float arrived = DrawHelpers.Smooth(rise), come = (1f - rise) * (1f - rise);  // it fades in evenly but slows as it settles
+            float rise = Saturate((t - start) / adu);
+            float arrived = Smooth(rise), come = (1f - rise) * (1f - rise);  // it fades in evenly but slows as it settles
 
             var (dro, dsp, ddu) = Depart[outS];
-            float dis = DrawHelpers.Smooth((t - DepartAt - dsp * OrderOf(dro, i, n, p.Seed + 77)) / ddu);
+            float dis = Smooth((t - DepartAt - dsp * OrderOf(dro, i, n, p.Seed + 77)) / ddu);
 
             int h = p.Seed * 131 + i * 17;
             var L = new Letter { Focus = arrived * (1f - dis), Spread = 1f, Glimmer = 1f + 0.15f * MathF.Sin(ctx.Time * 2.1f + seedPhase + i * 0.7f) };
@@ -130,7 +130,7 @@ public sealed class ParticleWhisper : IParticleMaterial
             {
                 case 0: L.Rise = 0.55f * come; break;
                 case 1: L.Spread += 0.20f * come; break;
-                case 2: L.Shift += new Vector2(DrawHelpers.HashRange(h + 2, -1f, 1f), DrawHelpers.HashRange(h + 3, -1f, 1f)) * (0.5f * unit * come); break;
+                case 2: L.Shift += new Vector2(HashRange(h + 2, -1f, 1f), HashRange(h + 3, -1f, 1f)) * (0.5f * unit * come); break;
                 case 3: L.Shift.X -= mid * 0.30f * unit * come; break;
                 case 4: L.Shift.X += (flip ? -1f : 1f) * 1.5f * unit * come; break;
                 case 5: L.Pop = t >= start ? MathF.Exp(-(t - start) / 0.05f) : 0f; break;
@@ -142,7 +142,7 @@ public sealed class ParticleWhisper : IParticleMaterial
                 case 1: L.Shift += new Vector2(MathF.Sin(h) * 0.12f * unit * dis, unit * dis * dis); break;
                 case 2: L.Shift.Y -= 0.12f * unit * dis; L.Spread += 0.05f * dis; break;
                 case 3: L.Spread += 0.60f * dis; break;
-                case 4: { float a = DrawHelpers.Hash01(h + 4) * MathF.Tau; L.Shift += new Vector2(MathF.Cos(a), MathF.Sin(a) - 0.3f) * (unit * dis); break; }
+                case 4: { float a = Hash01(h + 4) * MathF.Tau; L.Shift += new Vector2(MathF.Cos(a), MathF.Sin(a) - 0.3f) * (unit * dis); break; }
                 case 5: L.Shift.X -= mid * 0.60f * unit * dis; break;
             }
 
@@ -152,7 +152,7 @@ public sealed class ParticleWhisper : IParticleMaterial
         }
 
         // The phrase hangs a little askew, turned about its vertical axis so one end is nearer, and swivels slowly.
-        var pose = new Pose(p.DrawPos, unit, DrawHelpers.HashRange(p.Seed + 5, -0.70f, 0.70f) + 0.14f * MathF.Sin(ctx.Time * 0.35f + seedPhase), width, p.Rotation);
+        var pose = new Pose(p.DrawPos, unit, HashRange(p.Seed + 5, -0.70f, 0.70f) + 0.14f * MathF.Sin(ctx.Time * 0.35f + seedPhase), width, p.Rotation);
         // Shallow depth of field: the middle distance is in focus, the near and far are soft.
         float blur = depth == 0 ? 1.9f : depth == 1 ? 1.0f : 1.6f;
         uint plumC = _ink, haloC = _glow.Sample(0.34f), roseC = _glow.Sample(0.54f), blushC = _glow.Sample(0.80f), pearlC = _glow.Sample(0.99f);
@@ -173,7 +173,7 @@ public sealed class ParticleWhisper : IParticleMaterial
                 if (f <= 0.02f || g.Points.Length == 0) continue;
 
                 // A little handwriting in each letter, on top of however it is arriving or leaving.
-                float lift = 0.5f + L.Rise + DrawHelpers.HashRange(p.Seed * 131 + i * 17 + 1, -0.05f, 0.05f);
+                float lift = 0.5f + L.Rise + HashRange(p.Seed * 131 + i * 17 + 1, -0.05f, 0.05f);
                 float spread = L.Spread;
                 Vector2 away = L.Shift;
                 float soft = L.Soft;
@@ -182,14 +182,14 @@ public sealed class ParticleWhisper : IParticleMaterial
 
                 if (pass == 0)
                 {
-                    if (depth < 2) Glow(g, in pose, x0, lift, spread, away, haloReach * 0.55f, DrawHelpers.Tint(plumC, aBody * 0.36f, overridden), DrawHelpers.Tint(plumC, aBody * 0.16f, overridden));
-                    Glow(g, in pose, x0, lift, spread, away, haloReach, DrawHelpers.Tint(haloC, aBody * L.Glimmer * (0.20f + 0.5f * L.Pop), overridden), DrawHelpers.Tint(haloC, aBody * L.Glimmer * (0.09f + 0.25f * L.Pop), overridden));
+                    if (depth < 2) Glow(g, in pose, x0, lift, spread, away, haloReach * 0.55f, Tint(plumC, aBody * 0.36f, overridden), Tint(plumC, aBody * 0.16f, overridden));
+                    Glow(g, in pose, x0, lift, spread, away, haloReach, Tint(haloC, aBody * L.Glimmer * (0.20f + 0.5f * L.Pop), overridden), Tint(haloC, aBody * L.Glimmer * (0.09f + 0.25f * L.Pop), overridden));
                 }
                 else
                 {
                     // Rose out at the edges, pearl at the heart; defocus fattens the line and thins its light.
-                    uint clear = DrawHelpers.Tint(roseC, 0f, overridden);
-                    uint o1 = DrawHelpers.Tint(roseC, aBody * 0.22f, overridden), o2 = DrawHelpers.Tint(blushC, aBody * 0.65f, overridden), mid = DrawHelpers.Tint(pearlC, aCore, overridden);
+                    uint clear = Tint(roseC, 0f, overridden);
+                    uint o1 = Tint(roseC, aBody * 0.22f, overridden), o2 = Tint(blushC, aBody * 0.65f, overridden), mid = Tint(pearlC, aCore, overridden);
                     line[0] = line[6] = clear; line[1] = line[5] = o1; line[2] = line[4] = o2; line[3] = mid;
                     float sigma = unit * Weight * (1f + 0.9f * soft + 0.7f * L.Pop) * (0.88f + 0.16f * blur) + 0.35f * px;
                     Ribbons(g, in pose, x0, lift, spread, away, line, sigma);
@@ -209,8 +209,8 @@ public sealed class ParticleWhisper : IParticleMaterial
             Order.Backward => 1f - s,
             Order.CentreOut => c,
             Order.EdgesIn => 1f - c,
-            Order.Random => DrawHelpers.Hash01(seed + i * 7 + 1),
-            _ => DrawHelpers.Hash01(seed + i * 7 + 1) * 0.3f,
+            Order.Random => Hash01(seed + i * 7 + 1),
+            _ => Hash01(seed + i * 7 + 1) * 0.3f,
         };
     }
 

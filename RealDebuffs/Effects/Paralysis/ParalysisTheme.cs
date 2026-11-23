@@ -15,10 +15,10 @@ internal static class StormColor
         (1.00f, 1.00f, 0.975f, 0.760f));
 
     /// <summary>Edge tint for the screen's vignette: very dark umber.</summary>
-    public static readonly uint Vignette = DrawHelpers.Pack(0.030f, 0.014f, 0.002f);
+    public static readonly uint Vignette = Pack(0.030f, 0.014f, 0.002f);
 
     /// <summary>The white-hot flash a strike lands with (yellow-tinged, so it stays chromatic under a colour override).</summary>
-    public static readonly uint Flash = DrawHelpers.Pack(1.00f, 0.96f, 0.80f);
+    public static readonly uint Flash = Pack(1.00f, 0.96f, 0.80f);
 }
 
 internal sealed class StormMaterials : IMaterialPack
@@ -28,10 +28,10 @@ internal sealed class StormMaterials : IMaterialPack
         // A charged cloud deck: dark umber lit to amber by flashes the effect drives via Brightness.
         new ParticlePuff("particle.thunderhead", new[] { "thunderhead", "thundercloud", "stormcloud", "storm" },
             new ParticlePuff.Look(
-                Warm: DrawHelpers.Pack(0.95f, 0.62f, 0.24f), Cool: DrawHelpers.Pack(0.075f, 0.055f, 0.045f), CoolSpan: 0.60f,
+                Warm: Pack(0.95f, 0.62f, 0.24f), Cool: Pack(0.075f, 0.055f, 0.045f), CoolSpan: 0.60f,
                 GrowFrom: 0.60f, GrowBy: 0.50f, FadeIn: 0.30f, FadeOutAt: 0.55f,
                 Alpha: 0.36f, Squash: 0.55f, Irregular: 0.35f, MinSize: 2f,
-                Highlight: DrawHelpers.Pack(1.00f, 0.86f, 0.56f), Thin: 0.12f),
+                Highlight: Pack(1.00f, 0.86f, 0.56f), Thin: 0.12f),
             new StrokeEmission(Role: PrimitiveRole.Haze,
                 DensityPer100px: 0.35f,
                 SpeedMin: 4f, SpeedMax: 12f,

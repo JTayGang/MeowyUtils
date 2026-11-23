@@ -25,10 +25,10 @@ internal static class HellColor
         (1.00f, 1.000f, 0.880f, 0.520f));
 
     /// <summary>Edge tint for the screen's vignette: near-black blood.</summary>
-    public static readonly uint Vignette = DrawHelpers.Pack(0.022f, 0.003f, 0.004f);
+    public static readonly uint Vignette = Pack(0.022f, 0.003f, 0.004f);
 
     /// <summary>The flash an infernal cast lands with (orange-red, so it stays chromatic under a colour override).</summary>
-    public static readonly uint Flash = DrawHelpers.Pack(1.00f, 0.36f, 0.12f);
+    public static readonly uint Flash = Pack(1.00f, 0.36f, 0.12f);
 }
 
 internal sealed class HellMaterials : IMaterialPack
@@ -38,10 +38,10 @@ internal sealed class HellMaterials : IMaterialPack
         // Smoke over a hellfire: ember-lit oxblood while it is young, soot once it has risen out of the light
         new ParticlePuff("particle.brimstone", new[] { "brimstone", "sulphur", "sulfur", "hellsmoke" },
             new ParticlePuff.Look(
-                Warm: DrawHelpers.Pack(0.46f, 0.075f, 0.030f), Cool: DrawHelpers.Pack(0.030f, 0.020f, 0.024f), CoolSpan: 0.55f,
+                Warm: Pack(0.46f, 0.075f, 0.030f), Cool: Pack(0.030f, 0.020f, 0.024f), CoolSpan: 0.55f,
                 GrowFrom: 0.60f, GrowBy: 1.05f, FadeIn: 0.22f, FadeOutAt: 0.58f,
                 Alpha: 0.46f, Squash: 0.84f, Irregular: 0.55f, MinSize: 2f,
-                Highlight: DrawHelpers.Pack(0.95f, 0.28f, 0.05f), Thin: 0.28f, LitFromBelow: true),
+                Highlight: Pack(0.95f, 0.28f, 0.05f), Thin: 0.28f, LitFromBelow: true),
             new StrokeEmission(Role: PrimitiveRole.Smoke,
                 DensityPer100px: 0.45f,
                 SpeedMin: 8f, SpeedMax: 22f,

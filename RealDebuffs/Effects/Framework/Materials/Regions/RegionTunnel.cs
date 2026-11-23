@@ -16,7 +16,7 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
         if (a <= 0.003f) return;
 
         f.Wall.Ensure(f.Seed);
-        var env = new Env(f, a, DrawHelpers.ColorOverrideActive, MeshDraw.WhiteUv(ctx.Time));
+        var env = new Env(f, a, ColorOverrideActive, MeshDraw.WhiteUv(ctx.Time));
         DrawGlow(dl, f, in env);
         DrawWalls(dl, f, in env);
         DrawGrit(dl, f, in env);
@@ -59,7 +59,7 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
     }
 
     private static uint Col(Vector3 rgb, float alpha, bool overridden)
-        => DrawHelpers.VertexColor(rgb, alpha, DrawHelpers.AlphaBits(alpha), overridden);
+        => VertexColor(rgb, alpha, AlphaBits(alpha), overridden);
 
     // The tone curve is the same for every vertex: look it up instead of exp and pow each time.
     private const int LutSize = 512;
@@ -101,7 +101,7 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
     private const int WallSegments = 64;
 
     /// <summary>Fades a detail in as a rib comes near (0 below lo, 1 above hi); a hard threshold popped.</summary>
-    private static float Near(float scale, float lo, float hi) => DrawHelpers.Smooth((scale - lo) / (hi - lo));
+    private static float Near(float scale, float lo, float hi) => Smooth((scale - lo) / (hi - lo));
 
     private static readonly Vector3 FarLight = new(0.62f, 0.90f, 1.00f);
     private static readonly Vector3 Ambient = new(0.40f, 0.52f, 0.64f);
@@ -144,7 +144,7 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
         {
             float hu = fl.HeightOf(f.RibAt[i], out int lap);
             int s = f.Seed + 2000 + i * 7919 + lap * 104729;
-            Ribs[n++] = new Rib { H = hu, W = DrawHelpers.HashRange(s + 20, 55f, 100f), Seed = s };
+            Ribs[n++] = new Rib { H = hu, W = HashRange(s + 20, 55f, 100f), Seed = s };
         }
         for (int i = 1; i < n; i++)        // far to near
         {
@@ -222,9 +222,9 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
             float ct = MathF.Cos(twist), st = MathF.Sin(twist);
 
             // Ends of the tunnel fade into the dark in front of and behind us.
-            float fade = DrawHelpers.Smooth(t / 0.24f) * (1f - DrawHelpers.Smooth((t - 0.90f) / 0.10f));
+            float fade = Smooth(t / 0.24f) * (1f - Smooth((t - 0.90f) / 0.10f));
             float lightFar = MathF.Exp(-3.0f * t);
-            float body = DrawHelpers.Lerp(0.04f, 0.46f, DrawHelpers.Smooth(t / 0.80f));
+            float body = Lerp(0.04f, 0.46f, Smooth(t / 0.80f));
             float kindFar = kind == WallKind ? 1.00f : kind == BandKind ? 1.50f : 0.04f;
             float kindAlpha = kind == WallKind ? 1.00f : kind == BandKind ? 1.10f : 1.75f;
             float radius = row.Radius * shortSide * f.Breath;
@@ -243,12 +243,12 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
                 float mottle = tex.X, streak = tex.Y, pit = tex.Z;
 
                 // Concrete in the dark: blotched, stained and pitted, lit by the far light and a breath of ambient.
-                float blotch = DrawHelpers.Smooth((mottle - 0.30f) / 0.42f);
+                float blotch = Smooth((mottle - 0.30f) / 0.42f);
                 float albedo = (0.045f + 0.36f * blotch) * (1f - 0.72f * streak) * (0.80f + 0.40f * pit);
                 Vector3 lin = albedo * (Ambient * 0.060f + FarLight * (2.4f * lightFar * kindFar * shade * e.Light));
                 Vector3 rgb = Display(lin);
 
-                float radial = DrawHelpers.Smooth((Vector2.Distance(at, f.Center) / shortSide - 0.26f) / 0.45f);
+                float radial = Smooth((Vector2.Distance(at, f.Center) / shortSide - 0.26f) / 0.45f);
                 float dirt = 0.55f * streak + 0.45f * (1f - blotch);
                 float alpha = body * kindAlpha * (0.30f + 1.45f * dirt) * radial * fade * row.AlphaMul * e.A;
 
@@ -281,7 +281,7 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
 
         for (int k = 0; k < SeamCount; k++)
         {
-            float baseAng = MathF.Tau * (k + 0.5f * (panel & 1)) / SeamCount + 0.02f * DrawHelpers.Hash01(f.Seed + panel * 31 + k);
+            float baseAng = MathF.Tau * (k + 0.5f * (panel & 1)) / SeamCount + 0.02f * Hash01(f.Seed + panel * 31 + k);
             bool any = false;
             for (int r = 0; r < n; r++)
             {
@@ -289,9 +289,9 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
                 float ang = baseAng + f.Swirl * hu + f.Roll;
                 Vector2 at = f.Cam.Project(radius * MathF.Cos(ang) + SeamBend[r].X, radius * MathF.Sin(ang) + SeamBend[r].Y, h, out float s2);
                 float t = f.Flight.Near(hu);
-                float fade = DrawHelpers.Smooth(t / 0.24f) * (1f - DrawHelpers.Smooth((t - 0.90f) / 0.10f));
-                float radial = DrawHelpers.Smooth((Vector2.Distance(at, f.Center) / f.Short - 0.26f) / 0.45f);
-                float body = DrawHelpers.Lerp(0.04f, 0.56f, DrawHelpers.Smooth(t / 0.80f));
+                float fade = Smooth(t / 0.24f) * (1f - Smooth((t - 0.90f) / 0.10f));
+                float radial = Smooth((Vector2.Distance(at, f.Center) / f.Short - 0.26f) / 0.45f);
+                float body = Lerp(0.04f, 0.56f, Smooth(t / 0.80f));
                 float alpha = 0.95f * body * fade * radial * e.A * seen;
                 SeamP[r] = at;
                 SeamHalf[r] = Math.Clamp(1.7f * px * s2, 1.1f * px, 4.5f * px);
@@ -317,9 +317,9 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
         for (int c = 0; c < TunnelField.CrackCount; c++)
         {
             int s = f.Seed + 3000 + c * 7919;
-            float ang0 = DrawHelpers.Hash01(s + 1) * MathF.Tau;
-            float reachLen = DrawHelpers.HashRange(s + 2, 500f, 1000f);
-            float walk = DrawHelpers.HashRange(s + 3, 0.04f, 0.10f);
+            float ang0 = Hash01(s + 1) * MathF.Tau;
+            float reachLen = HashRange(s + 2, 500f, 1000f);
+            float walk = HashRange(s + 3, 0.04f, 0.10f);
             float radius = TunnelField.WallRadius * f.Short * f.Breath * 0.995f;
 
             int n = 0; float prevH = float.MinValue;
@@ -330,17 +330,17 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
                 float hu = fl.HeightOf(f.CrackAt[c] + u * reachLen, out _);
                 if (hu < prevH) break;                         // wrapped round the end of the tunnel: stop here
                 prevH = hu;
-                ang += (DrawHelpers.Hash01(s + 10 + i) - 0.5f) * walk;
+                ang += (Hash01(s + 10 + i) - 0.5f) * walk;
                 float twist = f.Swirl * hu + f.Roll;
                 Vector2 b = f.Bend(hu);
                 Vector2 at = f.Cam.Project(radius * MathF.Cos(ang + twist) + b.X, radius * MathF.Sin(ang + twist) + b.Y, hu * px, out float sc);
                 float t = fl.Near(hu);
-                float fade = DrawHelpers.Smooth(t / 0.24f) * (1f - DrawHelpers.Smooth((t - 0.90f) / 0.10f));
-                float radial = DrawHelpers.Smooth((Vector2.Distance(at, f.Center) / f.Short - 0.26f) / 0.45f);
-                float body = DrawHelpers.Lerp(0.04f, 0.56f, DrawHelpers.Smooth(t / 0.80f));
+                float fade = Smooth(t / 0.24f) * (1f - Smooth((t - 0.90f) / 0.10f));
+                float radial = Smooth((Vector2.Distance(at, f.Center) / f.Short - 0.26f) / 0.45f);
+                float body = Lerp(0.04f, 0.56f, Smooth(t / 0.80f));
                 float taper = 1f - 0.75f * u;
                 CrackP[n] = at;
-                CrackHalf[n] = Math.Clamp((2.8f + 2.2f * DrawHelpers.Hash01(s + 30 + i)) * px * sc * taper, 1.0f * px, 8f * px);
+                CrackHalf[n] = Math.Clamp((2.8f + 2.2f * Hash01(s + 30 + i)) * px * sc * taper, 1.0f * px, 8f * px);
                 CrackCol[n] = Col(new Vector3(0.005f, 0.008f, 0.012f), 1.0f * body * fade * radial * e.A * taper, e.Override);
                 n++;
             }
@@ -363,19 +363,19 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
             if (t < 0.12f || t > 0.97f) continue;
             int sd = f.Seed + 20000 + i * 7919 + lap * 104729;
 
-            float radius = DrawHelpers.Lerp(TunnelField.RibRadius, TunnelField.WallRadius, MathF.Sqrt(DrawHelpers.Hash01(sd + 1))) * s * f.Breath;
-            float theta = DrawHelpers.Hash01(sd + 2) * MathF.Tau;
+            float radius = Lerp(TunnelField.RibRadius, TunnelField.WallRadius, MathF.Sqrt(Hash01(sd + 1))) * s * f.Breath;
+            float theta = Hash01(sd + 2) * MathF.Tau;
             float ang = theta + f.Swirl * hu + f.Roll;
             Vector2 b = f.Bend(hu);
             Vector2 at = f.Cam.Project(radius * MathF.Cos(ang) + b.X, radius * MathF.Sin(ang) + b.Y, hu * px, out float sc);
 
-            float radial = DrawHelpers.Smooth((Vector2.Distance(at, f.Center) / s - 0.26f) / 0.45f);
-            float fade = DrawHelpers.Smooth(t / 0.30f) * (1f - DrawHelpers.Smooth((t - 0.90f) / 0.07f));
-            float size = DrawHelpers.HashRange(sd + 3, 1.3f, 3.6f) * px * sc;
+            float radial = Smooth((Vector2.Distance(at, f.Center) / s - 0.26f) / 0.45f);
+            float fade = Smooth(t / 0.30f) * (1f - Smooth((t - 0.90f) / 0.07f));
+            float size = HashRange(sd + 3, 1.3f, 3.6f) * px * sc;
             float k = e.A * radial * fade;
             if (k < 0.01f || size < 0.5f) continue;
 
-            bool fleck = DrawHelpers.Hash01(sd + 4) < 0.38f;
+            bool fleck = Hash01(sd + 4) < 0.38f;
             Vector3 rgb; float alpha;
             if (fleck)
             {
@@ -387,12 +387,12 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
             else
             {
                 rgb = new Vector3(0.008f, 0.012f, 0.016f);
-                alpha = 0.80f * k * DrawHelpers.HashRange(sd + 5, 0.4f, 1f);
+                alpha = 0.80f * k * HashRange(sd + 5, 0.4f, 1f);
             }
             if (alpha < 0.012f) continue;
 
             uint col = Col(rgb, MathF.Min(alpha, 0.9f), e.Override);
-            float rot = DrawHelpers.Hash01(sd + 6) * MathF.Tau;
+            float rot = Hash01(sd + 6) * MathF.Tau;
             Mb.Reserve(3, 3);
             int v0 = Mb.VertexReserved(at + new Vector2(MathF.Cos(rot), MathF.Sin(rot)) * size, col);
             Mb.VertexReserved(at + new Vector2(MathF.Cos(rot + 2.2f), MathF.Sin(rot + 2.2f)) * size * 0.9f, col);
@@ -408,7 +408,7 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
     {
         float px = f.Px, shortSide = f.Short;
         float t = f.Flight.Near(hu);
-        float fade = DrawHelpers.Smooth(t / 0.24f) * (1f - DrawHelpers.Smooth((t - 0.90f) / 0.10f));
+        float fade = Smooth(t / 0.24f) * (1f - Smooth((t - 0.90f) / 0.10f));
         float k = e.A * fade * (0.20f + 0.80f * MathF.Exp(-2.2f * t)) * e.Light;
         if (k < 0.006f) return;
 
@@ -422,7 +422,7 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
         float width = Math.Clamp(1.6f * px * sc, 1.2f * px, 6f * px);
 
         // A lens splits colours visibly only toward the frame edges; it fades in with rib nearness or shake.
-        float fringe = MathF.Max(Near(sc, 0.65f, 1.05f), DrawHelpers.Smooth((f.Fringe - 1.8f) / 1.2f));
+        float fringe = MathF.Max(Near(sc, 0.65f, 1.05f), Smooth((f.Fringe - 1.8f) / 1.2f));
         int firstPass = fringe > 0.02f ? 0 : 2;
         for (int pass = firstPass; pass < 3; pass++)
         {
@@ -440,7 +440,7 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
                 }
                 // The lip is chipped and dirty: it breaks up with the wall's own pitting.
                 Vector3 tex = f.Wall.Sample(j % segs / (float)segs, (hu - f.Flight.FarHeight - f.Flight.Travel) / f.Flight.Length);
-                float chip = DrawHelpers.Smooth((tex.Z * 1.2f + tex.X * 0.5f - 0.35f) / 0.5f);
+                float chip = Smooth((tex.Z * 1.2f + tex.X * 0.5f - 0.35f) / 0.5f);
                 LipPts[j] = at;
                 LipHalf[j] = width * (pass == 2 ? 1f : 0.8f);
                 LipCol[j] = Col(rgb, k * gain * (0.35f + 0.65f * chip), e.Override);
@@ -458,7 +458,7 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
         float c = MathF.Cos(angle), s = MathF.Sin(angle);
         float o = (seed & 0x3FF) * 0.173f;
         float n = 0.62f * Noise.Value(c * 1.7f + 31f + o, s * 1.7f + time * 0.045f) + 0.38f * Noise.Value(c * 3.9f + 77f + o, s * 3.9f - time * 0.07f);
-        float x = DrawHelpers.Smooth((n + 0.12f) / 0.75f);
+        float x = Smooth((n + 0.12f) / 0.75f);
 
         // One shaft is always there: a key beam, drifting slowly round, that the noise adds to.
         float key = (seed & 0xFFFF) * 0.0731f + time * 0.035f;
@@ -510,19 +510,19 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
             float hu = f.Flight.HeightOf(f.BillowAt[i], out int lap);
             float t = f.Flight.Near(hu);
             int sd = f.Seed + 12000 + i * 7919 + lap * 104729;
-            float lane = DrawHelpers.HashRange(sd + 1, 0.25f, 0.95f) * s;
-            float ang = DrawHelpers.Hash01(sd + 2) * MathF.Tau + f.Swirl * hu + f.Roll;
+            float lane = HashRange(sd + 1, 0.25f, 0.95f) * s;
+            float ang = Hash01(sd + 2) * MathF.Tau + f.Swirl * hu + f.Roll;
             Vector2 bz = f.Bend(hu);
             Vector2 at = f.Cam.Project(lane * MathF.Cos(ang) + bz.X, lane * MathF.Sin(ang) + bz.Y, hu * f.Px, out float sc);
 
-            float fade = DrawHelpers.Smooth(t / 0.20f) * (1f - DrawHelpers.Smooth((t - 0.80f) / 0.20f));
-            float k = e.A * fade * DrawHelpers.HashRange(sd + 3, 0.5f, 1f) * (0.4f + 0.6f * f.Stress) * (1f + 2.6f * e.Dusty);
-            float radius = DrawHelpers.HashRange(sd + 4, 220f, 420f) * f.Px * sc * (1f + 0.45f * e.Dusty);
+            float fade = Smooth(t / 0.20f) * (1f - Smooth((t - 0.80f) / 0.20f));
+            float k = e.A * fade * HashRange(sd + 3, 0.5f, 1f) * (0.4f + 0.6f * f.Stress) * (1f + 2.6f * e.Dusty);
+            float radius = HashRange(sd + 4, 220f, 420f) * f.Px * sc * (1f + 0.45f * e.Dusty);
             if (k < 0.004f || radius < 8f) continue;
 
             rr[0] = radius * 0.5f; rr[1] = radius;
             rc[0] = Col(DustTint * 0.62f, 0.060f * k, e.Override); rc[1] = Col(DustTint * 0.5f, 0f, e.Override);
-            MeshDraw.Radial(dl, at, e.Uv, Col(DustTint * 0.70f, 0.085f * k, e.Override), 14, rr, rc, DrawHelpers.Hash01(sd + 5) * MathF.Tau, 0.82f, sd, 0.5f);
+            MeshDraw.Radial(dl, at, e.Uv, Col(DustTint * 0.70f, 0.085f * k, e.Override), 14, rr, rc, Hash01(sd + 5) * MathF.Tau, 0.82f, sd, 0.5f);
         }
     }
 
@@ -561,21 +561,21 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
         for (int i = 0; i < 90; i++)
         {
             int sd = f.Seed + 30000 + i * 7919;
-            float x0 = DrawHelpers.Hash01(sd + 1) * size.X;
-            float v = DrawHelpers.HashRange(sd + 2, 110f, 480f) * px;
-            float y = -DrawHelpers.Hash01(sd + 3) * 0.7f * size.Y + v * f.VisionAge;
+            float x0 = Hash01(sd + 1) * size.X;
+            float v = HashRange(sd + 2, 110f, 480f) * px;
+            float y = -Hash01(sd + 3) * 0.7f * size.Y + v * f.VisionAge;
             if (y < -20f || y > size.Y + 40f) continue;
 
             // Mostly fine grit, a few big soft flakes; they sway as they fall.
-            float big = MathF.Pow(DrawHelpers.Hash01(sd + 4), 2.6f);
+            float big = MathF.Pow(Hash01(sd + 4), 2.6f);
             float sz = (1.0f + 6.0f * big) * px;
             float len = v * 0.026f + sz * 1.8f;
-            float x = x0 + MathF.Sin(f.VisionAge * DrawHelpers.HashRange(sd + 7, 0.8f, 2.2f) + sd) * (10f + 26f * big) * px;
-            float inView = DrawHelpers.Smooth((y + 20f) / (0.12f * size.Y)) * (1f - DrawHelpers.Smooth((y - size.Y * 0.85f) / (0.2f * size.Y)));
-            float alpha = MathF.Min(0.8f, 0.9f * k * DrawHelpers.HashRange(sd + 5, 0.3f, 1f) * inView * (1f - 0.55f * big));
+            float x = x0 + MathF.Sin(f.VisionAge * HashRange(sd + 7, 0.8f, 2.2f) + sd) * (10f + 26f * big) * px;
+            float inView = Smooth((y + 20f) / (0.12f * size.Y)) * (1f - Smooth((y - size.Y * 0.85f) / (0.2f * size.Y)));
+            float alpha = MathF.Min(0.8f, 0.9f * k * HashRange(sd + 5, 0.3f, 1f) * inView * (1f - 0.55f * big));
             if (alpha < 0.02f) continue;
 
-            uint core = Col(Vector3.Lerp(FallingDust, new Vector3(1f, 0.97f, 0.88f), DrawHelpers.Hash01(sd + 6)), alpha, e.Override), edge = Col(FallingDust, 0f, e.Override);
+            uint core = Col(Vector3.Lerp(FallingDust, new Vector3(1f, 0.97f, 0.88f), Hash01(sd + 6)), alpha, e.Override), edge = Col(FallingDust, 0f, e.Override);
             Mb.Reserve(9, 24);
             int v0 = Mb.VertexReserved(new Vector2(x - sz, y - len), edge);
             Mb.VertexReserved(new Vector2(x, y - len), Col(FallingDust, alpha * 0.1f, e.Override)); Mb.VertexReserved(new Vector2(x + sz, y - len), edge);
@@ -603,8 +603,8 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
             float t = fl.Near(hu);
             int sd = f.Seed + 8000 + i * 7919 + lap * 104729;
 
-            float lane = (0.10f + 0.80f * MathF.Sqrt(DrawHelpers.Hash01(sd + 1))) * s;
-            float theta = DrawHelpers.Hash01(sd + 2) * MathF.Tau;
+            float lane = (0.10f + 0.80f * MathF.Sqrt(Hash01(sd + 1))) * s;
+            float theta = Hash01(sd + 2) * MathF.Tau;
             float ang = theta + f.Swirl * hu + f.Roll;
             Vector2 bh = f.Bend(hu), bt = f.Bend(hu - travel);
             Vector2 head = f.Cam.Project(lane * MathF.Cos(ang) + bh.X, lane * MathF.Sin(ang) + bh.Y, hu * px, out float sc);
@@ -613,15 +613,15 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
 
             // Dust only shows where you are looking away from the middle, and there it is bright inside a shaft.
             float fromMid = Vector2.Distance(head, f.Center) / s;
-            float mask = DrawHelpers.Smooth((fromMid - 0.15f) / 0.18f);
+            float mask = Smooth((fromMid - 0.15f) / 0.18f);
             float beam = Shaft(MathF.Atan2(head.Y - e.VanishingPoint.Y, head.X - e.VanishingPoint.X) - f.Roll * 0.35f, f.Time, f.Seed);
-            float fade = DrawHelpers.Smooth(t / 0.10f) * (1f - DrawHelpers.Smooth((t - 0.93f) / 0.07f));
+            float fade = Smooth(t / 0.10f) * (1f - Smooth((t - 0.93f) / 0.07f));
 
             // Focus sits at about the middle of the tunnel; nearer or farther is a soft disc, spreading its light.
             float blur = MathF.Abs(t - 0.58f) / 0.42f;
             float soft = 1f + 3.2f * blur * blur * blur;
-            float size = DrawHelpers.HashRange(sd + 5, 1.5f, 4.2f) * px * sc * soft * (1f + 0.35f * e.Dusty);
-            float k = e.A * mask * fade * DrawHelpers.HashRange(sd + 3, 0.30f, 1.00f) * (0.22f + 0.78f * beam) * (1f / (0.6f + 0.4f * soft * soft)) * 2.4f * (1f + 1.2f * e.Dusty);
+            float size = HashRange(sd + 5, 1.5f, 4.2f) * px * sc * soft * (1f + 0.35f * e.Dusty);
+            float k = e.A * mask * fade * HashRange(sd + 3, 0.30f, 1.00f) * (0.22f + 0.78f * beam) * (1f / (0.6f + 0.4f * soft * soft)) * 2.4f * (1f + 1.2f * e.Dusty);
             if (k < 0.010f || size < 0.5f) continue;
 
             Vector2 dir = head - tail; float len = dir.Length();

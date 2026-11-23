@@ -24,13 +24,13 @@ internal sealed class MoteField
             int s = seed + i * 6151 + 11;
             _m[i] = new Mote
             {
-                Fx = DrawHelpers.HashRange(s + 2, -1.12f, 1.12f),
-                Fy = DrawHelpers.HashRange(s + 3, -1.12f, 1.12f),
-                Z = _far + (_near - _far) * MathF.Pow(DrawHelpers.Hash01(s + 1), 1.5f),
-                Speed = DrawHelpers.HashRange(s + 4, _speedLo, _speedHi),
-                Sway = DrawHelpers.HashRange(s + 5, _swayLo, _swayHi),
-                Phase = DrawHelpers.Hash01(s + 6) * MathF.Tau,
-                Size = DrawHelpers.HashRange(s + 7, _sizeLo, _sizeHi),
+                Fx = HashRange(s + 2, -1.12f, 1.12f),
+                Fy = HashRange(s + 3, -1.12f, 1.12f),
+                Z = _far + (_near - _far) * MathF.Pow(Hash01(s + 1), 1.5f),
+                Speed = HashRange(s + 4, _speedLo, _speedHi),
+                Sway = HashRange(s + 5, _swayLo, _swayHi),
+                Phase = Hash01(s + 6) * MathF.Tau,
+                Size = HashRange(s + 7, _sizeLo, _sizeHi),
                 Seed = s,
             };
         }
@@ -50,15 +50,15 @@ internal sealed class MoteField
 
             // Rise at a world speed (near ones cross faster), wrapped in screen fractions.
             float fy = m.Fy - m.Speed * px * s * age / halfH;
-            fy = DrawHelpers.Wrap(fy + 1.12f, 2.24f) - 1.12f;
+            fy = Wrap(fy + 1.12f, 2.24f) - 1.12f;
             float fx = m.Fx + (m.Sway * px * s / halfW) * 0.5f * MathF.Sin(age * 0.43f + m.Phase);
 
             Vector2 at = cam.Project(fx * halfW / s, fy * halfH / s, z, out float scale);
             if (at.X < -80f || at.Y < -80f || at.X > size.X + 80f || at.Y > size.Y + 80f) continue;
 
-            float blur = DrawHelpers.Smooth(150f, _near, m.Z);
-            float far = DrawHelpers.Smooth(_far, 0f, m.Z);
-            float flicker = 1f - twinkle + twinkle * DrawHelpers.Hash01(m.Seed * 13 + (int)(age * 11f + m.Phase * 3f));
+            float blur = Smooth(150f, _near, m.Z);
+            float far = Smooth(_far, 0f, m.Z);
+            float flicker = 1f - twinkle + twinkle * Hash01(m.Seed * 13 + (int)(age * 11f + m.Phase * 3f));
 
             scene.AddParticle(new ParticlePrimitive
             {

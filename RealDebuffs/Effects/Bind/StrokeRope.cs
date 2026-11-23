@@ -116,7 +116,7 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
         if (path.Count < 2 || alpha <= 0.004f) return;
 
         int n = Prepare(in s, ctx.ScreenScale, ctx.ShortSide, ctx.Time, alpha, ctx.ScreenW, ctx.ScreenH,
-                        DrawHelpers.ColorOverrideActive, DrawHelpers.ColorOverrideChroma, false,
+                        ColorOverrideActive, ColorOverrideChroma,
                         out Tier tier, out Look look, out float visibleLen, out float diameter);
         if (n < 2) return;
 
@@ -137,39 +137,54 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
         }
     }
 
-    /// <summary>Cuts the path into cross-sections (count; 0 = none) shared by drawing and the chart; allRows covers the whole rope, geometry only.</summary>
-    private int Prepare(in StrokePrimitive s, float px, float shortSide, float time, float alpha, int screenW, int screenH, bool overridden, float dye, bool allRows,
-                        out Tier tier, out Look look, out float visibleLen, out float diameter)
+    /// <summary>How a rope is cut into cross-sections and how its lay runs along it: everything drawing and the chart share.</summary>
+    private struct Cut
     {
-        tier = Full; look = default; visibleLen = 0f; diameter = 0f;
+        public StrandPath Path;
+        public int Pn, BodyRows;
+        public bool Closed, DomeStart, DomeEnd;
+        public float Total, VisibleLen, Diameter, Px, Depth, Cap, BodyStart, BodyEnd;
+        public float LayRate, WobbleRate, ToneRateA, ToneRateB;  // per pixel of arc
+        public float GrainPeriod, AgitRate, FeatherRate;  // closed ropes only (0 = open): the grain's period in its own units, and whole-cycle rates for the agitation and the soft edge
+        public float Psi0, Ph1, Ph2, Ph3, Agit, Time, Twist;
+
+        /// <summary>Arc of body row i, 0..BodyRows.</summary>
+        public readonly float Arc(int i) => BodyStart + (BodyEnd - BodyStart) * i / BodyRows;
+    }
+
+    /// <summary>This rope's character, level of detail and cut, for drawing and the chart alike (false = nothing to show).</summary>
+    private bool Setup(in StrokePrimitive s, float px, float shortSide, float time, float alpha, bool overridden, float dye,
+                       out Tier tier, out Look look, out Cut cut)
+    {
+        tier = Full; look = default; cut = default;
         var path = s.Path;
         float reveal = Math.Clamp(s.Reveal, 0f, 1f);
-        if (reveal <= 0.001f) return 0;
+        if (reveal <= 0.001f) return false;
 
         float depth = Math.Clamp(s.Depth, 0f, 1f);
         float agit = Math.Clamp(s.Agitation, 0f, 1f);
         bool closed = s.Closed;
         int seed = s.Seed;
 
-        diameter = Math.Clamp(s.WidthHint, shortSide * MinDiameterFrac, shortSide * MaxDiameterFrac)
+        float diameter = Math.Clamp(s.WidthHint, shortSide * MinDiameterFrac, shortSide * MaxDiameterFrac)
                          * (1f - 0.18f * depth);
         float radius = diameter * 0.5f;
 
         float total = path.Length;
-        visibleLen = total * reveal;
-        if (visibleLen < diameter) return 0;
+        float visibleLen = total * reveal;
+        if (visibleLen < diameter) return false;
 
         // level of detail, by how many pixels the rope is wide
         tier = diameter >= 21f * px ? Full : (diameter >= 15f * px ? Fine : (diameter >= 8f * px ? Medium : Coarse));
 
         // this rope's own character, reseeded from the stroke's seed
-        float pick = DrawHelpers.Hash01(seed + 41);
+        float pick = Hash01(seed + 41);
         Matcap body = pick < 0.55f ? Hemp : (pick < 0.85f ? Manila : Tarred);
-        float layLen = diameter * LayLength * DrawHelpers.HashRange(seed + 43, 0.92f, 1.08f);
-        float psi0 = DrawHelpers.Hash01(seed + 44);
-        float ph1 = DrawHelpers.HashRange(seed + 45, 0f, MathF.Tau);
-        float ph2 = DrawHelpers.HashRange(seed + 46, 0f, MathF.Tau);
-        float ph3 = DrawHelpers.HashRange(seed + 47, 0f, MathF.Tau);
+        float layLen = diameter * LayLength * HashRange(seed + 43, 0.92f, 1.08f);
+        float psi0 = Hash01(seed + 44);
+        float ph1 = HashRange(seed + 45, 0f, MathF.Tau);
+        float ph2 = HashRange(seed + 46, 0f, MathF.Tau);
+        float ph3 = HashRange(seed + 47, 0f, MathF.Tau);
 
         float detail = tier.Detail * Math.Clamp(diameter / (16f * px), 0.5f, 1f);
 
@@ -183,10 +198,10 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
             Fog = 0.55f * depth,
             Grain = 0.10f * detail,
             GrainRate = 1f / (diameter * 1.9f),
-            GrainOffset = DrawHelpers.HashRange(seed + 48, 0f, 200f),
+            GrainOffset = HashRange(seed + 48, 0f, 200f),
             TonePrimary = 1f,
-            ToneSecondary = DrawHelpers.HashRange(seed + 49, 0.90f, 0.97f),
-            ToneTertiary = DrawHelpers.HashRange(seed + 50, 1.02f, 1.08f),
+            ToneSecondary = HashRange(seed + 49, 0.90f, 0.97f),
+            ToneTertiary = HashRange(seed + 50, 1.02f, 1.08f),
             Agit = agit,
             Alpha = alpha,
             Overridden = overridden,
@@ -194,12 +209,53 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
             AlphaBits = DrawHelpers.AlphaBits(alpha),
         };
 
+        // the cut: spacing, ends, and the periodic terms of the lay
+        int pn = Math.Min(path.Count, MaxPathPoints);
+        _path.Prepare(path, pn, closed);
+
+        float step = MathF.Max(diameter * tier.StepFrac, 1.5f * px);
+
+        // Closed ropes lay a whole number of turns and keep every periodic term to whole cycles, so the seam is invisible.
+        float turns = closed ? MathF.Max(2f, MathF.Round(total / layLen)) : 0f;
+
+        // End finishes: closed has none; open always domes the far end, and the near end unless FlushStart.
+        float cap = closed ? 0f : radius;
+        bool domeStart = !closed && !s.FlushStart;
+        bool domeEnd = !closed;
+
+        // Body spacing, widened if the rope is so long it would overflow the buffer.
+        float bodyStart = domeStart ? cap : 0f;
+        float bodyEnd = domeEnd ? visibleLen - cap : visibleLen;
+        step = MathF.Max(step, (bodyEnd - bodyStart) / (MaxRows - 16));
+
+        cut = new Cut
+        {
+            Path = path, Pn = pn, Closed = closed, DomeStart = domeStart, DomeEnd = domeEnd,
+            Total = total, VisibleLen = visibleLen, Diameter = diameter, Px = px, Depth = depth, Cap = cap,
+            BodyStart = bodyStart, BodyEnd = bodyEnd,
+            BodyRows = Math.Max(1, (int)MathF.Ceiling((bodyEnd - bodyStart) / step)),
+            LayRate = closed ? turns / total : 1f / layLen,
+            WobbleRate = closed ? MathF.Max(1f, MathF.Round(total / (diameter * 6.1f))) / total : 1f / (diameter * 6.1f),
+            ToneRateA = closed ? MathF.Max(1f, MathF.Round(total / (diameter * 3.1f))) / total : 1f / (diameter * 3.1f),
+            ToneRateB = closed ? MathF.Max(1f, MathF.Round(total / (diameter * 1.7f))) / total : 1f / (diameter * 1.7f),
+            GrainPeriod = closed ? total * look.GrainRate : 0f,
+            AgitRate = closed ? MathF.Tau * MathF.Max(1f, MathF.Round(total * 2.1f / diameter / MathF.Tau)) / total : 0f,
+            FeatherRate = closed ? MathF.Tau * MathF.Max(1f, MathF.Round(total * 0.37f / MathF.Tau)) / total : 0f,
+            Psi0 = psi0, Ph1 = ph1, Ph2 = ph2, Ph3 = ph3, Agit = agit, Time = time, Twist = s.Twist / MathF.Tau,
+        };
+        return true;
+    }
+
+    /// <summary>Cuts the path into the cross-sections the rope is drawn with (count; 0 = none).</summary>
+    private int Prepare(in StrokePrimitive s, float px, float shortSide, float time, float alpha, int screenW, int screenH, bool overridden, float dye,
+                        out Tier tier, out Look look, out float visibleLen, out float diameter)
+    {
+        visibleLen = 0f; diameter = 0f;
+        if (!Setup(in s, px, shortSide, time, alpha, overridden, dye, out tier, out look, out Cut cut)) return 0;
+        visibleLen = cut.VisibleLen; diameter = cut.Diameter;
         _screenW = screenW;
         _screenH = screenH;
-
-        // cut the rope into cross-sections
-        return BuildRows(path, total, visibleLen, closed, s.FlushStart, diameter, radius, tier, layLen,
-                          psi0, ph1, ph2, ph3, agit, time, px, depth, s.Twist / MathF.Tau, in look, allRows);
+        return BuildRows(in cut, in look);
     }
 
     // ---- coat: one chart over the whole rope, cut from the drawn cross-sections and surface function
@@ -223,14 +279,13 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
     public void BuildCoatSurfaces(in StrokePrimitive s, in CoatBuildContext ctx, CoatCharts charts)
     {
         if (s.Path.Count < 2) return;
-        int n = Prepare(in s, ctx.Px, ctx.ShortSide, ctx.Time, 1f, (int)ctx.Screen.X, (int)ctx.Screen.Y, false, 0f, true, out _, out Look look, out _, out float diameter);
-        if (n < 2) return;
+        if (!Setup(in s, ctx.Px, ctx.ShortSide, ctx.Time, 1f, false, 0f, out _, out Look look, out Cut cut)) return;
 
-        bool closed = s.Closed;
-        float total = s.Path.Length;
-        int nb = _bodyEnd - _bodyFirst - (closed ? 1 : 0);  // distinct body rows
+        bool closed = cut.Closed;
+        float total = cut.Total, diameter = cut.Diameter;
+        int nb = cut.BodyRows + (closed ? 0 : 1);  // distinct body rows
         if (nb < 2) return;
-        float bodyLen = closed ? total : _rows[_bodyEnd - 1].Arc - _rows[_bodyFirst].Arc;
+        float bodyLen = closed ? total : cut.Arc(cut.BodyRows) - cut.Arc(0);
 
         // rows the stroke's cell share affords, no finer than RowStep; a count within a fifth of last frame's is kept
         int V = Sectors, cap = Math.Min(Math.Min(MaxChartRows, charts.Share / V), nb);
@@ -244,8 +299,19 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
         if (ch == null) return;
         ch.SeamU = closed; ch.SeamV = true; ch.Live = R; ch.SupplyScale = 1f;
 
-        Span<int> pick = stackalloc int[R];
-        for (int r = 0; r < R; r++) { pick[r] = _bodyFirst + PickRow(r, R, nb, closed); ch.UPos[r] = _rows[pick[r]].Arc; }
+        // only the R body rows the chart sits on, laid exactly as the drawn ones are (same arcs, same path sampler, same Lay)
+        Span<Row> rows = stackalloc Row[R];
+        int seg = 0;
+        for (int r = 0; r < R; r++)
+        {
+            ref Row row = ref rows[r];
+            row = default;
+            row.Arc = cut.Arc(PickRow(r, R, nb, closed));
+            _path.SampleAt(cut.Path, cut.Pn, ref seg, row.Arc, out row.P, out row.T);
+            PathRows.Cap(0f, 0f, out row.CapW, out row.CapAxial);
+            Lay(ref row, in cut);
+            ch.UPos[r] = row.Arc;
+        }
         float len = 0f;
         for (int r = 0; r < R; r++)
         {
@@ -259,7 +325,7 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
         float margin = 20f * ctx.Px;
         for (int r = 0; r < R; r++)
         {
-            ref readonly Row row = ref _rows[pick[r]];
+            ref readonly Row row = ref rows[r];
             var f = new Frame(in row, in look);
             for (int v = 0; v < V; v++)
             {
@@ -287,7 +353,7 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
                 ref var q = ref ch.S[r * V + v];
                 int rp = r > 0 ? r - 1 : (closed ? R - 1 : r), rn = r < R - 1 ? r + 1 : (closed ? 0 : r);
                 int vp = v > 0 ? v - 1 : V - 1, vn = v < V - 1 ? v + 1 : 0;
-                q.Du = Slope(in ch.S[rp * V + v], in ch.S[rn * V + v], _rows[pick[r]].T);
+                q.Du = Slope(in ch.S[rp * V + v], in ch.S[rn * V + v], rows[r].T);
                 q.Dv = Slope(in ch.S[r * V + vp], in ch.S[r * V + vn], default);
 
                 // a drop hangs where the surface faces down; an open rope's end that points down is the chart's downhill edge, as for a chain's
@@ -340,7 +406,7 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
         Vector2[] outP = MeshDraw.P;
         uint[] outC = MeshDraw.C;
 
-        DrawHelpers.PushColorOverride(coat.Color);
+        PushColorOverride(coat.Color);
         try
         {
             // the film varies slowly, so it needs about 0.42 diameters between rows, not the host's finest; the last row is always one
@@ -376,7 +442,7 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
                             span = arc[0] + total - arc[R - 1];
                             t = span > 1e-4f ? Math.Clamp((row.Arc - arc[R - 1]) / span, 0f, 1f) : 0f;
                         }
-                        for (int k = 0; k < V; k++) rowTh[k] = DrawHelpers.Lerp(thick[ra * V + k], thick[rb * V + k], t);
+                        for (int k = 0; k < V; k++) rowTh[k] = Lerp(thick[ra * V + k], thick[rb * V + k], t);
 
                         var f = new Frame(in row, in look);
                         for (int c = 0; c < nc; c++)
@@ -386,7 +452,7 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
                             float q = (tier.Turns3[c] / 3f - row.Psi) * V;  // this column's body angle, in sectors
                             q -= MathF.Floor(q / V) * V;
                             int k0 = Math.Min((int)q, V - 1), k1 = k0 + 1 == V ? 0 : k0 + 1;
-                            float th = DrawHelpers.Lerp(rowTh[k0], rowTh[k1], q - k0);
+                            float th = Lerp(rowTh[k0], rowTh[k1], q - k0);
 
                             outP[vb + c] = pos + new Vector2(nx, ny) * (FilmOffset(th, hold, maxDraw) * 0.9f);
                             outC[vb + c] = lm.FilmShade(new Vector3(nx, ny, nz), th, px, a, CoatDraw.Soft(tier.Sin[c], 0.6f));
@@ -399,7 +465,7 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
                 j0 = j1;  // the seam row is shared, so chunks join exactly
             }
         }
-        finally { DrawHelpers.PopColorOverride(); }
+        finally { PopColorOverride(); }
     }
 
     // the knot
@@ -413,9 +479,9 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
                                  in Look look, in MaterialContext ctx)
     {
         // The three coil axes: any three non-parallel directions look right, so turn the basis by a per-rope amount.
-        var q = Quaternion.CreateFromYawPitchRoll(DrawHelpers.HashRange(seed + 61, 0f, MathF.Tau),
-                                                  DrawHelpers.HashRange(seed + 62, 0f, MathF.Tau),
-                                                  DrawHelpers.HashRange(seed + 63, 0f, MathF.Tau));
+        var q = Quaternion.CreateFromYawPitchRoll(HashRange(seed + 61, 0f, MathF.Tau),
+                                                  HashRange(seed + 62, 0f, MathF.Tau),
+                                                  HashRange(seed + 63, 0f, MathF.Tau));
         Vector3 a1 = Vector3.Transform(Vector3.UnitX, q);
         Vector3 a2 = Vector3.Transform(Vector3.UnitY, q);
         Vector3 a3 = Vector3.Transform(Vector3.UnitZ, q);
@@ -445,11 +511,11 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
                 // Coil height: each axis wraps four bands round the ball; where coils cross, the higher one is on top.
                 float h = MathF.Max(Coil(n, a1), MathF.Max(Coil(n, a2), Coil(n, a3)));
                 Vector3 col = look.Body.Sample(n.X, n.Y) * (0.42f + 0.72f * h * h);
-                if (look.Dye > 0f) col = DrawHelpers.WithSaturation(col, look.Dye);
+                if (look.Dye > 0f) col = WithSaturation(col, look.Dye);
                 if (look.Agit > 0.01f) col += col * (col * (0.50f * look.Agit));
                 if (look.Fog > 0f) col = Vector3.Lerp(col, StrandShading.DepthFog, look.Fog);
 
-                outC[v] = DrawHelpers.VertexColor(col, alpha, alphaBits, look.Overridden);
+                outC[v] = VertexColor(col, alpha, alphaBits, look.Overridden);
             }
         }
 
@@ -476,95 +542,107 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
 
     // cross-sections
 
-    private int BuildRows(StrandPath path, float total, float visibleLen, bool closed, bool flushStart,
-                          float diameter, float radius, Tier tier, float layLen,
-                          float psi0, float ph1, float ph2, float ph3, float agit, float time, float px, float depth, float twistTurns, in Look look, bool allRows)
+#if REALDEBUFFS_PROFILE
+    internal static long RowBuilds;  // full row cuts made (harness builds only): one per drawn rope per frame, none by the chart
+#endif
+
+    private int BuildRows(in Cut c, in Look look)
     {
-        int pn = Math.Min(path.Count, MaxPathPoints);
-        _path.Prepare(path, pn, closed);
-
-        float step = MathF.Max(diameter * tier.StepFrac, 1.5f * px);
-        float margin = diameter * 1.6f;
-
-        // Closed ropes lay a whole number of turns and keep every periodic term to whole cycles, so the seam is invisible.
-        float turns = closed ? MathF.Max(2f, MathF.Round(total / layLen)) : 0f;
-        float layRate = closed ? turns / total : 1f / layLen;
-        float wobbleRate = closed ? MathF.Max(1f, MathF.Round(total / (diameter * 6.1f))) / total : 1f / (diameter * 6.1f);
-        float toneRateA  = closed ? MathF.Max(1f, MathF.Round(total / (diameter * 3.1f))) / total : 1f / (diameter * 3.1f);
-        float toneRateB  = closed ? MathF.Max(1f, MathF.Round(total / (diameter * 1.7f))) / total : 1f / (diameter * 1.7f);
-
-        // End finishes: closed has none; open always domes the far end, and the near end unless FlushStart.
-        float cap = closed ? 0f : radius;
-        bool domeStart = !closed && !flushStart;
-        bool domeEnd = !closed;
-
+#if REALDEBUFFS_PROFILE
+        RowBuilds++;
+#endif
+        var path = c.Path;
         int count = 0;
         int seg = 0;
 
-        // Body spacing, widened if the rope is so long it would overflow the buffer.
-        float bodyStart = domeStart ? cap : 0f;
-        float bodyEnd = domeEnd ? visibleLen - cap : visibleLen;
-        step = MathF.Max(step, (bodyEnd - bodyStart) / (MaxRows - 16));
-
-        if (domeStart)
+        if (c.DomeStart)
         {
             // Tip first. t is how far up the dome: 1 at the very end, 0 where it meets the body.
             for (int i = 0; i < PathRows.DomeT.Length - 1; i++)
-                AddRow(path, pn, ref seg, ref count, cap * (1f - PathRows.DomeT[i]), -1f, PathRows.DomeT[i]);
+                AddRow(path, c.Pn, ref seg, ref count, c.Cap * (1f - PathRows.DomeT[i]), -1f, PathRows.DomeT[i]);
         }
 
         // The body; a closed loop's last row lands on its first (same position and lay) so the seam closes.
-        int bodyRows = Math.Max(1, (int)MathF.Ceiling((bodyEnd - bodyStart) / step));
         _bodyFirst = count;
-        for (int i = 0; i <= bodyRows; i++)
-            AddRow(path, pn, ref seg, ref count, bodyStart + (bodyEnd - bodyStart) * i / bodyRows, 0f, 0f);
+        for (int i = 0; i <= c.BodyRows; i++)
+            AddRow(path, c.Pn, ref seg, ref count, c.Arc(i), 0f, 0f);
         _bodyEnd = count;
 
-        if (domeEnd)
+        if (c.DomeEnd)
         {
             for (int i = PathRows.DomeT.Length - 2; i >= 0; i--)
-                AddRow(path, pn, ref seg, ref count, visibleLen - cap * (1f - PathRows.DomeT[i]), +1f, PathRows.DomeT[i]);
+                AddRow(path, c.Pn, ref seg, ref count, c.VisibleLen - c.Cap * (1f - PathRows.DomeT[i]), +1f, PathRows.DomeT[i]);
         }
 
-        // per-row shading inputs
+        // per-row lay and shading inputs
+        float margin = c.Diameter * 1.6f;
         for (int i = 0; i < count; i++)
         {
             ref Row r = ref _rows[i];
             float sArc = r.Arc;
 
-            Vector2 c = r.P;
-            r.On = allRows || (c.X > -margin && c.Y > -margin && c.X < _screenW + margin && c.Y < _screenH + margin);
+            Vector2 p = r.P;
+            r.On = p.X > -margin && p.Y > -margin && p.X < _screenW + margin && p.Y < _screenH + margin;
             if (!r.On) continue;  // everything below is only ever read for rows that get drawn
 
-            float psi = psi0 + sArc * layRate;
-            if (!closed) psi += 0.035f * MathF.Sin(MathF.Tau * sArc / (diameter * 7.3f) + ph1);  // a lay that isn't machine-perfect
-            if (agit > 0.01f) psi += agit * 0.025f * MathF.Sin(time * 19f + sArc / diameter * 2.1f);
-            // Twist: the whole rope turning about its axis. Fixed at both ends, it turns most in the middle.
-            if (twistTurns != 0f) psi += twistTurns * (closed ? 1f : MathF.Sin(MathF.PI * sArc / total));
-            r.Psi = psi;
+            Lay(ref r, in c);
 
-            float wobble = 1f + 0.035f * MathF.Sin(MathF.Tau * sArc * wobbleRate + ph2);
-            r.Width = wobble * r.CapW;
-            if (allRows) continue;  // the chart reads only the lay and the width, not the shading inputs below
-
-            float tone = 1f + 0.075f * MathF.Sin(MathF.Tau * sArc * toneRateA + ph3)
-                            + 0.055f * MathF.Sin(MathF.Tau * sArc * toneRateB + ph1 * 1.7f);
+            float tone = 1f + 0.075f * MathF.Sin(MathF.Tau * sArc * c.ToneRateA + c.Ph3)
+                            + 0.055f * MathF.Sin(MathF.Tau * sArc * c.ToneRateB + c.Ph1 * 1.7f);
 
             // Fibre grain streaks vary slowly along a strand, so one sample per strand per cross-section suffices.
             float along = sArc * look.GrainRate;
-            r.Tone0 = tone * look.TonePrimary   * Grain(in look, 0, along);
-            r.Tone1 = tone * look.ToneSecondary * Grain(in look, 1, along);
-            r.Tone2 = tone * look.ToneTertiary  * Grain(in look, 2, along);
+            r.Tone0 = tone * look.TonePrimary   * Grain(in look, 0, along, c.GrainPeriod);
+            r.Tone1 = tone * look.ToneSecondary * Grain(in look, 1, along, c.GrainPeriod);
+            r.Tone2 = tone * look.ToneTertiary  * Grain(in look, 2, along, c.GrainPeriod);
 
             // The soft edge breathes a little along the rope, which reads as fuzz rather than a hard cut.
-            r.Feather = (1.0f + 2.2f * depth) * px * (1f + 0.45f * MathF.Sin(sArc * 0.37f + ph2));
+            r.Feather = (1.0f + 2.2f * c.Depth) * c.Px * (1f + 0.45f * MathF.Sin((c.Closed ? sArc * c.FeatherRate : sArc * 0.37f) + c.Ph2));
         }
         return count;
     }
 
-    /// <summary>Brightness multiplier from the fibre grain of one strand, along its length.</summary>
-    private static float Grain(in Look look, int strand, float along)
-        => 1f + look.Grain * 2f * (Noise.Value(strand * 11.7f + look.GrainOffset, along) - 0.5f);
+#if REALDEBUFFS_PROFILE
+    /// <summary>Harness: how far a closed rope's last body row is from its first as the drawing lays them; all zero when the seam cannot be seen.</summary>
+    internal bool SeamGap(in StrokePrimitive s, float px, float shortSide, float time, int screenW, int screenH,
+                          out float psi, out float width, out float tone, out float feather, out float pos)
+    {
+        psi = width = tone = feather = pos = 0f;
+        if (!s.Closed || Prepare(in s, px, shortSide, time, 1f, screenW, screenH, false, 0f, out _, out _, out _, out _) < 2) return false;
+        ref Row a = ref _rows[_bodyFirst]; ref Row b = ref _rows[_bodyEnd - 1];
+        float dp = b.Psi - a.Psi;
+        psi = MathF.Abs(dp - MathF.Round(dp));  // whole turns are no gap
+        width = MathF.Abs(b.Width - a.Width);
+        tone = MathF.Max(MathF.Abs(b.Tone0 - a.Tone0), MathF.Max(MathF.Abs(b.Tone1 - a.Tone1), MathF.Abs(b.Tone2 - a.Tone2)));
+        feather = MathF.Abs(b.Feather - a.Feather);
+        pos = (b.P - a.P).Length();
+        return true;
+    }
+#endif
+
+    /// <summary>The lay phase and width of a cross-section at its arc: the part of a row the coat's chart reads as well as the drawing.</summary>
+    private static void Lay(ref Row r, in Cut c)
+    {
+        float sArc = r.Arc;
+        float psi = c.Psi0 + sArc * c.LayRate;
+        if (!c.Closed) psi += 0.035f * MathF.Sin(MathF.Tau * sArc / (c.Diameter * 7.3f) + c.Ph1);  // a lay that isn't machine-perfect
+        if (c.Agit > 0.01f) psi += c.Agit * 0.025f * MathF.Sin(c.Time * 19f + (c.Closed ? sArc * c.AgitRate : sArc / c.Diameter * 2.1f));
+        // Twist: the whole rope turning about its axis. Fixed at both ends, it turns most in the middle.
+        if (c.Twist != 0f) psi += c.Twist * (c.Closed ? 1f : MathF.Sin(MathF.PI * sArc / c.Total));
+        r.Psi = psi;
+
+        float wobble = 1f + 0.035f * MathF.Sin(MathF.Tau * sArc * c.WobbleRate + c.Ph2);
+        r.Width = wobble * r.CapW;
+    }
+
+    /// <summary>Brightness multiplier from the fibre grain of one strand, along its length; a closed rope (period > 0) blends toward the grain a period back, so it meets itself at the seam.</summary>
+    private static float Grain(in Look look, int strand, float along, float period)
+    {
+        float x = strand * 11.7f + look.GrainOffset;
+        float n = Noise.Value(x, along);
+        if (period > 0f) n += (Noise.Value(x, along - period) - n) * (along / period);
+        return 1f + look.Grain * 2f * (n - 0.5f);
+    }
 
 
     private float _screenW, _screenH;
@@ -682,13 +760,13 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
             float strandTone = strand == 0 ? row.Tone0 : (strand == 1 ? row.Tone1 : row.Tone2);
 
             col *= (1f - look.Groove * vg * vg) * strandTone;
-            if (look.Dye > 0f) col = DrawHelpers.WithSaturation(col, look.Dye);
+            if (look.Dye > 0f) col = WithSaturation(col, look.Dye);
 
             if (look.Agit > 0.01f) col += col * (col * (0.50f * look.Agit));
             if (look.Fog > 0f) col = Vector3.Lerp(col, StrandShading.DepthFog, look.Fog);
 
             outP[vb + 1 + c] = pos;
-            outC[vb + 1 + c] = DrawHelpers.VertexColor(col, look.Alpha, look.AlphaBits, look.Overridden);
+            outC[vb + 1 + c] = VertexColor(col, look.Alpha, look.AlphaBits, look.Overridden);
         }
 
         // Soft edge: the neighbouring column's colour at alpha 0, pushed outward by the feather.

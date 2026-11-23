@@ -13,7 +13,7 @@ internal static class SceneStrokes
         scene.AddStroke(new StrokePrimitive
         {
             Path = path, Role = role, Reveal = reveal, WidthHint = width, Brightness = brightness,
-            Seed = seed + salt * 101, Phase = salt * 1.7f, Depth = depth, Agitation = DrawHelpers.Saturate(excite * agitGain),
+            Seed = seed + salt * 101, Phase = salt * 1.7f, Depth = depth, Agitation = Saturate(excite * agitGain),
             TipFlare = reveal < 0.999f ? 1f : 0f, Closed = true, Dash = dash, ColorOverride = color,
         });
     }

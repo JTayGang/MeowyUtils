@@ -40,7 +40,7 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
     private const float UnfurlRate = 2.1f;  // 1/s: how quickly it uncurls
     private const float AgitationAttack = 0.12f;  // s: time constant for Agitation to catch up with a new target
 
-    private static readonly MurkStyle Mood = new(DrawHelpers.Pack(0.012f, 0.022f, 0.012f), 0.16f, DrawHelpers.Pack(0.010f, 0.020f, 0.012f), 0.34f, 0.15f, 0.9f, 0.18f, 5.3f);
+    private static readonly MurkStyle Mood = new(Pack(0.012f, 0.022f, 0.012f), 0.16f, Pack(0.010f, 0.020f, 0.012f), 0.34f, 0.15f, 0.9f, 0.18f, 5.3f);
 
     private enum Mode : byte { Wander, Reach, Grip, Release }
 
@@ -116,7 +116,7 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
             Step(scene, rig, in f);
             if (rig.Path.Count < 2 || rig.Reveal <= 0.002f) continue;
 
-            float growing = DrawHelpers.Saturate(1f - rig.Reveal);
+            float growing = Saturate(1f - rig.Reveal);
             scene.AddStroke(new StrokePrimitive
             {
                 Path = rig.Path,
@@ -130,7 +130,7 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
                 Phase = rig.Phase,
                 Depth = rig.Depth,
                 Agitation = rig.Agitation,
-                Twist = rig.TwistAmp * MathF.Sin(0.27f * f.Time + rig.TwistPhase) + 0.5f * rig.Tension * DrawHelpers.Smooth((rig.Tension - 0.6f) / 0.4f),
+                Twist = rig.TwistAmp * MathF.Sin(0.27f * f.Time + rig.TwistPhase) + 0.5f * rig.Tension * Smooth((rig.Tension - 0.6f) / 0.4f),
                 ColorOverride = f.Color,
             });
         }
@@ -175,7 +175,7 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
         if (pinned)
         {
             // Settle onto the point along a curve from the tip's velocity to rest, so the pin takes over without a dead stop.
-            float k = DrawHelpers.Saturate((f.Time - r.GripStart) / PinSeconds);
+            float k = Saturate((f.Time - r.GripStart) / PinSeconds);
             end = Hermite(r.PinFrom, r.PinVel * PinSeconds, r.GripPoint, k);
         }
         strand.SetEnds(r.Root, end);  // unpinned, the end argument tracks the tip so a later pin starts from it
@@ -186,7 +186,7 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
         strand.FillPath(r.Path, PathSamples);
 
         // reveal: it surges out of the edge, fast at first and settling
-        float grow = DrawHelpers.Saturate(t / r.Grow);
+        float grow = Saturate(t / r.Grow);
         r.Reveal = 1f - MathF.Pow(1f - grow, 2.6f);
 
         // events
@@ -284,7 +284,7 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
                 if (time - r.ModeTime > 1.3f)
                 {
                     r.Mode = Mode.Wander; r.ModeTime = time;
-                    r.NextGripAt = time + DrawHelpers.HashRange(r.Seed + (int)(time * 10f), 4.0f, 9.5f);
+                    r.NextGripAt = time + HashRange(r.Seed + (int)(time * 10f), 4.0f, 9.5f);
                 }
                 break;
         }
@@ -316,7 +316,7 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
         const int N = 48;
         for (int i = 0; i < N; i++)
         {
-            float p = (i + DrawHelpers.Hash01(salt + i * 13)) * (4f / N);
+            float p = (i + Hash01(salt + i * 13)) * (4f / N);
             Vector2 pt = ScreenEdges.FromPerimeter(size, p, -inset, out ScreenEdge edge);
             float along = (edge == ScreenEdge.Top || edge == ScreenEdge.Bottom) ? pt.X / size.X : pt.Y / size.Y;
             if (along < 0.07f || along > 0.93f) continue;  // not in a corner
@@ -335,14 +335,14 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
             }
             if (crowded) continue;
 
-            float score = DrawHelpers.Hash01(salt + i * 31 + 7);
+            float score = Hash01(salt + i * 31 + 7);
             if (score > bestScore) { bestScore = score; best = pt; }
         }
         if (bestScore < 0f) return false;
 
         r.GripPoint = best;
-        r.GripHold = DrawHelpers.HashRange(salt + 5, 2.4f, 5.2f);
-        r.GripSide = DrawHelpers.Sign(salt + 6);
+        r.GripHold = HashRange(salt + 5, 2.4f, 5.2f);
+        r.GripSide = Sign(salt + 6);
         return true;
     }
 
@@ -361,7 +361,7 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
         // The arm contracts and relaxes a little; gripping tugs it harder.
         float breath = 1f + 0.035f * MathF.Sin(0.7f * time + r.BreathPhase);
         // Weighted smoothly by grip, so the arm's length doesn't step when tension crosses a threshold.
-        float holding = DrawHelpers.Smooth((r.Tension - 0.6f) / 0.4f);
+        float holding = Smooth((r.Tension - 0.6f) / 0.4f);
         float tug = holding * (0.5f + 0.5f * MathF.Sin(MathF.Tau * (time - r.GripStart) / 2.5f));
         float lenWant = r.Length * breath * (1f - 0.09f * tug);
 
@@ -416,7 +416,7 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
             {
                 Vector2 seg = pts[k] - pts[k - 1];
                 float segLen = seg.Length();
-                float a = MathF.Atan2(seg.Y, seg.X) + curl * DrawHelpers.Smooth((k - hinge) / (float)(GuideSamples - hinge));
+                float a = MathF.Atan2(seg.Y, seg.X) + curl * Smooth((k - hinge) / (float)(GuideSamples - hinge));
                 Vector2 next = prev + new Vector2(MathF.Cos(a), MathF.Sin(a)) * segLen;
                 pts[k] = next;
                 prev = next;
@@ -569,7 +569,7 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
         float overhang = shortSide * 0.12f;  // keep a thick root behind the edge: its flat cut must not show
 
         // Which archetypes this cast uses.
-        ScreenEdge skipEdge = DrawHelpers.Hash01(unchecked(castSeed * 31 + 17)) < 0.5f ? ScreenEdge.Left : ScreenEdge.Right;
+        ScreenEdge skipEdge = Hash01(unchecked(castSeed * 31 + 17)) < 0.5f ? ScreenEdge.Left : ScreenEdge.Right;
         _count = 0;
         for (int a = 0; a < Archetypes.Length && _count < MaxTentacles; a++)
         {
@@ -589,7 +589,7 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
     {
         var a = Archetypes[index];
         int s = unchecked(castSeed + index * 977 + 29);
-        float H(int salt, float lo, float hi) => DrawHelpers.HashRange(s + salt, lo, hi);
+        float H(int salt, float lo, float hi) => HashRange(s + salt, lo, hi);
 
         float along = H(1, a.AlongLo, a.AlongHi);
 
@@ -619,10 +619,10 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
         r.P1 = H(14, 0f, MathF.Tau);
         r.P2 = H(15, 0f, MathF.Tau);
         r.ShapeAngle0 = H(16, 0f, MathF.Tau);
-        r.ShapeRate = H(17, 0.14f, 0.28f) * DrawHelpers.Sign(s + 18);
+        r.ShapeRate = H(17, 0.14f, 0.28f) * Sign(s + 18);
         r.CurlAmp = H(19, 0.6f, 1.3f);
         r.CurlPhase = H(20, 0f, MathF.Tau);
-        r.UnfurlSign = DrawHelpers.Sign(s + 21);
+        r.UnfurlSign = Sign(s + 21);
         r.TwistAmp = H(22, 0.5f, 1.2f);
         r.TwistPhase = H(23, 0f, MathF.Tau);
         r.BreathPhase = H(24, 0f, MathF.Tau);

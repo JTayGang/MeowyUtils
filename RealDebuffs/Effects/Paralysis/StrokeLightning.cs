@@ -74,7 +74,7 @@ public sealed class StrokeLightning : IStrokeMaterial
             float a = k == n - 1 ? visible : k * step;
             path.SampleAtArc(a, out Vector2 pos, out Vector2 tan);
             Vector2 nrm = new(-tan.Y, tan.X);
-            float env = DrawHelpers.Smooth(a / pin) * DrawHelpers.Smooth((total - a) / pin);
+            float env = Smooth(a / pin) * Smooth((total - a) / pin);
             Arc[k] = a;
             Hard[k] = pos + nrm * (offHard[k] * env);
             Soft[k] = pos + nrm * (offSoft[k] * env);
@@ -87,7 +87,7 @@ public sealed class StrokeLightning : IStrokeMaterial
         float near = 1f - 0.55f * depth;
         float soften = 1f + 1.0f * depth;
         float heat = 0.22f * depth;
-        bool overridden = DrawHelpers.ColorOverrideActive;
+        bool overridden = ColorOverrideActive;
 
         var hard = Hard.AsSpan(0, n);
         var nh = NrmHard.AsSpan(0, n);
@@ -108,7 +108,7 @@ public sealed class StrokeLightning : IStrokeMaterial
             SoftD[j] = Soft[i];
         }
         for (int i = 0; i < n; i++)
-            Fade[i] = DrawHelpers.Smooth(Arc[i] / cap) * DrawHelpers.Smooth((visible - Arc[i]) / cap);
+            Fade[i] = Smooth(Arc[i] / cap) * Smooth((visible - Arc[i]) / cap);
         MeshBuilder.MiterNormals(SoftD.AsSpan(0, m), NrmD.AsSpan(0, m));
 
         for (int layer = 0; layer < ScatterReach.Length; layer++)
@@ -119,7 +119,7 @@ public sealed class StrokeLightning : IStrokeMaterial
                 int i = IdxD[j];
                 float e = Fade[i];
                 HalfD[j] = reach * ScatterReach[layer] * (0.25f + 0.75f * e) * (0.85f + 0.15f * Wid[i]);
-                ColD[j] = DrawHelpers.Tint(StormColor.Glow.Sample(tone), alpha * ScatterAlpha[layer] * near * e * MathF.Min(Lum[i], 2.2f), overridden);
+                ColD[j] = Tint(StormColor.Glow.Sample(tone), alpha * ScatterAlpha[layer] * near * e * MathF.Min(Lum[i], 2.2f), overridden);
             }
             Mb.Tent(SoftD.AsSpan(0, m), NrmD.AsSpan(0, m), HalfD.AsSpan(0, m), ColD.AsSpan(0, m));
         }
@@ -130,7 +130,7 @@ public sealed class StrokeLightning : IStrokeMaterial
         for (int i = 0; i < n; i++)
         {
             half[i] = glowHalf * Wid[i];
-            col[i] = DrawHelpers.Tint(StormColor.Glow.Sample(0.66f + 0.08f * MathF.Min(Lum[i], 2f) - heat), alpha * 0.34f * near * Fade[i] * MathF.Min(Lum[i], 1.8f), overridden);
+            col[i] = Tint(StormColor.Glow.Sample(0.66f + 0.08f * MathF.Min(Lum[i], 2f) - heat), alpha * 0.34f * near * Fade[i] * MathF.Min(Lum[i], 1.8f), overridden);
         }
         Mb.Ribbon(hard, nh, half, col, glowFeather);
 
@@ -144,7 +144,7 @@ public sealed class StrokeLightning : IStrokeMaterial
         {
             float over = Math.Clamp((Lum[i] - 1.0f) / 1.2f, 0f, 1f);
             half[i] = bodyHalf * Wid[i] * (0.9f + 0.5f * over);
-            col[i] = DrawHelpers.Tint(StormColor.Glow.Sample(0.84f + 0.14f * over - heat), alpha * 0.95f * near * MathF.Min(Lum[i], 1.4f), overridden);
+            col[i] = Tint(StormColor.Glow.Sample(0.84f + 0.14f * over - heat), alpha * 0.95f * near * MathF.Min(Lum[i], 1.4f), overridden);
         }
         Mb.Ribbon(hard, nh, half, col, 1.0f * px);
 
@@ -157,7 +157,7 @@ public sealed class StrokeLightning : IStrokeMaterial
                 float over = Math.Clamp((Lum[i] - 0.9f) / 1.3f, 0f, 1f);
                 half[i] = coreHalf * Wid[i] * (0.75f + 1.15f * over);
                 float k = Math.Clamp((Lum[i] - 0.35f) / 0.9f, 0f, 1f);
-                col[i] = DrawHelpers.Tint(StormColor.Glow.Sample(1.00f), alpha * near * (0.45f + 0.55f * k), overridden);
+                col[i] = Tint(StormColor.Glow.Sample(1.00f), alpha * near * (0.45f + 0.55f * k), overridden);
             }
             Mb.Ribbon(hard, nh, half, col, 0.8f * px);
         }
@@ -177,15 +177,15 @@ public sealed class StrokeLightning : IStrokeMaterial
         Span<float> gain = stackalloc float[2];
         for (int k = 0; k < 2; k++)
         {
-            float dir = DrawHelpers.Hash01(s.Seed * 13 + k * 101 + 5) < 0.5f ? 1f : -1f;
-            float speed = (700f + 700f * DrawHelpers.Hash01(s.Seed + k * 37 + 9)) * px * dir;
-            float p = (DrawHelpers.Hash01(s.Seed + k * 17 + 3) + s.Phase * 0.173f + time * speed / MathF.Max(total, 1f)) % 1f;
+            float dir = Hash01(s.Seed * 13 + k * 101 + 5) < 0.5f ? 1f : -1f;
+            float speed = (700f + 700f * Hash01(s.Seed + k * 37 + 9)) * px * dir;
+            float p = (Hash01(s.Seed + k * 17 + 3) + s.Phase * 0.173f + time * speed / MathF.Max(total, 1f)) % 1f;
             at[k] = (p < 0f ? p + 1f : p) * total;
-            gain[k] = 0.60f + 0.40f * DrawHelpers.Hash01(s.Seed + k * 29 + 1);
+            gain[k] = 0.60f + 0.40f * Hash01(s.Seed + k * 29 + 1);
         }
 
         float dashPeriod = s.Dash > 0f ? LightStrand.FitDash(s.Dash * px, total, false) : 0f;
-        float flickerTick = time * (11f + 8f * agit) + DrawHelpers.Hash01(s.Seed + 77) * 40f;
+        float flickerTick = time * (11f + 8f * agit) + Hash01(s.Seed + 77) * 40f;
         float head = 58f * px;
         bool travelling = reveal < 0.999f;
         float surgeAt = s.SurgeAt * total;
@@ -241,7 +241,7 @@ public sealed class StrokeLightning : IStrokeMaterial
                 float u = a / dashPeriod;
                 u -= MathF.Floor(u);
                 const float duty = 0.58f, soft = 0.10f;
-                lum *= DrawHelpers.Smooth(u / soft) * (1f - DrawHelpers.Smooth((u - (duty - soft)) / soft));
+                lum *= Smooth(u / soft) * (1f - Smooth((u - (duty - soft)) / soft));
             }
             Lum[i] = lum;
             Wid[i] = wid;
@@ -253,7 +253,7 @@ public sealed class StrokeLightning : IStrokeMaterial
     {
         if (n < 8) return;
         int count = Math.Clamp((int)(visible / (150f * px)), 1, 9);
-        float forkTick = time * (9f + 6f * agit) + DrawHelpers.Hash01(s.Seed + 5) * 30f;
+        float forkTick = time * (9f + 6f * agit) + Hash01(s.Seed + 5) * 30f;
         int tick = (int)MathF.Floor(forkTick);
         float lenScale = Math.Clamp(width / (32f * px), 0.6f, 1.4f);
         float chance = 0.40f + 0.55f * agit;
@@ -264,9 +264,9 @@ public sealed class StrokeLightning : IStrokeMaterial
         for (int i = 0; i < count; i++)
         {
             int fs = s.Seed * 31 + i * 977;
-            if (DrawHelpers.Hash01(fs + tick * 131 + 5) > chance) continue;
+            if (Hash01(fs + tick * 131 + 5) > chance) continue;
 
-            float u = (i + DrawHelpers.Hash01(fs + tick * 17 + 1)) / count;
+            float u = (i + Hash01(fs + tick * 17 + 1)) / count;
             int idx = Math.Clamp((int)(u * (n - 1)), 2, n - 3);
             Vector2 root = Hard[idx];
             Vector2 d = Hard[idx + 1] - Hard[idx - 1];
@@ -274,24 +274,24 @@ public sealed class StrokeLightning : IStrokeMaterial
             if (dl2 < 1e-4f) continue;
             Vector2 tan = d / MathF.Sqrt(dl2);
 
-            float side = DrawHelpers.Sign(fs + tick * 3 + 2);
-            float ang = 0.40f + 0.60f * DrawHelpers.Hash01(fs + tick * 7 + 3);
-            float len = (40f + 150f * DrawHelpers.Hash01(fs + tick * 11 + 4)) * px * lenScale * (0.45f + 1.0f * agit);
-            Vector2 dir = DrawHelpers.Rotate(tan, side * ang);
+            float side = Sign(fs + tick * 3 + 2);
+            float ang = 0.40f + 0.60f * Hash01(fs + tick * 7 + 3);
+            float len = (40f + 150f * Hash01(fs + tick * 11 + 4)) * px * lenScale * (0.45f + 1.0f * agit);
+            Vector2 dir = Rotate(tan, side * ang);
             float strength = MathF.Min(Lum[idx], 2f) * 0.7f;
 
             Bolt.Twig(pts, root, dir, len, fs + 17, tick, 0.75f);
             DrawTwig(pts, strength, 1f, alpha, near, heat, px, bodyHalf, overridden);
 
             // A twig off the twig.
-            if (agit > 0.25f && DrawHelpers.Hash01(fs + tick * 19 + 6) < 0.20f + 0.5f * agit)
+            if (agit > 0.25f && Hash01(fs + tick * 19 + 6) < 0.20f + 0.5f * agit)
             {
                 Vector2 td = pts[4] - pts[2];
                 float tl = td.Length();
                 if (tl > 1e-3f)
                 {
-                    float sgn = DrawHelpers.Sign(fs + tick * 23 + 7);
-                    Bolt.Twig(sub, pts[3], DrawHelpers.Rotate(td / tl, sgn * (0.5f + 0.5f * DrawHelpers.Hash01(fs + tick * 29 + 8))), len * 0.45f, fs + 41, tick, 0.8f);
+                    float sgn = Sign(fs + tick * 23 + 7);
+                    Bolt.Twig(sub, pts[3], Rotate(td / tl, sgn * (0.5f + 0.5f * Hash01(fs + tick * 29 + 8))), len * 0.45f, fs + 41, tick, 0.8f);
                     DrawTwig(sub, strength * 0.7f, 0.7f, alpha, near, heat, px, bodyHalf, overridden);
                 }
             }
@@ -315,8 +315,8 @@ public sealed class StrokeLightning : IStrokeMaterial
             float k = alpha * near * taper * MathF.Min(strength, 1.4f);
             half[j] = MathF.Max(0.5f * px, bodyHalf * 0.60f * thick * taper);
             reach[j] = 8f * px * thick * (0.4f + 0.6f * taper);
-            body[j] = DrawHelpers.Tint(StormColor.Glow.Sample(0.88f - heat), 0.80f * k, overridden);
-            bloom[j] = DrawHelpers.Tint(StormColor.Glow.Sample(0.56f - heat), 0.24f * k, overridden);
+            body[j] = Tint(StormColor.Glow.Sample(0.88f - heat), 0.80f * k, overridden);
+            bloom[j] = Tint(StormColor.Glow.Sample(0.56f - heat), 0.24f * k, overridden);
         }
         Mb.Tent(pts, nrm, reach, bloom);
         Mb.Ribbon(pts, nrm, half, body, 0.8f * px);
@@ -326,7 +326,7 @@ public sealed class StrokeLightning : IStrokeMaterial
             for (int j = 0; j < cnt; j++)
             {
                 half[j] *= 0.42f;
-                body[j] = DrawHelpers.Tint(StormColor.Glow.Sample(1f), alpha * near * (1f - j / (float)cnt) * 0.7f, overridden);
+                body[j] = Tint(StormColor.Glow.Sample(1f), alpha * near * (1f - j / (float)cnt) * 0.7f, overridden);
             }
             Mb.Ribbon(pts, nrm, half, body, 0.6f * px);
         }
@@ -338,10 +338,10 @@ public sealed class StrokeLightning : IStrokeMaterial
         Span<float> rr = stackalloc float[2] { width * 0.30f, width * 1.0f };
         Span<uint> cc = stackalloc uint[2]
         {
-            DrawHelpers.WithAlpha(StormColor.Glow.Sample(0.70f), 0.45f * k),
-            DrawHelpers.WithAlpha(StormColor.Glow.Sample(0.40f), 0f),
+            WithAlpha(StormColor.Glow.Sample(0.70f), 0.45f * k),
+            WithAlpha(StormColor.Glow.Sample(0.40f), 0f),
         };
-        MeshDraw.Radial(dl, tip, MeshDraw.WhiteUv(ctx.Time), DrawHelpers.WithAlpha(StormColor.Glow.Sample(1f), 0.95f * k),
+        MeshDraw.Radial(dl, tip, MeshDraw.WhiteUv(ctx.Time), WithAlpha(StormColor.Glow.Sample(1f), 0.95f * k),
                         10, rr, cc, 0f, 1f, 0, 0f);
     }
 

@@ -17,7 +17,7 @@ public sealed class FrostEffect : SceneEffect, IHasSwappableSlots
     };
 
     // palette
-    private static readonly uint Flash = DrawHelpers.Pack(0.70f, 0.86f, 1.00f);
+    private static readonly uint Flash = Pack(0.70f, 0.86f, 1.00f);
 
     // state
     private readonly FrostField _field = new();
@@ -43,12 +43,12 @@ public sealed class FrostEffect : SceneEffect, IHasSwappableSlots
         {
             var spots = _field.MistSpots;
             if (spots.Length == 0) return _f.Size * 0.5f;
-            var jitter = new Vector2(DrawHelpers.HashRange(seed + 7, -40f, 40f), DrawHelpers.HashRange(seed + 8, -40f, 40f));
+            var jitter = new Vector2(HashRange(seed + 7, -40f, 40f), HashRange(seed + 8, -40f, 40f));
             return spots[(int)((uint)seed % (uint)spots.Length)] + jitter * _f.Px;
         };
         // Rises a little and is carried downwind.
-        _mistVel = seed => (new Vector2(DrawHelpers.HashRange(seed + 3, -7f, 7f), DrawHelpers.HashRange(seed + 4, -16f, -4f))
-                            + _windDir * DrawHelpers.HashRange(seed + 9, 22f, 52f)) * _f.Px;
+        _mistVel = seed => (new Vector2(HashRange(seed + 3, -7f, 7f), HashRange(seed + 4, -16f, -4f))
+                            + _windDir * HashRange(seed + 9, 22f, 52f)) * _f.Px;
     }
 
     protected override void Emit(EffectScene scene, in CastFrame f)
@@ -62,8 +62,8 @@ public sealed class FrostEffect : SceneEffect, IHasSwappableSlots
             _mist.Clear();
 
             int seed = f.Seed;
-            _windDir = Vector2.Normalize(new Vector2(DrawHelpers.Sign(seed + 21), 0.18f));
-            _gustSeed = DrawHelpers.Hash01(seed + 22) * MathF.Tau;
+            _windDir = Vector2.Normalize(new Vector2(Sign(seed + 21), 0.18f));
+            _gustSeed = Hash01(seed + 22) * MathF.Tau;
             int flakes = Math.Clamp((int)(380f * MathF.Sqrt(f.Size.X * f.Size.Y / (1920f * 1080f))), 200, 560);
             _snow.Build(flakes, seed + 23, f.Size);
         }

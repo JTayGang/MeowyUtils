@@ -59,7 +59,7 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
         for (int i = 0; i < m; i++)
         {
             float q = MathF.Abs(t.X[i]) / HalfAxis;
-            t.Cap[i] = DrawHelpers.Smooth((q - 0.55f) / 0.45f);
+            t.Cap[i] = Smooth((q - 0.55f) / 0.45f);
         }
         t.Arc = new float[m]; t.Frac = new float[m];
         for (int i = 1; i < m; i++) t.Arc[i] = t.Arc[i - 1] + MathF.Sqrt((t.X[i] - t.X[i - 1]) * (t.X[i] - t.X[i - 1]) + (t.Y[i] - t.Y[i - 1]) * (t.Y[i] - t.Y[i - 1]));
@@ -151,12 +151,12 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
         float bar = L * BarDiameter;
         bool smallBar = bar < 9.5f * px;
 
-        float pick = DrawHelpers.Hash01(seed + 41);
+        float pick = Hash01(seed + 41);
         Matcap body = pick < 0.44f ? Iron : (pick < 0.76f ? Steel : Aged);
-        float rustLevel = MathF.Pow(DrawHelpers.Hash01(seed + 42), 1.7f) * 0.85f;
-        float twistBase = DrawHelpers.HashRange(seed + 43, -0.75f, 0.75f);
-        float twistAmp  = DrawHelpers.HashRange(seed + 44, 0.30f, 1.05f);
-        float twistFreq = DrawHelpers.HashRange(seed + 45, 0.55f, 1.15f);
+        float rustLevel = MathF.Pow(Hash01(seed + 42), 1.7f) * 0.85f;
+        float twistBase = HashRange(seed + 43, -0.75f, 0.75f);
+        float twistAmp  = HashRange(seed + 44, 0.30f, 1.05f);
+        float twistFreq = HashRange(seed + 45, 0.55f, 1.15f);
 
         float pitch = L * Pitch;
         bool closed = s.Closed;
@@ -219,8 +219,8 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
             ref Link lk = ref sn.Links[linkCount++];
             lk.C = c; lk.T = T; lk.N = new Vector2(-T.Y, T.X);
             lk.Cos = cs; lk.Sin = sn2;
-            lk.Tone = DrawHelpers.HashRange(ls + 3, 0.86f, 1.10f);
-            lk.Rust = Math.Clamp(rustLevel * DrawHelpers.HashRange(ls + 5, 0.25f, 1.45f), 0f, 1f);
+            lk.Tone = HashRange(ls + 3, 0.86f, 1.10f);
+            lk.Rust = Math.Clamp(rustLevel * HashRange(ls + 5, 0.25f, 1.45f), 0f, 1f);
             lk.Alpha = tipFrac;
             lk.Index = idx;
             lk.Arc = sc; lk.Span = pitch;
@@ -490,7 +490,7 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
         var mb = CoatDraw.Mb;
         mb.Reserve(M * nc, M * nc * 6);
         int first = mb.Vertices;
-        DrawHelpers.PushColorOverride(coat.Color);
+        PushColorOverride(coat.Color);
         try
         {
             for (int j = 0; j < M; j++)
@@ -503,13 +503,13 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
                     float u = cols[c], sq = colsSq[c];
                     int v0 = 0; while (v0 < Vn - 2 && u > uc[v0 + 1]) v0++;
                     float tv = uc[v0 + 1] > uc[v0] ? Math.Clamp((u - uc[v0]) / (uc[v0 + 1] - uc[v0]), 0f, 1f) : 0f;
-                    float th = DrawHelpers.Lerp(DrawHelpers.Lerp(thick[r0 * Vn + v0], thick[r0 * Vn + v0 + 1], tv), DrawHelpers.Lerp(thick[(r0 + 1) * Vn + v0], thick[(r0 + 1) * Vn + v0 + 1], tv), tr);
+                    float th = Lerp(Lerp(thick[r0 * Vn + v0], thick[r0 * Vn + v0 + 1], tv), Lerp(thick[(r0 + 1) * Vn + v0], thick[(r0 + 1) * Vn + v0 + 1], tv), tr);
                     Vector3 n = ts[j] * u + ns[j] * sq;
                     mb.VertexReserved(p2[j] + new Vector2(n.X, n.Y) * (half + th * 0.9f), lm.FilmShade(n, th, px, a, CoatDraw.Soft(u, 0.3f)));
                 }
             }
         }
-        finally { DrawHelpers.PopColorOverride(); }
+        finally { PopColorOverride(); }
         mb.StitchGrid(first, M, nc);
         mb.Flush(dl, MeshDraw.WhiteUv(ctx.Time));
     }
@@ -541,8 +541,8 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
         uint[] outC = MeshDraw.C;
 
         // Same bytes WithAlpha would produce (Pack gives alpha 255), without a clamp and conversion per vertex.
-        bool overridden = DrawHelpers.ColorOverrideActive;
-        uint alphaBits = DrawHelpers.AlphaBits(linkAlpha);
+        bool overridden = ColorOverrideActive;
+        uint alphaBits = AlphaBits(linkAlpha);
         int v = 0;
 
         for (int j = 0; j < M; j++)
@@ -581,7 +581,7 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
                 if (rusty)
                 {
                     float rm = rustA + (rustB - rustA) * (u * 0.5f + 0.5f) + (lk.Rust - 0.5f) * 0.95f;
-                    rustMask = DrawHelpers.Smooth((rm - 0.56f) / 0.24f) * (1f - 0.85f * cap) * 0.85f;
+                    rustMask = Smooth((rm - 0.56f) / 0.24f) * (1f - 0.85f * cap) * 0.85f;
                 }
                 if (rustMask > 0.01f) col = Vector3.Lerp(col, Rust.Sample(n.X, n.Y), rustMask);
 
@@ -595,7 +595,7 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
                 if (depthFog > 0f) col = Vector3.Lerp(col, StrandShading.DepthFog, depthFog);
 
                 outP[vb + c] = pos;
-                outC[vb + c] = DrawHelpers.VertexColor(col, linkAlpha, alphaBits, overridden);
+                outC[vb + c] = VertexColor(col, linkAlpha, alphaBits, overridden);
             }
 
             // Fringe: the neighbour's colour at alpha 0, pushed outward by the feather.

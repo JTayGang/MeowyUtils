@@ -174,9 +174,9 @@ public sealed class Coat
     /// <summary>Draws the coat as a layer of its host (the host's own colour override is not the coat's).</summary>
     public void DrawLayer(ImDrawListPtr dl, float alpha, in MaterialContext ctx)
     {
-        DrawHelpers.PushColorOverride(Color);
+        PushColorOverride(Color);
         try { Draw(dl, alpha, in ctx); }
-        finally { DrawHelpers.PopColorOverride(); }
+        finally { PopColorOverride(); }
     }
 
     /// <summary>Mean film thickness (px) over the stretch of a strand from arcFrom to arcTo (a one-sector coat).</summary>
@@ -195,7 +195,7 @@ public sealed class Coat
     {
         for (int i = 0, n = N * V; i < n; i++)
         {
-            float h = DrawHelpers.Hash01(Salt * 31 + i * 7 + 1);
+            float h = Hash01(Salt * 31 + i * 7 + 1);
             Patch[i] = (1f - Opt.Clump) + Opt.Clump * 2.4f * h * h;
         }
     }
@@ -324,8 +324,8 @@ public sealed class Coat
             for (int i = 0; i < cells; i++)
             {
                 float perCell = mt.Supply * Opt.Supply * px * A[i] * 0.01f * h * Bright * SupplyScale;
-                float room = 1f - DrawHelpers.Saturate((M[i] / A[i] - capTh * 0.7f) / (capTh * 0.3f));
-                float face = mt.Settles ? DrawHelpers.Saturate(Face[i] * 1.5f) : 1f;
+                float room = 1f - Saturate((M[i] / A[i] - capTh * 0.7f) / (capTh * 0.3f));
+                float face = mt.Settles ? Saturate(Face[i] * 1.5f) : 1f;
                 float add = Vis[i] && Holds[i] ? perCell * Patch[i] * room * face : 0f, was = M[i];
                 M[i] += add;
                 double got = (double)M[i] - was;  // book what the float cell took, not what was offered: the ledger then never drifts
@@ -338,7 +338,7 @@ public sealed class Coat
             for (int i = 0; i < cells; i++)
             {
                 float th = M[i] / A[i];
-                float run = DrawHelpers.Smooth((th - hold) / (hold * 1.2f + 0.3f * px));
+                float run = Smooth((th - hold) / (hold * 1.2f + 0.3f * px));
                 float rf = mt.Run * px * run * Math.Clamp(th / (2f * hold), 0.4f, 2.2f);
                 // power-law film runs as slope^(1/n): n = 1 is linear; a thinning liquid creeps on gentle slopes and runs on steep ones (same speed at 0.7)
                 float sl = T[i].Y, law = sl * MathF.Pow(MathF.Max(MathF.Abs(sl), 1e-4f) / 0.7f, 1f / mt.Index - 1f);
@@ -508,7 +508,7 @@ internal sealed class CoatSet
         IParticleMaterial? pm = forcedMaterial is not null ? MaterialRegistry.TryGetParticle(forcedMaterial) : scene.Materials.Particle(s.Owner, e.Role);
         if (pm is not ICoatMatter cm) return;
 
-        float px = DrawHelpers.PixelScale(scene.ScreenSize);
+        float px = PixelScale(scene.ScreenSize);
         float shortSide = scene.ScreenSize.X > 0f ? MathF.Min(scene.ScreenSize.X, scene.ScreenSize.Y) : 1080f;
         if (s.Path.Length < 24f * px) return;
         var ctx = new CoatBuildContext(scene.ScreenSize, shortSide, px, time);
@@ -634,7 +634,7 @@ internal sealed class CoatSet
         Vector3 dd = a.Ctr[ca] - b.Ctr[cb];
         float d2 = dd.LengthSquared();
         if (d2 >= limit * limit) return 0f;
-        return DrawHelpers.Smooth((limit - MathF.Sqrt(d2)) / MathF.Max(band, 1e-3f));
+        return Smooth((limit - MathF.Sqrt(d2)) / MathF.Max(band, 1e-3f));
     }
 
     private void Exchange(Coat a, int ca, Coat b, int cb, CoatEdge edge, bool seam, float h, float w)
@@ -652,7 +652,7 @@ internal sealed class CoatSet
         int cs = fromA ? ca : cb, cd = fromA ? cb : ca;
 
         float th = src.M[cs] / src.A[cs];
-        float run = DrawHelpers.Smooth((th - hold) / (hold * 1.2f + 0.3f * px));
+        float run = Smooth((th - hold) / (hold * 1.2f + 0.3f * px));
         float len = 0.5f * (src.Dc[cs] + dst.Dc[cd]), flux = 0f;
         if (run > 0f)  // below its yield thickness a film does not run (and the power law is the costly part)
         {
@@ -712,7 +712,7 @@ internal sealed class CoatSet
     internal bool TryBridge(Coat a, int k, Vector2 anchor, Vector2 bead, float rb, float chance, float wet)
     {
         ref var p = ref a.Pend[k];
-        if (DrawHelpers.Hash01(p.Salt + 11) > chance) return false;  // most strings never get to meet anything
+        if (Hash01(p.Salt + 11) > chance) return false;  // most strings never get to meet anything
         int slot = -1;
         for (int s = 0; s < MaxBridges; s++) if (!Br[s].Live) { slot = s; break; }
         if (slot < 0) return false;

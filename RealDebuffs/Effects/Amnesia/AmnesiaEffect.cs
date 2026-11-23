@@ -114,27 +114,27 @@ public sealed class AmnesiaEffect : SceneEffect, IHasSwappableSlots
         _field.Begin(seed);
         _whispers.Begin(seed, FirstWhisper);
 
-        _hand = DrawHelpers.Sign(seed + 1);
-        _spinDir = DrawHelpers.Sign(seed + 2);
-        _spinRate = DrawHelpers.HashRange(seed + 3, 0.10f, 0.20f);
-        _spinPhase = DrawHelpers.Hash01(seed + 4) * MathF.Tau;
-        _baseAngle = DrawHelpers.Hash01(seed + 5) * MathF.Tau;
-        _cruise = DrawHelpers.HashRange(seed + 7, 0.85f, 1.15f);
-        _pullEvery = DrawHelpers.HashRange(seed + 8, 5.5f, 8.0f);
-        _pullPhase = DrawHelpers.Hash01(seed + 9) * MathF.Tau;
+        _hand = Sign(seed + 1);
+        _spinDir = Sign(seed + 2);
+        _spinRate = HashRange(seed + 3, 0.10f, 0.20f);
+        _spinPhase = Hash01(seed + 4) * MathF.Tau;
+        _baseAngle = Hash01(seed + 5) * MathF.Tau;
+        _cruise = HashRange(seed + 7, 0.85f, 1.15f);
+        _pullEvery = HashRange(seed + 8, 5.5f, 8.0f);
+        _pullPhase = Hash01(seed + 9) * MathF.Tau;
 
         _spiral = Roll();
 
         // Where each thing starts along the tunnel.
-        _turn = DrawHelpers.Hash01(seed + 16) * MathF.Tau;
-        _tunnel.Travel = DrawHelpers.Hash01(seed + 12) * _tunnel.Length;
+        _turn = Hash01(seed + 16) * MathF.Tau;
+        _tunnel.Travel = Hash01(seed + 12) * _tunnel.Length;
         Spread(_fogAt, seed + 700, _tunnel.Length);
         Spread(_speckAt, seed + 800, _tunnel.Length);
     }
 
     private static void Spread(float[] offsets, int seed, float length)
     {
-        for (int i = 0; i < offsets.Length; i++) offsets[i] = length * (i + DrawHelpers.Hash01(seed + i * 17)) / offsets.Length;
+        for (int i = 0; i < offsets.Length; i++) offsets[i] = length * (i + Hash01(seed + i * 17)) / offsets.Length;
     }
 
     /// <summary>The cast's spiral: the fog's arm count and twist, and the spiral's own arm count (2 or 4) and gap between bands.</summary>
@@ -143,8 +143,8 @@ public sealed class AmnesiaEffect : SceneEffect, IHasSwappableSlots
         int s = _seed + 100;
         return new Spiral
         {
-            Arms = 3 + (int)(DrawHelpers.Hash01(s + 1) * 3f), Pitch = DrawHelpers.HashRange(s + 2, 0.00065f, 0.00105f),
-            BandArms = DrawHelpers.Hash01(s + 3) < 0.65f ? 2 : 4, Gap = DrawHelpers.HashRange(s + 4, 0.075f, 0.105f),
+            Arms = 3 + (int)(Hash01(s + 1) * 3f), Pitch = HashRange(s + 2, 0.00065f, 0.00105f),
+            BandArms = Hash01(s + 3) < 0.65f ? 2 : 4, Gap = HashRange(s + 4, 0.075f, 0.105f),
         };
     }
 
@@ -155,11 +155,11 @@ public sealed class AmnesiaEffect : SceneEffect, IHasSwappableSlots
     private float SpinAt(float age)
         => _baseAngle + _spinDir * (_spinRate * age + 0.25f * MathF.Sin(0.29f * age + _spinPhase) + IntroSpin * (1f - MathF.Exp(-age / 1.2f)));
 
-    private static float Prog(float age, float start, float secs) => DrawHelpers.Smooth(DrawHelpers.Saturate((age - start) / secs));
+    private static float Prog(float age, float start, float secs) => Smooth(Saturate((age - start) / secs));
 
     /// <summary>Fades a thing in out of the far end and out again once it has passed the lens.</summary>
     private static float DepthFade(float near, float inEnd, float outStart)
-        => DrawHelpers.Smooth(near / inEnd) * (1f - DrawHelpers.Smooth((near - outStart) / (1f - outStart)));
+        => Smooth(near / inEnd) * (1f - Smooth((near - outStart) / (1f - outStart)));
 
     // the tunnel and its atmosphere
 
@@ -168,14 +168,14 @@ public sealed class AmnesiaEffect : SceneEffect, IHasSwappableSlots
         ref readonly CastFrame f = ref _f;
         var v = _field;
         v.Flight = _tunnel; v.Cam = _view.Cam; v.Px = f.Px; v.Short = f.Short; v.Time = f.Time;
-        v.Swirl = _hand * _spiral.Pitch * (1f - 0.5f * DrawHelpers.Smooth(f.Leave)); v.Roll = spin;
+        v.Swirl = _hand * _spiral.Pitch * (1f - 0.5f * Smooth(f.Leave)); v.Roll = spin;
         v.Breath = 1f - 0.02f * pull; v.Alpha = f.Alpha * (1f - 0.35f * f.Leave);
         v.Arms = _spiral.Arms; v.Appear = _appear;
         v.SpiralArms = _spiral.BandArms; v.SpiralPitch = _spiral.Gap; v.SpiralHand = _hand; v.SpiralTurn = _turn; v.SpiralReach = _appear;
 
         // The cast lands as a ring of light racing down the tunnel from its far end.
         float ring = f.Age < 1.6f ? f.Age : -1f;
-        v.Front = VortexField.FarHeight + _tunnel.Length * DrawHelpers.EaseOutCubic(DrawHelpers.Saturate(ring / 1.1f));
+        v.Front = VortexField.FarHeight + _tunnel.Length * EaseOutCubic(Saturate(ring / 1.1f));
         v.FrontGain = ring >= 0f && ring < 1.6f ? 0.9f * MathF.Exp(-ring / 0.8f) : 0f;
 
         // The spiral, then the fog over it (the whispers are drawn between the two).
@@ -186,7 +186,7 @@ public sealed class AmnesiaEffect : SceneEffect, IHasSwappableSlots
     private void EmitAtmosphere(EffectScene scene, float pull)
     {
         ref readonly CastFrame f = ref _f;
-        float intro = DrawHelpers.Smooth(f.Age / IntroSecs);
+        float intro = Smooth(f.Age / IntroSecs);
 
         // The edges bleach rather than darken, the vignette breathes with the fall, and it sits over the spiral and fog.
         scene.RequestVignette(MemoryColor.Vignette, 0.18f + 0.08f * intro, MathF.Min(1f, f.Alpha * 0.60f * intro * (0.90f + 0.15f * pull)), priority: 22, f.Color, over: true);
@@ -205,15 +205,15 @@ public sealed class AmnesiaEffect : SceneEffect, IHasSwappableSlots
             float hu = _tunnel.HeightOf(_fogAt[i], out int lap);
             float near = _tunnel.Near(hu);
             int s = _seed + 7000 + i * 7919 + lap * 104729;
-            Vector2 at = _field.At(DrawHelpers.Hash01(s + 2) * MathF.Tau, hu, DrawHelpers.HashRange(s + 1, 0.25f, 1.0f), out float scale);
+            Vector2 at = _field.At(Hash01(s + 2) * MathF.Tau, hu, HashRange(s + 1, 0.25f, 1.0f), out float scale);
 
-            float k = f.Alpha * _appear * DepthFade(near, 0.20f, 0.85f) * 0.55f * (1f - 0.6f * f.Leave) * DrawHelpers.Smooth(0.22f, 0.57f, (at - f.Center).Length() / f.Short);
+            float k = f.Alpha * _appear * DepthFade(near, 0.20f, 0.85f) * 0.55f * (1f - 0.6f * f.Leave) * Smooth(0.22f, 0.57f, (at - f.Center).Length() / f.Short);
             if (k < 0.02f) continue;
 
             AddThing(hu, new ParticlePrimitive
             {
-                Position = at, Size = DrawHelpers.HashRange(s + 3, 240f, 440f) * f.Px * scale * 0.75f, AgeRatio = 0.45f, Brightness = k,
-                Seed = s, Role = PrimitiveRole.Mist, Rotation = DrawHelpers.Hash01(s + 4) * MathF.Tau, Variant = 60, ColorOverride = f.Color,
+                Position = at, Size = HashRange(s + 3, 240f, 440f) * f.Px * scale * 0.75f, AgeRatio = 0.45f, Brightness = k,
+                Seed = s, Role = PrimitiveRole.Mist, Rotation = Hash01(s + 4) * MathF.Tau, Variant = 60, ColorOverride = f.Color,
             });
         }
     }
@@ -227,14 +227,14 @@ public sealed class AmnesiaEffect : SceneEffect, IHasSwappableSlots
             float hu = _tunnel.HeightOf(_speckAt[i], out int lap);
             float near = _tunnel.Near(hu);
             int s = _seed + 8000 + i * 7919 + lap * 104729;
-            Vector2 at = _field.At(DrawHelpers.Hash01(s + 2) * MathF.Tau, hu, DrawHelpers.HashRange(s + 1, 0.10f, 1.0f), out float scale);
+            Vector2 at = _field.At(Hash01(s + 2) * MathF.Tau, hu, HashRange(s + 1, 0.10f, 1.0f), out float scale);
 
-            float k = f.Alpha * _appear * DepthFade(near, 0.10f, 0.92f) * DrawHelpers.HashRange(s + 3, 0.35f, 0.90f) * (1f - f.Leave) * DrawHelpers.Smooth(0.22f, 0.52f, (at - f.Center).Length() / f.Short);
+            float k = f.Alpha * _appear * DepthFade(near, 0.10f, 0.92f) * HashRange(s + 3, 0.35f, 0.90f) * (1f - f.Leave) * Smooth(0.22f, 0.52f, (at - f.Center).Length() / f.Short);
             if (k < 0.02f) continue;
 
             AddThing(hu, new ParticlePrimitive
             {
-                Position = at, Size = DrawHelpers.HashRange(s + 5, 2.5f, 7f) * f.Px * scale, AgeRatio = 0.5f, Brightness = k,
+                Position = at, Size = HashRange(s + 5, 2.5f, 7f) * f.Px * scale, AgeRatio = 0.5f, Brightness = k,
                 Seed = s, Role = PrimitiveRole.Mote, ColorOverride = f.Color,
             });
         }

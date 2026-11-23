@@ -26,9 +26,9 @@ internal sealed class WindField
             int s = seed + i * 7919;
             _flakes[i] = new Flake
             {
-                Pos = new Vector2(DrawHelpers.Hash01(s + 2) * size.X, DrawHelpers.Hash01(s + 3) * size.Y),
-                Depth = MathF.Pow(DrawHelpers.Hash01(s + 1), 1.7f),  // far flakes outnumber near ones
-                Phase = DrawHelpers.Hash01(s + 4) * MathF.Tau,
+                Pos = new Vector2(Hash01(s + 2) * size.X, Hash01(s + 3) * size.Y),
+                Depth = MathF.Pow(Hash01(s + 1), 1.7f),  // far flakes outnumber near ones
+                Phase = Hash01(s + 4) * MathF.Tau,
                 Seed = s,
             };
         }
@@ -41,7 +41,7 @@ internal sealed class WindField
                 + 0.26f * MathF.Sin(time * 0.29f + seed)
                 + 0.17f * MathF.Sin(time * 0.71f + seed * 1.9f)
                 + 0.09f * MathF.Sin(time * 1.70f + seed * 3.7f);
-        return DrawHelpers.Smooth(g);
+        return Smooth(g);
     }
 
     /// <summary>Advances every flake; wind is px/s at full gust (screen-scaled), gust 0..1, px scales settling and eddy motion.</summary>
@@ -65,8 +65,8 @@ internal sealed class WindField
 
             f.Vel = v;
             f.Pos += v * dt;
-            f.Pos.X = DrawHelpers.Wrap(f.Pos.X + margin, w) - margin;
-            f.Pos.Y = DrawHelpers.Wrap(f.Pos.Y + margin, h) - margin;
+            f.Pos.X = Wrap(f.Pos.X + margin, w) - margin;
+            f.Pos.Y = Wrap(f.Pos.Y + margin, h) - margin;
         }
     }
 
@@ -85,7 +85,7 @@ internal sealed class WindField
 
             float d = f.Depth;
             float on = Math.Clamp(active - i, 0f, 1f);
-            float flakeSize = (1.3f + 5.2f * d) * (0.85f + 0.30f * DrawHelpers.Hash01(f.Seed + 5)) * px;
+            float flakeSize = (1.3f + 5.2f * d) * (0.85f + 0.30f * Hash01(f.Seed + 5)) * px;
 
             scene.AddParticle(new ParticlePrimitive
             {

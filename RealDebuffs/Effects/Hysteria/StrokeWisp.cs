@@ -50,7 +50,7 @@ public sealed class StrokeWisp : IStrokeMaterial
         var half = st.Half.AsSpan(0, n);
         var col = st.Col.AsSpan(0, n);
 
-        bool overridden = DrawHelpers.ColorOverrideActive;
+        bool overridden = ColorOverrideActive;
         float shimmer = ctx.Time * 1.7f + s.Phase;
         float slow = ctx.Time * 0.8f + s.Phase * 2.3f;
 
@@ -80,7 +80,7 @@ public sealed class StrokeWisp : IStrokeMaterial
         {
             float u = st.Arc[i] / total;
             half[i] = Width(u, width) * 4.4f;
-            col[i] = DrawHelpers.Tint(_palette.Sample(0.24f), alpha * 0.17f * haze * Profile(u, st.Arc[i], shimmer), overridden);
+            col[i] = Tint(_palette.Sample(0.24f), alpha * 0.17f * haze * Profile(u, st.Arc[i], shimmer), overridden);
         }
         Mb.Tent(pts, nrm, half, col);
 
@@ -92,7 +92,7 @@ public sealed class StrokeWisp : IStrokeMaterial
             {
                 float u = st.Arc[i] / total;
                 half[i] = Width(u, width) * (strand == 0 ? 0.62f : 0.44f);
-                col[i] = DrawHelpers.Tint(_palette.Sample(0.46f + 0.24f * u), alpha * (strand == 0 ? 0.34f : 0.22f) * haze * Profile(u, st.Arc[i], shimmer), overridden);
+                col[i] = Tint(_palette.Sample(0.46f + 0.24f * u), alpha * (strand == 0 ? 0.34f : 0.22f) * haze * Profile(u, st.Arc[i], shimmer), overridden);
             }
             if (strand == 0) Mb.Ribbon(pts, nrm, half, col, feather);
             else Mb.Ribbon(twin, twinN, half, col, feather);
@@ -105,7 +105,7 @@ public sealed class StrokeWisp : IStrokeMaterial
             {
                 float u = st.Arc[i] / total;
                 half[i] = MathF.Max(0.45f * px, Width(u, width) * 0.07f);
-                col[i] = DrawHelpers.Tint(_palette.Sample(0.92f), alpha * 0.55f * haze * MathF.Pow(Profile(u, st.Arc[i], shimmer), 1.4f), overridden);
+                col[i] = Tint(_palette.Sample(0.92f), alpha * 0.55f * haze * MathF.Pow(Profile(u, st.Arc[i], shimmer), 1.4f), overridden);
             }
             Mb.Ribbon(pts, nrm, half, col, 0.8f * px);
         }
@@ -128,5 +128,5 @@ public sealed class StrokeWisp : IStrokeMaterial
 
     /// <summary>Brightness along the streamer: rising from the tail, fading out over the last fifth, with a slow shimmer.</summary>
     private static float Profile(float u, float arc, float shimmer)
-        => MathF.Pow(u, 1.4f) * (1f - DrawHelpers.Smooth((u - HeadStart) / (1f - HeadStart))) * (0.82f + 0.18f * MathF.Sin(arc * 0.021f + shimmer));
+        => MathF.Pow(u, 1.4f) * (1f - Smooth((u - HeadStart) / (1f - HeadStart))) * (0.82f + 0.18f * MathF.Sin(arc * 0.021f + shimmer));
 }

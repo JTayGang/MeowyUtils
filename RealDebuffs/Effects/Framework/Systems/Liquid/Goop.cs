@@ -49,8 +49,8 @@ internal static class GoopDraw
             Scale = MathF.Max(ctx.ScreenScale, 0.25f),
             Alpha = alpha > 1f ? 1f : alpha,
             Feather = MathF.Max(0.8f, ctx.ScreenScale * 0.9f),
-            Overridden = DrawHelpers.ColorOverrideActive,
-            Dye = DrawHelpers.ColorOverrideChroma,
+            Overridden = ColorOverrideActive,
+            Dye = ColorOverrideChroma,
             Uv = MeshDraw.WhiteUv(ctx.Time),
         };
 
@@ -218,27 +218,27 @@ internal static class GoopDraw
     {
         float rb = p.Size, speed = p.Velocity.Length(), age = p.Age, scale = look.Scale;
         Vector2 d = speed > 1e-2f ? p.Velocity / speed : Vector2.UnitY;
-        float h1 = DrawHelpers.Hash01(p.Seed * 7 + 1), h2 = DrawHelpers.Hash01(p.Seed * 7 + 2), h3 = DrawHelpers.Hash01(p.Seed * 7 + 3), h4 = DrawHelpers.Hash01(p.Seed * 7 + 4), h5 = DrawHelpers.Hash01(p.Seed * 7 + 5);
+        float h1 = Hash01(p.Seed * 7 + 1), h2 = Hash01(p.Seed * 7 + 2), h3 = Hash01(p.Seed * 7 + 3), h4 = Hash01(p.Seed * 7 + 4), h5 = Hash01(p.Seed * 7 + 5);
         var ph = look.Phys;
-        float big = DrawHelpers.Smooth(rb / (6f * scale));
+        float big = Smooth(rb / (6f * scale));
 
-        float freq = DrawHelpers.Lerp(9f, 4f, big);  // Hz: small drops ring faster
-        float ring = DrawHelpers.Lerp(1.2f, 0.07f, MathF.Pow(ph.Viscosity, 0.6f));  // seconds the ringing lasts
+        float freq = Lerp(9f, 4f, big);  // Hz: small drops ring faster
+        float ring = Lerp(1.2f, 0.07f, MathF.Pow(ph.Viscosity, 0.6f));  // seconds the ringing lasts
         float wobble = (0.10f + 0.40f * h1) * MathF.Exp(-age / ring) * MathF.Cos(MathF.Tau * (freq * age + h2));
         float fast = MathF.Min(1f, speed / (2400f * scale));
-        float flat = 0.10f * DrawHelpers.Smooth(rb / (7f * scale)) * fast;
+        float flat = 0.10f * Smooth(rb / (7f * scale)) * fast;
         float blur = 0.58f * MathF.Pow(h5, 1.4f) * fast * (1f - 0.35f * big);  // fast drops are drawn stretched along their travel, each by its own amount
 
         float q = Math.Clamp((1f + wobble) * (1f + blur) - flat, 0.74f, 1.9f);  // long axis over short; the volume stays that of a sphere of radius rb
         float b = rb / MathF.Cbrt(q), a = b * q;
 
         float st = ph.Stringiness;
-        float keep = DrawHelpers.Smooth(0.55f, 1f, h3);  // zero for most; some drops stay teardrops, each with its own length of tail
+        float keep = Smooth(0.55f, 1f, h3);  // zero for most; some drops stay teardrops, each with its own length of tail
         float tail = rb * ((0.5f + 2.2f * st) * (0.5f + h3) * MathF.Exp(-age / (0.07f + 0.25f * st)) + (1.1f * st + 1.7f * keep) * MathF.Min(1f, speed / (900f * scale)));
 
         var lk = look;
         lk.Alpha *= 0.84f + 0.16f * h4;
-        Teardrop(dl, p.Position, d, a, b, tail, DrawHelpers.Smooth(tail / (1.3f * rb)), in lk);  // a short tail is thin too, so it fades out instead of leaving a nub
+        Teardrop(dl, p.Position, d, a, b, tail, Smooth(tail / (1.3f * rb)), in lk);  // a short tail is thin too, so it fades out instead of leaving a nub
     }
 
     /// <summary>A bead of half-length a and radius rb along d, drawing out into a pointed tail of the given length behind it.</summary>
@@ -369,7 +369,7 @@ internal static class GoopDraw
 
     private static uint GlintColour(float r, float g, float b, float a, in Look look)
     {
-        return DrawHelpers.Tint(DrawHelpers.Pack(r, g, b), a * look.Alpha, look.Overridden);
+        return Tint(DrawHelpers.Pack(r, g, b), a * look.Alpha, look.Overridden);
     }
 
     // the mesh: a ribbon of rows, each a cross-section of the surface of revolution
@@ -398,7 +398,7 @@ internal static class GoopDraw
             float ds = s[i1] - s[i0];
             float slope = ds > 1e-4f ? Math.Clamp((r[i1] - r[i0]) / ds, -8f, 8f) : 0f;
 
-            float fade = attachFade > 0f ? DrawHelpers.Smooth(s[row] / attachFade) : 1f;
+            float fade = attachFade > 0f ? Smooth(s[row] / attachFade) : 1f;
             int vb = row * stride;
             float drawR = MathF.Max(rad, MinRadius);
 
@@ -429,8 +429,8 @@ internal static class GoopDraw
     private static uint Pack(Vector4 lit, float fade, in Look look)
     {
         Vector3 col = new(lit.X, lit.Y, lit.Z);
-        if (look.Dye > 0f) col = DrawHelpers.BoostSaturation(col, look.Dye, DrawHelpers.SoftDye);
-        return DrawHelpers.Tint(DrawHelpers.Pack(col.X, col.Y, col.Z), lit.W * fade * look.Alpha, look.Overridden);
+        if (look.Dye > 0f) col = BoostSaturation(col, look.Dye, SoftDye);
+        return Tint(DrawHelpers.Pack(col.X, col.Y, col.Z), lit.W * fade * look.Alpha, look.Overridden);
     }
 
     // small maths
@@ -455,6 +455,6 @@ internal static class PendantKeys
     {
         rb = rMax * (0.40f + 0.60f * MathF.Sqrt(q));
         len = rb * 0.45f + lMax * MathF.Pow(q, 2.4f);
-        neck = DrawHelpers.Lerp(0.66f, 0.10f + 0.10f * (1f - stringiness), MathF.Pow(q, 1.4f));
+        neck = Lerp(0.66f, 0.10f + 0.10f * (1f - stringiness), MathF.Pow(q, 1.4f));
     }
 }

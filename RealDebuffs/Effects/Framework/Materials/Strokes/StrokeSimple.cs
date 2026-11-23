@@ -8,8 +8,8 @@ public sealed class StrokeSimple : IStrokeMaterial
 {
     public string Name => "stroke.simple";
 
-    private static readonly uint Glow = DrawHelpers.Pack(0.80f, 0.82f, 0.88f);
-    private static readonly uint Core = DrawHelpers.Pack(0.94f, 0.96f, 1.00f);
+    private static readonly uint Glow = Pack(0.80f, 0.82f, 0.88f);
+    private static readonly uint Core = Pack(0.94f, 0.96f, 1.00f);
 
     public void Draw(ImDrawListPtr dl, in StrokePrimitive s, in MaterialContext ctx)
     {
@@ -36,8 +36,8 @@ public sealed class StrokeSimple : IStrokeMaterial
             float arc = visibleLen * i / steps;
             path.SampleAtArc(arc, out Vector2 pos, out _);
 
-            dl.AddLine(prevPos, pos, DrawHelpers.WithAlpha(Glow, alpha * 0.35f), width * 3.0f);
-            dl.AddLine(prevPos, pos, DrawHelpers.WithAlpha(Core, alpha * 0.95f), width);
+            dl.AddLine(prevPos, pos, WithAlpha(Glow, alpha * 0.35f), width * 3.0f);
+            dl.AddLine(prevPos, pos, WithAlpha(Core, alpha * 0.95f), width);
             prevPos = pos;
         }
 
@@ -45,8 +45,8 @@ public sealed class StrokeSimple : IStrokeMaterial
         {
             path.SampleAtArc(lastArc, out Vector2 tip, out _);
             float k = Math.Clamp(s.TipFlare, 0f, 1f);
-            dl.AddCircleFilled(tip, (6f + 10f * k) * ctx.ScreenScale, DrawHelpers.WithAlpha(Glow, alpha * 0.35f * k));
-            dl.AddCircleFilled(tip, (2f + 3f * k) * ctx.ScreenScale, DrawHelpers.WithAlpha(Core, alpha * 0.95f * k));
+            dl.AddCircleFilled(tip, (6f + 10f * k) * ctx.ScreenScale, WithAlpha(Glow, alpha * 0.35f * k));
+            dl.AddCircleFilled(tip, (2f + 3f * k) * ctx.ScreenScale, WithAlpha(Core, alpha * 0.95f * k));
         }
     }
 }

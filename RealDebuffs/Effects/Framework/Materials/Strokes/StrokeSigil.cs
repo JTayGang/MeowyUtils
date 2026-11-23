@@ -64,11 +64,11 @@ internal sealed class LightStrand
         Span<float> gain = stackalloc float[3];
         for (int k = 0; k < 3; k++)
         {
-            float h = DrawHelpers.Hash01(s.Seed * 13 + k * 101 + 5);
-            float speed = (110f + 120f * DrawHelpers.Hash01(s.Seed + k * 37 + 9)) * px * (h < 0.5f ? 1f : -1f);
-            float p = (DrawHelpers.Hash01(s.Seed + k * 17 + 3) + s.Phase * 0.173f + time * speed / MathF.Max(total, 1f)) % 1f;
+            float h = Hash01(s.Seed * 13 + k * 101 + 5);
+            float speed = (110f + 120f * Hash01(s.Seed + k * 37 + 9)) * px * (h < 0.5f ? 1f : -1f);
+            float p = (Hash01(s.Seed + k * 17 + 3) + s.Phase * 0.173f + time * speed / MathF.Max(total, 1f)) % 1f;
             at[k] = (p < 0f ? p + 1f : p) * total;
-            gain[k] = 0.62f + 0.38f * DrawHelpers.Hash01(s.Seed + k * 29 + 1);
+            gain[k] = 0.62f + 0.38f * Hash01(s.Seed + k * 29 + 1);
         }
 
         float shimmerPhase = s.Phase * 2.1f + time * 1.15f;
@@ -92,7 +92,7 @@ internal sealed class LightStrand
                 float u = a / dashPeriod;
                 u -= MathF.Floor(u);
                 const float duty = 0.58f, soft = 0.10f;
-                float mask = DrawHelpers.Smooth(u / soft) * (1f - DrawHelpers.Smooth((u - (duty - soft)) / soft));
+                float mask = Smooth(u / soft) * (1f - Smooth((u - (duty - soft)) / soft));
                 lum *= mask;
             }
             Lum[i] = lum;
@@ -187,7 +187,7 @@ public sealed class StrokeSigil : IStrokeMaterial
         var half = st.Half.AsSpan(0, n);
         var col = st.Col.AsSpan(0, n);
         var lum = st.Lum.AsSpan(0, n);
-        bool overridden = DrawHelpers.ColorOverrideActive;
+        bool overridden = ColorOverrideActive;
 
         Mb.Clear();
 
@@ -252,10 +252,10 @@ public sealed class StrokeSigil : IStrokeMaterial
         Span<float> rr = stackalloc float[2] { width * 0.35f, width * 1.1f };
         Span<uint> cc = stackalloc uint[2]
         {
-            DrawHelpers.WithAlpha(_palette.Sample(0.62f), 0.40f * k),
-            DrawHelpers.WithAlpha(_palette.Sample(0.35f), 0f),
+            WithAlpha(_palette.Sample(0.62f), 0.40f * k),
+            WithAlpha(_palette.Sample(0.35f), 0f),
         };
-        MeshDraw.Radial(dl, tip, MeshDraw.WhiteUv(ctx.Time), DrawHelpers.WithAlpha(_palette.Sample(1f), 0.95f * k),
+        MeshDraw.Radial(dl, tip, MeshDraw.WhiteUv(ctx.Time), WithAlpha(_palette.Sample(1f), 0.95f * k),
                         10, rr, cc, 0f, 1f, 0, 0f);
     }
 
@@ -309,7 +309,7 @@ public sealed class StrokeGlow : IStrokeMaterial
         float near = 1f - 0.5f * depth;
         var half = st.Half.AsSpan(0, n);
         var col = st.Col.AsSpan(0, n);
-        bool overridden = DrawHelpers.ColorOverrideActive;
+        bool overridden = ColorOverrideActive;
 
         for (int i = 0; i < n; i++)
         {

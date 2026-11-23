@@ -80,7 +80,7 @@ internal sealed class FrostField : IRegionState
             // Two octaves at wavelength >= ~5 cells: finer shows as blocks on a 20 px grid (the ferns carry fine detail).
             float n = Noise.Fbm(p.X / ss * 7f + off, p.Y / ss * 7f - off, 2);
             Mottle[i] = Math.Clamp(0.5f + 0.5f * n * 1.1f, 0f, 1f);
-            Cap[i] = 1f - DrawHelpers.Smooth((Growth.Arrival[i] - 0.25f) / 0.80f);
+            Cap[i] = 1f - Smooth((Growth.Arrival[i] - 0.25f) / 0.80f);
 
             float dEdge = MathF.Min(MathF.Min(p.X, size.X - p.X), MathF.Min(p.Y, size.Y - p.Y)) / ss;
             float k = 1f - Math.Clamp(dEdge / 0.20f, 0f, 1f);
@@ -99,13 +99,13 @@ internal sealed class FrostField : IRegionState
         var flowers = new List<Flower>(24);
         for (int i = 0; i < 400 && flowers.Count < 14; i++)
         {
-            var at = new Vector2(DrawHelpers.Hash01(seed + 12000 + i * 3) * size.X, DrawHelpers.Hash01(seed + 12001 + i * 3) * size.Y);
+            var at = new Vector2(Hash01(seed + 12000 + i * 3) * size.X, Hash01(seed + 12001 + i * 3) * size.Y);
             float a = Growth.ArrivalAt(at.X, at.Y);
             if (a < 0.14f || a > 0.80f) continue;
             bool crowded = false;
             foreach (var f in flowers) if (Vector2.DistanceSquared(f.Pos, at) < MathF.Pow(150f * px, 2f)) { crowded = true; break; }
             if (crowded) continue;
-            flowers.Add(new Flower(at, (15f + 20f * DrawHelpers.Hash01(seed + 12002 + i * 3)) * px, AgeFor(a * 0.9f) + 0.25f + 0.6f * DrawHelpers.Hash01(seed + 12003 + i), seed + 12004 + i));
+            flowers.Add(new Flower(at, (15f + 20f * Hash01(seed + 12002 + i * 3)) * px, AgeFor(a * 0.9f) + 0.25f + 0.6f * Hash01(seed + 12003 + i), seed + 12004 + i));
         }
         Flowers = flowers.ToArray();
 
@@ -113,12 +113,12 @@ internal sealed class FrostField : IRegionState
         var glints = new List<Glint>(160);
         for (int i = 0; i < 1400 && glints.Count < 150; i++)
         {
-            var at = new Vector2(DrawHelpers.Hash01(seed + 13000 + i * 3) * size.X, DrawHelpers.Hash01(seed + 13001 + i * 3) * size.Y);
+            var at = new Vector2(Hash01(seed + 13000 + i * 3) * size.X, Hash01(seed + 13001 + i * 3) * size.Y);
             float a = Growth.ArrivalAt(at.X, at.Y);
-            if (a > 1.0f || DrawHelpers.Hash01(seed + 13002 + i * 3) > MathF.Pow(1.05f - a, 1.2f)) continue;
-            glints.Add(new Glint(at, (10f + 14f * DrawHelpers.Hash01(seed + 13003 + i)) * px, AgeFor(a * 0.95f) + 0.2f,
-                                 DrawHelpers.Hash01(seed + 13004 + i) * 6.28f, 0.35f + 0.9f * DrawHelpers.Hash01(seed + 13005 + i),
-                                 5f + 9f * DrawHelpers.Hash01(seed + 13006 + i), seed + 13007 + i));
+            if (a > 1.0f || Hash01(seed + 13002 + i * 3) > MathF.Pow(1.05f - a, 1.2f)) continue;
+            glints.Add(new Glint(at, (10f + 14f * Hash01(seed + 13003 + i)) * px, AgeFor(a * 0.95f) + 0.2f,
+                                 Hash01(seed + 13004 + i) * 6.28f, 0.35f + 0.9f * Hash01(seed + 13005 + i),
+                                 5f + 9f * Hash01(seed + 13006 + i), seed + 13007 + i));
         }
         Glints = glints.ToArray();
 
@@ -126,7 +126,7 @@ internal sealed class FrostField : IRegionState
         var mist = new List<Vector2>(32);
         for (int i = 0; i < 300 && mist.Count < 24; i++)
         {
-            var at = new Vector2(DrawHelpers.Hash01(seed + 14000 + i * 2) * size.X, DrawHelpers.Hash01(seed + 14001 + i * 2) * size.Y);
+            var at = new Vector2(Hash01(seed + 14000 + i * 2) * size.X, Hash01(seed + 14001 + i * 2) * size.Y);
             float a = Growth.ArrivalAt(at.X, at.Y);
             if (a >= 0.35f && a <= 0.95f) mist.Add(at);
         }
@@ -148,7 +148,7 @@ internal sealed class FrostField : IRegionState
         foreach (var site in Growth.Sites)
         {
             float baseAng = MathF.Atan2(site.Inward.Y, site.Inward.X);
-            GrowFrom(site.Pos, baseAng + (DrawHelpers.Hash01(seed + 600 + n) - 0.5f) * 0.9f, seed + 700 + n * 31, big, px, ss, 1f);
+            GrowFrom(site.Pos, baseAng + (Hash01(seed + 600 + n) - 0.5f) * 0.9f, seed + 700 + n * 31, big, px, ss, 1f);
             n++;
         }
 
@@ -159,17 +159,17 @@ internal sealed class FrostField : IRegionState
         int placed = 0;
         for (int i = 0; i < 700 && placed < 60; i++)
         {
-            float x = DrawHelpers.Hash01(seed + 5000 + i * 3) * size.X;
-            float y = DrawHelpers.Hash01(seed + 5001 + i * 3) * size.Y;
+            float x = Hash01(seed + 5000 + i * 3) * size.X;
+            float y = Hash01(seed + 5001 + i * 3) * size.Y;
             float a = Growth.ArrivalAt(x, y);
             if (a < 0.04f || a > 0.95f) continue;
-            if (DrawHelpers.Hash01(seed + 5002 + i * 3) > MathF.Pow(1f - a, 1.1f)) continue;
+            if (Hash01(seed + 5002 + i * 3) > MathF.Pow(1f - a, 1.1f)) continue;
 
             float gx = Growth.ArrivalAt(x + 8f, y) - Growth.ArrivalAt(x - 8f, y);
             float gy = Growth.ArrivalAt(x, y + 8f) - Growth.ArrivalAt(x, y - 8f);
-            float ang = MathF.Atan2(gy, gx) + (DrawHelpers.Hash01(seed + 5003 + i) - 0.5f) * 2.2f;
-            float len = (0.045f + 0.075f * DrawHelpers.Hash01(seed + 5004 + i)) * ss;
-            Ferns.AddFern(new Vector2(x, y), ang, len, AgeFor(a * 0.85f) + 0.25f * DrawHelpers.Hash01(seed + 5005 + i), 1.3f * px, seed + 6000 + i * 41, small);
+            float ang = MathF.Atan2(gy, gx) + (Hash01(seed + 5003 + i) - 0.5f) * 2.2f;
+            float len = (0.045f + 0.075f * Hash01(seed + 5004 + i)) * ss;
+            Ferns.AddFern(new Vector2(x, y), ang, len, AgeFor(a * 0.85f) + 0.25f * Hash01(seed + 5005 + i), 1.3f * px, seed + 6000 + i * 41, small);
             placed++;
         }
 
@@ -177,12 +177,12 @@ internal sealed class FrostField : IRegionState
         int needles = 0;
         for (int i = 0; i < 2400 && needles < 700; i++)
         {
-            float x = DrawHelpers.Hash01(seed + 9000 + i * 3) * size.X;
-            float y = DrawHelpers.Hash01(seed + 9001 + i * 3) * size.Y;
+            float x = Hash01(seed + 9000 + i * 3) * size.X;
+            float y = Hash01(seed + 9001 + i * 3) * size.Y;
             float a = Growth.ArrivalAt(x, y);
-            if (a > 1.0f || DrawHelpers.Hash01(seed + 9002 + i * 3) > MathF.Pow(1.02f - a, 1.4f)) continue;
-            Ferns.AddNeedle(new Vector2(x, y), DrawHelpers.Hash01(seed + 9003 + i) * 6.28f, (4f + 9f * DrawHelpers.Hash01(seed + 9004 + i)) * px,
-                            AgeFor(a * 0.9f) + 0.5f * DrawHelpers.Hash01(seed + 9005 + i), 1f * px, DrawHelpers.Hash01(seed + 9006 + i) * 6.28f);
+            if (a > 1.0f || Hash01(seed + 9002 + i * 3) > MathF.Pow(1.02f - a, 1.4f)) continue;
+            Ferns.AddNeedle(new Vector2(x, y), Hash01(seed + 9003 + i) * 6.28f, (4f + 9f * Hash01(seed + 9004 + i)) * px,
+                            AgeFor(a * 0.9f) + 0.5f * Hash01(seed + 9005 + i), 1f * px, Hash01(seed + 9006 + i) * 6.28f);
             needles++;
         }
     }
@@ -201,8 +201,8 @@ internal sealed class FrostField : IRegionState
             for (int i = 0; i < count; i++)
             {
                 int k = e * 64 + i;
-                Vector2 pos = ScreenEdges.Anchor(size, edge, (i + DrawHelpers.Hash01(seed + k)) / count, 0f);
-                float jitter = (DrawHelpers.Hash01(seed + 300 + k) - 0.5f) * 0.9f;
+                Vector2 pos = ScreenEdges.Anchor(size, edge, (i + Hash01(seed + k)) / count, 0f);
+                float jitter = (Hash01(seed + 300 + k) - 0.5f) * 0.9f;
                 GrowFrom(pos, inwardAng + jitter, seed + 600 + k * 37, style, px, ss, maxLenFrac);
             }
         }

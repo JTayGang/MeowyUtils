@@ -37,7 +37,7 @@ public sealed class ParticleRune : IParticleMaterial
         float k = p.Brightness * ctx.Alpha;
         if (k <= 0.004f || p.Size <= 2f) return;
 
-        float size = p.Size * DrawHelpers.LifeSize(p.AgeRatio, riseEnd: 0.14f, riseFrom: 0.35f, fallStart: 0.82f, floor: 0.12f);
+        float size = p.Size * LifeSize(p.AgeRatio, riseEnd: 0.14f, riseFrom: 0.35f, fallStart: 0.82f, floor: 0.12f);
         if (size <= 2f) return;
 
         bool inscribed = (p.Variant & 1) != 0;
@@ -45,7 +45,7 @@ public sealed class ParticleRune : IParticleMaterial
         int glyph = forced > 0 ? forced - 1 : RuneGlyphs.Pick(p.Seed, _firstGlyph, _glyphCount);
 
         // A slow private flicker, so a ring of runes never pulses in unison.
-        float seedPhase = DrawHelpers.Hash01(p.Seed + 4) * MathF.Tau;
+        float seedPhase = Hash01(p.Seed + 4) * MathF.Tau;
         float flicker = inscribed ? 0.93f + 0.07f * MathF.Sin(ctx.Time * 1.9f + seedPhase)
                                   : 0.80f + 0.20f * MathF.Sin(ctx.Time * 2.6f + seedPhase);
         k *= flicker;
@@ -53,16 +53,16 @@ public sealed class ParticleRune : IParticleMaterial
         float px = ctx.ScreenScale;
         Vector2 uv = MeshDraw.WhiteUv(ctx.Time);
         Vector2 pos = p.DrawPos;
-        bool overridden = DrawHelpers.ColorOverrideActive;
+        bool overridden = ColorOverrideActive;
 
         // The pool of light the rune sits in.
         Span<float> rr = stackalloc float[2] { size * 0.75f, size * (inscribed ? 1.5f : 1.9f) };
         Span<uint> rc = stackalloc uint[2]
         {
-            DrawHelpers.WithAlpha(_palette.Sample(0.30f), k * (inscribed ? 0.10f : 0.17f)),
-            DrawHelpers.WithAlpha(_palette.Sample(0.20f), 0f),
+            WithAlpha(_palette.Sample(0.30f), k * (inscribed ? 0.10f : 0.17f)),
+            WithAlpha(_palette.Sample(0.20f), 0f),
         };
-        MeshDraw.Radial(dl, pos, uv, DrawHelpers.WithAlpha(_palette.Sample(0.34f), k * (inscribed ? 0.15f : 0.26f)),
+        MeshDraw.Radial(dl, pos, uv, WithAlpha(_palette.Sample(0.34f), k * (inscribed ? 0.15f : 0.26f)),
                         12, rr, rc, 0f, 1f, 0, 0f);
 
         float cos = MathF.Cos(p.Rotation), sin = MathF.Sin(p.Rotation);
@@ -72,9 +72,9 @@ public sealed class ParticleRune : IParticleMaterial
         float bodyHalf = MathF.Max(0.65f * px, size * 0.050f);
         float coreHalf = MathF.Max(0.40f * px, size * 0.020f);
 
-        uint bloomCol = DrawHelpers.Tint(_palette.Sample(0.30f), k * 0.30f, overridden);
-        uint bodyCol  = DrawHelpers.Tint(_palette.Sample(0.70f), k * 0.95f, overridden);
-        uint coreCol  = DrawHelpers.Tint(_palette.Sample(0.95f), k * 0.90f, overridden);
+        uint bloomCol = Tint(_palette.Sample(0.30f), k * 0.30f, overridden);
+        uint bodyCol  = Tint(_palette.Sample(0.70f), k * 0.95f, overridden);
+        uint coreCol  = Tint(_palette.Sample(0.95f), k * 0.90f, overridden);
 
         // Three passes across every stroke (bloom, body, core), so one stroke's glow never sits over another's core.
         Mb.Clear();
@@ -153,10 +153,10 @@ public sealed class ParticleMote : IParticleMaterial
         float k = p.Brightness * ctx.Alpha;
         if (k <= 0.004f || p.Size <= 0.4f) return;
 
-        float size = p.Size * DrawHelpers.LifeSize(p.AgeRatio, riseEnd: 0.20f, riseFrom: 0.25f, fallStart: 0.70f, floor: 0.06f);
+        float size = p.Size * LifeSize(p.AgeRatio, riseEnd: 0.20f, riseFrom: 0.25f, fallStart: 0.70f, floor: 0.06f);
         if (size <= 0.4f) return;
 
-        float twinkle = 0.72f + 0.28f * MathF.Sin(ctx.Time * (2.2f + 3.1f * DrawHelpers.Hash01(p.Seed + 6)) + DrawHelpers.Hash01(p.Seed + 5) * MathF.Tau);
+        float twinkle = 0.72f + 0.28f * MathF.Sin(ctx.Time * (2.2f + 3.1f * Hash01(p.Seed + 6)) + Hash01(p.Seed + 5) * MathF.Tau);
         k *= twinkle;
 
         Vector2 pos = p.DrawPos;
@@ -169,11 +169,11 @@ public sealed class ParticleMote : IParticleMaterial
             Span<float> rr = stackalloc float[3] { size * 0.80f, size * 0.93f, size };
             Span<uint> rc = stackalloc uint[3]
             {
-                DrawHelpers.WithAlpha(_palette.Sample(0.34f), k * 0.17f),
-                DrawHelpers.WithAlpha(_palette.Sample(0.50f), k * 0.26f),
-                DrawHelpers.WithAlpha(_palette.Sample(0.40f), 0f),
+                WithAlpha(_palette.Sample(0.34f), k * 0.17f),
+                WithAlpha(_palette.Sample(0.50f), k * 0.26f),
+                WithAlpha(_palette.Sample(0.40f), 0f),
             };
-            MeshDraw.Radial(dl, pos, uv, DrawHelpers.WithAlpha(_palette.Sample(0.30f), k * 0.12f),
+            MeshDraw.Radial(dl, pos, uv, WithAlpha(_palette.Sample(0.30f), k * 0.12f),
                             18, rr, rc, 0f, 1f, 0, 0f);
             return;
         }
@@ -181,17 +181,17 @@ public sealed class ParticleMote : IParticleMaterial
         Span<float> hr = stackalloc float[2] { size * 1.4f, size * 3.2f };
         Span<uint> hc = stackalloc uint[2]
         {
-            DrawHelpers.WithAlpha(_palette.Sample(0.45f), k * 0.30f),
-            DrawHelpers.WithAlpha(_palette.Sample(0.25f), 0f),
+            WithAlpha(_palette.Sample(0.45f), k * 0.30f),
+            WithAlpha(_palette.Sample(0.25f), 0f),
         };
-        MeshDraw.Radial(dl, pos, uv, DrawHelpers.WithAlpha(_palette.Sample(0.60f), k * 0.55f), 10, hr, hc, 0f, 1f, 0, 0f);
-        dl.AddCircleFilled(pos, MathF.Max(0.7f, size * 0.55f), DrawHelpers.WithAlpha(_palette.Sample(0.97f), k * 0.95f));
+        MeshDraw.Radial(dl, pos, uv, WithAlpha(_palette.Sample(0.60f), k * 0.55f), 10, hr, hc, 0f, 1f, 0, 0f);
+        dl.AddCircleFilled(pos, MathF.Max(0.7f, size * 0.55f), WithAlpha(_palette.Sample(0.97f), k * 0.95f));
 
         // A flare on about one in eight.
         if (_flares && (p.Seed & 7) == 0)
         {
             float r = size * 4.2f;
-            uint ray = DrawHelpers.WithAlpha(_palette.Sample(0.85f), k * 0.55f);
+            uint ray = WithAlpha(_palette.Sample(0.85f), k * 0.55f);
             dl.AddLine(pos + new Vector2(-r, 0f), pos + new Vector2(r, 0f), ray, 0.8f);
             dl.AddLine(pos + new Vector2(0f, -r), pos + new Vector2(0f, r), ray, 0.8f);
         }

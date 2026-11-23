@@ -49,14 +49,14 @@ public sealed class ParticleEmber : IParticleMaterial, ICoatMatter
         }
 
         // Life envelope: catch fast, hold, then shrink and cool.
-        float grow   = DrawHelpers.Smooth(age / 0.20f);
-        float decay  = DrawHelpers.Smooth((age - 0.50f) / 0.50f);
+        float grow   = Smooth(age / 0.20f);
+        float decay  = Smooth((age - 0.50f) / 0.50f);
         float widthK  = (0.70f + 0.30f * grow) * (1f - 0.35f * decay);
         float heightK = (0.30f + 0.70f * grow) * (1f - 0.45f * decay);
         heat *= 1f - 0.22f * decay;
 
         float w = p.Size * 2f * widthK;  // Size is radius-like (half-width)
-        float aspect = (2.3f + 1.4f * DrawHelpers.Hash01(seed + 3)) * tall;
+        float aspect = (2.3f + 1.4f * Hash01(seed + 3)) * tall;
         float h = w * aspect * heightK;
         if (h < 1.5f) return;
 
@@ -67,8 +67,8 @@ public sealed class ParticleEmber : IParticleMaterial, ICoatMatter
         int cols = w > 42f * px ? 4 : (w > 12f * px ? 3 : 2);
 
         // Lean: per-tongue (squared hash, usually mild), a breeze varying with screen X and time, plus its own motion.
-        float lr = DrawHelpers.Hash01(seed + 5) * 2f - 1f;
-        float hk = DrawHelpers.Hash01(seed + 6);
+        float lr = Hash01(seed + 5) * 2f - 1f;
+        float hk = Hash01(seed + 6);
         float own = lr * (0.22f + 0.42f * hk * hk);
         float breeze = Noise.Value(t * 0.42f + p.Position.X * 0.0035f, 3.7f) * 0.34f;
         float lean = Math.Clamp(own + breeze - p.Velocity.X * 0.0016f, -0.46f, 0.46f);
@@ -90,13 +90,13 @@ public sealed class ParticleEmber : IParticleMaterial, ICoatMatter
             float cy = b.Y - v * h;
 
             float taper = MathF.Pow(1f - v, 0.85f);
-            float belly = 0.50f + 0.50f * DrawHelpers.Smooth(v / 0.16f);
+            float belly = 0.50f + 0.50f * Smooth(v / 0.16f);
             float wobble = 1f + 0.18f * MathF.Sin(v * 5.1f + t * 1.9f + flickerPhase);
             float half = 0.5f * w * taper * belly * wobble;
 
             float longi = MathF.Pow(1f - v, 0.55f);
-            float erodeGain = (0.14f + 0.86f * DrawHelpers.Smooth(v / 0.75f)) * rough;
-            float tipFade = DrawHelpers.Smooth((1f - v) / 0.10f);  // exactly 0 at the tip vertex
+            float erodeGain = (0.14f + 0.86f * Smooth(v / 0.75f)) * rough;
+            float tipFade = Smooth((1f - v) / 0.10f);  // exactly 0 at the tip vertex
             bool fine = v > 0.22f;  // no fine octave near the base
 
             for (int c = 0; c <= cols; c++)
@@ -117,17 +117,17 @@ public sealed class ParticleEmber : IParticleMaterial, ICoatMatter
                 float erode = (n - 0.5f) * erodeGain * 1.05f;
 
                 float d = cross * longi + erode;
-                d *= 1f - DrawHelpers.Smooth((au - 0.62f) / 0.38f);  // silhouette edge is exactly 0
+                d *= 1f - Smooth((au - 0.62f) / 0.38f);  // silhouette edge is exactly 0
                 d *= tipFade;
                 d = d < 0f ? 0f : (d > 1f ? 1f : d);
 
                 float temp = d * (1.30f - 0.62f * v) * heat;
                 temp = TempFloor + (1f - TempFloor) * temp;
 
-                float a = DrawHelpers.Smooth((d - RimLo) / (RimHi - RimLo));
+                float a = Smooth((d - RimLo) / (RimHi - RimLo));
 
                 MeshDraw.P[i] = new Vector2(cx + u * half, cy);
-                MeshDraw.C[i] = DrawHelpers.WithAlpha(_ramp.Sample(temp), a * k * alphaK);
+                MeshDraw.C[i] = WithAlpha(_ramp.Sample(temp), a * k * alphaK);
                 i++;
             }
         }
@@ -156,7 +156,7 @@ public sealed class ParticleCinder : IParticleMaterial
     public string Name => "particle.cinder";
     public string[] NaturalLanguageWords { get; } = { "cinder", "cinders", "ash", "ashes" };
 
-    private static readonly uint White = DrawHelpers.Pack(1.00f, 0.97f, 0.85f);
+    private static readonly uint White = Pack(1.00f, 0.97f, 0.85f);
 
     public void Draw(ImDrawListPtr dl, in ParticlePrimitive p, in MaterialContext ctx)
     {
@@ -167,7 +167,7 @@ public sealed class ParticleCinder : IParticleMaterial
         float age = p.AgeRatio;
 
         float flick = 0.62f + 0.38f * Noise.Perlin(p.Seed * 0.0131f, t * 10.5f);
-        uint hot = FireColor.Flame.Sample(0.88f - 0.72f * DrawHelpers.Smooth(age * 1.05f));
+        uint hot = FireColor.Flame.Sample(0.88f - 0.72f * Smooth(age * 1.05f));
 
         float r = p.Size * (1f - 0.35f * age);
         Vector2 pos = p.DrawPos;
@@ -182,20 +182,20 @@ public sealed class ParticleCinder : IParticleMaterial
             Vector2 nrm = new Vector2(-dir.Y, dir.X) * (r * 0.9f);
             Vector2 tail = pos - dir * len;
 
-            uint head = DrawHelpers.WithAlpha(hot, a * 0.80f);
-            uint none = DrawHelpers.WithAlpha(hot, 0f);
+            uint head = WithAlpha(hot, a * 0.80f);
+            uint none = WithAlpha(hot, 0f);
             MeshDraw.Quad(dl, uv,
                           pos + nrm, head, pos - nrm, head,
                           tail - nrm * 0.15f, none, tail + nrm * 0.15f, none);
         }
 
         Span<float> rr = stackalloc float[1] { r * 4.2f };
-        Span<uint>  cc = stackalloc uint[1] { DrawHelpers.WithAlpha(hot, 0f) };
-        MeshDraw.Radial(dl, pos, uv, DrawHelpers.WithAlpha(hot, a * 0.32f),
+        Span<uint>  cc = stackalloc uint[1] { WithAlpha(hot, 0f) };
+        MeshDraw.Radial(dl, pos, uv, WithAlpha(hot, a * 0.32f),
                         8, rr, cc, rotation: 0f, squashY: 1f, seed: p.Seed, irregular: 0f);
 
-        uint core = DrawHelpers.LerpColor(hot, White, MathF.Max(0f, 1f - age * 2.2f) * 0.75f);
-        dl.AddCircleFilled(pos, r, DrawHelpers.WithAlpha(core, a * 0.95f));
+        uint core = LerpColor(hot, White, MathF.Max(0f, 1f - age * 2.2f) * 0.75f);
+        dl.AddCircleFilled(pos, r, WithAlpha(core, a * 0.95f));
     }
 }
 
@@ -205,8 +205,8 @@ public sealed class ParticleSpark : IParticleMaterial
     public string Name => "particle.spark";
     public string[] NaturalLanguageWords { get; } = { "spark", "sparks" };
 
-    private static readonly uint White = DrawHelpers.Pack(1.00f, 1.00f, 0.96f);
-    private static readonly uint Gold  = DrawHelpers.Pack(1.00f, 0.78f, 0.32f);
+    private static readonly uint White = Pack(1.00f, 1.00f, 0.96f);
+    private static readonly uint Gold  = Pack(1.00f, 0.78f, 0.32f);
 
     public void Draw(ImDrawListPtr dl, in ParticlePrimitive p, in MaterialContext ctx)
     {
@@ -215,12 +215,12 @@ public sealed class ParticleSpark : IParticleMaterial
         float alpha = p.Brightness * ctx.Alpha;
         if (alpha <= 0.005f) return;
 
-        float size = p.Size * DrawHelpers.LifeSize(p.AgeRatio, riseEnd: 0.12f, riseFrom: 0.25f, fallStart: 0.12f, floor: 0.05f);
+        float size = p.Size * LifeSize(p.AgeRatio, riseEnd: 0.12f, riseFrom: 0.25f, fallStart: 0.12f, floor: 0.05f);
         if (size <= 0.3f) return;
 
-        float heat = DrawHelpers.Hash01(p.Seed);
-        uint core = DrawHelpers.LerpColor(Gold, White, heat);
-        uint halo = DrawHelpers.LerpColor(Gold, White, heat * 0.5f);
+        float heat = Hash01(p.Seed);
+        uint core = LerpColor(Gold, White, heat);
+        uint halo = LerpColor(Gold, White, heat * 0.5f);
 
         Vector2 pos = p.DrawPos;
 
@@ -231,7 +231,7 @@ public sealed class ParticleSpark : IParticleMaterial
             Vector2 tail = pos - p.Velocity / speed * MathF.Min(speed * 0.06f, 60f);
             float trailAlpha = alpha * 0.55f;
 
-            dl.AddLine(tail, pos, DrawHelpers.WithAlpha(halo, trailAlpha * 0.45f), size * 2.2f);
+            dl.AddLine(tail, pos, WithAlpha(halo, trailAlpha * 0.45f), size * 2.2f);
 
             // Four segments of rising alpha and width: AddLine is single-colour, so this stands in for a gradient.
             const int segments = 4;
@@ -240,15 +240,15 @@ public sealed class ParticleSpark : IParticleMaterial
                 float t0 = (float)i / segments;
                 Vector2 a = Vector2.Lerp(tail, pos, t0);
                 Vector2 b = Vector2.Lerp(tail, pos, (i + 1f) / segments);
-                dl.AddLine(a, b, DrawHelpers.WithAlpha(core, trailAlpha * (0.15f + 0.85f * t0)), size * (0.55f + 1.25f * t0));
+                dl.AddLine(a, b, WithAlpha(core, trailAlpha * (0.15f + 0.85f * t0)), size * (0.55f + 1.25f * t0));
             }
 
-            dl.AddCircleFilled(tail, size * 0.45f, DrawHelpers.WithAlpha(core, trailAlpha * 0.35f));
+            dl.AddCircleFilled(tail, size * 0.45f, WithAlpha(core, trailAlpha * 0.35f));
         }
 
-        dl.AddCircleFilled(pos, size * 2.4f,  DrawHelpers.WithAlpha(halo, alpha * 0.16f));
-        dl.AddCircleFilled(pos, size,         DrawHelpers.WithAlpha(core, alpha * 0.88f));
-        dl.AddCircleFilled(pos, size * 0.45f, DrawHelpers.WithAlpha(White, alpha * 0.95f));
+        dl.AddCircleFilled(pos, size * 2.4f,  WithAlpha(halo, alpha * 0.16f));
+        dl.AddCircleFilled(pos, size,         WithAlpha(core, alpha * 0.88f));
+        dl.AddCircleFilled(pos, size * 0.45f, WithAlpha(White, alpha * 0.95f));
     }
 
     public ReadOnlySpan<StrokeEmission> Emissions => Shed;

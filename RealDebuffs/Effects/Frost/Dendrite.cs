@@ -108,13 +108,13 @@ internal sealed class Dendrite
         float a = angle;
         for (int i = 0; i < pieces; i++)
         {
-            a += (DrawHelpers.Hash01(seed + i * 3) - 0.5f) * st.Curl;
+            a += (Hash01(seed + i * 3) - 0.5f) * st.Curl;
             ang[i] = a;
-            float len = pieceLen * (0.9f + 0.2f * DrawHelpers.Hash01(seed + i * 3 + 1));
+            float len = pieceLen * (0.9f + 0.2f * Hash01(seed + i * 3 + 1));
             p[i + 1] = p[i] + Dir(a) * len;
             tt[i + 1] = tt[i] + len / speed;
         }
-        AddChain(p, t0, speed, width, 0, DrawHelpers.Hash01(seed) * 6.28f);
+        AddChain(p, t0, speed, width, 0, Hash01(seed) * 6.28f);
 
         // Side branches in pairs along the stem, longest around the lower-middle and tapering to the tip.
         for (int k = 0; k < st.Pairs; k++)
@@ -131,9 +131,9 @@ internal sealed class Dendrite
             for (int side = -1; side <= 1; side += 2)
             {
                 int bs = seed + 1000 + k * 17 + (side + 1) * 5;
-                float blen = length * st.BranchLength * profile * (0.75f + 0.5f * DrawHelpers.Hash01(bs));
+                float blen = length * st.BranchLength * profile * (0.75f + 0.5f * Hash01(bs));
                 if (blen < 6f) continue;
-                float bang = stemAng + side * st.BranchAngle * (0.9f + 0.2f * DrawHelpers.Hash01(bs + 1));
+                float bang = stemAng + side * st.BranchAngle * (0.9f + 0.2f * Hash01(bs + 1));
                 AddBranch(pos, bang, blen, tAttach + 0.04f, width * 0.62f, side, bs, st, speed * 0.85f);
             }
         }
@@ -157,7 +157,7 @@ internal sealed class Dendrite
             p[i + 1] = p[i] + Dir(a) * pieceLen;
             tt[i + 1] = tt[i] + pieceLen / speed;
         }
-        AddChain(p, t0, speed, width, 1, DrawHelpers.Hash01(seed) * 6.28f);
+        AddChain(p, t0, speed, width, 1, Hash01(seed) * 6.28f);
 
         // Twigs, alternating sides, spread along the branch and shortening toward its tip.
         Span<Vector2> tw = stackalloc Vector2[2];
@@ -168,14 +168,14 @@ internal sealed class Dendrite
             int pi = Math.Min(Pieces - 1, (int)f);
             float u = f - pi;
             Vector2 tp = p[pi] + (p[pi + 1] - p[pi]) * u;
-            float tlen = length * st.TwigLength * (1f - 0.55f * s) * (0.7f + 0.6f * DrawHelpers.Hash01(seed + 50 + k));
+            float tlen = length * st.TwigLength * (1f - 0.55f * s) * (0.7f + 0.6f * Hash01(seed + 50 + k));
             if (tlen < 3f) continue;
             int ts = seed + 70 + k * 3;
             float tdir = (k & 1) == 0 ? 1f : -1f;
-            float tang = ang[pi] + tdir * (0.85f + 0.3f * DrawHelpers.Hash01(ts)) - side * 0.12f;
+            float tang = ang[pi] + tdir * (0.85f + 0.3f * Hash01(ts)) - side * 0.12f;
             tw[0] = tp;
             tw[1] = tp + Dir(tang) * tlen;
-            AddChain(tw, tt[pi] + (tt[pi + 1] - tt[pi]) * u + 0.02f, speed * 0.8f, width * 0.6f, 2, DrawHelpers.Hash01(ts + 2) * 6.28f);
+            AddChain(tw, tt[pi] + (tt[pi + 1] - tt[pi]) * u + 0.02f, speed * 0.8f, width * 0.6f, 2, Hash01(ts + 2) * 6.28f);
         }
     }
 
@@ -211,7 +211,7 @@ internal sealed class Dendrite
         // Layer 1: shadow under stems and branches gives the crystals relief.
         if (st.ShadowAlpha > 0.002f)
         {
-            uint shade = DrawHelpers.WithAlpha(st.Shadow, st.ShadowAlpha * st.Alpha);
+            uint shade = WithAlpha(st.Shadow, st.ShadowAlpha * st.Alpha);
             for (int c = 0; c < Count; c++)
             {
                 if (_gen[c] > ShadowMaxGen) continue;
@@ -227,8 +227,8 @@ internal sealed class Dendrite
         // Layer 2: the milky body around stems and branches.
         if (st.BodyAlpha > 0.002f)
         {
-            uint body0 = DrawHelpers.WithAlpha(st.Body, st.BodyAlpha * st.Alpha);
-            uint body1 = DrawHelpers.WithAlpha(st.Body, st.BodyAlpha * 0.8f * st.Alpha);
+            uint body0 = WithAlpha(st.Body, st.BodyAlpha * st.Alpha);
+            uint body1 = WithAlpha(st.Body, st.BodyAlpha * 0.8f * st.Alpha);
             for (int c = 0; c < Count; c++)
             {
                 if (_gen[c] > 1) continue;
@@ -248,7 +248,7 @@ internal sealed class Dendrite
             for (int k = 0; k <= ShimmerSteps; k++)
             {
                 float bright = 0.6f + 0.4f * k / ShimmerSteps;
-                CoreLut[g * (ShimmerSteps + 1) + k] = DrawHelpers.WithAlpha(st.Core.Sample(0.55f + 0.45f * bright), genA * st.Alpha);
+                CoreLut[g * (ShimmerSteps + 1) + k] = WithAlpha(st.Core.Sample(0.55f + 0.45f * bright), genA * st.Alpha);
             }
         }
         // sin(t*1.3 + phase) from the chain's stored sin/cos: two multiplies instead of a sin per chain.

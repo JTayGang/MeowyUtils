@@ -27,14 +27,14 @@ public sealed partial class ParticleEye
 
         // It faces you, iris leaning toward screen centre; its nerve trails back the way it came.
         int glance = (int)(time * 1.3f);
-        Vector2 jitter = new Vector2(DrawHelpers.Hash01(p.Seed * 3 + glance * 17) - 0.5f, DrawHelpers.Hash01(p.Seed * 5 + glance * 29) - 0.5f) * 0.10f * w;
+        Vector2 jitter = new Vector2(Hash01(p.Seed * 3 + glance * 17) - 0.5f, Hash01(p.Seed * 5 + glance * 29) - 0.5f) * 0.10f * w;
         // (When something is being shown the iris comes round to face straight out at you.)
         Vector2 ic = (e.FromScreenDir(toward) * 0.30f * w + jitter) * (1f - forward);
 
         // A dark pool round it, so it reads on a bright scene too, and a little light of its own.
         Span<float> rr = stackalloc float[2] { w * 0.95f, w * 2.0f };
-        Span<uint> rc = stackalloc uint[2] { DrawHelpers.WithAlpha(Ink, e.K * 0.40f), DrawHelpers.WithAlpha(Ink, 0f) };
-        MeshDraw.Radial(dl, e.Pos, uv, DrawHelpers.WithAlpha(Ink, e.K * 0.55f), 14, rr, rc, 0f, 1f, 0, 0f);
+        Span<uint> rc = stackalloc uint[2] { WithAlpha(Ink, e.K * 0.40f), WithAlpha(Ink, 0f) };
+        MeshDraw.Radial(dl, e.Pos, uv, WithAlpha(Ink, e.K * 0.55f), 14, rr, rc, 0f, 1f, 0, 0f);
 
         Mb.Clear();
         BuildNerve(in e, toward, time, p.Seed);
@@ -78,12 +78,12 @@ public sealed partial class ParticleEye
                 float ndl = MathF.Max(0f, dir.X * f * L.X + dir.Y * f * L.Y + nz * L.Z);
 
                 float tone = 0.14f + 0.72f * MathF.Pow(ndl, 0.85f) + 0.10f * nz;
-                float rim = MathF.Pow(1f - nz, 3f) * DrawHelpers.Saturate(Vector2.Dot(dir, e.Light) * 1.4f);
+                float rim = MathF.Pow(1f - nz, 3f) * Saturate(Vector2.Dot(dir, e.Light) * 1.4f);
                 tone += 0.30f * rim;
                 // Light bleeds red through the thin edge just past the terminator.
-                float flush = DrawHelpers.Smooth(ndl * 5f) * (1f - DrawHelpers.Smooth(ndl * 1.6f)) * MathF.Pow(f, 1.5f);
+                float flush = Smooth(ndl * 5f) * (1f - Smooth(ndl * 1.6f)) * MathF.Pow(f, 1.5f);
 
-                uint c = DrawHelpers.LerpColor(_palette.Sample(DrawHelpers.Saturate(tone)), Flesh, DrawHelpers.Saturate(0.20f * MathF.Pow(f, 3f) + 0.42f * flush));
+                uint c = LerpColor(_palette.Sample(Saturate(tone)), Flesh, Saturate(0.20f * MathF.Pow(f, 3f) + 0.42f * flush));
                 float alpha = r == OrbRows - 1 ? 0f : 0.97f;
                 int at = r * (segs + 1) + j;
                 OrbPos[at] = e.Pos + dir * (f * w) * (r == OrbRows - 1 ? 1.05f : 1f);
@@ -107,14 +107,14 @@ public sealed partial class ParticleEye
         for (int v = 0; v < count; v++)
         {
             int h = seed * 7 + v * 13;
-            float a = MathF.Tau * (v + DrawHelpers.Hash01(h)) / count;
-            float bend = (DrawHelpers.Hash01(h + 1) - 0.5f) * 1.1f, ph = DrawHelpers.Hash01(h + 2) * MathF.Tau;
+            float a = MathF.Tau * (v + Hash01(h)) / count;
+            float bend = (Hash01(h + 1) - 0.5f) * 1.1f, ph = Hash01(h + 2) * MathF.Tau;
             float lit = 0.55f + 0.45f * MathF.Cos(a - MathF.Atan2(e.Light.Y, e.Light.X));
             for (int i = 0; i < pts; i++)
             {
                 float u = i / (float)(pts - 1);
                 float ang = a + bend * u * (1f - u) * 2.2f + 0.05f * MathF.Sin(u * 8f + ph);
-                float rad = DrawHelpers.Lerp(0.985f * w, reachIn, MathF.Pow(u, 0.9f));
+                float rad = Lerp(0.985f * w, reachIn, MathF.Pow(u, 0.9f));
                 FineP[i] = e.ToScreen(new Vector2(MathF.Cos(ang), MathF.Sin(ang)) * rad);
                 FineHalf[i] = MathF.Max(0.12f * e.Px, (0.62f * e.Px + 0.008f * w) * (1f - 0.75f * u));
                 FineCol[i] = e.Tint(VeinCol, e.Look.VeinAlpha * lit * (1f - 0.6f * u * u));
@@ -122,11 +122,11 @@ public sealed partial class ParticleEye
             MeshBuilder.MiterNormals(FineP.AsSpan(0, pts), FineN.AsSpan(0, pts));
             Mb.Ribbon(FineP.AsSpan(0, pts), FineN.AsSpan(0, pts), FineHalf.AsSpan(0, pts), FineCol.AsSpan(0, pts), e.Soft(0.5f * e.Px));
 
-            if (huge < 0.02f || DrawHelpers.Hash01(h + 3) < 0.4f) continue;
+            if (huge < 0.02f || Hash01(h + 3) < 0.4f) continue;
             // A fork part of the way in.
-            float u0 = 0.25f + 0.30f * DrawHelpers.Hash01(h + 4);
-            float a0 = a + bend * u0 * (1f - u0) * 2.2f, r0 = DrawHelpers.Lerp(0.985f * w, reachIn, MathF.Pow(u0, 0.9f));
-            float side = DrawHelpers.Sign(h + 5);
+            float u0 = 0.25f + 0.30f * Hash01(h + 4);
+            float a0 = a + bend * u0 * (1f - u0) * 2.2f, r0 = Lerp(0.985f * w, reachIn, MathF.Pow(u0, 0.9f));
+            float side = Sign(h + 5);
             for (int i = 0; i < 5; i++)
             {
                 float u = i / 4f;
@@ -146,11 +146,11 @@ public sealed partial class ParticleEye
     {
         float w = e.W;
         Vector2 across = new(-toward.Y, toward.X);
-        float phase = DrawHelpers.Hash01(seed + 3) * MathF.Tau;
+        float phase = Hash01(seed + 3) * MathF.Tau;
         Vector2 root = e.Pos + toward * (0.82f * w);
-        uint flesh = DrawHelpers.LerpColor(_palette.Sample(0.34f), Flesh, 0.5f);
-        uint shadow = DrawHelpers.LerpColor(flesh, Ink, 0.62f);
-        uint lit = DrawHelpers.LerpColor(flesh, _palette.Sample(0.80f), 0.38f);
+        uint flesh = LerpColor(_palette.Sample(0.34f), Flesh, 0.5f);
+        uint shadow = LerpColor(flesh, Ink, 0.62f);
+        uint lit = LerpColor(flesh, _palette.Sample(0.80f), 0.38f);
         // The light is at the tunnel's end, where the nerve runs: the side facing the middle of its width catches it.
         for (int i = 0; i < TailPts; i++)
         {

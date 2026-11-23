@@ -152,7 +152,7 @@ internal static class RuneGlyphs
     public static Vector2[][] Strokes(int index) => All[(int)((uint)index % (uint)All.Length)];
 
     /// <summary>Stable glyph for a seed from the count glyphs starting at first (a themed set such as the infernal one).</summary>
-    public static int Pick(int seed, int first, int count) => first + (int)(DrawHelpers.Hash01(seed * 31 + 7) * count) % count;
+    public static int Pick(int seed, int first, int count) => first + (int)(Hash01(seed * 31 + 7) * count) % count;
 
     private static Vector2[] L(params float[] xy)
     {
@@ -305,8 +305,8 @@ internal sealed class SigilView
 
     public void Begin(int seed)
     {
-        _azimuth = DrawHelpers.Hash01(seed + 1) * MathF.Tau;
-        _dir = DrawHelpers.Sign(seed + 2);
+        _azimuth = Hash01(seed + 1) * MathF.Tau;
+        _dir = Sign(seed + 2);
     }
 
     /// <summary>extraTilt adds to the lean (times tiltScale), shift moves the origin, distanceScale zooms.</summary>

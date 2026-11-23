@@ -22,10 +22,10 @@ internal static class CharmColor
         (1.00f, 1.000f, 0.800f, 0.850f));
 
     /// <summary>Edge tint for the screen's vignette: deep rose-plum.</summary>
-    public static readonly uint Vignette = DrawHelpers.Pack(0.360f, 0.050f, 0.240f);
+    public static readonly uint Vignette = Pack(0.360f, 0.050f, 0.240f);
 
     /// <summary>The flush a charm lands with (rose-white, so it stays chromatic under a colour override).</summary>
-    public static readonly uint Flash = DrawHelpers.Pack(1.000f, 0.700f, 0.860f);
+    public static readonly uint Flash = Pack(1.000f, 0.700f, 0.860f);
 }
 
 internal sealed class CharmMaterials : IMaterialPack
@@ -35,7 +35,7 @@ internal sealed class CharmMaterials : IMaterialPack
         // Perfumed haze: a billow lit from within, plum in its folds and peach at its rims
         new ParticlePuff("particle.rosefog", new[] { "rosefog", "haze", "perfume", "incense", "blush" },
             new ParticlePuff.Look(
-                Warm: DrawHelpers.Pack(0.72f, 0.26f, 0.47f), Cool: 0, CoolSpan: 0f,
+                Warm: Pack(0.72f, 0.26f, 0.47f), Cool: 0, CoolSpan: 0f,
                 GrowFrom: 0.80f, GrowBy: 0.28f, FadeIn: 0.20f, FadeOutAt: 0.72f,
                 Alpha: 0.50f, Squash: 0.74f, Irregular: 0.30f, MinSize: 6f, Ramp: CharmColor.Fog),
             new StrokeEmission(Role: PrimitiveRole.Mist,

@@ -15,7 +15,7 @@ public sealed class BleedingEffect : SceneEffect, IHasSwappableSlots
     };
 
     private const int MaxCuts = 4, CutPoints = 30;
-    private static readonly uint Gloom = DrawHelpers.Pack(0.12f, 0.000f, 0.008f);
+    private static readonly uint Gloom = Pack(0.12f, 0.000f, 0.008f);
 
     // the pen: when the first cut starts, and the gap before the next
     private const float PenStart = 0.10f, PenGap = 0.10f;
@@ -70,7 +70,7 @@ public sealed class BleedingEffect : SceneEffect, IHasSwappableSlots
         }
 
         // The vignette eases in and swells a little on each beat.
-        float castIn = DrawHelpers.Smooth(f.Age / 0.9f);
+        float castIn = Smooth(f.Age / 0.9f);
         scene.RequestVignette(Gloom, 0.15f + 0.03f * beat, MathF.Min(1f, f.Alpha * castIn * (0.55f + 0.30f * beat * drain)), priority: 14, f.Color);
 
         _field.Emit(scene, f.Alpha);
@@ -82,7 +82,7 @@ public sealed class BleedingEffect : SceneEffect, IHasSwappableSlots
         _heart.Begin(f.Seed, FirstBeat);
         _high = false;
         _beats = 0;
-        _nextSplat = 3.5f + 3f * DrawHelpers.Hash01(f.Seed + 9);
+        _nextSplat = 3.5f + 3f * Hash01(f.Seed + 9);
     }
 
     /// <summary>Lays the rake from the top corner on one side: a few near-parallel cuts, bowed alike, ending short of the middle.</summary>
@@ -90,26 +90,26 @@ public sealed class BleedingEffect : SceneEffect, IHasSwappableSlots
     {
         int seed = f.Seed;
         float W = f.Size.X, H = f.Size.Y, px = f.Px;
-        float r = DrawHelpers.Hash01(seed + 1);
+        float r = Hash01(seed + 1);
         _cuts = r < 0.25f ? 2 : r < 0.80f ? 3 : 4;
-        bool right = DrawHelpers.Sign(seed + 2) > 0f;
+        bool right = Sign(seed + 2) > 0f;
 
         // As seen from the left side; the right side is its mirror.
-        Vector2 a = new(W * DrawHelpers.HashRange(seed + 3, 0.00f, 0.08f), H * DrawHelpers.HashRange(seed + 4, -0.04f, 0.02f));
-        Vector2 b = new(W * DrawHelpers.HashRange(seed + 5, 0.34f, 0.46f), H * DrawHelpers.HashRange(seed + 6, 0.60f, 0.80f));
+        Vector2 a = new(W * HashRange(seed + 3, 0.00f, 0.08f), H * HashRange(seed + 4, -0.04f, 0.02f));
+        Vector2 b = new(W * HashRange(seed + 5, 0.34f, 0.46f), H * HashRange(seed + 6, 0.60f, 0.80f));
         float len = Vector2.Distance(a, b);
         Vector2 u = (b - a) / len, n = new(-u.Y, u.X);  // n points toward the screen edge
-        float spacing = 0.05f * f.Short * DrawHelpers.HashRange(seed + 7, 0.85f, 1.15f);
-        float bow = len * DrawHelpers.HashRange(seed + 8, -0.07f, 0.07f);
+        float spacing = 0.05f * f.Short * HashRange(seed + 7, 0.85f, 1.15f);
+        float bow = len * HashRange(seed + 8, -0.07f, 0.07f);
 
         for (int k = 0; k < _cuts; k++)
         {
             int s = seed + 100 + k * 37;
             float centre = k - 0.5f * (_cuts - 1);
-            float off = (centre + 0.5f + DrawHelpers.HashRange(s + 1, -0.12f, 0.12f)) * spacing;
-            Vector2 p0 = a + u * (len * DrawHelpers.HashRange(s + 2, 0f, 0.10f)) + n * off;
-            Vector2 p2 = b - u * (len * DrawHelpers.HashRange(s + 3, 0f, 0.16f)) + n * off;
-            Vector2 p1 = (a + b) * 0.5f + n * (off + bow + len * DrawHelpers.HashRange(s + 4, -0.012f, 0.012f));
+            float off = (centre + 0.5f + HashRange(s + 1, -0.12f, 0.12f)) * spacing;
+            Vector2 p0 = a + u * (len * HashRange(s + 2, 0f, 0.10f)) + n * off;
+            Vector2 p2 = b - u * (len * HashRange(s + 3, 0f, 0.16f)) + n * off;
+            Vector2 p1 = (a + b) * 0.5f + n * (off + bow + len * HashRange(s + 4, -0.012f, 0.012f));
 
             var path = _cut[k];
             for (int i = 0; i < CutPoints; i++)
@@ -123,13 +123,13 @@ public sealed class BleedingEffect : SceneEffect, IHasSwappableSlots
             path.BuildArc();
 
             float deep = 1f - MathF.Abs(centre) / (0.5f * _cuts);  // the middle cuts are the widest
-            _width[k] = px * (20f + 22f * deep) * DrawHelpers.HashRange(s + 5, 0.85f, 1.15f);
+            _width[k] = px * (20f + 22f * deep) * HashRange(s + 5, 0.85f, 1.15f);
             _start[k] = PenStart + PenGap * k;
-            _secs[k] = DrawHelpers.HashRange(s + 6, 0.30f, 0.42f);
+            _secs[k] = HashRange(s + 6, 0.30f, 0.42f);
         }
     }
 
-    private float Drawn(float age, int k) => DrawHelpers.Smooth(DrawHelpers.Saturate((age - _start[k]) / _secs[k]));
+    private float Drawn(float age, int k) => Smooth(Saturate((age - _start[k]) / _secs[k]));
 
     private void EmitCuts(EffectScene scene, in CastFrame f, float beat, float drain)
     {

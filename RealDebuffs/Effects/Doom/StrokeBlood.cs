@@ -109,7 +109,7 @@ public sealed class StrokeBlood : IStrokeMaterial
         float width = MathF.Max(4f * px, s.WidthHint) * (1f - 0.12f * depth);
         float visibleLen = total * reveal;
         float time = ctx.Time;
-        bool overridden = DrawHelpers.ColorOverrideActive;
+        bool overridden = ColorOverrideActive;
         float agit = Math.Clamp(s.Agitation, 0f, 1f);
 
         float step = Math.Clamp(width * 0.42f, 7f * px, 14f * px);
@@ -179,7 +179,7 @@ public sealed class StrokeBlood : IStrokeMaterial
 
                 // Thin patches read brighter red, pooled ones nearly black; the edge is a darker bead.
                 col *= 1.10f - 0.30f * thickness;
-                col *= 1f - 0.22f * DrawHelpers.Smooth(0.80f, 1.0f, MathF.Abs(uc));
+                col *= 1f - 0.22f * Smooth(0.80f, 1.0f, MathF.Abs(uc));
 
                 // Light from a fire below, on the faces that point down; and the paint's own inner glow
                 float below = MathF.Max(0f, ny);
@@ -191,7 +191,7 @@ public sealed class StrokeBlood : IStrokeMaterial
                 if (haze > 0f) col = Vector3.Lerp(col, StrandShading.DepthFog, haze);
 
                 float edge = edgeFringe ? 0f : 1f;
-                uint color = DrawHelpers.Tint(DrawHelpers.Pack(col.X, col.Y, col.Z), MathF.Min(1f, opacity * alpha * near) * edge, overridden);
+                uint color = Tint(Pack(col.X, col.Y, col.Z), MathF.Min(1f, opacity * alpha * near) * edge, overridden);
 
                 // The offset normal already carries the miter, so the paint keeps its width round a bend.
                 float off = edgeFringe ? Math.Sign(u) * (hw + fringe * soften) : u * hw;
@@ -225,8 +225,8 @@ public sealed class StrokeBlood : IStrokeMaterial
     {
         if (alpha <= 0.01f) return;
         float fade = alpha * (1f - 0.5f * Math.Clamp(s.Depth, 0f, 1f));
-        Streak(dl, in s, in ctx, st, n, half0, fade * 0.95f * 1.15f, DrawHelpers.Pack(1.00f, 0.93f, 0.84f), KeyHalf, overridden, capStart, capEnd, capLen, visibleLen);
-        Streak(dl, in s, in ctx, st, n, half0, fade * 0.85f * 0.42f, DrawHelpers.Pack(0.80f, 0.88f, 1.00f), FillHalf, overridden, capStart, capEnd, capLen, visibleLen);
+        Streak(dl, in s, in ctx, st, n, half0, fade * 0.95f * 1.15f, Pack(1.00f, 0.93f, 0.84f), KeyHalf, overridden, capStart, capEnd, capLen, visibleLen);
+        Streak(dl, in s, in ctx, st, n, half0, fade * 0.85f * 0.42f, Pack(0.80f, 0.88f, 1.00f), FillHalf, overridden, capStart, capEnd, capLen, visibleLen);
     }
 
     /// <summary>One highlight along the strand.</summary>
@@ -267,11 +267,11 @@ public sealed class StrokeBlood : IStrokeMaterial
             // A thin bright core inside a wider soft sheen.
             float gw = MathF.Max(0.8f * px, hw * 0.13f);
             Vector2 c = st.Pts[i] + nu * (u * hw);
-            int v0 = Mb.VertexReserved(c - nu * (gw * 3.4f), DrawHelpers.Tint(rgb, 0f, overridden));
-            Mb.VertexReserved(c - nu * gw, DrawHelpers.Tint(rgb, ga * 0.50f, overridden));
-            Mb.VertexReserved(c, DrawHelpers.Tint(rgb, ga, overridden));
-            Mb.VertexReserved(c + nu * gw, DrawHelpers.Tint(rgb, ga * 0.50f, overridden));
-            Mb.VertexReserved(c + nu * (gw * 3.4f), DrawHelpers.Tint(rgb, 0f, overridden));
+            int v0 = Mb.VertexReserved(c - nu * (gw * 3.4f), Tint(rgb, 0f, overridden));
+            Mb.VertexReserved(c - nu * gw, Tint(rgb, ga * 0.50f, overridden));
+            Mb.VertexReserved(c, Tint(rgb, ga, overridden));
+            Mb.VertexReserved(c + nu * gw, Tint(rgb, ga * 0.50f, overridden));
+            Mb.VertexReserved(c + nu * (gw * 3.4f), Tint(rgb, 0f, overridden));
             if (first < 0) first = v0;
         }
 
@@ -288,12 +288,12 @@ public sealed class StrokeBlood : IStrokeMaterial
         Span<float> rr = stackalloc float[2] { width * 0.55f, width * 1.9f };
         Span<uint> cc = stackalloc uint[2]
         {
-            DrawHelpers.WithAlpha(HellColor.Glow.Sample(0.62f), 0.38f * k),
-            DrawHelpers.WithAlpha(HellColor.Glow.Sample(0.30f), 0f),
+            WithAlpha(HellColor.Glow.Sample(0.62f), 0.38f * k),
+            WithAlpha(HellColor.Glow.Sample(0.30f), 0f),
         };
-        MeshDraw.Radial(dl, tip, uv, DrawHelpers.WithAlpha(HellColor.Glow.Sample(1f), 0.95f * k), 12, rr, cc, 0f, 1f, 0, 0f);
-        dl.AddCircleFilled(tip, MathF.Max(1.2f, width * 0.30f), DrawHelpers.WithAlpha(HellColor.Glow.Sample(0.55f), 0.95f * k));
-        dl.AddCircleFilled(tip, MathF.Max(0.8f, width * 0.12f), DrawHelpers.WithAlpha(HellColor.Glow.Sample(1f), 0.95f * k));
+        MeshDraw.Radial(dl, tip, uv, WithAlpha(HellColor.Glow.Sample(1f), 0.95f * k), 12, rr, cc, 0f, 1f, 0, 0f);
+        dl.AddCircleFilled(tip, MathF.Max(1.2f, width * 0.30f), WithAlpha(HellColor.Glow.Sample(0.55f), 0.95f * k));
+        dl.AddCircleFilled(tip, MathF.Max(0.8f, width * 0.12f), WithAlpha(HellColor.Glow.Sample(1f), 0.95f * k));
     }
 
     // what it sheds, and what happens when it is hit

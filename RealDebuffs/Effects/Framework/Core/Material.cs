@@ -95,7 +95,7 @@ public abstract class RegionMaterial<TState> : IRegionMaterial where TState : cl
     protected static void FlatFill(ImDrawListPtr dl, in RegionPrimitive r, in MaterialContext ctx)
     {
         float a = r.Alpha * ctx.Alpha;
-        if (a > 0.001f) dl.AddRectFilled(r.Min, r.Max, DrawHelpers.WithAlpha(r.Tint, a));
+        if (a > 0.001f) dl.AddRectFilled(r.Min, r.Max, WithAlpha(r.Tint, a));
     }
 }
 

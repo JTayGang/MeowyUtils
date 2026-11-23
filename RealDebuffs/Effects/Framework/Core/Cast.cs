@@ -29,7 +29,7 @@ public readonly struct CastFrame
 
     public CastFrame(Vector2 size, float alpha, float gate, float leave, bool leaving, float age, float time, float dt, int seed, bool fresh, bool resized, Vector4? color)
     {
-        Size = size; Short = MathF.Min(size.X, size.Y); Px = DrawHelpers.PixelScale(size);
+        Size = size; Short = MathF.Min(size.X, size.Y); Px = PixelScale(size);
         Alpha = alpha; Gate = gate; Leave = leave; Leaving = leaving;
         Age = age; Time = time; Dt = dt; Seed = seed; Fresh = fresh; Resized = resized; Color = color;
     }
@@ -104,7 +104,7 @@ internal sealed class CastEnvelope
         else if (alpha < _lastAlpha - 1e-4f) Leaving = true;
         _lastAlpha = alpha;
         if (!Leaving) _peakAlpha = MathF.Max(_peakAlpha, alpha);
-        Leave = Leaving && _peakAlpha > 0.01f ? DrawHelpers.Saturate(1f - alpha / _peakAlpha) : 0f;
+        Leave = Leaving && _peakAlpha > 0.01f ? Saturate(1f - alpha / _peakAlpha) : 0f;
 
         float gate = alpha;
         if (!Leaving && age + _rampLead < CastTracker.FadeInSeconds)

@@ -107,7 +107,7 @@ public sealed class StrokeShed
         float reach = EndReachArc(in s, visibleLen);
         if (reach > 0f) expected *= 2f * reach / visibleLen;
         int toSpawn = (int)expected;
-        if (DrawHelpers.Hash01(unchecked(s.Seed + (int)(time * 90f) + (int)e.Role * 7919)) < expected - toSpawn)
+        if (Hash01(unchecked(s.Seed + (int)(time * 90f) + (int)e.Role * 7919)) < expected - toSpawn)
             toSpawn++;
         if (toSpawn > 24) toSpawn = 24;
         if (toSpawn <= 0) return;
@@ -128,8 +128,8 @@ public sealed class StrokeShed
         {
             int bucket = (int)(time / e.ClusterWindowSeconds);
             int clusterSeed = unchecked(s.Seed * 7919 + bucket * 131 + (int)e.Role * 977);
-            float gustAngle = DrawHelpers.HashRange(clusterSeed, -e.SpreadRadians, e.SpreadRadians);
-            clusterBaseDir = DrawHelpers.Rotate(Vector2.Normalize(axis), gustAngle);
+            float gustAngle = HashRange(clusterSeed, -e.SpreadRadians, e.SpreadRadians);
+            clusterBaseDir = Rotate(Vector2.Normalize(axis), gustAngle);
         }
 
         for (int i = 0; i < toSpawn; i++)
@@ -137,7 +137,7 @@ public sealed class StrokeShed
             int seed = unchecked(s.Seed + (int)(time * 977f) + i * 131 + (int)e.Role * 7919);
 
             bool asFlow = e.Flow is { } flowOpts
-                && DrawHelpers.Hash01(seed + 7) < flowOpts.Share;
+                && Hash01(seed + 7) < flowOpts.Share;
 
             if (asFlow)
                 SpawnFlow(in s, in e, e.Flow!.Value, particleMaterial, seed, visibleLen, flowToTip, time);
@@ -193,7 +193,7 @@ public sealed class StrokeShed
         float k = Math.Clamp(hit.Strength, 0f, 1f);
 
         int seed0 = unchecked(hit.Seed + (int)e.Role * 7919 + salt * 4421);
-        float countF = DrawHelpers.HashRange(seed0, e.CountMin, e.CountMax + 0.999f);
+        float countF = HashRange(seed0, e.CountMin, e.CountMax + 0.999f);
         int count = Math.Max(1, (int)(countF * (0.35f + 0.65f * k)));
 
         float brightness = hit.Brightness > 0f ? hit.Brightness : 1f;
@@ -203,10 +203,10 @@ public sealed class StrokeShed
             if (_free.Full) return;
 
             int seed = unchecked(seed0 + i * 131);
-            Vector2 d = DrawHelpers.Rotate(dir, DrawHelpers.HashRange(seed + 1, -e.ConeRadians, e.ConeRadians));
-            float speed = DrawHelpers.HashRange(seed + 2, e.SpeedMin, e.SpeedMax) * (0.55f + 0.45f * k);
+            Vector2 d = Rotate(dir, HashRange(seed + 1, -e.ConeRadians, e.ConeRadians));
+            float speed = HashRange(seed + 2, e.SpeedMin, e.SpeedMax) * (0.55f + 0.45f * k);
 
-            Vector2 jitter = new(DrawHelpers.HashRange(seed + 5, -3f, 3f), DrawHelpers.HashRange(seed + 6, -3f, 3f));
+            Vector2 jitter = new(HashRange(seed + 5, -3f, 3f), HashRange(seed + 6, -3f, 3f));
 
             _free.Add(new ParticleSystem.Particle
             {
@@ -214,8 +214,8 @@ public sealed class StrokeShed
                 Vel = d * speed,
                 Gravity = e.Gravity,
                 Born = time,
-                Life = DrawHelpers.HashRange(seed + 3, e.LifespanMin, e.LifespanMax),
-                Size = DrawHelpers.HashRange(seed + 4, e.SizeMin, e.SizeMax),
+                Life = HashRange(seed + 3, e.LifespanMin, e.LifespanMax),
+                Size = HashRange(seed + 4, e.SizeMin, e.SizeMax),
                 Brightness = brightness,
                 Seed = seed,
                 Role = e.Role,
@@ -252,10 +252,10 @@ public sealed class StrokeShed
             directionSpread = e.SpreadRadians;
         }
 
-        float spread = DrawHelpers.HashRange(seed + 1, -directionSpread, directionSpread);
-        Vector2 dir = DrawHelpers.Rotate(baseDir, spread);
+        float spread = HashRange(seed + 1, -directionSpread, directionSpread);
+        Vector2 dir = Rotate(baseDir, spread);
 
-        float speed = DrawHelpers.HashRange(seed + 2, e.SpeedMin, e.SpeedMax);
+        float speed = HashRange(seed + 2, e.SpeedMin, e.SpeedMax);
 
         _free.Add(new ParticleSystem.Particle
         {
@@ -263,8 +263,8 @@ public sealed class StrokeShed
             Vel = dir * speed + e.BiasVelocity,
             Gravity = e.Gravity,
             Born = time,
-            Life = DrawHelpers.HashRange(seed + 3, e.LifespanMin, e.LifespanMax),
-            Size = DrawHelpers.HashRange(seed + 4, e.SizeMin, e.SizeMax),
+            Life = HashRange(seed + 3, e.LifespanMin, e.LifespanMax),
+            Size = HashRange(seed + 4, e.SizeMin, e.SizeMax),
             Brightness = s.Brightness,
             Seed = seed,
             Role = e.Role,
@@ -280,21 +280,21 @@ public sealed class StrokeShed
         if (s.EmitEdgeReach <= 0f || _screen.X <= 0f) return true;
 
         float edge = MathF.Min(MathF.Min(p.X, _screen.X - p.X), MathF.Min(p.Y, _screen.Y - p.Y));
-        return edge >= 0f && edge <= s.EmitEdgeReach * DrawHelpers.PixelScale(_screen);
+        return edge >= 0f && edge <= s.EmitEdgeReach * PixelScale(_screen);
     }
 
     /// <summary>The EmitEndReach window in arc px, or 0 if unrestricted (unset, or the windows cover the whole strand).</summary>
     private float EndReachArc(in StrokePrimitive s, float visibleLen)
     {
         if (s.EmitEndReach <= 0f) return 0f;
-        float reach = s.EmitEndReach * DrawHelpers.PixelScale(_screen);
+        float reach = s.EmitEndReach * PixelScale(_screen);
         return 2f * reach >= visibleLen ? 0f : reach;
     }
 
     /// <summary>Where along the strand to spawn: anywhere, or only in the stretches by its two ends (EmitEndReach).</summary>
     private float PickArc(in StrokePrimitive s, float visibleLen, int seed)
     {
-        float u = DrawHelpers.Hash01(seed);
+        float u = Hash01(seed);
         float reach = EndReachArc(in s, visibleLen);
         if (reach <= 0f) return visibleLen * u;
 
@@ -321,22 +321,22 @@ public sealed class StrokeShed
             MaterialName = particleMaterial,
 
             Born = time,
-            Lifespan = DrawHelpers.HashRange(seed + 1, e.LifespanMin, e.LifespanMax),
-            Size = DrawHelpers.HashRange(seed + 2, e.SizeMin, e.SizeMax),
+            Lifespan = HashRange(seed + 1, e.LifespanMin, e.LifespanMax),
+            Size = HashRange(seed + 2, e.SizeMin, e.SizeMax),
             Brightness = s.Brightness,
             Role = e.Role,
             ColorOverride = s.ColorOverride,
 
             Arc = arc,
-            BaseSpeed = DrawHelpers.HashRange(seed + 3, f.SpeedMin, f.SpeedMax),
+            BaseSpeed = HashRange(seed + 3, f.SpeedMin, f.SpeedMax),
             FlowToTip = flowToTip,
 
-            WobblePhase = DrawHelpers.HashRange(seed + 4, 0f, MathF.Tau),
+            WobblePhase = HashRange(seed + 4, 0f, MathF.Tau),
             WobbleFreq = f.WobbleFrequencyHz,
             WobbleAmp = f.WobbleAmplitude,
             ObstacleSpacing = f.ObstacleSpacingPx,
             LateralOffsetFrac = f.LateralOffsetFrac,
-            SideSign = DrawHelpers.Hash01(seed + 5) < 0.5f ? -1 : 1,
+            SideSign = Hash01(seed + 5) < 0.5f ? -1 : 1,
         };
     }
 

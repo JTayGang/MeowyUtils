@@ -31,7 +31,7 @@ public sealed class StrokeGash : IStrokeMaterial
     {
         float tipLen = MathF.Max(22f * px, 0.12f * total);
         float edgeAt = reveal >= 0.999f ? total + tipLen : total * reveal;
-        return Profile(arc / total) * DrawHelpers.Smooth((edgeAt - arc) / tipLen);
+        return Profile(arc / total) * Smooth((edgeAt - arc) / tipLen);
     }
 
     /// <summary>A torn edge: the half-width wobbles from place to place, differently on each side.</summary>
@@ -61,10 +61,10 @@ public sealed class StrokeGash : IStrokeMaterial
         float px = ctx.ScreenScale;
         float visible = total * Math.Clamp(s.Reveal, 0f, 1f);
         float open = MathF.Max(2f * px, s.WidthHint) * HalfOpen;
-        float agit = DrawHelpers.Saturate(s.Agitation);
-        bool overridden = DrawHelpers.ColorOverrideActive;
+        float agit = Saturate(s.Agitation);
+        bool overridden = ColorOverrideActive;
         Vector2 light = Vector2.Normalize(-StudioLighting.ShadowDirection);
-        float phA = DrawHelpers.Hash01(s.Seed + 3) * MathF.Tau, phB = DrawHelpers.Hash01(s.Seed + 5) * MathF.Tau, phF = DrawHelpers.Hash01(s.Seed + 7) * MathF.Tau;
+        float phA = Hash01(s.Seed + 3) * MathF.Tau, phB = Hash01(s.Seed + 5) * MathF.Tau, phF = Hash01(s.Seed + 7) * MathF.Tau;
 
         var st = Strand;
         st.Resample(path, visible, Math.Clamp(9f * px, 6f, 14f));
@@ -85,7 +85,7 @@ public sealed class StrokeGash : IStrokeMaterial
         Mb.Reserve(n * (Cols + 3), (n - 1) * (6 * (Cols - 1) + 12));
 
         // The bruise first, under everything.
-        Mb.Tent(st.Pts.AsSpan(0, n), st.Nrm.AsSpan(0, n), Reach.AsSpan(0, n), DrawHelpers.Tint(DrawHelpers.Pack(BleedColor.Bruise.X, BleedColor.Bruise.Y, BleedColor.Bruise.Z), alpha * 0.32f, overridden));
+        Mb.Tent(st.Pts.AsSpan(0, n), st.Nrm.AsSpan(0, n), Reach.AsSpan(0, n), Tint(Pack(BleedColor.Bruise.X, BleedColor.Bruise.Y, BleedColor.Bruise.Z), alpha * 0.32f, overridden));
 
         int first = Mb.Vertices;
         float fe = 1.6f * px;
@@ -96,7 +96,7 @@ public sealed class StrokeGash : IStrokeMaterial
             Vector2 unit = nl > 1e-4f ? nm / nl : new Vector2(0f, 1f);
             float a = st.Arc[i];
             float prof = Open(a, total, s.Reveal, px);
-            float fade = DrawHelpers.Smooth(prof * 4f);
+            float fade = Smooth(prof * 4f);
 
             float sD = unit.Y >= 0f ? 1f : -1f;                       // which side of the cut is downhill
             float sL = Vector2.Dot(unit, light) >= 0f ? 1f : -1f;     // which side faces the light
@@ -127,7 +127,7 @@ public sealed class StrokeGash : IStrokeMaterial
     private static void Vertex(Vector2 pos, Vector3 rgb, float a, float alpha, bool overridden)
     {
         float k = a * alpha;
-        Mb.VertexReserved(pos, DrawHelpers.VertexColor(rgb, k, DrawHelpers.AlphaBits(k), overridden));
+        Mb.VertexReserved(pos, VertexColor(rgb, k, AlphaBits(k), overridden));
     }
 
     /// <summary>A point in the opening at u (-1..1 across): dark and deep centrally, lit on the wall facing the light, blood pooled below.</summary>
@@ -136,10 +136,10 @@ public sealed class StrokeGash : IStrokeMaterial
         float m = MathF.Abs(u);
         Vector3 c = Vector3.Lerp(BleedColor.Void, BleedColor.WallDark, MathF.Pow(m, 1.6f));
         if (u * sL < 0f) c += BleedColor.WallLit * (0.55f * m * m);
-        c = Vector3.Lerp(c, BleedColor.WallDark * 0.6f, 0.6f * DrawHelpers.Smooth(0.75f, 1f, m));
+        c = Vector3.Lerp(c, BleedColor.WallDark * 0.6f, 0.6f * Smooth(0.75f, 1f, m));
 
         float v = u * sD;  // -1 uphill edge, +1 downhill edge
-        float blood = DrawHelpers.Smooth((v - (1f - 2f * fill)) / 0.8f);
+        float blood = Smooth((v - (1f - 2f * fill)) / 0.8f);
         Vector3 wet = Vector3.Lerp(BleedColor.Wet, BleedColor.WetHot, 0.30f + 0.45f * agit + 0.25f * sheenGain);
         c = Vector3.Lerp(c, wet, 0.92f * blood);
 

@@ -44,22 +44,22 @@ internal sealed class WhisperField
         _seed = seed;
 
         // The wind: mostly along the screen, either way, steady with slow gusts.
-        WindAngle = DrawHelpers.HashRange(seed + 1, -0.8f, 0.8f) + (DrawHelpers.Hash01(seed + 2) < 0.5f ? 0f : MathF.PI);
-        _windSpeed = DrawHelpers.HashRange(seed + 3, 0.75f, 1.30f);
-        _gustA = DrawHelpers.Hash01(seed + 4) * MathF.Tau;
-        _gustB = DrawHelpers.Hash01(seed + 5) * MathF.Tau;
+        WindAngle = HashRange(seed + 1, -0.8f, 0.8f) + (Hash01(seed + 2) < 0.5f ? 0f : MathF.PI);
+        _windSpeed = HashRange(seed + 3, 0.75f, 1.30f);
+        _gustA = Hash01(seed + 4) * MathF.Tau;
+        _gustB = Hash01(seed + 5) * MathF.Tau;
 
         Array.Clear(_w);
         for (int i = 0; i < _bag.Length; i++) _bag[i] = i;
         for (int i = _bag.Length - 1; i > 0; i--)
         {
-            int j = (int)(DrawHelpers.Hash01(seed + 900 + i) * (i + 1));
+            int j = (int)(Hash01(seed + 900 + i) * (i + 1));
             (_bag[i], _bag[j]) = (_bag[j], _bag[i]);
         }
         _bagAt = 0; _spawned = 0; _ticks = 0; _lastIn = _lastOut = -1;
 
         _nextWhisper = firstAt;
-        _nextChorus = DrawHelpers.HashRange(seed + 7, 1.7f, 2.4f);
+        _nextChorus = HashRange(seed + 7, 1.7f, 2.4f);
         _chorusEnds = 0f;
     }
 
@@ -78,9 +78,9 @@ internal sealed class WhisperField
         // Now and then a few are spoken at once, close together, as if from one mouth.
         if (age >= _nextChorus && age >= _chorusEnds)
         {
-            _chorusAt = new Vector2(DrawHelpers.HashRange(_seed + _spawned * 31 + 11, 0.2f, 0.8f) * f.Size.X, DrawHelpers.HashRange(_seed + _spawned * 31 + 12, 0.25f, 0.75f) * f.Size.Y);
-            _chorusEnds = age + DrawHelpers.HashRange(_seed + _spawned * 31 + 13, 1.0f, 1.5f);
-            _nextChorus = _chorusEnds + DrawHelpers.HashRange(_seed + _spawned * 31 + 14, ChorusEvery.Lo, ChorusEvery.Hi);
+            _chorusAt = new Vector2(HashRange(_seed + _spawned * 31 + 11, 0.2f, 0.8f) * f.Size.X, HashRange(_seed + _spawned * 31 + 12, 0.25f, 0.75f) * f.Size.Y);
+            _chorusEnds = age + HashRange(_seed + _spawned * 31 + 13, 1.0f, 1.5f);
+            _nextChorus = _chorusEnds + HashRange(_seed + _spawned * 31 + 14, ChorusEvery.Lo, ChorusEvery.Hi);
             _nextWhisper = MathF.Min(_nextWhisper, age);
         }
 
@@ -89,9 +89,9 @@ internal sealed class WhisperField
         bool chorus = age < _chorusEnds;
         int n = _seed + _ticks++ * 53;
         if (Showing() < (chorus ? Max : Calm)) Spawn(in f, chorus);
-        float gap = chorus ? DrawHelpers.HashRange(n + 1, 0.30f, 0.55f)
-                  : age < 4f ? DrawHelpers.HashRange(n + 2, EarlyGap.Lo, EarlyGap.Hi)
-                  : DrawHelpers.HashRange(n + 3, Gap.Lo, Gap.Hi);
+        float gap = chorus ? HashRange(n + 1, 0.30f, 0.55f)
+                  : age < 4f ? HashRange(n + 2, EarlyGap.Lo, EarlyGap.Hi)
+                  : HashRange(n + 3, Gap.Lo, Gap.Hi);
         _nextWhisper = age + gap;
     }
 
@@ -111,18 +111,18 @@ internal sealed class WhisperField
         int s = _seed + _spawned * 6151;
         _spawned++;
 
-        float r = DrawHelpers.Hash01(s + 1);
+        float r = Hash01(s + 1);
         int depth = r < 0.22f ? 0 : r < 0.72f ? 1 : 2;
-        float size = DepthSize[depth] * DrawHelpers.HashRange(s + 2, 0.85f, 1.10f) * f.Px;
+        float size = DepthSize[depth] * HashRange(s + 2, 0.85f, 1.10f) * f.Px;
         int phrase = _bag[_bagAt++ % _bag.Length];
         int arrive = Fresh(ref _lastIn, ParticleWhisper.Arrivals, s + 8), depart = Fresh(ref _lastOut, ParticleWhisper.Departures, s + 9);
         float width = ScriptFont.Width(_phrases[phrase]) * size, height = ScriptFont.Height * size;
-        float life = DrawHelpers.HashRange(s + 4, DepthLife[depth].Lo, DepthLife[depth].Hi);
+        float life = HashRange(s + 4, DepthLife[depth].Lo, DepthLife[depth].Hi);
 
         // Mostly nearly level, often askew, now and then steeply so; and turning slowly as it hangs.
-        float lean = DrawHelpers.Hash01(s + 5);
-        float tilt = (DrawHelpers.Hash01(s + 11) < 0.5f ? -1f : 1f) * (lean < 0.40f ? DrawHelpers.HashRange(s + 12, 0f, 0.08f) : lean < 0.85f ? DrawHelpers.HashRange(s + 12, 0.08f, 0.24f) : DrawHelpers.HashRange(s + 12, 0.24f, 0.42f));
-        float spin = (DrawHelpers.Hash01(s + 13) < 0.5f ? -1f : 1f) * DrawHelpers.HashRange(s + 14, 0.008f, 0.022f);
+        float lean = Hash01(s + 5);
+        float tilt = (Hash01(s + 11) < 0.5f ? -1f : 1f) * (lean < 0.40f ? HashRange(s + 12, 0f, 0.08f) : lean < 0.85f ? HashRange(s + 12, 0.08f, 0.24f) : HashRange(s + 12, 0.24f, 0.42f));
+        float spin = (Hash01(s + 13) < 0.5f ? -1f : 1f) * HashRange(s + 14, 0.008f, 0.022f);
 
         // The room it takes once tilted (at its most turned), and where the wind will have carried it by the end.
         float reach = MathF.Abs(tilt) + MathF.Abs(spin) * life;
@@ -136,9 +136,9 @@ internal sealed class WhisperField
         {
             Vector2 at;
             if (chorus)
-                at = _chorusAt + new Vector2(DrawHelpers.HashRange(s + 20 + attempt, -0.26f, 0.26f) * f.Size.X, DrawHelpers.HashRange(s + 40 + attempt, -0.20f, 0.20f) * f.Size.Y);
+                at = _chorusAt + new Vector2(HashRange(s + 20 + attempt, -0.26f, 0.26f) * f.Size.X, HashRange(s + 40 + attempt, -0.20f, 0.20f) * f.Size.Y);
             else
-                at = new Vector2(DrawHelpers.Hash01(s + 20 + attempt) * f.Size.X, DrawHelpers.Hash01(s + 40 + attempt) * f.Size.Y);
+                at = new Vector2(Hash01(s + 20 + attempt) * f.Size.X, Hash01(s + 40 + attempt) * f.Size.Y);
 
             float mx = MathF.Max(0f, half.X - width * bleed) + 20f * f.Px, my = half.Y + 20f * f.Px;
             at = new Vector2(Fit(at.X, mx - MathF.Min(0f, travel.X), f.Size.X - mx - MathF.Max(0f, travel.X)),
@@ -154,12 +154,12 @@ internal sealed class WhisperField
             if (!clear && attempt < 13) continue;
             if (!clear) return;
 
-            float bearing = WindAngle + DrawHelpers.HashRange(s + 3, -0.5f, 0.5f);
+            float bearing = WindAngle + HashRange(s + 3, -0.5f, 0.5f);
             _w[slot] = new Whisper
             {
                 On = true, Phrase = phrase, Seed = s, Depth = depth, At = at, Half = half, Size = size, Born = age, In = arrive, Out = depart,
                 Life = life, Tilt = tilt, Spin = spin,
-                Breath = new Vector2(MathF.Cos(bearing), MathF.Sin(bearing)) * DrawHelpers.HashRange(s + 6, 28f, 64f) * f.Px,
+                Breath = new Vector2(MathF.Cos(bearing), MathF.Sin(bearing)) * HashRange(s + 6, 28f, 64f) * f.Px,
             };
             return;
         }
@@ -171,14 +171,14 @@ internal sealed class WhisperField
     /// <summary>A style that isn't the one just used, so neighbouring phrases never move alike.</summary>
     private static int Fresh(ref int last, int count, int seed)
     {
-        int pick = (int)(DrawHelpers.Hash01(seed) * count) % count;
-        if (pick == last) pick = (pick + 1 + (int)(DrawHelpers.Hash01(seed + 1) * (count - 1))) % count;
+        int pick = (int)(Hash01(seed) * count) % count;
+        if (pick == last) pick = (pick + 1 + (int)(Hash01(seed + 1) * (count - 1))) % count;
         return last = pick;
     }
 
     public void Emit(EffectScene scene, in CastFrame f, int depth)
     {
-        float intro = DrawHelpers.Smooth(f.Age / 0.8f);
+        float intro = Smooth(f.Age / 0.8f);
         var downwind = new Vector2(MathF.Cos(WindAngle), MathF.Sin(WindAngle));
         for (int i = 0; i < Max; i++)
         {

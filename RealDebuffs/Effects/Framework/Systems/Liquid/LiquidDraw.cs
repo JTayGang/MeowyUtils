@@ -36,7 +36,7 @@ internal static partial class LiquidDraw
         {
             L = f.Liquid, Alpha = alpha > 1f ? 1f : alpha, Px = f.Px, Time = f.Time,
             Feather = MathF.Max(0.8f, ctx.ScreenScale * 0.9f),
-            Over = DrawHelpers.ColorOverrideActive, Dye = DrawHelpers.ColorOverrideChroma, Uv = MeshDraw.WhiteUv(ctx.Time),
+            Over = ColorOverrideActive, Dye = ColorOverrideChroma, Uv = MeshDraw.WhiteUv(ctx.Time),
         };
         Sample(f);
 
@@ -61,8 +61,8 @@ internal static partial class LiquidDraw
 
     private static uint Col(in Look k, Vector3 display, float a)
     {
-        if (k.Dye > 0f) display = DrawHelpers.BoostSaturation(display, k.Dye, DrawHelpers.SoftDye);
-        return DrawHelpers.Tint(DrawHelpers.Pack(display.X, display.Y, display.Z), a * k.Alpha, k.Over);
+        if (k.Dye > 0f) display = BoostSaturation(display, k.Dye, SoftDye);
+        return Tint(Pack(display.X, display.Y, display.Z), a * k.Alpha, k.Over);
     }
 
     private static Vector3 Lit(Vector3 lin) => Matcap.ToDisplay(lin);
@@ -88,7 +88,7 @@ internal static partial class LiquidDraw
                 float u = p / (float)(n - 1);
                 float w = MathF.Max(t.Pts[p].Z, 0.7f * k.Px) * (0.45f + 0.55f * u);
                 Mb.VertexReserved(at - perp * w, Col(in k, wet, 0f));
-                Mb.VertexReserved(at, Col(in k, wet, aMax * DrawHelpers.Smooth(u * 1.4f)));
+                Mb.VertexReserved(at, Col(in k, wet, aMax * Smooth(u * 1.4f)));
                 Mb.VertexReserved(at + perp * w, Col(in k, wet, 0f));
             }
             for (int p = 0; p + 1 < n; p++)
@@ -129,14 +129,14 @@ internal static partial class LiquidDraw
             float age = MathF.Max(k.Time - born, 0f);
 
             // how rough the water is: fast, thick and churning is ragged and white; slow and thin runs clear
-            float turb = j.Churn * ph.Churn * DrawHelpers.Smooth(rad / (3f * px)) * (0.35f + 0.65f * MathF.Min(1f, j.PathV[i].Length() / (900f * px)));
-            float gain = ph.Foam * DrawHelpers.Smooth(age / 0.25f) * DrawHelpers.Smooth(rad / (4f * px)) * (0.25f + 0.75f * turb);
-            float tail = DrawHelpers.Smooth(j.Rad[i] / (1.3f * px));
+            float turb = j.Churn * ph.Churn * Smooth(rad / (3f * px)) * (0.35f + 0.65f * MathF.Min(1f, j.PathV[i].Length() / (900f * px)));
+            float gain = ph.Foam * Smooth(age / 0.25f) * Smooth(rad / (4f * px)) * (0.25f + 0.75f * turb);
+            float tail = Smooth(j.Rad[i] / (1.3f * px));
 
             // the two edges are not the same: noise fixed to the parcel, so it stretches as the stream speeds up
             float eL = Math.Clamp(1f + 0.24f * turb * (Noise.Value(born * 7f + seed, 0.37f) + 0.35f * Noise.Value(born * 17f + seed, 2.9f)), 0.6f, 1.5f);
             float eR = Math.Clamp(1f + 0.24f * turb * (Noise.Value(born * 7f + seed + 40f, 1.7f) + 0.35f * Noise.Value(born * 17f + seed + 9f, 4.1f)), 0.6f, 1.5f);
-            uint halo = Col(in k, shade, 0.34f * tail * DrawHelpers.Smooth(rad / (3f * px)));  // the dark line where the water bends the scene behind it
+            uint halo = Col(in k, shade, 0.34f * tail * Smooth(rad / (3f * px)));  // the dark line where the water bends the scene behind it
 
             for (int c = 0; c <= Half; c++)
             {
@@ -150,12 +150,12 @@ internal static partial class LiquidDraw
                 {
                     // white water: streaks that stretch along the flow, at three scales
                     float w = 0.5f + 0.30f * Noise.Value(sn * 2.1f + seed * 0.37f, born * 4f) + 0.22f * Noise.Value(sn * 4.7f - seed * 0.21f, born * 11f) + 0.16f * Noise.Value(sn * 9.3f + seed, born * 27f);
-                    float ae = DrawHelpers.Smooth(0.38f, 0.85f, w) * gain;
+                    float ae = Smooth(0.38f, 0.85f, w) * gain;
                     col = Vector3.Lerp(col, foam, ae * 0.85f);
                     a += (1f - a) * ae * 0.70f;
-                    a *= 1f - 0.45f * DrawHelpers.Smooth(0.82f, 0.97f, 0.5f + 0.5f * Noise.Value(sn * 3.3f + seed * 0.6f, born * 19f)) * gain;  // gaps in the froth
+                    a *= 1f - 0.45f * Smooth(0.82f, 0.97f, 0.5f + 0.5f * Noise.Value(sn * 3.3f + seed * 0.6f, born * 19f)) * gain;  // gaps in the froth
                 }
-                float sp = ph.Foam > 0f ? DrawHelpers.Smooth(0.80f, 0.97f, 0.5f + 0.5f * Noise.Value(sn * 6.5f + seed * 0.3f, born * 33f + 3f)) * MathF.Min(1f, rad / (2.5f * px)) * k.L.Look.Gloss : 0f;
+                float sp = ph.Foam > 0f ? Smooth(0.80f, 0.97f, 0.5f + 0.5f * Noise.Value(sn * 6.5f + seed * 0.3f, born * 33f + 3f)) * MathF.Min(1f, rad / (2.5f * px)) * k.L.Look.Gloss : 0f;
                 if (sp > 0.01f) { col = Vector3.Lerp(col, spark, sp * 0.85f); a = MathF.Max(a, 0.55f * sp); }
                 Vector2 at = p + perp * (sn * rad * (sn < 0f ? eL : eR));
                 Mb.VertexReserved(at, Col(in k, col, a * tail));
@@ -207,8 +207,8 @@ internal static partial class LiquidDraw
                 float ax = Vector2.Dot(perp, new Vector2(h.X, h.Y));
                 float u = ax / MathF.Sqrt(ax * ax + h.Z * h.Z);
                 float n = Noise.Value(j.Born[i] * 14f + j.Seed + pass * 7f, k.Time * 2.3f);
-                float shimmer = 1f - rough * (1f - DrawHelpers.Smooth(-0.35f, 0.55f, n));  // dashes and gaps, more of them the rougher it runs
-                float a = strength * shimmer * (0.4f + 0.6f * gloss) * DrawHelpers.Smooth(rad / (2.2f * px));
+                float shimmer = 1f - rough * (1f - Smooth(-0.35f, 0.55f, n));  // dashes and gaps, more of them the rougher it runs
+                float a = strength * shimmer * (0.4f + 0.6f * gloss) * Smooth(rad / (2.2f * px));
                 float w = MathF.Max(0.8f * px, rad * (pass == 0 ? 0.09f : 0.12f)) * (0.75f + 0.5f * (0.5f + 0.5f * n));
                 Vector2 c = p + perp * (u * rad * 0.9f + rough * 0.06f * rad * n);
                 Mb.VertexReserved(c - perp * w, Col(in k, colr, 0f));

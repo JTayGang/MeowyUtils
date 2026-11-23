@@ -135,7 +135,7 @@ internal static class ScriptFont
                 // A broad nib held up and to the right: down-strokes are full, rising hairlines thin.
                 float cross = MathF.Abs(tan.X * -0.643f - tan.Y * 0.766f);
                 float u = arc[m - 1] > 1e-4f ? arc[i] / arc[m - 1] : 0.5f;
-                wid[i] = (0.42f + 0.58f * cross) * (0.55f + 0.45f * DrawHelpers.Smooth(MathF.Min(u, 1f - u) / 0.22f));
+                wid[i] = (0.42f + 0.58f * cross) * (0.55f + 0.45f * Smooth(MathF.Min(u, 1f - u) / 0.22f));
             }
             // How far either side of the stroke can be offset before the offset folds over itself.
             for (int i = 0; i < m; i++)

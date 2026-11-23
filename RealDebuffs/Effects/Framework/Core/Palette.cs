@@ -29,7 +29,7 @@ internal sealed class Palette
     {
         t = t > 0f ? (t < 1f ? t : 1f) : 0f;
         int i = (int)(t * (N - 1) + 0.5f);
-        return DrawHelpers.ColorOverrideActive ? _lutTint[i] : _lut[i];
+        return ColorOverrideActive ? _lutTint[i] : _lut[i];
     }
 
     /// <summary>Sample without the override lift, for a colour baked at construction (the override is whatever happens to be pushed then).</summary>
@@ -81,7 +81,7 @@ internal static class IceColor
     public static uint Pack(float r, float g, float b)
     {
         uint c = DrawHelpers.Pack(r, g, b);
-        return DrawHelpers.ColorOverrideActive ? Tintable(c) : c;
+        return ColorOverrideActive ? Tintable(c) : c;
     }
 
     public static readonly uint Cold  = DrawHelpers.Pack(0.68f, 0.84f, 1.00f);  // pale blue glow

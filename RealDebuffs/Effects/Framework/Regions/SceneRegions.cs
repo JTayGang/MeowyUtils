@@ -32,9 +32,9 @@ internal static class SceneRegions
     /// <summary>The dim mood under a heavy effect: an edge vignette plus gloom pooled along the bottom, swelling slowly.</summary>
     public static void Murk(this EffectScene scene, in CastFrame f, in MurkStyle m)
     {
-        float ramp = DrawHelpers.Saturate(f.Age / m.RampSeconds);
+        float ramp = Saturate(f.Age / m.RampSeconds);
         scene.RequestVignette(m.Vignette, 0.12f, f.Alpha * m.VignetteAlpha * ramp, priority: 20, f.Color);
-        float depth = f.Size.Y * m.PoolDepth * (1f + m.Swell * DrawHelpers.Pulse(f.Time, m.SwellSeconds)) * ramp;
+        float depth = f.Size.Y * m.PoolDepth * (1f + m.Swell * Pulse(f.Time, m.SwellSeconds)) * ramp;
         scene.Pool(f.Size, depth, m.Pool, m.PoolAlpha * f.Alpha, f.Color);
     }
 }

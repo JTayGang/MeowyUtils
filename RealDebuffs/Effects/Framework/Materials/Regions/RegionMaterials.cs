@@ -13,7 +13,7 @@ public sealed class RegionFlatFill : IRegionMaterial
         float a = r.Alpha * ctx.Alpha;
         if (a <= 0.001f) return;
 
-        dl.AddRectFilled(r.Min, r.Max, DrawHelpers.WithAlpha(r.Tint, a));
+        dl.AddRectFilled(r.Min, r.Max, WithAlpha(r.Tint, a));
     }
 }
 
@@ -27,8 +27,8 @@ public sealed class RegionEdgeGlow : IRegionMaterial
         float a = r.Alpha * ctx.Alpha;
         if (a <= 0.001f) return;
 
-        uint tint = DrawHelpers.WithAlpha(r.Tint, a);
-        uint clear = DrawHelpers.WithAlpha(r.Tint, 0f);
+        uint tint = WithAlpha(r.Tint, a);
+        uint clear = WithAlpha(r.Tint, 0f);
         var tl = r.Min;
         var br = r.Max;
 
@@ -105,7 +105,7 @@ public sealed class RegionFirelight : IRegionMaterial
             for (int c = 0; c <= cols; c++)
             {
                 MeshDraw.P[i] = new Vector2(left + c / (float)cols * width, y);
-                MeshDraw.C[i] = DrawHelpers.WithAlpha(baseCol, a * fall * mid[c] * flick[c]);
+                MeshDraw.C[i] = WithAlpha(baseCol, a * fall * mid[c] * flick[c]);
                 i++;
             }
         }
@@ -135,7 +135,7 @@ public sealed class RegionFirelight : IRegionMaterial
                     float sx = c / (float)sCols;
                     float x = side == 0 ? left + sx * sideW : right - sx * sideW;
                     MeshDraw.P[i] = new Vector2(x, y);
-                    MeshDraw.C[i] = DrawHelpers.WithAlpha(col, a * 0.62f * hFall[c] * vFall * rowFlick);
+                    MeshDraw.C[i] = WithAlpha(col, a * 0.62f * hFall[c] * vFall * rowFlick);
                     i++;
                 }
             }

@@ -36,7 +36,7 @@ public sealed class LiquidMatter : CoatMatter
     internal uint FilmShade(Vector3 n, float th, float px, float alpha, float soft)
     {
         Vector4 lit = _liq.Matcap.Sample(n.X, n.Y);
-        float show = DrawHelpers.Smooth(th / (_liq.Phys.Hold * px * 0.9f));
+        float show = Smooth(th / (_liq.Phys.Hold * px * 0.9f));
         float dark = 0.5f + 0.5f * MathF.Exp(-_liq.Phys.Absorb * th / px);
         float spec = MathF.Max(0f, lit.X + lit.Y + lit.Z - 1.9f) * 1.4f;  // the matcap's highlights read as a wet sheen
         float a = Math.Clamp(lit.W * (0.45f + 0.55f * show) * 0.85f + spec * 0.35f, 0f, 1f) * alpha * soft * soft;
@@ -91,7 +91,7 @@ public sealed class LiquidMatter : CoatMatter
             float load = p.M / mcrit;
             if (load < 1f)
             {
-                p.Neck = DrawHelpers.Lerp(0.66f, 0.42f, MathF.Pow(load, 1.4f));
+                p.Neck = Lerp(0.66f, 0.42f, MathF.Pow(load, 1.4f));
                 p.L = MathF.Sqrt(p.M / MathF.PI) * 0.92f * (0.5f + 0.9f * load * load);
             }
             else
@@ -141,11 +141,11 @@ public sealed class LiquidMatter : CoatMatter
         float rem = p.M * (0.10f + 0.25f * ph.Stringiness), md = p.M - rem;
         c.Credit(p.Cell, rem);
         float sat = 0f;
-        if (DrawHelpers.Hash01(p.Salt + 5) < ph.Satellites) { sat = md * 0.14f; md -= sat; }
+        if (Hash01(p.Salt + 5) < ph.Satellites) { sat = md * 0.14f; md -= sat; }
         c.Out += md + sat; c.Shed += md + sat;
 
         Spawn(c, in ph, bead, anchor, p.Salt, md, p.Neck, main: true);
-        if (sat > 0f) Spawn(c, in ph, bead + new Vector2(DrawHelpers.HashRange(p.Salt + 6, -5f, 5f), 9f) * c.Px, anchor, p.Salt + 1, sat, 0f, main: false);
+        if (sat > 0f) Spawn(c, in ph, bead + new Vector2(HashRange(p.Salt + 6, -5f, 5f), 9f) * c.Px, anchor, p.Salt + 1, sat, 0f, main: false);
 
         c.PendAt[p.Cell] = -1;
         p.Live = false;
@@ -162,10 +162,10 @@ public sealed class LiquidMatter : CoatMatter
         return c.Set.Drops.Add(new DropPool.Drop
         {
             Owner = c.Owner, Pos = pos, Amount = area,
-            Vel = new Vector2(DrawHelpers.HashRange(salt + 7, -14f, 14f), DrawHelpers.HashRange(salt + 8, ph.ReleaseMin, ph.ReleaseMax) * 0.8f) * px,
+            Vel = new Vector2(HashRange(salt + 7, -14f, 14f), HashRange(salt + 8, ph.ReleaseMin, ph.ReleaseMax) * 0.8f) * px,
             Gravity = new Vector2(0f, ph.Gravity * px),
             Anchor = anchor, Pinch = pos,
-            Born = c.Time, Life = DrawHelpers.HashRange(salt + 9, ph.LifeMin, ph.LifeMax),
+            Born = c.Time, Life = HashRange(salt + 9, ph.LifeMin, ph.LifeMax),
             Size = r, Brightness = c.Bright,
             Tether = main ? MathF.Max(neck, 0.12f) * (0.5f + ph.Stringiness) : 0f,
             RecoilTime = main ? 0.18f + 0.35f * ph.Stringiness : 0f,
@@ -197,8 +197,8 @@ public sealed class LiquidMatter : CoatMatter
             scene.AddParticleForOwner(new ParticlePrimitive
             {
                 Owner = c.Owner, Position = bead, Anchor = anchor, ThreadEnd = bead, Tether = p.Neck,
-                Size = rb, AgeRatio = DrawHelpers.Saturate(p.M / mcrit),
-                Brightness = c.Bright * DrawHelpers.Smooth((face - ph.MinSlope * 0.6f) / 0.25f),
+                Size = rb, AgeRatio = Saturate(p.M / mcrit),
+                Brightness = c.Bright * Smooth((face - ph.MinSlope * 0.6f) / 0.25f),
                 Seed = p.Salt, HasHost = true, HostSeed = c.Seed, Role = PrimitiveRole.Goop,
                 MaterialName = Material, ColorOverride = c.Color,
             }, c.Owner);
@@ -266,16 +266,16 @@ public sealed class LiquidMatter : CoatMatter
         for (int i = 0, cells = c.Live * c.V; i < cells; i++)
         {
             if (!c.Vis[i]) continue;
-            float th = c.M[i] / c.A[i], k = DrawHelpers.Smooth((th - 0.5f * hold) / hold);
+            float th = c.M[i] / c.A[i], k = Smooth((th - 0.5f * hold) / hold);
             int seed = c.Salt * 53 + i * 11;
             float dens = c.V == 1 ? 1f : MathF.Min(1f, c.A[i] / (10f * px));  // a strand cell is ~10 px of film; a chart's cells are smaller, so each takes its share
-            if (k <= 0.02f || DrawHelpers.Hash01(seed) > k * 0.6f * dens) continue;
+            if (k <= 0.02f || Hash01(seed) > k * 0.6f * dens) continue;
             c.Set.BeadsDrawn++;
-            float size = DrawHelpers.HashRange(seed + 3, 1.3f, 2.7f) * px * (0.7f + 0.5f * DrawHelpers.Saturate(th / (ph.MaxThick * px)));
+            float size = HashRange(seed + 3, 1.3f, 2.7f) * px * (0.7f + 0.5f * Saturate(th / (ph.MaxThick * px)));
             scene.AddParticleForOwner(new ParticlePrimitive
             {
                 Owner = c.Owner, AgeRatio = 0.5f, Size = size, Brightness = c.Bright * k, Seed = seed,
-                Position = c.P[i] + c.Sd[i] * (DrawHelpers.HashRange(seed + 1, -0.65f, 0.65f) * (c.V == 1 ? c.R[i] : 0.5f * c.VStep[i % c.V])) + c.T[i] * (DrawHelpers.HashRange(seed + 2, -0.5f, 0.5f) * c.Dc[i]),
+                Position = c.P[i] + c.Sd[i] * (HashRange(seed + 1, -0.65f, 0.65f) * (c.V == 1 ? c.R[i] : 0.5f * c.VStep[i % c.V])) + c.T[i] * (HashRange(seed + 2, -0.5f, 0.5f) * c.Dc[i]),
                 HasHost = true, HostSeed = c.Seed, Role = PrimitiveRole.Goop, MaterialName = Material, ColorOverride = c.Color,
             }, c.Owner);
         }
@@ -303,7 +303,7 @@ public sealed class LiquidMatter : CoatMatter
             float th = c.M[i] / c.Ds;
             uIn = -c.R[i]; uOut = c.R[i] + MathF.Min(th * 0.3f, c.R[i] * 0.3f);
             sign = 1f;
-            return DrawHelpers.Smooth(th / (L.Phys.Hold * c.Px * 0.6f));
+            return Smooth(th / (L.Phys.Hold * c.Px * 0.6f));
         }
 
         public uint Color(Coat c, int i, float x, Vector2 dir, float show)
@@ -325,7 +325,7 @@ public sealed class LiquidMatter : CoatMatter
             uOut = r + th * 1.1f;
             uIn = r - MathF.Min(th * 1.2f + c.Px, r * 0.8f);
             sign = 1f;
-            return DrawHelpers.Smooth(th / (L.Phys.Hold * c.Px * 0.9f)) * DrawHelpers.Smooth(c.Face[i] / 0.3f);
+            return Smooth(th / (L.Phys.Hold * c.Px * 0.9f)) * Smooth(c.Face[i] / 0.3f);
         }
 
         public uint Color(Coat c, int i, float x, Vector2 dir, float show)
@@ -360,7 +360,7 @@ public sealed class FlameMatter : CoatMatter
         int sites = Math.Max(2, c.N / 14);
         for (int k = 0, lit = 0; k < sites * 8 && lit < sites; k++)
         {
-            int i = (int)(DrawHelpers.Hash01(c.Seed * 977 + k * 131) * c.Live) % Math.Max(1, c.Live);
+            int i = (int)(Hash01(c.Seed * 977 + k * 131) * c.Live) % Math.Max(1, c.Live);
             if (c.Live > 0 && c.Vis[i] && c.Heat[i] == 0f) { c.Heat[i] = 1f; lit++; }
         }
     }
@@ -373,10 +373,10 @@ public sealed class FlameMatter : CoatMatter
         for (int i = 0; i < n; i++)
         {
             total += c.Heat[i];
-            float fuel = DrawHelpers.Saturate(c.M[i] / ds / (0.45f * px));
+            float fuel = Saturate(c.M[i] / ds / (0.45f * px));
             float nb = MathF.Max(i > 0 ? c.Heat[i - 1] : (c.Closed ? c.Heat[n - 1] : 0f), i < n - 1 ? c.Heat[i + 1] : (c.Closed ? c.Heat[0] : 0f));
             float ign = (nb > 0.4f ? 1.8f : 0f) + (c.Char[i] > 0.35f ? 0.7f * c.Char[i] : 0f);  // a neighbour's flame, or embers still glowing in the char
-            c.Heat[i] = DrawHelpers.Saturate(c.Heat[i] + (ign * fuel * (1f - c.Heat[i]) - 1.5f * (1f - fuel) * c.Heat[i]) * h);
+            c.Heat[i] = Saturate(c.Heat[i] + (ign * fuel * (1f - c.Heat[i]) - 1.5f * (1f - fuel) * c.Heat[i]) * h);
 
             float heat = c.Heat[i];
             if (heat < 0.02f) continue;
@@ -386,18 +386,18 @@ public sealed class FlameMatter : CoatMatter
 
             int salt = c.Seed + i * 977 + (int)(c.Time * 997f);
             Vector2 top = c.P[i] - c.Nm[i] * (c.R[i] * 0.6f);
-            if (DrawHelpers.Hash01(salt) < 0.12f * heat * h)
+            if (Hash01(salt) < 0.12f * heat * h)
                 c.Set.Cinders.Add(new ParticleSystem.Particle
                 {
-                    Pos = top, Vel = new Vector2(DrawHelpers.HashRange(salt + 1, -55f, 55f), -DrawHelpers.HashRange(salt + 2, 90f, 300f)) * px,
-                    Born = c.Time, Life = DrawHelpers.HashRange(salt + 3, 1.3f, 2.8f), Size = DrawHelpers.HashRange(salt + 4, 1.7f, 3.6f) * px,
+                    Pos = top, Vel = new Vector2(HashRange(salt + 1, -55f, 55f), -HashRange(salt + 2, 90f, 300f)) * px,
+                    Born = c.Time, Life = HashRange(salt + 3, 1.3f, 2.8f), Size = HashRange(salt + 4, 1.7f, 3.6f) * px,
                     Brightness = c.Bright, Seed = salt, Role = PrimitiveRole.Cinder, Owner = c.Owner, Color = c.Color,
                 });
-            if (DrawHelpers.Hash01(salt + 50) < 0.07f * heat * h)
+            if (Hash01(salt + 50) < 0.07f * heat * h)
                 c.Set.Smoke.Add(new ParticleSystem.Particle
                 {
-                    Pos = top, Vel = new Vector2(DrawHelpers.HashRange(salt + 5, -14f, 14f), -DrawHelpers.HashRange(salt + 6, 30f, 70f)) * px,
-                    Born = c.Time, Life = DrawHelpers.HashRange(salt + 7, 3f, 5f), Size = DrawHelpers.HashRange(salt + 8, 30f, 60f) * px,
+                    Pos = top, Vel = new Vector2(HashRange(salt + 5, -14f, 14f), -HashRange(salt + 6, 30f, 70f)) * px,
+                    Born = c.Time, Life = HashRange(salt + 7, 3f, 5f), Size = HashRange(salt + 8, 30f, 60f) * px,
                     Brightness = 0.5f * c.Bright, Seed = salt, Role = PrimitiveRole.Smoke, Owner = c.Owner, Color = c.Color,
                 });
         }
@@ -405,7 +405,7 @@ public sealed class FlameMatter : CoatMatter
         // A coat with no fire and fuel to burn catches again from a stray ember, so it never goes dark for good.
         if (total < 0.05f && n > 0)
         {
-            int i = (int)(DrawHelpers.Hash01(c.Seed * 3 + (int)(c.Time * 10f)) * n) % n;
+            int i = (int)(Hash01(c.Seed * 3 + (int)(c.Time * 10f)) * n) % n;
             if (c.Vis[i] && c.M[i] / ds > 0.3f * px) c.Heat[i] = 1f;
         }
     }
@@ -421,7 +421,7 @@ public sealed class FlameMatter : CoatMatter
             if (heat < 0.12f || !c.Vis[i]) continue;
             Vector2 at = c.P[i] - c.Nm[i] * (c.R[i] * 0.55f);
             int site = c.Seed * 61 + i * 17;
-            float fuel = DrawHelpers.Saturate(c.M[i] / c.Ds / (0.8f * px));
+            float fuel = Saturate(c.M[i] / c.Ds / (0.8f * px));
             float size = px * (0.3f + 0.8f * heat) * (0.55f + 0.45f * fuel), b = c.Bright * heat;
             var spread = new Vector2(c.Ds * 0.4f, 3f * px);
             Flames.Tongues(scene, Back, at, site, time, size, spread, 0f, 0.3f, b, c.Color, Material);
@@ -445,7 +445,7 @@ public sealed class FlameMatter : CoatMatter
         public bool Continuous => true;
         public float Extent(Coat c, int i, out float uIn, out float uOut, out float sign) { uIn = -c.R[i] * 0.9f; uOut = c.R[i] * 0.9f; sign = 1f; return c.Char[i]; }
         public uint Color(Coat c, int i, float x, Vector2 dir, float show) =>
-            DrawHelpers.Tint(DrawHelpers.Pack(0.05f, 0.045f, 0.04f), show * 0.55f * Alpha * CoatDraw.Soft(x, 0f), false);
+            Tint(Pack(0.05f, 0.045f, 0.04f), show * 0.55f * Alpha * CoatDraw.Soft(x, 0f), false);
     }
 
     private struct Glow : IBand
@@ -457,7 +457,7 @@ public sealed class FlameMatter : CoatMatter
         public uint Color(Coat c, int i, float x, Vector2 dir, float show)
         {
             float flicker = 0.85f + 0.15f * MathF.Sin(c.Time * 9f + i * 1.7f);
-            return DrawHelpers.WithAlpha(Ramp.Sample(0.30f + 0.55f * show * (1f - x * x * 0.6f)), show * 0.42f * Alpha * flicker * CoatDraw.Soft(x, 0f));
+            return WithAlpha(Ramp.Sample(0.30f + 0.55f * show * (1f - x * x * 0.6f)), show * 0.42f * Alpha * flicker * CoatDraw.Soft(x, 0f));
         }
     }
 }
@@ -474,7 +474,7 @@ public sealed class GranularMatter : CoatMatter
 
     internal override void Seed(Coat c)
     {
-        for (int i = 0; i < c.N; i++) c.M[i] = c.Ds * c.Px * (1.5f + 2.5f * c.Patch[i]) * DrawHelpers.Saturate(c.Face[i] * 1.5f);
+        for (int i = 0; i < c.N; i++) c.M[i] = c.Ds * c.Px * (1.5f + 2.5f * c.Patch[i]) * Saturate(c.Face[i] * 1.5f);
     }
 
     internal override void Tick(Coat c, float h)
@@ -488,8 +488,8 @@ public sealed class GranularMatter : CoatMatter
             int salt = c.Seed * 7 + i * 131 + (int)(c.Time * 97f);
             c.Set.Lumps.Add(new ParticleSystem.Particle
             {
-                Pos = c.P[i] + c.Nm[i] * c.R[i], Vel = new Vector2(DrawHelpers.HashRange(salt, -30f, 30f), 20f) * px, Gravity = new Vector2(0f, 900f * px),
-                Born = c.Time, Life = DrawHelpers.HashRange(salt + 1, 1.4f, 2.0f), Size = MathF.Sqrt(m / MathF.PI) * 0.8f,
+                Pos = c.P[i] + c.Nm[i] * c.R[i], Vel = new Vector2(HashRange(salt, -30f, 30f), 20f) * px, Gravity = new Vector2(0f, 900f * px),
+                Born = c.Time, Life = HashRange(salt + 1, 1.4f, 2.0f), Size = MathF.Sqrt(m / MathF.PI) * 0.8f,
                 Brightness = c.Bright, Seed = salt, Role = PrimitiveRole.Snow, Owner = c.Owner, Color = c.Color,
             });
         }
@@ -507,11 +507,11 @@ public sealed class GranularMatter : CoatMatter
 
         public float Extent(Coat c, int i, out float uIn, out float uOut, out float sign)
         {
-            float th = c.M[i] / c.Ds * (0.7f + 0.6f * DrawHelpers.Hash01(c.Seed * 29 + i * 7)), r = c.R[i];  // drifts are lumpy
+            float th = c.M[i] / c.Ds * (0.7f + 0.6f * Hash01(c.Seed * 29 + i * 7)), r = c.R[i];  // drifts are lumpy
             uOut = r + th * 1.3f;
             uIn = r - MathF.Min(th * 0.8f, r * 0.6f);
             sign = -1f;  // the upper side
-            return DrawHelpers.Smooth(th / (0.8f * c.Px)) * DrawHelpers.Smooth(c.Face[i] / 0.3f);
+            return Smooth(th / (0.8f * c.Px)) * Smooth(c.Face[i] / 0.3f);
         }
 
         public uint Color(Coat c, int i, float x, Vector2 dir, float show) =>

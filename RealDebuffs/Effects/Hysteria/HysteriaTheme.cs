@@ -15,10 +15,10 @@ internal static class HauntColor
         (1.00f, 0.985f, 0.990f, 0.940f));
 
     /// <summary>Edge tint for the screen's vignette: ink with a cold cast.</summary>
-    public static readonly uint Vignette = DrawHelpers.Pack(0.010f, 0.014f, 0.020f);
+    public static readonly uint Vignette = Pack(0.010f, 0.014f, 0.020f);
 
     /// <summary>The cold flash a haunting lands with (pale cyan-bone, so it stays chromatic under a colour override).</summary>
-    public static readonly uint Flash = DrawHelpers.Pack(0.78f, 0.96f, 0.90f);
+    public static readonly uint Flash = Pack(0.78f, 0.96f, 0.90f);
 }
 
 internal sealed class HauntMaterials : IMaterialPack
@@ -28,10 +28,10 @@ internal sealed class HauntMaterials : IMaterialPack
         // The dark that comes with a haunting: ink with a cold sheen where something pale catches it
         new ParticlePuff("particle.gloom", new[] { "gloom", "gloaming", "umbra" },
             new ParticlePuff.Look(
-                Warm: DrawHelpers.Pack(0.16f, 0.24f, 0.26f), Cool: DrawHelpers.Pack(0.012f, 0.018f, 0.024f), CoolSpan: 0.80f,
+                Warm: Pack(0.16f, 0.24f, 0.26f), Cool: Pack(0.012f, 0.018f, 0.024f), CoolSpan: 0.80f,
                 GrowFrom: 0.60f, GrowBy: 0.60f, FadeIn: 0.25f, FadeOutAt: 0.55f,
                 Alpha: 0.42f, Squash: 0.80f, Irregular: 0.55f, MinSize: 2f,
-                Highlight: DrawHelpers.Pack(0.55f, 0.72f, 0.70f), Thin: 0.30f),
+                Highlight: Pack(0.55f, 0.72f, 0.70f), Thin: 0.30f),
             new StrokeEmission(Role: PrimitiveRole.Miasma,
                 DensityPer100px: 0.30f,
                 SpeedMin: 4f, SpeedMax: 12f,

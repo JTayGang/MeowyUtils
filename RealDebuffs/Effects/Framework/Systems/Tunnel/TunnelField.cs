@@ -26,12 +26,12 @@ internal sealed class TunnelField : IRegionState
     public void Begin(int seed, float tunnelLength)
     {
         Seed = seed;
-        _bendPhase = DrawHelpers.Hash01(seed + 14) * MathF.Tau;
-        _bendDir = DrawHelpers.Sign(seed + 15);
-        for (int i = 0; i < DustCount; i++) DustAt[i] = tunnelLength * (i + DrawHelpers.Hash01(seed + 600 + i * 17)) / DustCount;
-        for (int i = 0; i < BillowCount; i++) BillowAt[i] = tunnelLength * (i + DrawHelpers.Hash01(seed + 700 + i * 17)) / BillowCount;
-        for (int i = 0; i < GritCount; i++) GritAt[i] = tunnelLength * (i + DrawHelpers.Hash01(seed + 800 + i * 17)) / GritCount;
-        for (int i = 0; i < CrackCount; i++) CrackAt[i] = tunnelLength * (i + DrawHelpers.Hash01(seed + 900 + i * 17)) / CrackCount;
+        _bendPhase = Hash01(seed + 14) * MathF.Tau;
+        _bendDir = Sign(seed + 15);
+        for (int i = 0; i < DustCount; i++) DustAt[i] = tunnelLength * (i + Hash01(seed + 600 + i * 17)) / DustCount;
+        for (int i = 0; i < BillowCount; i++) BillowAt[i] = tunnelLength * (i + Hash01(seed + 700 + i * 17)) / BillowCount;
+        for (int i = 0; i < GritCount; i++) GritAt[i] = tunnelLength * (i + Hash01(seed + 800 + i * 17)) / GritCount;
+        for (int i = 0; i < CrackCount; i++) CrackAt[i] = tunnelLength * (i + Hash01(seed + 900 + i * 17)) / CrackCount;
     }
 
     /// <summary>Where each rib starts along the tunnel (TunnelFlight offsets); the effect's rings ride the same ones.</summary>
@@ -109,7 +109,7 @@ internal sealed class TunnelField : IRegionState
 
                     // Stains run down the wall: stretched along the tunnel, fine across it.
                     float streak = 0.5f + 0.5f * Fbm(u * 44f, v * 4f, 44, 4, 3, seed + 2);
-                    streak = DrawHelpers.Smooth((streak - 0.50f) / 0.28f);
+                    streak = Smooth((streak - 0.50f) / 0.28f);
 
                     float pit = 0.5f + 0.5f * Fbm(u * 64f, v * 48f, 64, 48, 2, seed + 3);
                     _t[y * Around + x] = new Vector3(mottle, streak, pit);
@@ -141,7 +141,7 @@ internal sealed class TunnelField : IRegionState
             return (top + v * (bot - top)) * 2f - 1f;
         }
 
-        private static float Cell(int x, int y, int salt) => DrawHelpers.Hash01(x * 7919 + y * 104729 + salt * 6151);
+        private static float Cell(int x, int y, int salt) => Hash01(x * 7919 + y * 104729 + salt * 6151);
         private static int Mod(int a, int m) { int r = a % m; return r < 0 ? r + m : r; }
 
         private static float Fbm(float x, float y, int px, int py, int octaves, int salt)
@@ -186,5 +186,5 @@ internal sealed class TunnelFlight
     }
 
     /// <summary>0 at the far end of the tunnel, 1 at the lens.</summary>
-    public float Near(float height) => DrawHelpers.Saturate((height - FarHeight) / Length);
+    public float Near(float height) => Saturate((height - FarHeight) / Length);
 }

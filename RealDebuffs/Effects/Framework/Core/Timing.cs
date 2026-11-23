@@ -16,21 +16,21 @@ internal static class Flicker
 
         float attack = MathF.Min(0.30f * life, 0.22f);
         float tail = MathF.Min(0.22f * life, 0.14f);
-        float on = t < attack ? DrawHelpers.Lerp(0.25f, 0.90f, t / attack)
-                 : t > life - tail ? DrawHelpers.Lerp(0.85f, 0.15f, (t - (life - tail)) / tail)
+        float on = t < attack ? Lerp(0.25f, 0.90f, t / attack)
+                 : t > life - tail ? Lerp(0.85f, 0.15f, (t - (life - tail)) / tail)
                  : 0.93f;
 
         int frame = (int)(t * Rate);
-        return DrawHelpers.Hash01(seed * 31 + frame * 7919) < on ? 1f : Dropped;
+        return Hash01(seed * 31 + frame * 7919) < on ? 1f : Dropped;
     }
 
     /// <summary>A gutter: 1 most of the time with a dip now and then (chance is per frame).</summary>
     public static float Gutter(float time, int seed, float chance)
-        => DrawHelpers.Hash01(seed * 17 + (int)(time * Rate) * 104729) < chance ? 0.35f : 1f;
+        => Hash01(seed * 17 + (int)(time * Rate) * 104729) < chance ? 0.35f : 1f;
 
     /// <summary>A value that jumps to a new random one in -1..1 at rate Hz: a tic, a tremor.</summary>
     public static float Tic(float time, int seed, float hz = 14f)
-        => DrawHelpers.Hash01(seed * 13 + (int)(time * hz) * 15485863) * 2f - 1f;
+        => Hash01(seed * 13 + (int)(time * hz) * 15485863) * 2f - 1f;
 }
 
 /// <summary>When the next apparition is due: TryStart begins one, Finish sets the quiet before the next.</summary>
@@ -58,7 +58,7 @@ internal struct FlashSchedule
 
     /// <summary>The apparition is over at age: the next is a random gap away.</summary>
     public void Finish(float age, float gapMin, float gapMax)
-        => _next = age + DrawHelpers.HashRange(_seed + _count * 104729, gapMin, gapMax);
+        => _next = age + HashRange(_seed + _count * 104729, gapMin, gapMax);
 }
 
 /// <summary>A pulse that doesn't keep time: lub-dub at uneven intervals, with the odd doubled or half-hearted beat.</summary>
@@ -78,10 +78,10 @@ internal sealed class Heartbeat
         while (age >= _next)
         {
             _count++;
-            float roll = DrawHelpers.Hash01(_seed + _count * 31);
+            float roll = Hash01(_seed + _count * 31);
             _lub = _next;
-            _dub = roll < 0.12f ? -10f : _next + 0.24f + 0.05f * DrawHelpers.Hash01(_seed + _count * 37);   // the odd missing dub
-            float gap = DrawHelpers.HashRange(_seed + _count * 41, 0.62f, 1.15f) * (1f - 0.40f * stress);
+            _dub = roll < 0.12f ? -10f : _next + 0.24f + 0.05f * Hash01(_seed + _count * 37);   // the odd missing dub
+            float gap = HashRange(_seed + _count * 41, 0.62f, 1.15f) * (1f - 0.40f * stress);
             _next += roll > 0.90f ? 0.30f : gap;                                                          // and the odd extra beat
         }
 
@@ -89,5 +89,5 @@ internal sealed class Heartbeat
     }
 
     private static float Thump(float t, float gain)
-        => t < 0f ? 0f : gain * MathF.Exp(-t / 0.11f) * DrawHelpers.Smooth(t / 0.02f);
+        => t < 0f ? 0f : gain * MathF.Exp(-t / 0.11f) * Smooth(t / 0.02f);
 }

@@ -22,7 +22,7 @@ public sealed class ParticleArc : IParticleMaterial
         if (k <= 0.004f || p.Size <= 1f) return;
 
         // A strike is sudden: up in a blink, out over the second half.
-        float life = DrawHelpers.Smooth(p.AgeRatio / 0.15f) * (1f - DrawHelpers.Smooth((p.AgeRatio - 0.5f) / 0.5f));
+        float life = Smooth(p.AgeRatio / 0.15f) * (1f - Smooth((p.AgeRatio - 0.5f) / 0.5f));
         k *= life;
         if (k <= 0.004f) return;
 
@@ -30,8 +30,8 @@ public sealed class ParticleArc : IParticleMaterial
         float half = p.Size * (0.75f + 0.25f * life);
         Vector2 pos = p.DrawPos;
         Vector2 dir = new(MathF.Sin(p.Rotation), -MathF.Cos(p.Rotation));
-        int tick = (int)MathF.Floor(ctx.Time * 16f + DrawHelpers.Hash01(p.Seed + 3) * 8f);
-        bool overridden = DrawHelpers.ColorOverrideActive;
+        int tick = (int)MathF.Floor(ctx.Time * 16f + Hash01(p.Seed + 3) * 8f);
+        bool overridden = ColorOverrideActive;
 
         if (half < LodSmall * px)
         {
@@ -56,7 +56,7 @@ public sealed class ParticleArc : IParticleMaterial
         {
             float t = j / (float)(m - 1);  // 0..1 along the arc
             float along = (t * 2f - 1f) * half;
-            float pin = DrawHelpers.Smooth(MathF.Min(t, 1f - t) / 0.22f);
+            float pin = Smooth(MathF.Min(t, 1f - t) / 0.22f);
             pts[j] = pos + dir * along + side * (Bolt.Lattice(p.Seed, j, tick) * amp * pin);
         }
         MeshBuilder.MiterNormals(pts[..m], nrm[..m]);
@@ -67,12 +67,12 @@ public sealed class ParticleArc : IParticleMaterial
         for (int j = 0; j < m; j++)
         {
             float t = j / (float)(m - 1);
-            float ends = 0.55f + 0.45f * DrawHelpers.Smooth(MathF.Min(t, 1f - t) / 0.30f);
+            float ends = 0.55f + 0.45f * Smooth(MathF.Min(t, 1f - t) / 0.30f);
             hw[j] = bodyHalf;
             reach[j] = bloomReach;
-            bloom[j] = DrawHelpers.Tint(StormColor.Glow.Sample(0.50f), k * 0.28f * ends, overridden);
-            body[j] = DrawHelpers.Tint(StormColor.Glow.Sample(0.84f), k * 0.95f * ends, overridden);
-            core[j] = DrawHelpers.Tint(StormColor.Glow.Sample(1.00f), k * 0.90f * ends, overridden);
+            bloom[j] = Tint(StormColor.Glow.Sample(0.50f), k * 0.28f * ends, overridden);
+            body[j] = Tint(StormColor.Glow.Sample(0.84f), k * 0.95f * ends, overridden);
+            core[j] = Tint(StormColor.Glow.Sample(1.00f), k * 0.90f * ends, overridden);
         }
 
         Mb.Clear();
@@ -87,27 +87,27 @@ public sealed class ParticleArc : IParticleMaterial
             Span<float> tr = stackalloc float[4];
             Span<uint> tb = stackalloc uint[4];
             Span<uint> tbl = stackalloc uint[4];
-            int twigs = 2 + (DrawHelpers.Hash01(p.Seed + tick * 5 + 1) < 0.4f ? 1 : 0);
+            int twigs = 2 + (Hash01(p.Seed + tick * 5 + 1) < 0.4f ? 1 : 0);
             for (int i = 0; i < twigs; i++)
             {
                 int fs = p.Seed * 7 + i * 131;
-                int at = 1 + (int)(DrawHelpers.Hash01(fs + tick * 3) * (m - 2));
+                int at = 1 + (int)(Hash01(fs + tick * 3) * (m - 2));
                 at = Math.Clamp(at, 1, m - 2);
                 Vector2 d = pts[at + 1] - pts[at - 1];
                 float dl2 = d.LengthSquared();
                 if (dl2 < 1e-4f) continue;
                 Vector2 tan = d / MathF.Sqrt(dl2);
                 float sgn = (i & 1) == 0 ? 1f : -1f;
-                float ang = 0.55f + 0.5f * DrawHelpers.Hash01(fs + tick * 9 + 2);
-                Bolt.Twig(tw, pts[at], DrawHelpers.Rotate(tan, sgn * ang), half * (0.55f + 0.35f * DrawHelpers.Hash01(fs + 4)), fs + 29, tick, 0.5f);
+                float ang = 0.55f + 0.5f * Hash01(fs + tick * 9 + 2);
+                Bolt.Twig(tw, pts[at], Rotate(tan, sgn * ang), half * (0.55f + 0.35f * Hash01(fs + 4)), fs + 29, tick, 0.5f);
                 MeshBuilder.MiterNormals(tw, tn);
                 for (int j = 0; j < 4; j++)
                 {
                     float taper = 1f - j / 4f;
                     th[j] = MathF.Max(0.45f * px, bodyHalf * 0.6f * taper);
                     tr[j] = bloomReach * 0.55f * taper;
-                    tb[j] = DrawHelpers.Tint(StormColor.Glow.Sample(0.66f), k * 0.70f * taper, overridden);
-                    tbl[j] = DrawHelpers.Tint(StormColor.Glow.Sample(0.34f), k * 0.22f * taper, overridden);
+                    tb[j] = Tint(StormColor.Glow.Sample(0.66f), k * 0.70f * taper, overridden);
+                    tbl[j] = Tint(StormColor.Glow.Sample(0.34f), k * 0.22f * taper, overridden);
                 }
                 Mb.Tent(tw, tn, tr, tbl);
                 Mb.Ribbon(tw, tn, th, tb, 0.7f * px);
@@ -121,7 +121,7 @@ public sealed class ParticleArc : IParticleMaterial
         Mb.Flush(dl, MeshDraw.WhiteUv(ctx.Time));
 
         // A hot pip where the arc touches down at either end.
-        uint pip = DrawHelpers.WithAlpha(StormColor.Glow.Sample(1f), k * 0.80f);
+        uint pip = WithAlpha(StormColor.Glow.Sample(1f), k * 0.80f);
         float pr = MathF.Max(0.9f * px, half * 0.07f);
         dl.AddCircleFilled(pts[0], pr, pip);
         dl.AddCircleFilled(pts[m - 1], pr, pip);
@@ -134,8 +134,8 @@ public sealed class ParticleArc : IParticleMaterial
         Vector2 a = pos - dir * half;
         Vector2 b = pos + side * (Bolt.Lattice(seed, 1, tick) * half * 0.5f);
         Vector2 c = pos + dir * half;
-        uint glow = DrawHelpers.WithAlpha(StormColor.Glow.Sample(0.45f), k * 0.30f);
-        uint line = DrawHelpers.WithAlpha(StormColor.Glow.Sample(0.92f), k * 0.95f);
+        uint glow = WithAlpha(StormColor.Glow.Sample(0.45f), k * 0.30f);
+        uint line = WithAlpha(StormColor.Glow.Sample(0.92f), k * 0.95f);
         dl.AddCircleFilled(pos, half * 1.6f, glow);
         dl.AddLine(a, b, line, 1.2f);
         dl.AddLine(b, c, line, 1.2f);
@@ -167,7 +167,7 @@ public sealed class ParticleFlare : IParticleMaterial
         float k = p.Brightness * ctx.Alpha;
         if (k <= 0.004f || p.Size <= 1f) return;
 
-        float life = DrawHelpers.Smooth(p.AgeRatio / 0.10f) * (1f - DrawHelpers.Smooth((p.AgeRatio - 0.25f) / 0.75f));
+        float life = Smooth(p.AgeRatio / 0.10f) * (1f - Smooth((p.AgeRatio - 0.25f) / 0.75f));
         k *= life;
         if (k <= 0.004f) return;
 
@@ -175,11 +175,11 @@ public sealed class ParticleFlare : IParticleMaterial
         Span<float> rr = stackalloc float[3] { r * 0.14f, r * 0.42f, r };
         Span<uint> cc = stackalloc uint[3]
         {
-            DrawHelpers.WithAlpha(StormColor.Glow.Sample(0.92f), 0.60f * k),
-            DrawHelpers.WithAlpha(StormColor.Glow.Sample(0.62f), 0.22f * k),
-            DrawHelpers.WithAlpha(StormColor.Glow.Sample(0.45f), 0f),
+            WithAlpha(StormColor.Glow.Sample(0.92f), 0.60f * k),
+            WithAlpha(StormColor.Glow.Sample(0.62f), 0.22f * k),
+            WithAlpha(StormColor.Glow.Sample(0.45f), 0f),
         };
-        MeshDraw.Radial(dl, p.DrawPos, MeshDraw.WhiteUv(ctx.Time), DrawHelpers.WithAlpha(StormColor.Glow.Sample(1.00f), 0.95f * k),
+        MeshDraw.Radial(dl, p.DrawPos, MeshDraw.WhiteUv(ctx.Time), WithAlpha(StormColor.Glow.Sample(1.00f), 0.95f * k),
                         18, rr, cc, 0f, 1f, 0, 0f);
     }
 

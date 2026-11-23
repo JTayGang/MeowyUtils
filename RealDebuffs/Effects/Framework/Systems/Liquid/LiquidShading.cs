@@ -81,9 +81,9 @@ public sealed class LiquidMatcap
         Vector3 light = StudioLighting.KeyColor * (0.28f + 0.85f * keyWrap) + StudioLighting.FillColor * 0.42f;
         body *= light;
         // A thin dark line at the silhouette: the liquid refracts the edge of the scene
-        body *= 1f - 0.34f * DrawHelpers.Smooth(0.80f, 1.0f, rimness);
+        body *= 1f - 0.34f * Smooth(0.80f, 1.0f, rimness);
 
-        float opacity = DrawHelpers.Lerp(s.EdgeOpacity, s.Opacity, thick);
+        float opacity = Lerp(s.EdgeOpacity, s.Opacity, thick);
 
         // light added on top of the body
         Vector3 add = Vector3.Zero;
@@ -112,7 +112,7 @@ public sealed class LiquidMatcap
             Vector2 away = new(-StudioLighting.Key.X, -StudioLighting.Key.Y);
             away /= away.Length();
             float facing = MathF.Max(0f, (n.X * away.X + n.Y * away.Y) / rl);
-            float crescent = MathF.Pow(facing, 2.6f) * DrawHelpers.Smooth(0.28f, 0.92f, rimness) * (1f - 0.35f * DrawHelpers.Smooth(0.92f, 1f, rimness));
+            float crescent = MathF.Pow(facing, 2.6f) * Smooth(0.28f, 0.92f, rimness) * (1f - 0.35f * Smooth(0.92f, 1f, rimness));
             add += (s.Thin * 1.9f + new Vector3(0.10f)) * (crescent * s.Caustic);
         }
 

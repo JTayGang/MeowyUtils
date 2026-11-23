@@ -60,7 +60,7 @@ public sealed class BindEffect : SceneEffect, IHasSwappableSlots
     private const float HangDelay = 0.8f;
     private const float HangEaseIn = 1.5f;
 
-    private static readonly uint Vignette = DrawHelpers.Pack(0.022f, 0.015f, 0.010f);
+    private static readonly uint Vignette = Pack(0.022f, 0.015f, 0.010f);
 
     // Standing-wave shapes per path sample (u is fixed), so Hang needs no per-sample sines.
     private static readonly float[] RingMode1 = new float[PathSamples];
@@ -148,7 +148,7 @@ public sealed class BindEffect : SceneEffect, IHasSwappableSlots
         }
 
         // The vignette closes in as the ropes are hauled taut.
-        float castIn = DrawHelpers.Saturate(f.Age / 0.7f);
+        float castIn = Saturate(f.Age / 0.7f);
         float tension = _set.Count > 0 ? haul / _set.Count : 0f;
         scene.RequestVignette(Vignette, VignetteDepth + VignetteTighten * tension,
                               f.Alpha * VignetteAlpha * castIn * (0.7f + 0.3f * tension), priority: 20, f.Color);
@@ -164,7 +164,7 @@ public sealed class BindEffect : SceneEffect, IHasSwappableSlots
         float tTaut = tHaul + rig.Haul;
 
         // Head: constant speed after a short launch ramp, stopped by the far anchor; the loose line keeps going.
-        float tau = DrawHelpers.Saturate(t / rig.Flight);
+        float tau = Saturate(t / rig.Flight);
         float arc = ThrowArc * rig.ChordLen * MathF.Sin(MathF.PI * tau);
         Vector2 head = rig.Start + (rig.End - rig.Start) * StrandRig.Travel(tau) - rig.SagDir * arc;
 
@@ -197,14 +197,14 @@ public sealed class BindEffect : SceneEffect, IHasSwappableSlots
             float length = slackLength;
             if (t >= tHaul)
             {
-                haulK = DrawHelpers.Saturate((t - tHaul) / rig.Haul);
+                haulK = Saturate((t - tHaul) / rig.Haul);
                 float tautLength = rig.ChordLen * (1f + rig.TautExtra);
                 length = slackLength + (tautLength - slackLength) * MathF.Pow(haulK, HaulEase);
             }
             strand.Length = MathF.Max(2f, length);
 
             // Through the haul: heavier damping, tighter constraints, less visible weight.
-            float tighten = DrawHelpers.Smooth(haulK);
+            float tighten = Smooth(haulK);
             strand.Drag = HangDrag + (TautDrag - HangDrag) * tighten;
             strand.Gravity = new Vector2(0f, Gravity * f.Px * (1f - (1f - rig.TautGravity) * tighten));
             strand.Iterations = haulK > 0f ? 24 : 8;
@@ -237,7 +237,7 @@ public sealed class BindEffect : SceneEffect, IHasSwappableSlots
     private static void Hang(Rig rig, float t, float px)
     {
         float since = t - rig.TautAt;
-        float ease = DrawHelpers.Smooth((since - HangDelay) / HangEaseIn);
+        float ease = Smooth((since - HangDelay) / HangEaseIn);
 
         float amp = ease * SwayAmp * px;
         float swayA = amp * rig.SwayScaleA * MathF.Sin(rig.SwayOmegaA * since + rig.SwayPhaseA);
@@ -307,11 +307,11 @@ public sealed class BindEffect : SceneEffect, IHasSwappableSlots
     {
         float overhang = MathF.Min(size.X, size.Y) * 0.07f;
 
-        _set.Count = Math.Min(5 + (int)(DrawHelpers.Hash01(castSeed + 1) * 2f), MaxRopes);
+        _set.Count = Math.Min(5 + (int)(Hash01(castSeed + 1) * 2f), MaxRopes);
 
         // Partners go on corners whose rope they can cross; never the same corner twice.
-        int firstPartner = (int)(DrawHelpers.Hash01(castSeed + 2) * 4f) & 3;
-        int secondPartner = (firstPartner + 1 + (int)(DrawHelpers.Hash01(castSeed + 3) * 3f)) & 3;
+        int firstPartner = (int)(Hash01(castSeed + 2) * 4f) & 3;
+        int secondPartner = (firstPartner + 1 + (int)(Hash01(castSeed + 3) * 3f)) & 3;
 
         // Each corner rope's legs, so a partner can be made steeper than the rope it crosses.
         Span<float> legA = stackalloc float[4];
@@ -320,7 +320,7 @@ public sealed class BindEffect : SceneEffect, IHasSwappableSlots
         for (int i = 0; i < _set.Count; i++)
         {
             int s = unchecked(castSeed + i * 977 + 17);
-            float H(int salt, float lo, float hi) => DrawHelpers.HashRange(s + salt, lo, hi);
+            float H(int salt, float lo, float hi) => HashRange(s + salt, lo, hi);
 
             bool partner = i >= 4;
             int corner = partner ? (i == 4 ? firstPartner : secondPartner) : i;
@@ -372,10 +372,10 @@ public sealed class BindEffect : SceneEffect, IHasSwappableSlots
 
     private static void BuildRig(Rig r, int s, Vector2 a, Vector2 b, Vector2 size, bool far)
     {
-        float H(int salt, float lo, float hi) => DrawHelpers.HashRange(s + salt, lo, hi);
-        float px = DrawHelpers.PixelScale(size);
+        float H(int salt, float lo, float hi) => HashRange(s + salt, lo, hi);
+        float px = PixelScale(size);
 
-        if (DrawHelpers.Hash01(s + 3) < 0.5f) (a, b) = (b, a);
+        if (Hash01(s + 3) < 0.5f) (a, b) = (b, a);
 
         r.Reset(s);
         r.SetChord(a, b);

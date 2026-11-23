@@ -56,7 +56,7 @@ internal static partial class LiquidDraw
         ReadOnlySpan<float> rows = [0f, 3f, 9f, 20f, 38f, 64f, 100f, 1e5f];
 
         // light is absorbed with depth, so the tint closes on the deep colour exponentially
-        float reach = DrawHelpers.Lerp(80f, 30f, look.Opacity) * px;
+        float reach = Lerp(80f, 30f, look.Opacity) * px;
         Vector3 skin = Lit(look.Thin * (StudioLighting.FillColor * 1.1f + StudioLighting.KeyColor * 0.30f + new Vector3(0.05f)));
         Vector3 deep = Lit(look.Deep * 0.9f);
         float aTop = 0.12f + 0.50f * ph.Viscosity, aDeep = look.Opacity;
@@ -68,12 +68,12 @@ internal static partial class LiquidDraw
         int first = Mb.Vertices;
         for (int i = 0; i < n; i++)
         {
-            float y0 = _y[i], x = i * dx, fade = DrawHelpers.Smooth((H - y0) / (7f * px));
+            float y0 = _y[i], x = i * dx, fade = Smooth((H - y0) / (7f * px));
             for (int r = 0; r < R; r++)
             {
                 float y = y0 + rows[r] * px, z = zr[r];
                 if (y > H) { y = H; z = 1f - MathF.Exp(-(H - y0) / reach); }
-                Mb.VertexReserved(new Vector2(x, y), Col(in k, Vector3.Lerp(skin, deep, z), DrawHelpers.Lerp(aTop, aDeep, z) * fade));
+                Mb.VertexReserved(new Vector2(x, y), Col(in k, Vector3.Lerp(skin, deep, z), Lerp(aTop, aDeep, z) * fade));
             }
         }
         Mb.StitchGrid(first, n, R);
@@ -136,7 +136,7 @@ internal static partial class LiquidDraw
             }
         }
         _luxCols = cols; _luxExt = ext; _luxRest = rest; _luxLevel = level;
-        _luxReach = DrawHelpers.Lerp(80f, 30f, look.Opacity) * px;
+        _luxReach = Lerp(80f, 30f, look.Opacity) * px;
         _luxOn = true;
 
         Vector3 glow = Lit(Vector3.Lerp(look.Thin, Vector3.One, 0.55f) * StudioLighting.KeyColor * 1.3f);
@@ -147,7 +147,7 @@ internal static partial class LiquidDraw
         for (int j = 0; j < Planes; j++)
         {
             float d = PlaneD[j], sink = 1f - d / level;
-            float strength = gain * MathF.Exp(-d / (0.9f * _luxReach)) * DrawHelpers.Smooth(d / (4f * px));
+            float strength = gain * MathF.Exp(-d / (0.9f * _luxReach)) * Smooth(d / (4f * px));
             for (int q = 0; q < span; q++)
             {
                 int c = Math.Min(lo + 2 * q, cols - 2);
@@ -201,7 +201,7 @@ internal static partial class LiquidDraw
             {
                 float u = r / (Rz - 1f), z = reach * MathF.Pow(u, 1.2f);
                 float w = w0 * (0.8f + 0.9f * u), cx = j.Hit.X + lean * reach * 0.5f * (1f - MathF.Exp(-u * 2.5f));
-                float fade = MathF.Exp(-1.9f * u) * (1f - u) * DrawHelpers.Smooth(z / (3f * px));
+                float fade = MathF.Exp(-1.9f * u) * (1f - u) * Smooth(z / (3f * px));
                 for (int c = 0; c < Cx; c++)
                 {
                     float q = c / (Cx - 1f) * 2f - 1f;
@@ -226,7 +226,7 @@ internal static partial class LiquidDraw
         for (int i = 0; i < f.BubbleCount; i++)
         {
             ref readonly var b = ref f.Bubbles[i];
-            float r = b.R, a = DrawHelpers.Smooth(b.Age / 0.12f) * (0.55f + 0.45f * k.L.Phys.Bubbles);
+            float r = b.R, a = Smooth(b.Age / 0.12f) * (0.55f + 0.45f * k.L.Phys.Bubbles);
 
             // an air bubble is nearly clear in the middle, with a bright rim where light is totally reflected inside it
             rr[0] = r * 0.70f; rr[1] = r * 0.98f; rr[2] = r * 1.20f;
@@ -257,14 +257,14 @@ internal static partial class LiquidDraw
         for (int i = 0; i < count; i++)
         {
             int h = i * 131 + 17;
-            float t = k.Time, p = DrawHelpers.Hash01(h + 2) * MathF.Tau;
-            float x = DrawHelpers.Wrap(DrawHelpers.Hash01(h) * W + t * (5f + 9f * DrawHelpers.Hash01(h + 3)) * px + 30f * px * MathF.Sin(t * 0.11f + p), W);
+            float t = k.Time, p = Hash01(h + 2) * MathF.Tau;
+            float x = Wrap(Hash01(h) * W + t * (5f + 9f * Hash01(h + 3)) * px + 30f * px * MathF.Sin(t * 0.11f + p), W);
             float s = SurfaceAt(x, f), depth = f.Size.Y - s;
-            float d = 0.10f + 0.84f * DrawHelpers.Hash01(h + 1);
+            float d = 0.10f + 0.84f * Hash01(h + 1);
             float y = s + depth * d + 4f * px * MathF.Sin(t * 0.37f + p);
             float lit = Math.Clamp(LightAt(x, y, f.Spacing) - 0.4f, 0f, 1.6f) / 1.6f;
-            float a = clear * (0.10f + 0.36f * lit) * DrawHelpers.Smooth(d / 0.14f) * DrawHelpers.Smooth(depth / (30f * px));
-            float r = (0.7f + 1.1f * DrawHelpers.Hash01(h + 4)) * px * (0.8f + 0.5f * lit);
+            float a = clear * (0.10f + 0.36f * lit) * Smooth(d / 0.14f) * Smooth(depth / (30f * px));
+            float r = (0.7f + 1.1f * Hash01(h + 4)) * px * (0.8f + 0.5f * lit);
             rr[0] = r * 0.5f; rr[1] = r;
             cc[0] = Col(in k, dust, a * 0.5f); cc[1] = Col(in k, dust, 0f);
             MeshDraw.Radial(dl, new Vector2(x, y), k.Uv, Col(in k, dust, a), 6, rr, cc, 0f, 1f, 0, 0f);
@@ -294,8 +294,8 @@ internal static partial class LiquidDraw
             float s = _slope[i] + micro;
             float glint = MathF.Exp(-MathF.Pow((s + 0.30f) / 0.20f, 2f)) + 0.10f;
             float lit = Math.Clamp((1f - AirTilt * s - 0.5f) / 1.0f, 0f, 1.2f);  // a face turned to the light is brighter
-            float broken = 0.55f + 0.45f * DrawHelpers.Smooth(-0.2f, 0.7f, Noise.Value(x * 0.03f / px, k.Time * 0.35f));
-            float fade = DrawHelpers.Smooth((f.Size.Y - y0) / (30f * px));
+            float broken = 0.55f + 0.45f * Smooth(-0.2f, 0.7f, Noise.Value(x * 0.03f / px, k.Time * 0.35f));
+            float fade = Smooth((f.Size.Y - y0) / (30f * px));
 
             Vector3 line = Vector3.Lerp(sky, key, MathF.Min(1f, glint * sheen));
             float aLine = Math.Clamp(0.26f + 0.50f * glint * sheen + 0.18f * lit, 0f, 0.95f);
@@ -331,7 +331,7 @@ internal static partial class LiquidDraw
                 continue;
             }
             float cell = 0.5f + 0.35f * Noise.Value(x * 0.035f / px, k.Time * 0.6f) + 0.15f * Noise.Value(x * 0.09f / px, k.Time * 1.3f);
-            float body = DrawHelpers.Smooth(0.04f, 0.95f, MathF.Min(f.Foam[i], 1.4f) * (0.45f + 0.8f * cell));
+            float body = Smooth(0.04f, 0.95f, MathF.Min(f.Foam[i], 1.4f) * (0.45f + 0.8f * cell));
             float th = (1.4f + 9f * body) * px, a = body * 0.78f;
             Mb.VertexReserved(new Vector2(x, y0 - th), Col(in k, white, 0f));
             Mb.VertexReserved(new Vector2(x, y0 - th * 0.55f), Col(in k, white, a * 0.85f));
@@ -357,13 +357,13 @@ internal static partial class LiquidDraw
             for (int s = 0; s < 2; s++)
             {
                 int h = i * 91 + s * 577;
-                float life = DrawHelpers.HashRange(h + 1, 0.8f, 1.7f), u = k.Time / life + DrawHelpers.Hash01(h + 2);
+                float life = HashRange(h + 1, 0.8f, 1.7f), u = k.Time / life + Hash01(h + 2);
                 int cycle = (int)u;
                 float born = u - cycle;
-                if (DrawHelpers.Hash01(h + cycle * 31) > amt * 0.8f) continue;
+                if (Hash01(h + cycle * 31) > amt * 0.8f) continue;
                 float env = MathF.Sqrt(MathF.Sin(MathF.PI * born));
-                float r = DrawHelpers.HashRange(h + cycle * 17, 0.9f, 2.6f) * px;
-                var at = new Vector2(i * f.Spacing + DrawHelpers.HashRange(h + cycle * 29, -3.5f, 3.5f) * px, _y[i] - r * 0.3f - DrawHelpers.Hash01(h + cycle * 7) * 4f * px);
+                float r = HashRange(h + cycle * 17, 0.9f, 2.6f) * px;
+                var at = new Vector2(i * f.Spacing + HashRange(h + cycle * 29, -3.5f, 3.5f) * px, _y[i] - r * 0.3f - Hash01(h + cycle * 7) * 4f * px);
                 rr[0] = r * 0.7f; rr[1] = r; rr[2] = r * 1.25f;
                 cc[0] = Col(in k, rim, 0.10f * env); cc[1] = Col(in k, rim, 0.55f * env); cc[2] = Col(in k, rim, 0f);
                 MeshDraw.Radial(dl, at, k.Uv, Col(in k, rim, 0.03f * env), 8, rr, cc, 0f, 1f, 0, 0f);

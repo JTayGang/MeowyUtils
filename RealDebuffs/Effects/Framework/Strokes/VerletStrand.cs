@@ -319,7 +319,7 @@ public abstract class StrandRig
     public virtual void Reset(int seed)
     {
         Seed = seed;
-        Phase = DrawHelpers.HashRange(seed + 999, 0f, MathF.Tau);
+        Phase = HashRange(seed + 999, 0f, MathF.Tau);
         Launched = Landed = PathFrozen = false;
         Agitation = 0f;
         Path.Count = 0;

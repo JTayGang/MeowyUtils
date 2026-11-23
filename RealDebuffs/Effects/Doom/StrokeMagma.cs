@@ -45,7 +45,7 @@ public sealed class StrokeMagma : IStrokeMaterial
         float depth = Math.Clamp(s.Depth, 0f, 1f);
         float visibleLen = total * reveal;
         float time = ctx.Time;
-        bool overridden = DrawHelpers.ColorOverrideActive;
+        bool overridden = ColorOverrideActive;
         float agit = Math.Clamp(s.Agitation, 0f, 1f);
 
         float step = Math.Clamp(width * 1.4f, 14f * px, 22f * px);  // the heat varies over tens of px, so it needs no finer
@@ -86,7 +86,7 @@ public sealed class StrokeMagma : IStrokeMaterial
             for (int i = 0; i < heat.Length; i++)
             {
                 half[i] = reach * (0.75f + 0.25f * heat[i]);
-                col[i] = DrawHelpers.Tint(_palette.Sample(0.24f + 0.10f * heat[i]), alpha * 0.30f * near * Math.Min(heat[i], 1.2f), overridden);
+                col[i] = Tint(_palette.Sample(0.24f + 0.10f * heat[i]), alpha * 0.30f * near * Math.Min(heat[i], 1.2f), overridden);
             }
             Mb.Tent(pts.AsSpan(0, heat.Length), nrm.AsSpan(0, heat.Length), half, col);
         }
@@ -111,7 +111,7 @@ public sealed class StrokeMagma : IStrokeMaterial
                 float cv = Math.Clamp(0.10f + 0.90f * temp, 0f, 1f);
                 float a = fringe ? 0f : Math.Clamp(prof * 2.4f, 0f, 1f) * (0.62f + 0.38f * MathF.Min(h, 1f));
 
-                uint color = DrawHelpers.Tint(_palette.Sample(cv), alpha * near * a, overridden);
+                uint color = Tint(_palette.Sample(cv), alpha * near * a, overridden);
                 float off = fringe ? Math.Sign(u) * (hw + 1.2f * px * soften) : u * hw;
                 int v = Mb.VertexReserved(pts[i] + nrm[i] * off, color);
                 if (first < 0) first = v;
@@ -131,11 +131,11 @@ public sealed class StrokeMagma : IStrokeMaterial
         Span<float> rr = stackalloc float[2] { width * 0.9f, width * 2.8f };
         Span<uint> cc = stackalloc uint[2]
         {
-            DrawHelpers.WithAlpha(_palette.Sample(0.70f), 0.40f * k),
-            DrawHelpers.WithAlpha(_palette.Sample(0.30f), 0f),
+            WithAlpha(_palette.Sample(0.70f), 0.40f * k),
+            WithAlpha(_palette.Sample(0.30f), 0f),
         };
-        MeshDraw.Radial(dl, tip, MeshDraw.WhiteUv(ctx.Time), DrawHelpers.WithAlpha(_palette.Sample(1f), 0.95f * k), 12, rr, cc, 0f, 1f, 0, 0f);
-        dl.AddCircleFilled(tip, MathF.Max(1.4f, width * 0.36f), DrawHelpers.Tint(_palette.Sample(1f), 0.95f * k, overridden));
+        MeshDraw.Radial(dl, tip, MeshDraw.WhiteUv(ctx.Time), WithAlpha(_palette.Sample(1f), 0.95f * k), 12, rr, cc, 0f, 1f, 0, 0f);
+        dl.AddCircleFilled(tip, MathF.Max(1.4f, width * 0.36f), Tint(_palette.Sample(1f), 0.95f * k, overridden));
     }
 
     public ReadOnlySpan<StrokeEmission> Emissions => Shed;

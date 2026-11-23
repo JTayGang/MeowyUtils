@@ -30,13 +30,13 @@ internal static class MemoryColor
         (1.00f, 0.900f, 0.900f, 0.930f));
 
     /// <summary>The shade behind script: slate grey.</summary>
-    public static readonly uint MurmurInk = DrawHelpers.Pack(0.300f, 0.310f, 0.360f);
+    public static readonly uint MurmurInk = Pack(0.300f, 0.310f, 0.360f);
 
     /// <summary>The deep tone of the spiral's ink arms.</summary>
-    public static readonly uint Ink = DrawHelpers.Pack(0.070f, 0.070f, 0.200f);
+    public static readonly uint Ink = Pack(0.070f, 0.070f, 0.200f);
 
     /// <summary>Edge tint for the screen's vignette: pale lilac, so the edges bleach rather than darken.</summary>
-    public static readonly uint Vignette = DrawHelpers.Pack(0.800f, 0.820f, 0.940f);
+    public static readonly uint Vignette = Pack(0.800f, 0.820f, 0.940f);
 }
 
 internal sealed class MemoryMaterials : IMaterialPack
@@ -46,7 +46,7 @@ internal sealed class MemoryMaterials : IMaterialPack
         // Milky haze: a billow of pearl and lilac, slate in its folds
         new ParticlePuff("particle.pearlfog", new[] { "pearlfog", "milk", "cloud", "clouds", "brume" },
             new ParticlePuff.Look(
-                Warm: DrawHelpers.Pack(0.84f, 0.86f, 0.96f), Cool: 0, CoolSpan: 0f,
+                Warm: Pack(0.84f, 0.86f, 0.96f), Cool: 0, CoolSpan: 0f,
                 GrowFrom: 0.80f, GrowBy: 0.28f, FadeIn: 0.20f, FadeOutAt: 0.72f,
                 Alpha: 0.56f, Squash: 0.78f, Irregular: 0.30f, MinSize: 6f, Ramp: MemoryColor.Fog),
             new StrokeEmission(Role: PrimitiveRole.Mist,

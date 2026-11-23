@@ -10,7 +10,7 @@ internal static class Bolt
     {
         unchecked
         {
-            return DrawHelpers.Hash01(seed * 747796405 + cell * 1597334677 + tick * (int)0x9E3779B1 + 0x2545F491) * 2f - 1f;
+            return Hash01(seed * 747796405 + cell * 1597334677 + tick * (int)0x9E3779B1 + 0x2545F491) * 2f - 1f;
         }
     }
 
@@ -21,11 +21,11 @@ internal static class Bolt
         float f = (k - cell * m) / (float)m;
         int t0 = (int)MathF.Floor(tt);
 
-        float v0 = DrawHelpers.Lerp(Lattice(seed, cell, t0), Lattice(seed, cell + 1, t0), f);
+        float v0 = Lerp(Lattice(seed, cell, t0), Lattice(seed, cell + 1, t0), f);
         if (!smooth) return v0;
 
-        float v1 = DrawHelpers.Lerp(Lattice(seed, cell, t0 + 1), Lattice(seed, cell + 1, t0 + 1), f);
-        return DrawHelpers.Lerp(v0, v1, DrawHelpers.Smooth(tt - t0));
+        float v1 = Lerp(Lattice(seed, cell, t0 + 1), Lattice(seed, cell + 1, t0 + 1), f);
+        return Lerp(v0, v1, Smooth(tt - t0));
     }
 
     /// <summary>Lateral kink in px along each sample's normal: a slow meander plus a drifting wander.</summary>
@@ -37,7 +37,7 @@ internal static class Bolt
         float a2 = 0.50f * stepPx * violence;
 
         // Tick clocks are offset per seed so a crowd of bolts never re-rolls in step.
-        float ph = DrawHelpers.Hash01(seed + 11) * 50f;
+        float ph = Hash01(seed + 11) * 50f;
         float tm = time * 0.7f + ph * 0.6f;
         float t0 = time * 2.2f + ph;
         float t1 = time * 7.0f + ph * 1.7f;
@@ -63,7 +63,7 @@ internal static class Bolt
             ang += Lattice(seed, j, tick) * bend;
             float c = MathF.Cos(ang), s = MathF.Sin(ang);
             Vector2 d = new(dir.X * c - dir.Y * s, dir.X * s + dir.Y * c);
-            outPts[j] = outPts[j - 1] + d * (seg * (0.75f + 0.5f * DrawHelpers.Hash01(seed + j * 53 + tick)));
+            outPts[j] = outPts[j - 1] + d * (seg * (0.75f + 0.5f * Hash01(seed + j * 53 + tick)));
         }
     }
 }

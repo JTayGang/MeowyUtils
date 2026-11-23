@@ -70,8 +70,8 @@ public sealed class ParalysisEffect : SceneEffect, IHasSwappableSlots
     private const float HazeHeightA = -430f, HazeHeightB = -260f;
 
     private static readonly uint FlashTint = StormColor.Flash;
-    private static readonly uint NumbTint = DrawHelpers.Pack(0.050f, 0.025f, 0.004f);
-    private static readonly uint StormLight = DrawHelpers.Pack(1.00f, 0.66f, 0.14f);
+    private static readonly uint NumbTint = Pack(0.050f, 0.025f, 0.004f);
+    private static readonly uint StormLight = Pack(1.00f, 0.66f, 0.14f);
 
     // A shock's spasm: the view snaps to a new offset at each of these times (s) with these gains, then rings out.
     private static readonly float[] SpasmAt = { 0.000f, 0.032f, 0.080f, 0.135f, 0.205f, 0.290f };
@@ -139,14 +139,14 @@ public sealed class ParalysisEffect : SceneEffect, IHasSwappableSlots
             else if (f.Age >= _nextStray)
             {
                 if (!_dirty && f.Age < _nextShock - ChargeLead * 0.9f && f.Age > _shockAt + 2.4f) Stray(f.Age, f.Size);
-                _nextStray = f.Age + DrawHelpers.HashRange(_seed + _shockCount * 211 + 9, 1.6f, 3.4f);
+                _nextStray = f.Age + HashRange(_seed + _shockCount * 211 + 9, 1.6f, 3.4f);
             }
         }
 
         float tau = f.Age - _shockAt;  // seconds since the latest shock
         float charge = Charge(f.Age);
-        float quiet = tau < 0f ? 1f : DrawHelpers.Smooth((tau - 0.8f) / 0.9f);  // the idle crackle gives way to a shock, then returns
-        float light = DrawHelpers.Saturate(ShockLight(tau, out float flash) * _fired.Power * 0.9f + 0.12f * charge * charge);
+        float quiet = tau < 0f ? 1f : Smooth((tau - 0.8f) / 0.9f);  // the idle crackle gives way to a shock, then returns
+        float light = Saturate(ShockLight(tau, out float flash) * _fired.Power * 0.9f + 0.12f * charge * charge);
 
         // The camera: nearly still between shocks; a shock yanks it toward the layers and throws it about.
         Vector2 spasm = Spasm(tau, out float punch);
@@ -197,19 +197,19 @@ public sealed class ParalysisEffect : SceneEffect, IHasSwappableSlots
         return new Plan
         {
             Seed = s,
-            Power = intro ? 1.2f : DrawHelpers.HashRange(s + 1, 0.85f, 1.2f),
-            Order = intro ? 0 : (int)(DrawHelpers.Hash01(s + 2) * 4f) % 4,
-            HitAngle = DrawHelpers.Hash01(s + 3) * MathF.Tau,
-            Bias = intro ? 0.12f : DrawHelpers.HashRange(s + 4, 0.15f, 0.55f),
-            Participation = intro ? 1f : DrawHelpers.HashRange(s + 5, 0.60f, 1.00f),
-            Leader = DrawHelpers.HashRange(s + 6, 0.060f, 0.105f),
-            Restrikes = intro ? 2 : 1 + (int)(DrawHelpers.Hash01(s + 7) * 3f) % 3,
-            Sweep = DrawHelpers.HashRange(s + 8, 0.22f, 0.42f),
-            SweepStart = DrawHelpers.Hash01(s + 9) * 4f,
-            SweepDir = DrawHelpers.Sign(s + 10),
-            FlashScale = intro ? 1f : DrawHelpers.HashRange(s + 11, 0.70f, 1.00f),
-            ReFlash = intro || DrawHelpers.Hash01(s + 12) < 0.70f,
-            Violence = DrawHelpers.HashRange(s + 13, 0.85f, 1.15f),
+            Power = intro ? 1.2f : HashRange(s + 1, 0.85f, 1.2f),
+            Order = intro ? 0 : (int)(Hash01(s + 2) * 4f) % 4,
+            HitAngle = Hash01(s + 3) * MathF.Tau,
+            Bias = intro ? 0.12f : HashRange(s + 4, 0.15f, 0.55f),
+            Participation = intro ? 1f : HashRange(s + 5, 0.60f, 1.00f),
+            Leader = HashRange(s + 6, 0.060f, 0.105f),
+            Restrikes = intro ? 2 : 1 + (int)(Hash01(s + 7) * 3f) % 3,
+            Sweep = HashRange(s + 8, 0.22f, 0.42f),
+            SweepStart = Hash01(s + 9) * 4f,
+            SweepDir = Sign(s + 10),
+            FlashScale = intro ? 1f : HashRange(s + 11, 0.70f, 1.00f),
+            ReFlash = intro || Hash01(s + 12) < 0.70f,
+            Violence = HashRange(s + 13, 0.85f, 1.15f),
         };
     }
 
@@ -225,7 +225,7 @@ public sealed class ParalysisEffect : SceneEffect, IHasSwappableSlots
     {
         Plan p = _plan;
         Vector2 c = size * 0.5f;
-        for (int l = 0; l < Layers.Length; l++) _layerStart[l] = DrawHelpers.Hash01(p.Seed + 30 + l) * 4f;
+        for (int l = 0; l < Layers.Length; l++) _layerStart[l] = Hash01(p.Seed + 30 + l) * 4f;
 
         int active = 0;
         for (int n = 0; n < ArcCount; n++)
@@ -235,10 +235,10 @@ public sealed class ParalysisEffect : SceneEffect, IHasSwappableSlots
             int s = p.Seed + n * 7919 + 13;
             float slot = 4f / L.Count;
 
-            a.P0 = _layerStart[a.Layer] + slot * a.LayerIdx + DrawHelpers.HashRange(s + 1, -0.12f, 0.12f) * slot;
-            a.Span = DrawHelpers.HashRange(s + 2, L.SpanMin, L.SpanMax);
-            a.Bulge = DrawHelpers.HashRange(s + 3, L.BulgeMin, L.BulgeMax);
-            a.WobblePhase = DrawHelpers.Hash01(s + 7) * MathF.Tau;
+            a.P0 = _layerStart[a.Layer] + slot * a.LayerIdx + HashRange(s + 1, -0.12f, 0.12f) * slot;
+            a.Span = HashRange(s + 2, L.SpanMin, L.SpanMax);
+            a.Bulge = HashRange(s + 3, L.BulgeMin, L.BulgeMax);
+            a.WobblePhase = Hash01(s + 7) * MathF.Tau;
             a.Seed = s;
 
             // How squarely this arc faces the hit, 0 (away) to 1 (into it).
@@ -246,14 +246,14 @@ public sealed class ParalysisEffect : SceneEffect, IHasSwappableSlots
             float angle = MathF.Atan2(mid.Y, mid.X);
             a.Facing = 0.5f + 0.5f * MathF.Cos(angle - p.HitAngle);
             float favour = p.Bias * (a.Facing * 2f - 1f);
-            a.Active = DrawHelpers.Hash01(s + 9) < Math.Clamp(p.Participation + favour, 0.15f, 1f);
+            a.Active = Hash01(s + 9) < Math.Clamp(p.Participation + favour, 0.15f, 1f);
             a.RollPower = p.Power * (1f + favour);
-            a.StreamerOn = DrawHelpers.Hash01(s + 10) < 0.55f;
+            a.StreamerOn = Hash01(s + 10) < 0.55f;
 
-            float jitter = DrawHelpers.Hash01(s + 4);
+            float jitter = Hash01(s + 4);
             a.Stagger = p.Order switch
             {
-                1 => DrawHelpers.Wrap((a.P0 + a.Span * 0.5f - p.SweepStart) * p.SweepDir / 4f, 1f) * p.Sweep + jitter * 0.015f,  // round the perimeter
+                1 => Wrap((a.P0 + a.Span * 0.5f - p.SweepStart) * p.SweepDir / 4f, 1f) * p.Sweep + jitter * 0.015f,  // round the perimeter
                 2 => (1f - a.Facing) * p.Sweep + jitter * 0.015f,  // a wave from the hit
                 3 => jitter * 0.02f,  // all at once
                 _ => L.Stagger + 0.012f * a.LayerIdx + jitter * 0.02f,  // by layer
@@ -283,10 +283,10 @@ public sealed class ParalysisEffect : SceneEffect, IHasSwappableSlots
         _spasmAngle = _fired.HitAngle + MathF.PI;  // thrown away from where it came from
         for (int k = 0; k < SpasmAt.Length; k++)
         {
-            _spT[k] = SpasmAt[k] * DrawHelpers.HashRange(_fired.Seed + 70 + k, 0.85f, 1.15f);
-            _spG[k] = SpasmGain[k] * DrawHelpers.HashRange(_fired.Seed + 80 + k, 0.75f, 1.25f);
+            _spT[k] = SpasmAt[k] * HashRange(_fired.Seed + 70 + k, 0.85f, 1.15f);
+            _spG[k] = SpasmGain[k] * HashRange(_fired.Seed + 80 + k, 0.75f, 1.25f);
         }
-        _nextShock = at + DrawHelpers.HashRange(_seed + _shockCount * 97 + 6, ShockMin, ShockMax);
+        _nextShock = at + HashRange(_seed + _shockCount * 97 + 6, ShockMin, ShockMax);
         _nextStray = at + 2.6f;
 
         for (int i = 0; i < ArcCount; i++)
@@ -307,7 +307,7 @@ public sealed class ParalysisEffect : SceneEffect, IHasSwappableSlots
     private void Stray(float age, Vector2 size)
     {
         float shortSide = MathF.Min(size.X, size.Y);
-        int first = (int)(DrawHelpers.Hash01(_seed + _shockCount * 331 + (int)(age * 10f)) * 9f) % 9;
+        int first = (int)(Hash01(_seed + _shockCount * 331 + (int)(age * 10f)) * 9f) % 9;
         for (int k = 0; k < 9; k++)
         {
             int pick = 3 + (first + k) % 9;  // arcs 3-11: everything but the faint far layer
@@ -343,7 +343,7 @@ public sealed class ParalysisEffect : SceneEffect, IHasSwappableSlots
     /// <summary>0 while the screen is quiet, rising to 1 over the ChargeLead seconds before the next shock.</summary>
     private float Charge(float age)
     {
-        float c = DrawHelpers.Saturate(1f - (_nextShock - age) / ChargeLead);
+        float c = Saturate(1f - (_nextShock - age) / ChargeLead);
         return c * c * (3f - 2f * c);
     }
 
@@ -371,7 +371,7 @@ public sealed class ParalysisEffect : SceneEffect, IHasSwappableSlots
         while (k + 1 < _spT.Length && tau >= _spT[k + 1]) k++;
         Vector2 cur = Offset(k, amp);
         Vector2 prev = k > 0 ? Offset(k - 1, amp) : Vector2.Zero;
-        float snap = DrawHelpers.Smooth((tau - _spT[k]) / 0.016f);
+        float snap = Smooth((tau - _spT[k]) / 0.016f);
         Vector2 v = prev + (cur - prev) * snap;
         if (k == _spT.Length - 1) v *= MathF.Exp(-MathF.Max(0f, tau - _spT[k] - 0.016f) / 0.20f);
 
@@ -395,7 +395,7 @@ public sealed class ParalysisEffect : SceneEffect, IHasSwappableSlots
         surgeAt = surgeGain = 0f;
         if (tau < 0f || tau > ZapSeconds) return;
 
-        reveal = DrawHelpers.Saturate(tau / leader);
+        reveal = Saturate(tau / leader);
         float since = tau - leader;
         if (since < 0f)
         {
@@ -416,11 +416,11 @@ public sealed class ParalysisEffect : SceneEffect, IHasSwappableSlots
                 surgeGain = RestrikeSurge[k] * power;
             }
         }
-        float dying = 1f - DrawHelpers.Smooth((since - 0.85f) / 0.55f);
+        float dying = 1f - Smooth((since - 0.85f) / 0.55f);
         level = power * (MathF.Exp(-since / 0.11f) + 0.55f * MathF.Exp(-since / 0.55f) + re) * dying;
-        glow = power * 0.9f * MathF.Exp(-since / 0.45f) * (1f - DrawHelpers.Smooth((since - 1.0f) / 0.8f));
-        agit = DrawHelpers.Saturate(power * (0.25f + 0.75f * MathF.Exp(-since / 0.30f)));
-        width = 0.60f + 0.40f * DrawHelpers.Saturate(level);
+        glow = power * 0.9f * MathF.Exp(-since / 0.45f) * (1f - Smooth((since - 1.0f) / 0.8f));
+        agit = Saturate(power * (0.25f + 0.75f * MathF.Exp(-since / 0.30f)));
+        width = 0.60f + 0.40f * Saturate(level);
 
         if (since < 0.05f) { surgeAt = 1f - since / 0.05f; surgeGain = 2.4f * power; }  // the return stroke: far end back to the start
     }
@@ -429,7 +429,7 @@ public sealed class ParalysisEffect : SceneEffect, IHasSwappableSlots
 
     private void EmitAtmosphere(EffectScene scene, float tau, float flash, float light, float charge)
     {
-        float castIn = DrawHelpers.Smooth(_f.Age / 0.40f);
+        float castIn = Smooth(_f.Age / 0.40f);
 
         scene.RequestVignette(StormColor.Vignette, 0.14f, _f.Alpha * (0.14f + 0.20f * light + 0.10f * charge) * castIn, priority: 12, _f.Color);
 
@@ -441,7 +441,7 @@ public sealed class ParalysisEffect : SceneEffect, IHasSwappableSlots
         // The shock: a flash and (usually) a weaker re-flash, then the world going numb for a beat.
         scene.Wash(_f.Size, FlashTint, 0.26f * _fired.Power * flash * _f.Gate, _f.Color);
 
-        float numb = DrawHelpers.Smooth(tau / 0.12f) * (1f - DrawHelpers.Smooth((tau - 0.20f) / 1.0f));
+        float numb = Smooth(tau / 0.12f) * (1f - Smooth((tau - 0.20f) / 1.0f));
         scene.Wash(_f.Size, NumbTint, 0.18f * _fired.Power * numb * _f.Gate, _f.Color);
     }
 
@@ -450,7 +450,7 @@ public sealed class ParalysisEffect : SceneEffect, IHasSwappableSlots
     {
         ref readonly LayerCamera cam = ref _view.Cam;
         float px = _f.Px, dist = CameraDistance * px;
-        float ramp = DrawHelpers.Smooth(_f.Age / 0.40f) * (1f - DrawHelpers.Smooth(_f.Leave));
+        float ramp = Smooth(_f.Age / 0.40f) * (1f - Smooth(_f.Leave));
         if (ramp <= 0.002f) return;
 
         float shortSide = MathF.Min(_f.Size.X, _f.Size.Y);
@@ -458,20 +458,20 @@ public sealed class ParalysisEffect : SceneEffect, IHasSwappableSlots
         for (int i = 0; i < HazeCount; i++)
         {
             int s = _seed + i * 4217 + 91;
-            float h = DrawHelpers.HashRange(s + 1, HazeHeightA, HazeHeightB) * px;
+            float h = HashRange(s + 1, HazeHeightA, HazeHeightB) * px;
             float pf = MathF.Max(0.12f, 1f - h / dist);
-            float perimeter = (i + DrawHelpers.Hash01(s + 2) * 0.8f) * (4f / HazeCount);
+            float perimeter = (i + Hash01(s + 2) * 0.8f) * (4f / HazeCount);
             Vector2 at0 = ScreenEdges.FromPerimeter(_f.Size, perimeter, -shortSide * 0.07f, out _);
             Vector2 drift = new(MathF.Sin(_f.Age * 0.11f + i) * 26f * px, MathF.Cos(_f.Age * 0.09f + i * 1.7f) * 20f * px);
             Vector2 at = cam.Project((at0.X - c.X) * pf + drift.X, (at0.Y - c.Y) * pf + drift.Y, h, out float scale);
 
-            float period = DrawHelpers.HashRange(s + 3, 8f, 13f);
-            float cycle = _f.Age / period + DrawHelpers.Hash01(s + 4);
+            float period = HashRange(s + 3, 8f, 13f);
+            float cycle = _f.Age / period + Hash01(s + 4);
             cycle -= MathF.Floor(cycle);
 
             scene.AddParticle(new ParticlePrimitive
             {
-                Position = at, Size = DrawHelpers.HashRange(s + 5, 440f, 780f) * px * scale, AgeRatio = cycle,
+                Position = at, Size = HashRange(s + 5, 440f, 780f) * px * scale, AgeRatio = cycle,
                 Brightness = _f.Alpha * ramp * (0.06f + 0.62f * light + 0.18f * charge), Seed = s, Role = PrimitiveRole.Haze, ColorOverride = _f.Color,
             });
         }
@@ -489,7 +489,7 @@ public sealed class ParalysisEffect : SceneEffect, IHasSwappableSlots
         float shockEnv = tau >= 0f ? MathF.Exp(-tau / 0.25f) * _fired.Power : 0f;
         int thrash = (int)(MathF.Max(tau, 0f) * 30f);
         // Idle streamers flicker at the edges even when nothing is about to happen
-        float stream = (0.22f + 0.78f * DrawHelpers.Smooth(charge)) * quiet;
+        float stream = (0.22f + 0.78f * Smooth(charge)) * quiet;
 
         for (int i = 0; i < ArcCount; i++)
         {
@@ -522,7 +522,7 @@ public sealed class ParalysisEffect : SceneEffect, IHasSwappableSlots
             if (zapping)
             {
                 Envelope(arcTau, a.ZapPower, leader, a.ZapRestrikes, out reveal, out level, out glow, out agit, out widthMul, out surgeAt, out surgeGain);
-                agit = DrawHelpers.Saturate(agit * _fired.Violence);
+                agit = Saturate(agit * _fired.Violence);
             }
             else
             {
@@ -532,9 +532,9 @@ public sealed class ParalysisEffect : SceneEffect, IHasSwappableSlots
                 if (a.Active && a.StreamerOn && stream > 0.04f)
                 {
                     int tick = (int)MathF.Floor(_f.Age * 9f + a.WobblePhase * 3f);
-                    if (DrawHelpers.Hash01(a.Seed + tick * 37) < 0.12f + 0.65f * stream)
+                    if (Hash01(a.Seed + tick * 37) < 0.12f + 0.65f * stream)
                     {
-                        reveal = (0.15f + 0.20f * stream) * (0.5f + 0.5f * DrawHelpers.Hash01(a.Seed + tick * 53 + 1));
+                        reveal = (0.15f + 0.20f * stream) * (0.5f + 0.5f * Hash01(a.Seed + tick * 53 + 1));
                         level = (0.14f + 0.50f * stream);
                         agit = 0.15f + 0.50f * stream;
                     }
@@ -640,38 +640,38 @@ public sealed class ParalysisEffect : SceneEffect, IHasSwappableSlots
     /// <summary>Short crackles that hop off the arcs and die, placed on the part of each arc that's on screen; stateless.</summary>
     private void EmitCrawlers(EffectScene scene, float tau, float charge, float quiet)
     {
-        float ramp = DrawHelpers.Smooth((_f.Age - 0.20f) / 0.5f) * (1f - DrawHelpers.Smooth(_f.Leave));
+        float ramp = Smooth((_f.Age - 0.20f) / 0.5f) * (1f - Smooth(_f.Leave));
         if (ramp <= 0.002f) return;
         float after = tau >= 0f ? MathF.Exp(-tau / 0.5f) * _fired.Power : 0f;
         float chance = 0.26f * quiet + 0.45f * charge + 0.90f * after;
 
         for (int slot = 0; slot < CrawlSlots; slot++)
         {
-            float rate = 3.2f + 3.0f * DrawHelpers.Hash01(slot * 13 + 1);
-            float x = _f.Age * rate + DrawHelpers.Hash01(slot * 7 + 2) * 10f;
+            float rate = 3.2f + 3.0f * Hash01(slot * 13 + 1);
+            float x = _f.Age * rate + Hash01(slot * 7 + 2) * 10f;
             int epoch = (int)MathF.Floor(x);
             float f = x - epoch;
             if (f > 0.7f) continue;
 
             int hs = _seed + slot * 9173 + epoch * 7919;
-            if (DrawHelpers.Hash01(hs + 1) > chance) continue;
+            if (Hash01(hs + 1) > chance) continue;
 
-            int ai = (int)(DrawHelpers.Hash01(hs + 2) * ArcCount) % ArcCount;
+            int ai = (int)(Hash01(hs + 2) * ArcCount) % ArcCount;
             for (int tries = 0; tries < ArcCount && _visB[ai] <= _visA[ai]; tries++) ai = (ai + 1) % ArcCount;
             if (_visB[ai] <= _visA[ai]) continue;
             StrandPath path = _paths[ai];
 
             // Near an end of the visible stretch while quiet (they hop off the edges), anywhere on it once the arc is lit.
             float lit = MathF.Min(_arcLevel[ai], 1.6f);
-            float r = DrawHelpers.Hash01(hs + 3);
+            float r = Hash01(hs + 3);
             float span = _visB[ai] - _visA[ai];
             float u = lit > 0.3f ? _visA[ai] + span * r
                                  : _visA[ai] + span * (r < 0.5f ? 0.28f * r * 2f : 1f - 0.28f * (r - 0.5f) * 2f);
             path.SampleAtArc(u * path.Length, out Vector2 pos, out Vector2 tan);
 
-            float side = DrawHelpers.Sign(hs + 4);
-            Vector2 dir = DrawHelpers.Rotate(tan, side * (0.9f + 0.9f * DrawHelpers.Hash01(hs + 5)));
-            float half = (9f + 8f * DrawHelpers.Hash01(hs + 6)) * _f.Px * _arcScale[ai];
+            float side = Sign(hs + 4);
+            Vector2 dir = Rotate(tan, side * (0.9f + 0.9f * Hash01(hs + 5)));
+            float half = (9f + 8f * Hash01(hs + 6)) * _f.Px * _arcScale[ai];
 
             scene.AddParticle(new ParticlePrimitive
             {
@@ -685,7 +685,7 @@ public sealed class ParalysisEffect : SceneEffect, IHasSwappableSlots
     /// <summary>Bolts surging along the screen edges: real lightning strands (same material, forks, glow and core as the arcs).</summary>
     private void EmitEdgeArcs(EffectScene scene, float charge, float quiet)
     {
-        float ramp = DrawHelpers.Smooth((_f.Age - 0.6f) / 0.8f) * (1f - DrawHelpers.Smooth(_f.Leave)) * quiet;
+        float ramp = Smooth((_f.Age - 0.6f) / 0.8f) * (1f - Smooth(_f.Leave)) * quiet;
         if (ramp <= 0.002f) return;
         float px = _f.Px;
         float perimeter = 2f * (_f.Size.X + _f.Size.Y);
@@ -693,29 +693,29 @@ public sealed class ParalysisEffect : SceneEffect, IHasSwappableSlots
 
         for (int slot = 0; slot < EdgeSlots; slot++)
         {
-            float period = 1.7f + 1.3f * DrawHelpers.Hash01(slot * 17 + 3);
-            float x = _f.Age / period + DrawHelpers.Hash01(slot * 29 + 5);
+            float period = 1.7f + 1.3f * Hash01(slot * 17 + 3);
+            float x = _f.Age / period + Hash01(slot * 29 + 5);
             int epoch = (int)MathF.Floor(x);
             float f = x - epoch;
             const float liveFrac = 0.50f;  // each cycle a bolt is up for this share of it
             if (f > liveFrac) continue;
 
             int hs = _seed + slot * 7717 + epoch * 104729;
-            if (DrawHelpers.Hash01(hs + 1) > 0.70f + 0.25f * charge) continue;
+            if (Hash01(hs + 1) > 0.70f + 0.25f * charge) continue;
 
             float t = f * period;  // seconds since it struck
             float life = liveFrac * period;  // seconds it lasts
 
             // Where: an edge (more often a long one), a stretch clear of the corners, and how far it bows in.
-            float pick = DrawHelpers.Hash01(hs + 2) * perimeter;
+            float pick = Hash01(hs + 2) * perimeter;
             int edge = 0;
             float edgeLen = _f.Size.X;
             while (edge < 3 && pick >= edgeLen) { pick -= edgeLen; edge++; edgeLen = (edge & 1) == 0 ? _f.Size.X : _f.Size.Y; }
-            float len = MathF.Min((280f + 340f * DrawHelpers.Hash01(hs + 3)) * px, edgeLen - 2f * margin - 1f);
+            float len = MathF.Min((280f + 340f * Hash01(hs + 3)) * px, edgeLen - 2f * margin - 1f);
             if (len < 60f * px) continue;
-            float along0 = margin + DrawHelpers.Hash01(hs + 4) * (edgeLen - 2f * margin - len);
-            bool flip = DrawHelpers.Hash01(hs + 5) < 0.5f;  // which end the leader sets out from
-            float bow = (28f + 55f * DrawHelpers.Hash01(hs + 6)) * px;
+            float along0 = margin + Hash01(hs + 4) * (edgeLen - 2f * margin - len);
+            bool flip = Hash01(hs + 5) < 0.5f;  // which end the leader sets out from
+            float bow = (28f + 55f * Hash01(hs + 6)) * px;
 
             StrandPath path = _edgePaths[slot];
             for (int i = 0; i < EdgePoints; i++)
@@ -730,9 +730,9 @@ public sealed class ParalysisEffect : SceneEffect, IHasSwappableSlots
 
             // A quick leader, then crackle and pulse (a current surge every ~0.25 s, alternating direction), then it dies away.
             const float leader = 0.10f;
-            float reveal = DrawHelpers.Saturate(t / leader);
-            float fade = 1f - DrawHelpers.Smooth((t - (life - 0.38f)) / 0.38f);
-            float flick = 0.75f + 0.25f * DrawHelpers.Hash01(hs * 13 + (int)(_f.Age * 14f));
+            float reveal = Saturate(t / leader);
+            float fade = 1f - Smooth((t - (life - 0.38f)) / 0.38f);
+            float flick = 0.75f + 0.25f * Hash01(hs * 13 + (int)(_f.Age * 14f));
             float level = (0.34f + 0.40f * charge) * ramp * fade * flick;
             if (level <= 0.01f) continue;
 
@@ -749,13 +749,13 @@ public sealed class ParalysisEffect : SceneEffect, IHasSwappableSlots
 
             scene.AddStroke(new StrokePrimitive
             {
-                Path = path, Role = PrimitiveRole.Edge, Reveal = reveal, WidthHint = (16f + 8f * DrawHelpers.Hash01(hs + 7)) * px,
+                Path = path, Role = PrimitiveRole.Edge, Reveal = reveal, WidthHint = (16f + 8f * Hash01(hs + 7)) * px,
                 Brightness = _f.Alpha * level, Seed = hs, Phase = slot * 0.9f, Depth = 0f, Agitation = reveal < 0.999f ? 1f : 0.35f + 0.35f * charge,
                 TipFlare = reveal < 0.999f ? 1f : 0f, SurgeAt = surgeAt, SurgeGain = surgeGain, ColorOverride = _f.Color,
             });
 
             // Anchored: a small flash of light where each end meets the border.
-            float anchor = _f.Alpha * level * (0.9f + 0.6f * (1f - DrawHelpers.Smooth(t / 0.25f)));
+            float anchor = _f.Alpha * level * (0.9f + 0.6f * (1f - Smooth(t / 0.25f)));
             AddFlare(scene, EdgePoint(_f.Size, edge, along0, 4f * px), 11f * px, anchor, hs + 8, _f.Color);
             AddFlare(scene, EdgePoint(_f.Size, edge, along0 + len, 4f * px), 11f * px, anchor, hs + 9, _f.Color);
         }
@@ -773,35 +773,35 @@ public sealed class ParalysisEffect : SceneEffect, IHasSwappableSlots
     /// <summary>Static pops at the edges: a small crackle and a 0.2 s flash of light somewhere along the border.</summary>
     private void EmitPops(EffectScene scene, float charge, float quiet)
     {
-        float ramp = DrawHelpers.Smooth((_f.Age - 0.6f) / 0.8f) * (1f - DrawHelpers.Smooth(_f.Leave)) * quiet;
+        float ramp = Smooth((_f.Age - 0.6f) / 0.8f) * (1f - Smooth(_f.Leave)) * quiet;
         if (ramp <= 0.002f) return;
         float px = _f.Px, perimeter = 2f * (_f.Size.X + _f.Size.Y);
 
         for (int slot = 0; slot < PopSlots; slot++)
         {
-            float rate = 0.7f + 0.9f * DrawHelpers.Hash01(slot * 19 + 1);
-            float x = _f.Age * rate + DrawHelpers.Hash01(slot * 23 + 2) * 10f;
+            float rate = 0.7f + 0.9f * Hash01(slot * 19 + 1);
+            float x = _f.Age * rate + Hash01(slot * 23 + 2) * 10f;
             int epoch = (int)MathF.Floor(x);
             float f = x - epoch;
             if (f > 0.25f) continue;
 
             int hs = _seed + slot * 5381 + epoch * 7907;
-            if (DrawHelpers.Hash01(hs + 1) > 0.55f + 0.40f * charge) continue;
+            if (Hash01(hs + 1) > 0.55f + 0.40f * charge) continue;
 
-            float inset = (8f + 40f * DrawHelpers.Hash01(hs + 3)) * px;
-            Vector2 p = PerimeterPoint(_f.Size, DrawHelpers.Hash01(hs + 2) * perimeter, inset, out _);
+            float inset = (8f + 40f * Hash01(hs + 3)) * px;
+            Vector2 p = PerimeterPoint(_f.Size, Hash01(hs + 2) * perimeter, inset, out _);
             float ar = f / 0.25f;
             float k = _f.Alpha * ramp * (0.55f + 0.45f * charge);
-            float ang = DrawHelpers.Hash01(hs + 4) * MathF.Tau;
+            float ang = Hash01(hs + 4) * MathF.Tau;
 
             scene.AddParticle(new ParticlePrimitive
             {
-                Position = p, Size = (16f + 16f * DrawHelpers.Hash01(hs + 5)) * px, AgeRatio = ar, Brightness = k,
+                Position = p, Size = (16f + 16f * Hash01(hs + 5)) * px, AgeRatio = ar, Brightness = k,
                 Seed = hs, Role = PrimitiveRole.Arc, Rotation = ang, ColorOverride = _f.Color,
             });
             scene.AddParticle(new ParticlePrimitive
             {
-                Position = p, Size = (12f + 8f * DrawHelpers.Hash01(hs + 6)) * px, AgeRatio = ar, Brightness = k * 0.85f,
+                Position = p, Size = (12f + 8f * Hash01(hs + 6)) * px, AgeRatio = ar, Brightness = k * 0.85f,
                 Seed = hs + 3, Role = PrimitiveRole.Flash, ColorOverride = _f.Color,
             });
         }
@@ -827,7 +827,7 @@ public sealed class ParalysisEffect : SceneEffect, IHasSwappableSlots
     private void EmitMotes(EffectScene scene, float light, float charge)
     {
         ref readonly LayerCamera cam = ref _view.Cam;
-        float ramp = DrawHelpers.Smooth((_f.Age - 0.20f) / 1.0f) * (1f - DrawHelpers.Smooth(_f.Leave));
+        float ramp = Smooth((_f.Age - 0.20f) / 1.0f) * (1f - Smooth(_f.Leave));
         float energy = MathF.Min(1.3f, 0.26f + 0.60f * charge + 0.80f * light);
         _motes.Emit(scene, in cam, CameraDistance * _f.Px, _f.Size, _f.Px, _f.Age, _f.Alpha * ramp * energy, blurDim: 0.65f, twinkle: 0.35f, _f.Color);
     }

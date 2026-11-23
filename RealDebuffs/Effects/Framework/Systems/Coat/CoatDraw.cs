@@ -86,15 +86,15 @@ internal static class CoatDraw
     /// <summary>A lit colour and opacity as a vertex colour, recoloured when the effect carries a colour override.</summary>
     public static uint Pack(Vector3 rgb, float alpha)
     {
-        float dye = DrawHelpers.ColorOverrideChroma;
-        if (dye > 0f) rgb = DrawHelpers.BoostSaturation(rgb, dye, DrawHelpers.SoftDye);
-        return DrawHelpers.Tint(DrawHelpers.Pack(rgb.X, rgb.Y, rgb.Z), alpha, DrawHelpers.ColorOverrideActive);
+        float dye = ColorOverrideChroma;
+        if (dye > 0f) rgb = BoostSaturation(rgb, dye, SoftDye);
+        return Tint(DrawHelpers.Pack(rgb.X, rgb.Y, rgb.Z), alpha, ColorOverrideActive);
     }
 
     /// <summary>1 across the middle of a band falling to `edge` at its sides.</summary>
     public static float Soft(float x, float edge)
     {
         float x2 = x * x;
-        return DrawHelpers.Lerp(1f, edge, x2 * x2);
+        return Lerp(1f, edge, x2 * x2);
     }
 }

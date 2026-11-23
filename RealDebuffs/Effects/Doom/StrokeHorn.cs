@@ -45,7 +45,7 @@ public sealed class StrokeHorn : IStrokeMaterial
         float depth = Math.Clamp(s.Depth, 0f, 1f);
         float fire = 0.55f + 0.45f * Math.Clamp(s.Agitation, 0f, 1f);
         float visibleLen = total * reveal;
-        bool overridden = DrawHelpers.ColorOverrideActive;
+        bool overridden = ColorOverrideActive;
 
         var st = Strand;
         st.Resample(path, visibleLen, Math.Clamp(r0 * 0.5f, 8f * px, 22f * px));
@@ -74,11 +74,11 @@ public sealed class StrokeHorn : IStrokeMaterial
             float phase = a / (0.62f * r0) * (1f + 0.9f * f);
             float ridge = 0.5f + 0.5f * MathF.Sin(phase * MathF.Tau);
             float slope = MathF.Cos(phase * MathF.Tau);
-            float ridgeAmp = DrawHelpers.Smooth(0.03f, 0.18f, f) * (1f - 0.55f * f);
+            float ridgeAmp = Smooth(0.03f, 0.18f, f) * (1f - 0.55f * f);
             float tilt = slope * 0.46f * ridgeAmp;
 
             // The base fades into the dark it rises from; the tip stays crisp.
-            float emerge = DrawHelpers.Smooth(0.0f, 0.22f, f);
+            float emerge = Smooth(0.0f, 0.22f, f);
             float lowFire = fire * MathF.Exp(-f * 3.2f);  // the fire's light is strongest near where it rises
 
             for (int c = 0; c < Cols; c++)
@@ -111,7 +111,7 @@ public sealed class StrokeHorn : IStrokeMaterial
                 if (depth > 0f) col = Vector3.Lerp(col, StrandShading.DepthFog, 0.5f * depth);
 
                 float k = fringe ? 0f : alpha * emerge * (1f - 0.35f * depth);
-                uint color = DrawHelpers.Tint(DrawHelpers.Pack(col.X, col.Y, col.Z), k, overridden);
+                uint color = Tint(Pack(col.X, col.Y, col.Z), k, overridden);
                 float off = fringe ? Math.Sign(u) * (r + 1.1f * px) : u * r;
                 int v = Mb.VertexReserved(pts[i] + nm * off, color);
                 if (first < 0) first = v;

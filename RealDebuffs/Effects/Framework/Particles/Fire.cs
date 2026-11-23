@@ -17,16 +17,16 @@ internal static class Flames
     {
         for (int t = 0; t < layer.PerSite; t++)
         {
-            float cyc = time / (layer.Period * DrawHelpers.HashRange(siteSeed + 3, 0.85f, 1.15f))
-                      + DrawHelpers.Hash01(siteSeed + 4 + t * 7) + t / (float)layer.PerSite;
+            float cyc = time / (layer.Period * HashRange(siteSeed + 3, 0.85f, 1.15f))
+                      + Hash01(siteSeed + 4 + t * 7) + t / (float)layer.PerSite;
             float life = cyc - MathF.Floor(cyc);
             int seed = siteSeed * 31 + (int)MathF.Floor(cyc) * 7 + t * 13;
 
-            float size = DrawHelpers.HashRange(seed + 1, layer.SizeLo, layer.SizeHi) * sizeMul;
+            float size = HashRange(seed + 1, layer.SizeLo, layer.SizeHi) * sizeMul;
             scene.AddParticle(new ParticlePrimitive
             {
-                Position = at + new Vector2(DrawHelpers.HashRange(seed + 2, -1f, 1f) * spread.X, DrawHelpers.HashRange(seed + 5, -1f, 1f) * spread.Y - size * rise),
-                Velocity = new Vector2(DrawHelpers.HashRange(seed + 3, -12f, 12f) + lean, -30f),
+                Position = at + new Vector2(HashRange(seed + 2, -1f, 1f) * spread.X, HashRange(seed + 5, -1f, 1f) * spread.Y - size * rise),
+                Velocity = new Vector2(HashRange(seed + 3, -12f, 12f) + lean, -30f),
                 AgeRatio = life, Size = size, Brightness = ParticleSystem.FadeFor(life) * brightness,
                 Seed = seed, Role = PrimitiveRole.Ember, Variant = layer.Variant, ColorOverride = color, MaterialName = material,
             });
@@ -53,8 +53,8 @@ internal sealed class FireDrift
         _smoke = new ParticleSystem(smokeMax, salt + 0x10, new ParticlePhysics(Drag: 0.06f, Wander: 26f, WanderHz: 0.35f));
         _cinderPos = cinderPos;
         _smokePos = smokePos;
-        _cinderVel = seed => new Vector2(DrawHelpers.HashRange(seed + 10, -55f, 55f), -DrawHelpers.HashRange(seed + 11, CinderSpeed.X, CinderSpeed.Y)) * Px;
-        _smokeVel = seed => new Vector2(DrawHelpers.HashRange(seed + 10, -14f, 14f), -DrawHelpers.HashRange(seed + 11, 30f, 70f)) * Px;
+        _cinderVel = seed => new Vector2(HashRange(seed + 10, -55f, 55f), -HashRange(seed + 11, CinderSpeed.X, CinderSpeed.Y)) * Px;
+        _smokeVel = seed => new Vector2(HashRange(seed + 10, -14f, 14f), -HashRange(seed + 11, 30f, 70f)) * Px;
     }
 
     public void Clear() { _cinders.Clear(); _smoke.Clear(); }

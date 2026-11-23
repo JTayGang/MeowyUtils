@@ -22,7 +22,7 @@ internal sealed class RegionFrost : RegionMaterial<FrostField>
         // Everything looks colder as the glass freezes: one very faint blue wash across the screen.
         float wash = a * 0.07f * Math.Clamp(f.Progress, 0f, 1f);
         if (wash > 0.003f)
-            dl.AddRectFilled(Vector2.Zero, new Vector2(ctx.ScreenW, ctx.ScreenH), DrawHelpers.WithAlpha(DrawHelpers.Pack(0.45f, 0.65f, 0.95f), wash));
+            dl.AddRectFilled(Vector2.Zero, new Vector2(ctx.ScreenW, ctx.ScreenH), WithAlpha(DrawHelpers.Pack(0.45f, 0.65f, 0.95f), wash));
 
         DrawHaze(dl, f, a, ctx);
 
@@ -60,7 +60,7 @@ internal sealed class RegionFrost : RegionMaterial<FrostField>
 
         float slam = MathF.Exp(-f.Age / 0.45f);  // the border darkens hard at first, then settles
         float rimAlpha = a * (0.30f + 0.45f * slam);
-        bool overridden = DrawHelpers.ColorOverrideActive;  // no override: skip the per-vertex remap entirely
+        bool overridden = ColorOverrideActive;  // no override: skip the per-vertex remap entirely
 
         float[] arrivalArr = g.Arrival, mottle = f.Mottle, rimArr = f.Rim, cap = f.Cap;
         uint[] haze = f.Haze;
@@ -84,7 +84,7 @@ internal sealed class RegionFrost : RegionMaterial<FrostField>
             if (lead > 0f)
             {
                 // A front soft enough for the grid to show cleanly (a sharper one aliases into steps).
-                float edge = DrawHelpers.Smooth(lead / 0.26f);
+                float edge = Smooth(lead / 0.26f);
                 float thick = Math.Clamp(lead / 0.75f, 0f, 1f);
                 // Frost is thickest at the border and thins toward the clear middle: the ferns reach in, the coat doesn't.
                 float dens = Math.Clamp(thick * cap[i] * (0.60f + 0.40f * mott) + 0.55f * rim * thick, 0f, 1f);
@@ -109,8 +109,8 @@ internal sealed class RegionFrost : RegionMaterial<FrostField>
     private static uint Pack(float r, float g, float b, float alpha, bool overridden)
     {
         uint rgb = DrawHelpers.Pack(r, g, b);
-        if (overridden) return DrawHelpers.WithAlpha(IceColor.Tintable(rgb), alpha);
-        return (rgb & 0x00FFFFFFu) | DrawHelpers.AlphaBits(alpha);
+        if (overridden) return WithAlpha(IceColor.Tintable(rgb), alpha);
+        return (rgb & 0x00FFFFFFu) | AlphaBits(alpha);
     }
 
     /// <summary>Straight-alpha "over": layer (r, g, b, a) on top of the accumulated color.</summary>

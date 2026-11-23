@@ -25,17 +25,17 @@ public sealed class ParticleCandle : IParticleMaterial
 
         float px = ctx.ScreenScale;
         float time = ctx.Time;
-        bool overridden = DrawHelpers.ColorOverrideActive;
+        bool overridden = ColorOverrideActive;
         Vector2 uv = MeshDraw.WhiteUv(time);
 
         int seed = p.Seed;
-        float H = R * (5.4f + 3.4f * DrawHelpers.Hash01(seed + 1));
+        float H = R * (5.4f + 3.4f * Hash01(seed + 1));
 
-        float lit = DrawHelpers.Saturate(p.AgeRatio);
-        float vigor = p.Variant == 0 ? 1f : DrawHelpers.Saturate((p.Variant & 0xFF) / 255f);
-        float burn = DrawHelpers.Smooth(lit) * vigor;  // how much flame there is
+        float lit = Saturate(p.AgeRatio);
+        float vigor = p.Variant == 0 ? 1f : Saturate((p.Variant & 0xFF) / 255f);
+        float burn = Smooth(lit) * vigor;  // how much flame there is
 
-        float ph = DrawHelpers.Hash01(seed + 2) * 40f;
+        float ph = Hash01(seed + 2) * 40f;
         float flick = 0.5f + 0.5f * Noise.Value(time * 7.3f + ph, 1.3f);  // 0..1, quick
         float slow = Noise.Value(time * 1.9f + ph, 4.1f);  // -1..1, slow lean
         float glow = burn * (0.80f + 0.20f * flick);
@@ -52,11 +52,11 @@ public sealed class ParticleCandle : IParticleMaterial
             Span<float> rr = stackalloc float[3] { R * 2.2f, R * 6.0f, R * 14f };
             Span<uint> rc = stackalloc uint[3]
             {
-                DrawHelpers.WithAlpha(HellColor.Glow.Sample(0.80f), 0.30f * glow * k),
-                DrawHelpers.WithAlpha(HellColor.Glow.Sample(0.62f), 0.11f * glow * k),
-                DrawHelpers.WithAlpha(HellColor.Glow.Sample(0.45f), 0f),
+                WithAlpha(HellColor.Glow.Sample(0.80f), 0.30f * glow * k),
+                WithAlpha(HellColor.Glow.Sample(0.62f), 0.11f * glow * k),
+                WithAlpha(HellColor.Glow.Sample(0.45f), 0f),
             };
-            MeshDraw.Radial(dl, fc, uv, DrawHelpers.WithAlpha(HellColor.Glow.Sample(0.92f), 0.55f * glow * k), 16, rr, rc, 0f, 1f, 0, 0f);
+            MeshDraw.Radial(dl, fc, uv, WithAlpha(HellColor.Glow.Sample(0.92f), 0.55f * glow * k), 16, rr, rc, 0f, 1f, 0, 0f);
         }
 
         // A soft contact shadow where it stands.
@@ -64,10 +64,10 @@ public sealed class ParticleCandle : IParticleMaterial
             Span<float> rr = stackalloc float[2] { R * 1.0f, R * 2.2f };
             Span<uint> rc = stackalloc uint[2]
             {
-                DrawHelpers.Tint(0x00000000u, 0.30f * k, overridden),
-                DrawHelpers.Tint(0x00000000u, 0f, overridden),
+                Tint(0x00000000u, 0.30f * k, overridden),
+                Tint(0x00000000u, 0f, overridden),
             };
-            MeshDraw.Radial(dl, b + up * (R * 0.1f), uv, DrawHelpers.Tint(0x00000000u, 0.42f * k, overridden), 10, rr, rc, 0f, 0.32f, 0, 0f);
+            MeshDraw.Radial(dl, b + up * (R * 0.1f), uv, Tint(0x00000000u, 0.42f * k, overridden), 10, rr, rc, 0f, 0.32f, 0, 0f);
         }
 
         // the pillar
@@ -100,11 +100,11 @@ public sealed class ParticleCandle : IParticleMaterial
                 // The flame lights the wax, warmest on the nearest side; the pillar's top glows through its own melt.
                 float facing = 0.55f + 0.45f * nz;
                 col += new Vector3(1.00f, 0.50f, 0.15f) * (flameLight * 0.50f * facing);
-                float melt = glow * DrawHelpers.Smooth(0.70f, 1f, v);
+                float melt = glow * Smooth(0.70f, 1f, v);
                 col = Vector3.Lerp(col, new Vector3(1.00f, 0.70f, 0.32f), melt * 0.55f);
 
                 float a = fringe ? 0f : 1f;
-                P(vi, centre + right * (u * R), DrawHelpers.Tint(DrawHelpers.Pack(col.X, col.Y, col.Z), k * a, overridden));
+                P(vi, centre + right * (u * R), Tint(Pack(col.X, col.Y, col.Z), k * a, overridden));
                 vi++;
             }
         }
@@ -113,14 +113,14 @@ public sealed class ParticleCandle : IParticleMaterial
         // Wax run down the side: a thin pale rope ending in a bead, set hard.
         for (int d = 0; d < 2; d++)
         {
-            float side = DrawHelpers.Sign(seed + 30 + d * 5);
-            float u0 = side * DrawHelpers.HashRange(seed + 31 + d * 5, 0.45f, 0.82f);
-            float len = H * DrawHelpers.HashRange(seed + 32 + d * 5, 0.16f, 0.52f) * (d == 0 ? 1f : 0.65f);
+            float side = Sign(seed + 30 + d * 5);
+            float u0 = side * HashRange(seed + 31 + d * 5, 0.45f, 0.82f);
+            float len = H * HashRange(seed + 32 + d * 5, 0.16f, 0.52f) * (d == 0 ? 1f : 0.65f);
             Vector2 s0 = top + right * (u0 * R) + up * (-R * 0.04f);
             Vector2 s1 = s0 - up * len;
             Vector3 wc = Wax.Sample(u0 * 0.9f, -0.15f) * 1.08f;
             wc += new Vector3(1.00f, 0.50f, 0.15f) * (glow * 0.28f);
-            uint wcol = DrawHelpers.Tint(DrawHelpers.Pack(wc.X, wc.Y, wc.Z), 0.95f * k, overridden);
+            uint wcol = Tint(Pack(wc.X, wc.Y, wc.Z), 0.95f * k, overridden);
             dl.AddLine(s0, s1, wcol, MathF.Max(1.2f * px, R * 0.20f));
             dl.AddCircleFilled(s1, MathF.Max(1.0f * px, R * 0.17f), wcol);
         }
@@ -132,21 +132,21 @@ public sealed class ParticleCandle : IParticleMaterial
             Vector3 pool = Vector3.Lerp(new Vector3(0.86f, 0.78f, 0.60f), new Vector3(1.00f, 0.72f, 0.34f), glow * 0.9f);
             Span<uint> rc = stackalloc uint[2]
             {
-                DrawHelpers.Tint(DrawHelpers.Pack(pool.X, pool.Y, pool.Z), 0.98f * k, overridden),
-                DrawHelpers.Tint(DrawHelpers.Pack(rim.X, rim.Y, rim.Z), 0.98f * k, overridden),
+                Tint(Pack(pool.X, pool.Y, pool.Z), 0.98f * k, overridden),
+                Tint(Pack(rim.X, rim.Y, rim.Z), 0.98f * k, overridden),
             };
             Vector3 centre = pool * (1f + 0.25f * glow);
-            MeshDraw.Radial(dl, top, uv, DrawHelpers.Tint(DrawHelpers.Pack(centre.X, centre.Y, centre.Z), k, overridden), 14, rr, rc, 0f, 0.34f, 0, 0f);
+            MeshDraw.Radial(dl, top, uv, Tint(Pack(centre.X, centre.Y, centre.Z), k, overridden), 14, rr, rc, 0f, 0.34f, 0, 0f);
         }
 
         // The wick: dark, and curled a little toward the draught.
         Vector2 wickTop = top + up * (R * 0.34f) + right * (R * 0.05f * slow);
-        dl.AddLine(top, wickTop, DrawHelpers.Tint(DrawHelpers.Pack(0.06f, 0.05f, 0.045f), 0.95f * k, overridden), MathF.Max(1.1f * px, R * 0.13f));
+        dl.AddLine(top, wickTop, Tint(Pack(0.06f, 0.05f, 0.045f), 0.95f * k, overridden), MathF.Max(1.1f * px, R * 0.13f));
         if (burn <= 0.01f)
         {
             // Unlit but not cold: a bead of red where it has just gone out, or is about to catch.
             if (lit > 0.0f)
-                dl.AddCircleFilled(wickTop, MathF.Max(1.0f * px, R * 0.12f), DrawHelpers.WithAlpha(HellColor.Glow.Sample(0.70f), 0.9f * k));
+                dl.AddCircleFilled(wickTop, MathF.Max(1.0f * px, R * 0.12f), WithAlpha(HellColor.Glow.Sample(0.70f), 0.9f * k));
             return;
         }
 
@@ -181,17 +181,17 @@ public sealed class ParticleCandle : IParticleMaterial
                 // Hot in the middle and low down; cool at the skirt and the tip.
                 float temp = MathF.Pow(1f - rho, 1.15f) * (1f - 0.50f * v) * (0.80f + 0.20f * flick);
                 uint col = HellColor.Flame.Sample(0.30f + 0.95f * temp);
-                float a = k * (1f - MathF.Pow(rho, 2.2f)) * (1f - 0.35f * v * v * v) * DrawHelpers.Smooth(0f, 0.12f, v + 0.02f) * (v >= 1f ? 0f : 1f);
+                float a = k * (1f - MathF.Pow(rho, 2.2f)) * (1f - 0.35f * v * v * v) * Smooth(0f, 0.12f, v + 0.02f) * (v >= 1f ? 0f : 1f);
 
                 // The blue cone at the foot, where it is burning cleanest.
                 if (v < 0.30f && rho < 0.85f)
                 {
                     float bl = (1f - v / 0.30f) * (1f - rho / 0.85f);
-                    col = DrawHelpers.LerpColor(col, DrawHelpers.Pack(0.30f, 0.42f, 1.00f), bl * 0.75f);
+                    col = LerpColor(col, Pack(0.30f, 0.42f, 1.00f), bl * 0.75f);
                 }
 
                 MeshDraw.P[i] = centre + right * (u * half);
-                MeshDraw.C[i] = DrawHelpers.WithAlpha(col, a);
+                MeshDraw.C[i] = WithAlpha(col, a);
                 i++;
             }
         }
@@ -203,10 +203,10 @@ public sealed class ParticleCandle : IParticleMaterial
             Span<float> hr = stackalloc float[2] { Wf * 0.34f, Wf * 0.80f };
             Span<uint> hc = stackalloc uint[2]
             {
-                DrawHelpers.WithAlpha(HellColor.Flame.Sample(1f), 0.80f * k * burn),
-                DrawHelpers.WithAlpha(HellColor.Flame.Sample(0.82f), 0f),
+                WithAlpha(HellColor.Flame.Sample(1f), 0.80f * k * burn),
+                WithAlpha(HellColor.Flame.Sample(0.82f), 0f),
             };
-            MeshDraw.Radial(dl, heart, uv, DrawHelpers.WithAlpha(HellColor.Flame.Sample(1f), 0.95f * k * burn), 10, hr, hc, 0f, 1.7f, 0, 0f);
+            MeshDraw.Radial(dl, heart, uv, WithAlpha(HellColor.Flame.Sample(1f), 0.95f * k * burn), 10, hr, hc, 0f, 1.7f, 0, 0f);
         }
     }
 

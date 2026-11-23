@@ -35,7 +35,7 @@ public sealed class HeavyEffect : SceneEffect, IHasSwappableSlots
     private const float SwayAmp = 15f;
     private const float SwayGustHz = 0.30f;
 
-    private static readonly MurkStyle Mood = new(DrawHelpers.Pack(0.010f, 0.014f, 0.022f), 0.12f, DrawHelpers.Pack(0.012f, 0.016f, 0.024f), 0.28f, 0.12f, 0.7f, 0.15f, 4.6f);
+    private static readonly MurkStyle Mood = new(Pack(0.010f, 0.014f, 0.022f), 0.12f, Pack(0.012f, 0.016f, 0.024f), 0.28f, 0.12f, 0.7f, 0.15f, 4.6f);
 
     private static readonly float[] SwayShape = BuildSwayShape();
 
@@ -113,7 +113,7 @@ public sealed class HeavyEffect : SceneEffect, IHasSwappableSlots
         if (!rig.Launched) rig.Launch(2500f * f.Px, HangDrag);
 
         // Head: an arrow. Constant speed after a short launch ramp, stopped dead by the far anchor.
-        float tau = DrawHelpers.Saturate(t / rig.Flight);
+        float tau = Saturate(t / rig.Flight);
         float bow = rig.ArcSide * FlightBow * rig.ChordLen * MathF.Sin(MathF.PI * tau);
         Vector2 head = rig.Start + (rig.End - rig.Start) * StrandRig.Travel(tau) + rig.ChordPerp * bow;
 
@@ -141,7 +141,7 @@ public sealed class HeavyEffect : SceneEffect, IHasSwappableSlots
             float extra = flightExtra;
             if (rig.Landed)
             {
-                float release = DrawHelpers.Smooth((f.Time - rig.LandTime) / ReleaseSeconds);
+                float release = Smooth((f.Time - rig.LandTime) / ReleaseSeconds);
                 extra = flightExtra + (rig.ChordLen * rig.Slack - flightExtra) * release;
             }
 
@@ -173,7 +173,7 @@ public sealed class HeavyEffect : SceneEffect, IHasSwappableSlots
     private static void ApplySway(Rig rig, float time, float px)
     {
         var path = rig.Path;
-        float amp = SwayAmp * px * DrawHelpers.Saturate((time - rig.LandTime) / 1.2f);
+        float amp = SwayAmp * px * Saturate((time - rig.LandTime) / 1.2f);
         if (amp <= 0.01f) return;
 
         const int n = PathSamples;
@@ -207,7 +207,7 @@ public sealed class HeavyEffect : SceneEffect, IHasSwappableSlots
         Vector2 along = Vector2.Normalize(strand.Pos[StrandNodes - 1] - strand.Pos[StrandNodes - 4]);
         if (float.IsNaN(along.X)) along = new Vector2(1f, 0f);
         Vector2 side = new(-along.Y, along.X);
-        float sign = DrawHelpers.Sign(rig.Seed + 710 + (int)(time * 10f));
+        float sign = Sign(rig.Seed + 710 + (int)(time * 10f));
         float v = 520f * px * strength * (1f - 0.35f * rig.Depth);
 
         // One smooth bump of sideways velocity (alternating signs on neighbours would fold the end into a zigzag).
@@ -224,9 +224,9 @@ public sealed class HeavyEffect : SceneEffect, IHasSwappableSlots
     {
         float overhang = MathF.Min(size.X, size.Y) * 0.07f;
 
-        _set.Count = 4 + (int)(DrawHelpers.Hash01(castSeed + 1) * 2f);
+        _set.Count = 4 + (int)(Hash01(castSeed + 1) * 2f);
 
-        int farIdx = Math.Min((int)(DrawHelpers.Hash01(castSeed + 200) * _set.Count), _set.Count - 1);
+        int farIdx = Math.Min((int)(Hash01(castSeed + 200) * _set.Count), _set.Count - 1);
 
         for (int i = 0; i < _set.Count; i++)
             BuildRig(_set.Rigs[i], i, castSeed, size, overhang, farIdx == i);
@@ -237,7 +237,7 @@ public sealed class HeavyEffect : SceneEffect, IHasSwappableSlots
     private static void BuildRig(Rig r, int index, int castSeed, Vector2 size, float overhang, bool far)
     {
         int s = unchecked(castSeed + index * 977 + 17);
-        float H(int salt, float lo, float hi) => DrawHelpers.HashRange(s + salt, lo, hi);
+        float H(int salt, float lo, float hi) => HashRange(s + salt, lo, hi);
 
         Vector2 a, b;
         if (index >= Archetypes.Length)
@@ -265,7 +265,7 @@ public sealed class HeavyEffect : SceneEffect, IHasSwappableSlots
         r.Slack = slack * (0.30f + 0.70f * horizontal);
         r.Delay = H(6, 0f, MaxThrowDelay);
         // Speed is what's chosen, not flight time, so a long span isn't faster than a short one.
-        float px = DrawHelpers.PixelScale(size);
+        float px = PixelScale(size);
         r.Flight = Math.Clamp(Vector2.Distance(a, b) / (H(7, 4300f, 6200f) * px), 0.20f, 0.50f);
         r.ArcSide = H(8, -0.07f, 0.07f);
         r.SwayPhase = H(9, 0f, MathF.Tau);

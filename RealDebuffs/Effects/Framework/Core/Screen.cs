@@ -156,10 +156,10 @@ internal sealed class ScreenGrowth
         BuildSites(seed, size, s.Sites);
 
         // Each border gets its own thickness: frost never covers a screen evenly.
-        float wL = 0.80f + 0.50f * DrawHelpers.Hash01(seed + 101);
-        float wR = 0.80f + 0.50f * DrawHelpers.Hash01(seed + 102);
-        float wT = 0.80f + 0.50f * DrawHelpers.Hash01(seed + 103);
-        float wB = 0.80f + 0.50f * DrawHelpers.Hash01(seed + 104);
+        float wL = 0.80f + 0.50f * Hash01(seed + 101);
+        float wR = 0.80f + 0.50f * Hash01(seed + 102);
+        float wT = 0.80f + 0.50f * Hash01(seed + 103);
+        float wB = 0.80f + 0.50f * Hash01(seed + 104);
 
         float nOff = (seed & 255) * 1.7f;
         float invSs = 1f / ss;
@@ -215,16 +215,16 @@ internal sealed class ScreenGrowth
 
         for (int k = 0; k < count; k++)
         {
-            var edge = (ScreenEdge)((int)(DrawHelpers.Hash01(seed + 200 + k * 7) * 4f) & 3);
-            float t = DrawHelpers.Hash01(seed + 300 + k * 11);
+            var edge = (ScreenEdge)((int)(Hash01(seed + 200 + k * 7) * 4f) & 3);
+            float t = Hash01(seed + 300 + k * 11);
             // Push positions toward the corners: frost nucleates where two cold borders meet.
             t = t < 0.5f ? 0.5f * MathF.Pow(2f * t, 1.8f) : 1f - 0.5f * MathF.Pow(2f * (1f - t), 1.8f);
 
             Vector2 pos = ScreenEdges.Anchor(size, edge, t, 0f);
             Vector2 inward = ScreenEdges.Inward(edge);
 
-            float delay = k == 0 ? 0f : 0.42f * DrawHelpers.Hash01(seed + 400 + k * 13);
-            float strength = 0.70f + 0.30f * DrawHelpers.Hash01(seed + 500 + k * 17);
+            float delay = k == 0 ? 0f : 0.42f * Hash01(seed + 400 + k * 13);
+            float strength = 0.70f + 0.30f * Hash01(seed + 500 + k * 17);
             Sites[k] = new Site(pos, inward, delay, strength);
         }
     }

@@ -282,11 +282,11 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
             Agit = agit,
             Alpha = alpha,
             AlphaBits = (uint)(int)(255f * (alpha > 0f ? (alpha < 1f ? alpha : 1f) : 0f)) << 24,
-            Overridden = DrawHelpers.ColorOverrideActive,
-            Dye = DrawHelpers.ColorOverrideChroma,
+            Overridden = ColorOverrideActive,
+            Dye = ColorOverrideChroma,
             Detail = Math.Clamp(diameter / (22f * px), 0.4f, 1f),
             MottleFreq = 1f / MathF.Min(diameter * 2.3f, 100f * px),  // skin detail is in px, not a fraction of the limb
-            MottleOffset = DrawHelpers.HashRange(seed + 71, 0f, 300f),
+            MottleOffset = HashRange(seed + 71, 0f, 300f),
         };
 
         _screenW = ctx.ScreenW;
@@ -337,23 +337,23 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         _rp = new RowParams
         {
             Total = total, VisibleLen = visibleLen, Reveal = reveal, Closed = closed,
-            Growing = 1f - DrawHelpers.Smooth((reveal - 0.90f) / 0.10f),  // the front of a growing tentacle is drawn out to a point
+            Growing = 1f - Smooth((reveal - 0.90f) / 0.10f),  // the front of a growing tentacle is drawn out to a point
             Diameter = diameter, Radius = radius, Px = px, Depth = depth, Time = time, Twist = twist,
             Margin = diameter * 1.6f, ScreenW = _screenW, ScreenH = _screenH,
             FieldScale = MathF.Min(diameter, 70f * px),
-            Ph1 = DrawHelpers.HashRange(seed + 81, 0f, MathF.Tau),
-            Ph2 = DrawHelpers.HashRange(seed + 82, 0f, MathF.Tau),
-            Ph3 = DrawHelpers.HashRange(seed + 83, 0f, MathF.Tau),
-            Psi0 = DrawHelpers.HashRange(seed + 84, 0f, MathF.Tau),
-            OffA = DrawHelpers.HashRange(seed + 85, 0f, 400f),
-            OffB = DrawHelpers.HashRange(seed + 86, 0f, 400f),
-            OffC = DrawHelpers.HashRange(seed + 87, 0f, 400f),
+            Ph1 = HashRange(seed + 81, 0f, MathF.Tau),
+            Ph2 = HashRange(seed + 82, 0f, MathF.Tau),
+            Ph3 = HashRange(seed + 83, 0f, MathF.Tau),
+            Psi0 = HashRange(seed + 84, 0f, MathF.Tau),
+            OffA = HashRange(seed + 85, 0f, 400f),
+            OffB = HashRange(seed + 86, 0f, 400f),
+            OffC = HashRange(seed + 87, 0f, 400f),
             Scroll = flowSign * (time + phase * 3.1f) * 24f * px,
             WobbleRate = Rate(diameter * 6.4f), ToneRateA = Rate(diameter * 4.3f), ToneRateB = Rate(diameter * 9.1f),
             PitchRate = Rate(diameter * 13f), TwistRate = Rate(diameter * 40f),
             // Skin relief.
             BumpWave = (!closed && tier.Cols >= 11) ? MathF.Max(3.9f * step, 0.25f * diameter) : 0f,
-            BumpOff = DrawHelpers.HashRange(seed + 91, 0f, 200f),
+            BumpOff = HashRange(seed + 91, 0f, 200f),
             FoldWave = diameter * 0.30f,
         };
 
@@ -410,8 +410,8 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         float swell = 1f + 0.045f * MathF.Sin(swellPhase - time * 1.7f)
                          + 0.030f * look.Agit * MathF.Sin(swellPhase - time * 4.7f);
 
-        float lumpField = DrawHelpers.Smooth((Field(sArc, total, closed, fs * 2.4f, p.OffA, p.Scroll * 0.8f) - 0.46f) / 0.28f);
-        float wetField  = 0.55f + 0.45f * DrawHelpers.Smooth((Field(sArc, total, closed, fs * 3.3f, p.OffB, p.Scroll) - 0.34f) / 0.34f);
+        float lumpField = Smooth((Field(sArc, total, closed, fs * 2.4f, p.OffA, p.Scroll * 0.8f) - 0.46f) / 0.28f);
+        float wetField  = 0.55f + 0.45f * Smooth((Field(sArc, total, closed, fs * 3.3f, p.OffB, p.Scroll) - 0.34f) / 0.34f);
         float lump = lumpField * wetField;
 
         float pitch = (0.40f + 0.22f * look.Agit) * MathF.Sin(MathF.Tau * sArc * p.PitchRate + p.Ph2 + 0.55f * time);
@@ -422,7 +422,7 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         if (p.Growing > 0.001f && !closed)
         {
             float fromTip = (p.VisibleLen - sArc) / MathF.Max(1f, p.Radius * 4.5f);
-            tipThin = 1f - 0.5f * p.Growing * (1f - DrawHelpers.Smooth(fromTip));
+            tipThin = 1f - 0.5f * p.Growing * (1f - Smooth(fromTip));
         }
 
         r.Radius = p.Radius * Taper(u, closed) * swell * (1f + 0.16f * lump) * perspective * tipThin * r.CapW;
@@ -430,8 +430,8 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
 
         // Lump gradient tilts the normal along the tube so a lump shades as a bulge, not a stripe.
         float h = fs * 0.6f;
-        float lumpAhead = DrawHelpers.Smooth((Field(sArc + h, total, closed, fs * 2.4f, p.OffA, p.Scroll * 0.8f) - 0.46f) / 0.28f);
-        float lumpBehind = DrawHelpers.Smooth((Field(sArc - h, total, closed, fs * 2.4f, p.OffA, p.Scroll * 0.8f) - 0.46f) / 0.28f);
+        float lumpAhead = Smooth((Field(sArc + h, total, closed, fs * 2.4f, p.OffA, p.Scroll * 0.8f) - 0.46f) / 0.28f);
+        float lumpBehind = Smooth((Field(sArc - h, total, closed, fs * 2.4f, p.OffA, p.Scroll * 0.8f) - 0.46f) / 0.28f);
         r.LumpTilt = -(lumpAhead - lumpBehind) * 0.85f * wetField;
 
         // the belly line: turns slowly down the strand, drifts with time, and follows Twist
@@ -444,9 +444,9 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         r.Feather = (1.0f + 2.2f * p.Depth) * p.Px * (1f + 0.4f * MathF.Sin(MathF.Tau * sArc * p.ToneRateB + p.Ph2));
 
         // highlight strips: where each light's reflection falls on this stretch of tube
-        float breakup = DrawHelpers.Smooth((Field(sArc, total, closed, fs * 1.7f, p.OffC, p.Scroll * 1.2f) - 0.30f) / 0.30f);
+        float breakup = Smooth((Field(sArc, total, closed, fs * 1.7f, p.OffC, p.Scroll * 1.2f) - 0.30f) / 0.30f);
         Glint(KeyHalf, r.T, r.SinA, r.CosA, r.Radius, breakup, wetField, 9f, out r.Glint, out r.GlintX);
-        float breakup2 = DrawHelpers.Smooth((Field(sArc, total, closed, fs * 2.1f, p.OffC + 91f, p.Scroll * 0.9f) - 0.34f) / 0.30f);
+        float breakup2 = Smooth((Field(sArc, total, closed, fs * 2.1f, p.OffC + 91f, p.Scroll * 0.9f) - 0.34f) / 0.30f);
         Glint(FillHalf, r.T, r.SinA, r.CosA, r.Radius, breakup2, wetField, 7f, out r.Glint2, out r.GlintX2);
 
         // skin relief
@@ -570,7 +570,7 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
                     {
                         float w = ShadowAcross[c];
                         MeshDraw.P[v] = row.P + offsetDir * reach + nrm * (w * (hw + soft * 0.5f * MathF.Abs(w)));
-                        MeshDraw.C[v] = DrawHelpers.WithAlpha(StrandShading.ShadowTint, a * ShadowProfile[c] * edge);
+                        MeshDraw.C[v] = WithAlpha(StrandShading.ShadowTint, a * ShadowProfile[c] * edge);
                         v++;
                     }
                 }
@@ -709,7 +709,7 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
             // Position on the tentacle's own surface, measured from its belly line.
             float cosPhi = co * cPsi - u * sPsi;
             float belly = cosPhi;
-            Vector3 tint = Vector3.Lerp(DorsalTint, VentralTint, DrawHelpers.Smooth((belly + 0.2f) / 1.0f));
+            Vector3 tint = Vector3.Lerp(DorsalTint, VentralTint, Smooth((belly + 0.2f) / 1.0f));
             col *= tint * row.Tone;
 
             // Mottling: broad blotches and a few dark freckles painted on the skin (so they ride round with the twist).
@@ -721,14 +721,14 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
                 {
                     // The hollows between warts are darker (they are shaded and holding dirt)
                     float hn0 = hgt[ho + c];
-                    float cavity = DrawHelpers.Smooth((-hn0 - 0.10f) / 0.70f);
-                    float crest = DrawHelpers.Smooth((hn0 - 0.30f) / 0.70f);
+                    float cavity = Smooth((-hn0 - 0.10f) / 0.70f);
+                    float crest = Smooth((hn0 - 0.30f) / 0.70f);
                     col *= 1f + (m - 0.5f) * 0.38f * detail - cavity * CavityDark * detail + crest * CrestLift * detail;
                 }
                 else
                 {
                     float mx = row.MX + cosPhi * 1.15f, my = row.MY + (u * cPsi + co * sPsi) * 1.15f;
-                    float freckle = DrawHelpers.Smooth((Noise.Value(mx * 2.3f + 17f, my * 2.3f + 9f) - 0.70f) / 0.16f);
+                    float freckle = Smooth((Noise.Value(mx * 2.3f + 17f, my * 2.3f + 9f) - 0.70f) / 0.16f);
                     col *= 1f + (m - 0.5f) * 0.38f * detail - freckle * 0.20f * detail;
                 }
             }
@@ -738,11 +738,11 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
             col = col * (1f - 0.10f * wet);
             col = col + gloss * wet - col * gloss * wet;  // screen: gloss lightens without clipping
 
-            if (look.Dye > 0f) col = DrawHelpers.BoostSaturation(col, look.Dye, DrawHelpers.SoftDye);
+            if (look.Dye > 0f) col = BoostSaturation(col, look.Dye, SoftDye);
             if (look.Agit > 0.01f) col += col * (col * (0.45f * look.Agit));
             if (look.Fog > 0f) col = Vector3.Lerp(col, StrandShading.DepthFog, look.Fog);
 
-            outC[vb + 1 + c] = DrawHelpers.VertexColor(col, look.Alpha, look.AlphaBits, look.Overridden);
+            outC[vb + 1 + c] = VertexColor(col, look.Alpha, look.AlphaBits, look.Overridden);
         }
 
         // Soft edge: the neighbouring column's colour at alpha 0, pushed outward by the feather.
@@ -872,7 +872,7 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         for (int i = 0; i < ProfileSteps; i++)
         {
             float uMid = (i + 0.5f) / ProfileSteps;
-            float openUp = 1f + TipThinExtra * DrawHelpers.Smooth((uMid - TipThinStart) / (1f - TipThinStart));
+            float openUp = 1f + TipThinExtra * Smooth((uMid - TipThinStart) / (1f - TipThinStart));
             _profileN[i + 1] = _profileN[i] + scaleN / (ProfileSteps * Taper(uMid, false) * openUp);
         }
         float nTotal = _profileN[ProfileSteps];
@@ -912,8 +912,8 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
 
         // Size comes from the static profile, so a cup doesn't pulse with the swell.
         float refR = 0.5f * p.Diameter * Taper(u, p.Closed);
-        float grow = p.Closed ? 1f : DrawHelpers.Smooth((p.VisibleLen - sArc) / (1.7f * refR + 1f));
-        float small = DrawHelpers.Smooth((2f * refR - 6f * px) / (7f * px));  // fades out smoothly as the arm thins to nothing
+        float grow = p.Closed ? 1f : Smooth((p.VisibleLen - sArc) / (1.7f * refR + 1f));
+        float small = Smooth((2f * refR - 6f * px) / (7f * px));  // fades out smoothly as the arm thins to nothing
         float k = grow * small;
         if (k < 0.02f) return false;
         float rc = SuckerRadiusFrac * refR * k;
@@ -1015,7 +1015,7 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
     private void PushQuads(int vb, int rings, int segs, int stride, int strideCode, float[] zTab, float lift, float theta, int firstFlesh)
     {
         // Quads that can be seen.
-        float near = DrawHelpers.Smooth((MathF.Cos(theta) + 0.72f) / 0.87f);  // 0: cup well behind the arm; 1: at or in front of its edge
+        float near = Smooth((MathF.Cos(theta) + 0.72f) / 0.87f);  // 0: cup well behind the arm; 1: at or in front of its edge
         float frontFrom = -0.55f * near;
 
         for (int j = 0; j < rings - 1; j++)
@@ -1052,7 +1052,7 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
             Alpha = CupAlpha[ring] * alphaK;
             Shadow = ring < FirstFlesh;
             Cavity = ring >= FirstCavity;
-            Blend = DrawHelpers.Smooth((CupRings[ring] - FirstFleshRing) / 3f);  // by the full profile's ring, so the skirt fades over the same distance
+            Blend = Smooth((CupRings[ring] - FirstFleshRing) / 3f);  // by the full profile's ring, so the skirt fades over the same distance
             ToneOpen = row.Tone * CupOpen[ring];
             Wet = wet * (Cavity ? 0.8f : 1f);  // the same clear gloss as the body, so the cups and the skin agree
             Keep = 1f - 0.10f * Wet;
@@ -1066,7 +1066,7 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         if (r.Shadow)
         {
             // The contact shadow: the same tint as the tentacle's cast shadow, a little darker.
-            return DrawHelpers.WithAlpha(StrandShading.ShadowTint, r.Alpha * 0.9f * DrawHelpers.Smooth(n.Z / 0.45f));
+            return WithAlpha(StrandShading.ShadowTint, r.Alpha * 0.9f * Smooth(n.Z / 0.45f));
         }
 
         // The skirt is a fillet: at its foot it takes the colour of the skin it grows from.
@@ -1075,7 +1075,7 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         if (r.Fixed) col = flesh * r.FixedTone;  // most rings: nothing left of the skin's tint to blend
         else
         {
-            Vector3 skinTint = Vector3.Lerp(DorsalTint, VentralTint, DrawHelpers.Smooth(belly + 0.2f));
+            Vector3 skinTint = Vector3.Lerp(DorsalTint, VentralTint, Smooth(belly + 0.2f));
             Vector3 tint = Vector3.Lerp(skinTint, VentralTint * 1.04f, r.Blend);
             col = flesh * (tint * r.ToneOpen);
             if (r.Cavity) col *= CupTint;  // inside a cup the flesh is pinker and softer
@@ -1084,11 +1084,11 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         col = col * r.Keep;
         col = col + gloss * r.Wet - col * gloss * r.Wet;
 
-        if (look.Dye > 0f) col = DrawHelpers.BoostSaturation(col, look.Dye, DrawHelpers.SoftDye);
+        if (look.Dye > 0f) col = BoostSaturation(col, look.Dye, SoftDye);
         if (look.Agit > 0.01f) col += col * (col * (0.45f * look.Agit));
         if (look.Fog > 0f) col = Vector3.Lerp(col, StrandShading.DepthFog, look.Fog);
 
-        return DrawHelpers.Tint(DrawHelpers.Pack(col.X, col.Y, col.Z), r.Alpha, look.Overridden);
+        return Tint(Pack(col.X, col.Y, col.Z), r.Alpha, look.Overridden);
     }
 
     /// <summary>Draws the cup quads behind the tube's silhouette plane (before the body) or in front of it (after), far to near.</summary>
@@ -1186,13 +1186,13 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
     {
         for (int j = 0; j < SparkleBins; j++)
         {
-            SparkOn[j]   = DrawHelpers.Hash01(j * 13 + 5) < SparkleShare;
-            SparkJit[j]  = DrawHelpers.Hash01(j * 13 + 6);
-            float beta   = DrawHelpers.HashRange(j * 13 + 7, -MathF.PI, MathF.PI);
+            SparkOn[j]   = Hash01(j * 13 + 5) < SparkleShare;
+            SparkJit[j]  = Hash01(j * 13 + 6);
+            float beta   = HashRange(j * 13 + 7, -MathF.PI, MathF.PI);
             SparkSinB[j] = MathF.Sin(beta); SparkCosB[j] = MathF.Cos(beta);
-            SparkTx[j]   = DrawHelpers.HashRange(j * 13 + 8, -0.55f, 0.55f);
-            SparkTy[j]   = DrawHelpers.HashRange(j * 13 + 9, -0.55f, 0.55f);
-            SparkSize[j] = DrawHelpers.HashRange(j * 13 + 10, 0.8f, 1.35f);
+            SparkTx[j]   = HashRange(j * 13 + 8, -0.55f, 0.55f);
+            SparkTy[j]   = HashRange(j * 13 + 9, -0.55f, 0.55f);
+            SparkSize[j] = HashRange(j * 13 + 10, 0.8f, 1.35f);
         }
     }
 
@@ -1240,7 +1240,7 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
 
                 float x2 = nh * nh, x4 = x2 * x2, x8 = x4 * x4, x16 = x8 * x8;
                 float spec = x16 * x4 * x2;  // nh^22: how narrow one facet's reflection is
-                float a = DrawHelpers.Smooth(spec * 2.4f) * DrawHelpers.Smooth(cT / 0.30f) * r.Wet * look.Alpha;
+                float a = Smooth(spec * 2.4f) * Smooth(cT / 0.30f) * r.Wet * look.Alpha;
                 if (a < 0.04f) continue;
 
                 float along = Math.Clamp((b + SparkJit[j]) / binsPerPx - r.Arc, 0f, r2.Arc - r.Arc);
@@ -1249,7 +1249,7 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
                 float foreshorten = 0.55f + 0.45f * cT;  // a facet on a turned-away patch is a narrower sliver
 
                 // A hexagonal fan: bright at the centre, clear at the rim (six sides read as round at this size).
-                uint hot  = DrawHelpers.Tint(DrawHelpers.Pack(1.00f, 0.98f, 0.90f), a, look.Overridden);
+                uint hot  = Tint(Pack(1.00f, 0.98f, 0.90f), a, look.Overridden);
                 uint none = hot & 0x00FFFFFFu;
                 _sparkMesh.Reserve(7, 18);
                 int v0 = _sparkMesh.VertexReserved(c, hot), first = 0;
@@ -1273,8 +1273,8 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
     private void DrawGlints(ImDrawListPtr dl, int rowCount, in Look look, in MaterialContext ctx)
     {
         // The key light's reflection is the hard warm one; the fill's is dimmer, cooler and broader.
-        DrawGlintStrip(dl, rowCount, in look, in ctx, fill: false, DrawHelpers.Pack(1.00f, 0.97f, 0.86f));
-        DrawGlintStrip(dl, rowCount, in look, in ctx, fill: true,  DrawHelpers.Pack(0.82f, 0.93f, 1.00f));
+        DrawGlintStrip(dl, rowCount, in look, in ctx, fill: false, Pack(1.00f, 0.97f, 0.86f));
+        DrawGlintStrip(dl, rowCount, in look, in ctx, fill: true,  Pack(0.82f, 0.93f, 1.00f));
     }
 
     private void DrawGlintStrip(ImDrawListPtr dl, int rowCount, in Look look, in MaterialContext ctx, bool fill, uint tint)
@@ -1324,7 +1324,7 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         }
     }
 
-    private static uint GlintColour(uint rgb, float alpha, in Look look) => DrawHelpers.Tint(rgb, alpha, look.Overridden);
+    private static uint GlintColour(uint rgb, float alpha, in Look look) => Tint(rgb, alpha, look.Overridden);
 
     // Tip
 
@@ -1332,9 +1332,9 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
     {
         if (k <= 0.004f) return;
         // A slime bead on a still-reaching tentacle tip: a hard pinprick glint and the faintest sheen.
-        uint halo = DrawHelpers.WithAlpha(DrawHelpers.Pack(0.82f, 0.95f, 0.55f), 0.11f * k * look.Alpha);
-        uint clear = DrawHelpers.WithAlpha(DrawHelpers.Pack(0.82f, 0.95f, 0.55f), 0f);
-        uint pip = DrawHelpers.WithAlpha(DrawHelpers.Pack(1.00f, 1.00f, 0.92f), 0.90f * k * look.Alpha);
+        uint halo = WithAlpha(Pack(0.82f, 0.95f, 0.55f), 0.11f * k * look.Alpha);
+        uint clear = WithAlpha(Pack(0.82f, 0.95f, 0.55f), 0f);
+        uint pip = WithAlpha(Pack(1.00f, 1.00f, 0.92f), 0.90f * k * look.Alpha);
         Span<float> rr = stackalloc float[2] { bar * 0.9f, bar * 2.3f };
         Span<uint> cc = stackalloc uint[2] { halo, clear };
         MeshDraw.Radial(dl, tip, MeshDraw.WhiteUv(ctx.Time), pip, 10, rr, cc, 0f, 1f, 0, 0f);

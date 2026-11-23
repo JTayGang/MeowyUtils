@@ -46,7 +46,7 @@ public sealed class CharmEffect : SceneEffect, IHasSwappableSlots
     // sparkles: stars that flare and fade where they are, each slot coming back somewhere else
     private const int Sparkles = 22;
 
-    private static readonly uint Haze = DrawHelpers.Pack(0.95f, 0.42f, 0.66f);
+    private static readonly uint Haze = Pack(0.95f, 0.42f, 0.66f);
 
     private CastFrame _f;
     private readonly MoteField _motes = new(40, 650f, -420f, (8f, 26f), (10f, 40f), (1.6f, 4.2f));
@@ -69,7 +69,7 @@ public sealed class CharmEffect : SceneEffect, IHasSwappableSlots
         _f = f;
         if (f.Fresh || f.Resized) { if (f.Fresh) BeginCast(f.Seed); else _whispers.Clear(); }
 
-        float intro = DrawHelpers.Smooth(f.Age / IntroSecs);
+        float intro = Smooth(f.Age / IntroSecs);
         float beat = f.Age < FirstBeat ? 0f : Pulse((f.Age - FirstBeat) % _beatEvery);
 
         EmitAtmosphere(scene, intro, beat);
@@ -93,8 +93,8 @@ public sealed class CharmEffect : SceneEffect, IHasSwappableSlots
     {
         _seed = seed;
         _whispers.Begin(seed, FirstWhisper);
-        _density = DrawHelpers.HashRange(seed + 6, 0.88f, 1.12f);
-        _beatEvery = DrawHelpers.HashRange(seed + 10, 3.4f, 4.4f);
+        _density = HashRange(seed + 6, 0.88f, 1.12f);
+        _beatEvery = HashRange(seed + 10, 3.4f, 4.4f);
         _motes.Seed(seed);
     }
 
@@ -105,7 +105,7 @@ public sealed class CharmEffect : SceneEffect, IHasSwappableSlots
         => MathF.Max(Swell(since, 0.45f, 1.1f), 0.55f * Swell(since - 0.65f, 0.40f, 1.0f));
 
     private static float Swell(float t, float rise, float fall)
-        => t <= 0f || t >= rise + fall ? 0f : t < rise ? DrawHelpers.Smooth(t / rise) : 1f - DrawHelpers.Smooth((t - rise) / fall);
+        => t <= 0f || t >= rise + fall ? 0f : t < rise ? Smooth(t / rise) : 1f - Smooth((t - rise) / fall);
 
     private void EmitAtmosphere(EffectScene scene, float intro, float beat)
     {
@@ -140,27 +140,27 @@ public sealed class CharmEffect : SceneEffect, IHasSwappableSlots
         ref readonly CastFrame f = ref _f;
         ref readonly Tier T = ref Tiers[tier];
         float px = f.Px, halfW = f.Size.X * 0.5f, halfH = f.Size.Y * 0.5f;
-        float arrive = DrawHelpers.Smooth(f.Age / (IntroSecs * T.Arrive + 0.2f));
+        float arrive = Smooth(f.Age / (IntroSecs * T.Arrive + 0.2f));
         float level = f.Alpha * T.Alpha * _density * (1f - 0.6f * f.Leave) * (0.91f + 0.18f * beat);
         float edgeExp = 1f - 0.62f * T.EdgeBias;
 
         for (int i = 0; i < T.Count; i++)
         {
             int slot = _seed + (tier * TierStride + i) * 977;
-            float period = DrawHelpers.HashRange(slot + 1, T.PeriodMin, T.PeriodMax);
-            float u = f.Age / period + DrawHelpers.Hash01(slot + 2);
+            float period = HashRange(slot + 1, T.PeriodMin, T.PeriodMax);
+            float u = f.Age / period + Hash01(slot + 2);
             int cycle = (int)MathF.Floor(u);
             float life = u - cycle;
             int cs = slot + cycle * 7919;
 
             // Where this cycle's billow forms: banked toward the edges, so the middle stays thinnest.
-            float ux = DrawHelpers.Hash01(cs + 3) * 2f - 1f, uy = DrawHelpers.Hash01(cs + 4) * 2f - 1f;
+            float ux = Hash01(cs + 3) * 2f - 1f, uy = Hash01(cs + 4) * 2f - 1f;
             Vector2 home = f.Center + new Vector2(MathF.Sign(ux) * MathF.Pow(MathF.Abs(ux), edgeExp) * halfW * 1.05f,
                                                   MathF.Sign(uy) * MathF.Pow(MathF.Abs(uy), edgeExp) * halfH * 1.05f);
 
             // It drifts with the wind from the moment it formed.
-            float bearing = _whispers.WindAngle + DrawHelpers.HashRange(cs + 6, -0.35f, 0.35f);
-            float born = (cycle - DrawHelpers.Hash01(slot + 2)) * period;
+            float bearing = _whispers.WindAngle + HashRange(cs + 6, -0.35f, 0.35f);
+            float born = (cycle - Hash01(slot + 2)) * period;
             float run = (_whispers.Wind(f.Age) - _whispers.Wind(born)) * T.Speed * px;
             Vector2 at = home + new Vector2(MathF.Cos(bearing), MathF.Sin(bearing)) * run;
 
@@ -172,7 +172,7 @@ public sealed class CharmEffect : SceneEffect, IHasSwappableSlots
 
             scene.AddParticle(new ParticlePrimitive
             {
-                Position = at, Size = DrawHelpers.HashRange(cs + 5, T.SizeMin, T.SizeMax) * px * (0.55f + 0.45f * arrive) * (1f + 0.04f * beat),
+                Position = at, Size = HashRange(cs + 5, T.SizeMin, T.SizeMax) * px * (0.55f + 0.45f * arrive) * (1f + 0.04f * beat),
                 AgeRatio = life, Brightness = level * (0.7f + 0.3f * arrive), Seed = cs, Rotation = bearing, Variant = T.Squash, Role = PrimitiveRole.Mist, ColorOverride = f.Color,
             });
         }
@@ -187,10 +187,10 @@ public sealed class CharmEffect : SceneEffect, IHasSwappableSlots
         for (int i = 0; i < Sparkles; i++)
         {
             int slot = _seed + 90001 + i * 1237;
-            if ((DrawHelpers.Hash01(slot + 1) < 0.35f) != near) continue;
+            if ((Hash01(slot + 1) < 0.35f) != near) continue;
 
-            float period = DrawHelpers.HashRange(slot + 2, 2.6f, 5.2f);
-            float u = f.Age / period + DrawHelpers.Hash01(slot + 3);
+            float period = HashRange(slot + 2, 2.6f, 5.2f);
+            float u = f.Age / period + Hash01(slot + 3);
             int cycle = (int)MathF.Floor(u);
             int cs = slot + cycle * 7919;
 
@@ -198,8 +198,8 @@ public sealed class CharmEffect : SceneEffect, IHasSwappableSlots
             float flare = MathF.Sin(MathF.PI * MathF.Pow(u - cycle, 0.55f));
             scene.AddParticle(new ParticlePrimitive
             {
-                Position = new Vector2(DrawHelpers.Hash01(cs + 4) * f.Size.X, DrawHelpers.Hash01(cs + 5) * f.Size.Y),
-                Size = (near ? DrawHelpers.HashRange(cs + 6, 15f, 27f) : DrawHelpers.HashRange(cs + 6, 7f, 14f)) * f.Px,
+                Position = new Vector2(Hash01(cs + 4) * f.Size.X, Hash01(cs + 5) * f.Size.Y),
+                Size = (near ? HashRange(cs + 6, 15f, 27f) : HashRange(cs + 6, 7f, 14f)) * f.Px,
                 Brightness = flare * flare * level * (near ? 1f : 0.7f), Seed = cs, Role = PrimitiveRole.Glint, ColorOverride = f.Color,
             });
         }

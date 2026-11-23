@@ -67,7 +67,7 @@ public sealed class ParticleSystem
         {
             int seed = _seedSalt + (int)(time * 977f);
             _pool[_count++] = Make(seed, time, in spawn);
-            _nextSpawnAt = time + DrawHelpers.HashRange(seed + 4, interval.Min, interval.Max);
+            _nextSpawnAt = time + HashRange(seed + 4, interval.Min, interval.Max);
         }
     }
 
@@ -174,8 +174,8 @@ public sealed class ParticleSystem
         Vel = s.Velocity(seed),
         Gravity = _physics.Gravity,
         Born = time,
-        Life = DrawHelpers.HashRange(seed + 1, s.Life.Min, s.Life.Max),
-        Size = DrawHelpers.HashRange(seed + 2, s.Size.Min, s.Size.Max),
+        Life = HashRange(seed + 1, s.Life.Min, s.Life.Max),
+        Size = HashRange(seed + 2, s.Size.Min, s.Size.Max),
         Brightness = 1f,
         Seed = seed,
     };

@@ -30,7 +30,7 @@ internal static class Noise
     {
         var t = new float[TableSize * TableSize];
         for (int i = 0; i < t.Length; i++)
-            t[i] = DrawHelpers.Hash01(i * 7 + 12345) * 2f - 1f;
+            t[i] = Hash01(i * 7 + 12345) * 2f - 1f;
         return t;
     }
 
@@ -88,7 +88,7 @@ internal static class Noise
     {
         float v = Value(arc * freq + offset, y);
         if (!closed || total < 1f) return v;
-        float t = DrawHelpers.Smooth(0.86f, 1f, arc / total);
+        float t = Smooth(0.86f, 1f, arc / total);
         return t <= 0f ? v : v * (1f - t) + Value((arc - total) * freq + offset, y) * t;
     }
 }

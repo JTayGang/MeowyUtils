@@ -528,7 +528,7 @@ internal static unsafe partial class MeshDraw
         {
             for (int j = 0; j < segs; j++)
             {
-                float wob = 1f + irregular * (DrawHelpers.Hash01(seed + j * 7919) * 2f - 1f) * 0.5f;
+                float wob = 1f + irregular * (Hash01(seed + j * 7919) * 2f - 1f) * 0.5f;
                 float ang = rotation + MathF.Tau * j / segs;
                 float rad = ringRadius[r] * wob;
                 v[n].Pos = new Vector2(center.X + MathF.Cos(ang) * rad, center.Y + MathF.Sin(ang) * rad * squashY);

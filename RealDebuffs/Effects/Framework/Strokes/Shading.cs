@@ -211,14 +211,14 @@ public sealed class Matcap
     internal static Vector3 Environment(Vector3 r)
     {
         float up = -r.Y;  // screen up is -Y
-        float sky = DrawHelpers.Smooth(-0.35f, 0.85f, up);
+        float sky = Smooth(-0.35f, 0.85f, up);
 
         Vector3 ground = new(0.006f, 0.006f, 0.008f);
         Vector3 zenith = new(0.085f, 0.100f, 0.135f);
         Vector3 env = Vector3.Lerp(ground, zenith, sky);
 
         float band = MathF.Exp(-MathF.Pow((up + 0.02f) / 0.20f, 2f));
-        env += new Vector3(0.38f, 0.25f, 0.15f) * (band * 0.30f * DrawHelpers.Smooth(-0.6f, 0.4f, r.Z));
+        env += new Vector3(0.38f, 0.25f, 0.15f) * (band * 0.30f * Smooth(-0.6f, 0.4f, r.Z));
 
         float back = MathF.Max(0f, Vector3.Dot(r, StudioLighting.Rim));
         env += StudioLighting.RimColor * (MathF.Pow(back, 7f) * 0.85f);
@@ -247,8 +247,8 @@ internal static class StrandShading
     /// <summary>Colour a strand hazes toward as its Depth approaches 1.</summary>
     public static readonly Vector3 DepthFog = new(0.105f, 0.125f, 0.165f);
 
-    public static readonly uint ShadowTint = DrawHelpers.Pack(0.015f, 0.016f, 0.022f);
-    public static readonly uint FlareWarm  = DrawHelpers.Pack(1.00f, 0.80f, 0.52f);
+    public static readonly uint ShadowTint = Pack(0.015f, 0.016f, 0.022f);
+    public static readonly uint FlareWarm  = Pack(1.00f, 0.80f, 0.52f);
 
     /// <summary>Soft cast band under the strand, displaced away from the key light.</summary>
     public static void DrawShadow(ImDrawListPtr dl, StrandPath path, float scale, float depth, float alpha,
@@ -284,7 +284,7 @@ internal static class StrandShading
             {
                 float w = across[c];
                 MeshDraw.P[v] = p + offset + nrm * (w * (hw + soft * 0.5f * MathF.Abs(w)));
-                MeshDraw.C[v] = DrawHelpers.WithAlpha(ShadowTint, a * prof[c] * edgeFade);
+                MeshDraw.C[v] = WithAlpha(ShadowTint, a * prof[c] * edgeFade);
                 v++;
             }
         }
@@ -309,10 +309,10 @@ internal static class StrandShading
         Span<float> rr = stackalloc float[2] { bar * 1.1f, bar * 3.0f };
         Span<uint> cc = stackalloc uint[2]
         {
-            DrawHelpers.WithAlpha(FlareWarm, 0.30f * k),
-            DrawHelpers.WithAlpha(FlareWarm, 0f),
+            WithAlpha(FlareWarm, 0.30f * k),
+            WithAlpha(FlareWarm, 0f),
         };
-        MeshDraw.Radial(dl, tip, MeshDraw.WhiteUv(ctx.Time), DrawHelpers.WithAlpha(0xFFFFFFFFu, 0.85f * k),
+        MeshDraw.Radial(dl, tip, MeshDraw.WhiteUv(ctx.Time), WithAlpha(0xFFFFFFFFu, 0.85f * k),
                         10, rr, cc, 0f, 1f, 0, 0f);
     }
 }

@@ -14,7 +14,7 @@ public sealed class SceneRenderer
 
     public void Render(ImDrawListPtr dl, EffectScene scene, Vector2 screenSize, float time, float globalAlpha)
     {
-        var ctx = new MaterialContext(time, DrawHelpers.PixelScale(screenSize), globalAlpha, (int)screenSize.X, (int)screenSize.Y);
+        var ctx = new MaterialContext(time, PixelScale(screenSize), globalAlpha, (int)screenSize.X, (int)screenSize.Y);
         MeshDraw.AbortBatch();
 
         if (!scene.Vignette.Over) DrawVignette(dl, scene, screenSize, globalAlpha);
@@ -32,9 +32,9 @@ public sealed class SceneRenderer
         if (!v.Active || v.Alpha <= 0.001f) return;
 
         FrameProbe.Mark(FrameProbe.Phase.Vignette);
-        DrawHelpers.PushColorOverride(v.ColorOverride);
+        PushColorOverride(v.ColorOverride);
         try { DrawHelpers.DrawVignette(dl, screenSize, v.Tint, v.ThicknessFrac, globalAlpha * v.Alpha); }
-        finally { DrawHelpers.PopColorOverride(); }
+        finally { PopColorOverride(); }
     }
 
     private static void DrawRegions(ImDrawListPtr dl, EffectScene scene, in MaterialContext ctx, bool veil)
@@ -45,14 +45,14 @@ public sealed class SceneRenderer
             if (r.Veil != veil) continue;
             FrameProbe.Owner(r.Owner);
             IRegionMaterial? mat = null;
-            DrawHelpers.PushColorOverride(r.ColorOverride);
+            PushColorOverride(r.ColorOverride);
             try
             {
                 mat = scene.Materials.Region(r.Owner, r.Kind);
                 if (DrawGuard.Allowed(mat, r.Owner)) { DrawGuard.Probe?.Invoke(mat!); mat!.Draw(dl, in r, in ctx); DrawGuard.Ok(mat, r.Owner); }
             }
             catch (Exception e) { if (mat != null) DrawGuard.Fail(mat, r.Owner, e); }
-            finally { DrawHelpers.PopColorOverride(); }
+            finally { PopColorOverride(); }
         }
     }
 
@@ -125,7 +125,7 @@ public sealed class SceneRenderer
             if (stroke is ICoatLayeredHost lh)
                 for (int c = 0; c < cc; c++)
                     if (_coatHost[c] == i && lh.Layers(scene.Coats[c].Coat)) { layered = c; break; }
-            DrawHelpers.PushColorOverride(s.ColorOverride);
+            PushColorOverride(s.ColorOverride);
             try
             {
                 if (DrawGuard.Allowed(stroke, s.Owner))
@@ -137,7 +137,7 @@ public sealed class SceneRenderer
                 }
             }
             catch (Exception e) { if (stroke != null) DrawGuard.Fail(stroke, s.Owner, e); }
-            finally { DrawHelpers.PopColorOverride(); }
+            finally { PopColorOverride(); }
 
             for (int c = 0; c < cc; c++)
                 if (_coatHost[c] == i && c != layered) { FrameProbe.Owner(scene.Coats[c].Owner); DrawCoat(dl, scene.Coats[c], in ctx); }
@@ -157,26 +157,26 @@ public sealed class SceneRenderer
     private static void DrawCoat(ImDrawListPtr dl, in CoatPrimitive c, in MaterialContext ctx)
     {
         var key = c.Coat.Matter;
-        DrawHelpers.PushColorOverride(c.ColorOverride);
+        PushColorOverride(c.ColorOverride);
         try
         {
             if (!DrawGuard.Allowed(key, c.Owner)) return;
             DrawGuard.Probe?.Invoke(key); c.Coat.Draw(dl, c.Alpha, in ctx); DrawGuard.Ok(key, c.Owner);
         }
         catch (Exception e) { DrawGuard.Fail(key, c.Owner, e); }
-        finally { DrawHelpers.PopColorOverride(); }
+        finally { PopColorOverride(); }
     }
 
     private static void DrawParticle(ImDrawListPtr dl, in ParticlePrimitive p, IParticleMaterial? mat, in MaterialContext ctx)
     {
         if (mat is IBatchedParticleMaterial) MeshDraw.BeginBatch(); else MeshDraw.EndBatch(dl);  // a run of mesh-only drops is staged; anything else draws in its place
-        DrawHelpers.PushColorOverride(p.ColorOverride);
+        PushColorOverride(p.ColorOverride);
         try
         {
             if (!DrawGuard.Allowed(mat, p.Owner)) return;
             DrawGuard.Probe?.Invoke(mat!); mat!.Draw(dl, in p, in ctx); DrawGuard.Ok(mat, p.Owner);
         }
         catch (Exception e) { if (mat != null) DrawGuard.Fail(mat, p.Owner, e); }
-        finally { DrawHelpers.PopColorOverride(); }
+        finally { PopColorOverride(); }
     }
 }

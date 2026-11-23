@@ -64,8 +64,8 @@ public sealed class SilenceEffect : SceneEffect, IHasSwappableSlots, IReactsToBl
     private const int   MaxFloating = 14;
 
     private static readonly uint Flash = CurseColor.Flash;
-    private static readonly uint Hush = DrawHelpers.Pack(0.060f, 0.012f, 0.100f);
-    private static readonly uint Veil = DrawHelpers.Pack(0.58f, 0.13f, 0.82f);
+    private static readonly uint Hush = Pack(0.060f, 0.012f, 0.100f);
+    private static readonly uint Veil = Pack(0.58f, 0.13f, 0.82f);
 
     private const float NeverDenied = -1000f;
 
@@ -113,15 +113,15 @@ public sealed class SilenceEffect : SceneEffect, IHasSwappableSlots, IReactsToBl
         _miasmaPos = seed =>
         {
             int i = (int)((uint)seed % (uint)Math.Max(1, _hero.Count - 1));
-            return _hero.Points[i] + new Vector2(DrawHelpers.HashRange(seed + 7, -30f, 30f), DrawHelpers.HashRange(seed + 8, -30f, 30f)) * _f.Px;
+            return _hero.Points[i] + new Vector2(HashRange(seed + 7, -30f, 30f), HashRange(seed + 8, -30f, 30f)) * _f.Px;
         };
         _miasmaVel = seed =>
         {
             int i = (int)((uint)seed % (uint)Math.Max(1, _hero.Count - 1));
             Vector2 from = _hero.Points[i] - _f.Center;
             Vector2 dir = from.LengthSquared() > 1f ? Vector2.Normalize(from) : new Vector2(0f, -1f);
-            float side = DrawHelpers.Sign(seed + 3);
-            return (dir * side * DrawHelpers.HashRange(seed + 4, 6f, 20f) + new Vector2(0f, DrawHelpers.HashRange(seed + 5, -14f, -3f))) * _f.Px;
+            float side = Sign(seed + 3);
+            return (dir * side * HashRange(seed + 4, 6f, 20f) + new Vector2(0f, HashRange(seed + 5, -14f, -3f))) * _f.Px;
         };
     }
 
@@ -148,7 +148,7 @@ public sealed class SilenceEffect : SceneEffect, IHasSwappableSlots, IReactsToBl
         EmitFloatingRunes(scene);
         EmitMiasma(scene, f.Time, f.Dt);
         _motes.Emit(scene, in _view.Cam, CameraDistance * f.Px, f.Size, f.Px, f.Age,
-                    f.Alpha * DrawHelpers.Smooth((f.Age - 0.35f) / 1.4f) * (1f - DrawHelpers.Smooth(f.Leave)),
+                    f.Alpha * Smooth((f.Age - 0.35f) / 1.4f) * (1f - Smooth(f.Leave)),
                     blurDim: 0.45f, twinkle: 0f, f.Color);
     }
 
@@ -157,7 +157,7 @@ public sealed class SilenceEffect : SceneEffect, IHasSwappableSlots, IReactsToBl
         _seed = seed;
         _deniedAt = NeverDenied;
         _view.Begin(seed);
-        _hushEvery = DrawHelpers.HashRange(seed + 3, 9f, 12f);
+        _hushEvery = HashRange(seed + 3, 9f, 12f);
         _nextRune = 1.1f;
         _runeSpawns = _floatingCount = 0;
         _stamped = false;
@@ -183,7 +183,7 @@ public sealed class SilenceEffect : SceneEffect, IHasSwappableSlots, IReactsToBl
         if (sinceDenied >= 0f && n < into.Length)
         {
             float u = sinceDenied / DenySeconds;
-            into[n++] = new ShockFront(shortSide * (0.16f + 0.95f * DrawHelpers.EaseOutCubic(u)), shortSide * 0.055f, DenyGain * (1f - DrawHelpers.Smooth(u)));
+            into[n++] = new ShockFront(shortSide * (0.16f + 0.95f * EaseOutCubic(u)), shortSide * 0.055f, DenyGain * (1f - Smooth(u)));
         }
 
         float th = age - FirstHush;
@@ -193,7 +193,7 @@ public sealed class SilenceEffect : SceneEffect, IHasSwappableSlots, IReactsToBl
             if (tp < HushSecondsLong)
             {
                 float u = tp / HushSecondsLong;
-                into[n++] = new ShockFront(shortSide * (0.20f + 0.90f * DrawHelpers.EaseOutCubic(u)), shortSide * 0.07f, HushGain * (1f - DrawHelpers.Smooth(u)));
+                into[n++] = new ShockFront(shortSide * (0.20f + 0.90f * EaseOutCubic(u)), shortSide * 0.07f, HushGain * (1f - Smooth(u)));
             }
         }
         return n;
@@ -206,9 +206,9 @@ public sealed class SilenceEffect : SceneEffect, IHasSwappableSlots, IReactsToBl
     // How far a layer has landed (0..1), how far it still has to fall, and how solid it is.
     private static void Arrive(float age, Layer layer, float leave, out float lift, out float appear, out float landed)
     {
-        landed = DrawHelpers.Saturate((age - ArriveAt[(int)layer]) / ArriveSeconds);
+        landed = Saturate((age - ArriveAt[(int)layer]) / ArriveSeconds);
         lift = (1f - EaseOutBack(landed)) * ArriveLift + leave * LeaveLift;
-        appear = DrawHelpers.Smooth(landed / 0.40f) * (1f - DrawHelpers.Smooth(leave));
+        appear = Smooth(landed / 0.40f) * (1f - Smooth(leave));
     }
 
     private static float EaseOutBack(float t)
@@ -221,7 +221,7 @@ public sealed class SilenceEffect : SceneEffect, IHasSwappableSlots, IReactsToBl
     private void EmitAtmosphere(EffectScene scene, float castGate, float denyFlare)
     {
         ref readonly CastFrame f = ref _f;
-        float castIn = DrawHelpers.Smooth(f.Age / 0.45f);
+        float castIn = Smooth(f.Age / 0.45f);
 
         scene.RequestVignette(CurseColor.Vignette, 0.17f + 0.04f * denyFlare, f.Alpha * 0.62f * castIn * _view.Breath, priority: 15, f.Color);
         scene.EdgeSpill(f.Size, f.Short * 0.13f, Veil, 0.20f * f.Alpha * castIn * _view.Breath * (1f + 1.2f * denyFlare), f.Color);
@@ -229,12 +229,12 @@ public sealed class SilenceEffect : SceneEffect, IHasSwappableSlots, IReactsToBl
         // The cast's own flash and hush use the gate, so the manager's fade-in can't swallow them.
         float flash = f.Age < 0.45f ? MathF.Exp(-f.Age / 0.10f) : 0f;
         scene.Wash(f.Size, Flash, 0.42f * flash * castGate, f.Color);
-        float hush = DrawHelpers.Smooth(f.Age / 0.25f) * (1f - DrawHelpers.Smooth((f.Age - 0.35f) / 1.3f));
+        float hush = Smooth(f.Age / 0.25f) * (1f - Smooth((f.Age - 0.35f) / 1.3f));
         scene.Wash(f.Size, Hush, 0.34f * hush * castGate, f.Color);
     }
 
     private void Inscribe(EffectScene scene, StrandPath path, int salt, float width, float bright, float depth, float excite, float landed, float dash)
-        => scene.Ring(path, PrimitiveRole.Inscription, _seed, salt, width, bright, depth, excite, DrawHelpers.Saturate(landed * 1.35f), dash, _f.Color);
+        => scene.Ring(path, PrimitiveRole.Inscription, _seed, salt, width, bright, depth, excite, Saturate(landed * 1.35f), dash, _f.Color);
 
     private void EmitRings(EffectScene scene)
     {
@@ -269,8 +269,8 @@ public sealed class SilenceEffect : SceneEffect, IHasSwappableSlots, IReactsToBl
             var wobble = new RingWobble(HeroWobble + 0.016f * excite, 3, _seed * 0.0007f - 0.35f * age,
                                         HeroWobble * 0.6f, 5, _seed * 0.0011f + 0.52f * age);
             SigilGeometry.Ring(_hero, HeroSegments, in cam, SigilGeometry.PlaneRadius(eff, h, dist), h, ang, in wobble);
-            scene.HeroRing(_hero, _seed, DrawHelpers.Saturate(landed * 1.5f), bright, 1.05f, 0.30f, 0.30f,
-                           DrawHelpers.Saturate(excite * 0.8f), landed < 0.66f ? 1f : 0f, f.Color);
+            scene.HeroRing(_hero, _seed, Saturate(landed * 1.5f), bright, 1.05f, 0.30f, 0.30f,
+                           Saturate(excite * 0.8f), landed < 0.66f ? 1f : 0f, f.Color);
 
             // The seal lands: light thrown off the ring all the way round.
             if (!_stamped && age >= LockSeconds)
@@ -278,7 +278,7 @@ public sealed class SilenceEffect : SceneEffect, IHasSwappableSlots, IReactsToBl
                 _stamped = true;
                 for (int k = 0; k < 9; k++)
                 {
-                    float a = ang + MathF.Tau * (k + DrawHelpers.Hash01(_seed + k * 3) * 0.6f) / 9f;
+                    float a = ang + MathF.Tau * (k + Hash01(_seed + k * 3) * 0.6f) / 9f;
                     Vector2 at = SigilGeometry.PointOn(in cam, SigilGeometry.PlaneRadius(eff, h, dist), h, a, out _, out Vector2 outward);
                     if (at.X < 0f || at.Y < 0f || at.X > f.Size.X || at.Y > f.Size.Y) continue;
 
@@ -353,7 +353,7 @@ public sealed class SilenceEffect : SceneEffect, IHasSwappableSlots, IReactsToBl
             SigilGeometry.Ring(_shock, ShockSegments, in cam, MathF.Max(8f * px, r.Front), 0f, 0f, RingWobble.None);
 
             // Dark at screen centre (a bright ring there reads as a crosshair), brighter as it reaches the rings.
-            float reachIn = DrawHelpers.Smooth((r.Front - 0.08f * shortSide) / (0.22f * shortSide));
+            float reachIn = Smooth((r.Front - 0.08f * shortSide) / (0.22f * shortSide));
             Inscribe(scene, _shock, 30, ShockWidth * px, alpha * MathF.Min(1.4f, r.Gain * 1.2f) * reachIn, 0f, r.Gain, 1f, 0f);
         }
     }
@@ -376,7 +376,7 @@ public sealed class SilenceEffect : SceneEffect, IHasSwappableSlots, IReactsToBl
             float a = ang + MathF.Tau * u;
 
             // They light in order round the ring as the seal lands.
-            float ignite = DrawHelpers.Saturate((f.Age - 0.70f - 0.9f * u) / 0.22f);
+            float ignite = Saturate((f.Age - 0.70f - 0.9f * u) / 0.22f);
             float flare = ignite > 0f && ignite < 1f ? 1f + 1.4f * MathF.Sin(MathF.PI * ignite) : 1f;
 
             float d = MathF.Abs(MathF.IEEERemainder(a - scan, MathF.Tau)) / 0.30f;
@@ -412,19 +412,19 @@ public sealed class SilenceEffect : SceneEffect, IHasSwappableSlots, IReactsToBl
             int s = _seed + _runeSpawns * 4099 + 5;
             _floating[_floatingCount++] = new Floating
             {
-                Angle = DrawHelpers.Hash01(s + 1) * MathF.Tau,
-                Radius = DrawHelpers.HashRange(s + 2, 0.40f, 0.70f),
-                Height = DrawHelpers.HashRange(s + 3, -120f, 60f),
-                Lift = DrawHelpers.HashRange(s + 4, 55f, 120f),
-                Spin = DrawHelpers.HashRange(s + 5, -0.10f, 0.10f),
+                Angle = Hash01(s + 1) * MathF.Tau,
+                Radius = HashRange(s + 2, 0.40f, 0.70f),
+                Height = HashRange(s + 3, -120f, 60f),
+                Lift = HashRange(s + 4, 55f, 120f),
+                Spin = HashRange(s + 5, -0.10f, 0.10f),
                 Born = age,
-                Life = DrawHelpers.HashRange(s + 6, 3.6f, 6.0f),
-                Size = DrawHelpers.HashRange(s + 7, 0.8f, 1.4f),
-                Tilt = DrawHelpers.HashRange(s + 8, -0.35f, 0.35f),
+                Life = HashRange(s + 6, 3.6f, 6.0f),
+                Size = HashRange(s + 7, 0.8f, 1.4f),
+                Tilt = HashRange(s + 8, -0.35f, 0.35f),
                 Seed = s,
             };
             _runeSpawns++;
-            _nextRune = age + DrawHelpers.HashRange(s + 9, 0.45f, 1.05f);
+            _nextRune = age + HashRange(s + 9, 0.45f, 1.05f);
         }
 
         int w = 0;
@@ -440,7 +440,7 @@ public sealed class SilenceEffect : SceneEffect, IHasSwappableSlots, IReactsToBl
             float planeR = SigilGeometry.PlaneRadius(fl.Radius * f.Short, 0f, dist) * (1f + 0.06f * u);
             Vector2 at = SigilGeometry.PointOn(in _view.Cam, planeR, h, fl.Angle + fl.Spin * t, out float scale, out _);
 
-            float fade = DrawHelpers.Smooth(u / 0.18f) * (1f - DrawHelpers.Smooth((u - 0.65f) / 0.35f));
+            float fade = Smooth(u / 0.18f) * (1f - Smooth((u - 0.65f) / 0.35f));
             scene.AddParticle(new ParticlePrimitive
             {
                 Position = at, Size = RuneSize * 1.15f * fl.Size * px * scale, AgeRatio = 0.5f,
@@ -458,6 +458,6 @@ public sealed class SilenceEffect : SceneEffect, IHasSwappableSlots, IReactsToBl
         {
             _miasma.Stream(time, dt, (0.35f, 0.80f), new ParticleSpawn(_miasmaPos, _miasmaVel, (4.0f, 6.5f), (70f * _f.Px, 150f * _f.Px)));
         }
-        _miasma.Emit(scene, time, new ParticleStyle(PrimitiveRole.Miasma, f.Alpha * DrawHelpers.Saturate((f.Age - 0.8f) * 0.6f), f.Color));
+        _miasma.Emit(scene, time, new ParticleStyle(PrimitiveRole.Miasma, f.Alpha * Saturate((f.Age - 0.8f) * 0.6f), f.Color));
     }
 }

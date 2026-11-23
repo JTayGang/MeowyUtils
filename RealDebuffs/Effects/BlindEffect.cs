@@ -16,7 +16,7 @@ public sealed class BlindEffect : SceneEffect, IHasSwappableSlots
 
     protected override void Emit(EffectScene scene, in CastFrame f)
     {
-        float a = f.Alpha * (0.92f + 0.08f * DrawHelpers.Pulse(f.Time, 2.6f));
+        float a = f.Alpha * (0.92f + 0.08f * Pulse(f.Time, 2.6f));
 
         // The lights cut out: a hard black beat on the cast that settles into tunnel vision.
         float cut = MathF.Exp(-f.Age / 0.30f);

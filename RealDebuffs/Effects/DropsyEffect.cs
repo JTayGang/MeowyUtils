@@ -185,9 +185,9 @@ public sealed class DropsyEffect : SceneEffect, IHasSwappableSlots
         float flutter = 1f + 0.20f * l.Jet.Churn * Noise.Value(age * l.FlutterW + l.P1, l.Jet.Seed * 0.1f);  // the quick lumpiness of a ragged flow
         float glug = 1f - 0.34f * Bump(Cycle(age - l.GlugAt, l.GlugEvery) / l.GlugLen);  // air gulped in the pipe
         float gush = 1f + l.Gush * MathF.Exp(-age / l.GushSecs);
-        float taper = DrawHelpers.Smooth(rem / 1.6f);
-        float sputter = rem < 1.8f ? 0.30f + 0.70f * DrawHelpers.Smooth(0f, 0.55f, 0.5f + 0.5f * MathF.Sin(age * (12f + 8f * (1.8f - rem)) + l.P2)) : 1f;
-        float flow = l.Base * DrawHelpers.Smooth(age / 0.012f) * gush * swell * flutter * glug * taper * sputter * keep * keep;
+        float taper = Smooth(rem / 1.6f);
+        float sputter = rem < 1.8f ? 0.30f + 0.70f * Smooth(0f, 0.55f, 0.5f + 0.5f * MathF.Sin(age * (12f + 8f * (1.8f - rem)) + l.P2)) : 1f;
+        float flow = l.Base * Smooth(age / 0.012f) * gush * swell * flutter * glug * taper * sputter * keep * keep;
 
         l.Jet.Flow = MathF.Max(flow, 0.003f);
         l.Jet.Speed = l.Speed * f.Px * (0.97f + 0.03f * swell);  // pressure holds steady, so parcels launched together fly together
@@ -281,8 +281,8 @@ public sealed class DropsyEffect : SceneEffect, IHasSwappableSlots
     {
         var look = liquid.Look;
         Vector3 deep = Matcap.ToDisplay(look.Deep * 0.55f), pale = Matcap.ToDisplay(look.Thin * 1.5f);
-        float ramp = DrawHelpers.Saturate(f.Age / 2.4f);
-        scene.RequestVignette(DrawHelpers.Pack(deep.X * 0.15f, deep.Y * 0.15f, deep.Z * 0.15f), 0.14f, f.Alpha * 0.85f * ramp, priority: 20, f.Color);
-        scene.Wash(f.Size, DrawHelpers.Pack(pale.X, pale.Y, pale.Z), 0.30f * f.Gate * MathF.Exp(-f.Age / 0.22f), f.Color);
+        float ramp = Saturate(f.Age / 2.4f);
+        scene.RequestVignette(Pack(deep.X * 0.15f, deep.Y * 0.15f, deep.Z * 0.15f), 0.14f, f.Alpha * 0.85f * ramp, priority: 20, f.Color);
+        scene.Wash(f.Size, Pack(pale.X, pale.Y, pale.Z), 0.30f * f.Gate * MathF.Exp(-f.Age / 0.22f), f.Color);
     }
 }

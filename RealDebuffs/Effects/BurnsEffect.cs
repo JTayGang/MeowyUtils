@@ -14,8 +14,8 @@ public sealed class BurnsEffect : SceneEffect, IHasSwappableSlots
         Slot.Region(RegionKind.EdgeGlow, "Firelight", "region.firelight"),
     };
 
-    private static readonly uint Soot = DrawHelpers.Pack(0.045f, 0.012f, 0.006f);
-    private static readonly uint Glow = DrawHelpers.Pack(1.00f, 0.42f, 0.07f);
+    private static readonly uint Soot = Pack(0.045f, 0.012f, 0.006f);
+    private static readonly uint Glow = Pack(1.00f, 0.42f, 0.07f);
 
     private const float BuildSeconds = 1.30f, BuildFloor = 0.30f;
     private const int BottomSites = 14, SideSites = 2;
@@ -66,17 +66,17 @@ public sealed class BurnsEffect : SceneEffect, IHasSwappableSlots
     private Vector2 Spawn(int seed, float liftLo, float liftHi)
     {
         Site s = _sites[(int)((uint)seed % BottomSites)];
-        float x = (s.Along + DrawHelpers.HashRange(seed + 20, -1f, 1f) * s.Spread * 1.3f) * _f.Size.X;
-        return new Vector2(x, _f.Size.Y + 2f - DrawHelpers.HashRange(seed + 22, liftLo, liftHi) * _f.Short);
+        float x = (s.Along + HashRange(seed + 20, -1f, 1f) * s.Spread * 1.3f) * _f.Size.X;
+        return new Vector2(x, _f.Size.Y + 2f - HashRange(seed + 22, liftLo, liftHi) * _f.Short);
     }
 
     // Per cast: sites jitter inside their own cell so no gaps open; ignition spreads out from a random origin.
     private void BuildLayout(int castSeed)
     {
         float cell = 1f / BottomSites;
-        float origin = 0.5f + DrawHelpers.HashRange(castSeed + 11, -0.10f, 0.10f);
-        int hotA = Math.Clamp((int)(DrawHelpers.Hash01(castSeed + 21) * BottomSites), 0, BottomSites - 1);
-        int hotB = (hotA + 4 + (int)(DrawHelpers.Hash01(castSeed + 22) * (BottomSites - 8))) % BottomSites;
+        float origin = 0.5f + HashRange(castSeed + 11, -0.10f, 0.10f);
+        int hotA = Math.Clamp((int)(Hash01(castSeed + 21) * BottomSites), 0, BottomSites - 1);
+        int hotB = (hotA + 4 + (int)(Hash01(castSeed + 22) * (BottomSites - 8))) % BottomSites;
 
         for (int n = 0; n < _sites.Length; n++)
         {
@@ -87,22 +87,22 @@ public sealed class BurnsEffect : SceneEffect, IHasSwappableSlots
 
             if (st.Edge == 0)
             {
-                st.Along = Math.Clamp((index + 0.5f + DrawHelpers.HashRange(s, -0.28f, 0.28f)) * cell, 0.015f, 0.985f);
+                st.Along = Math.Clamp((index + 0.5f + HashRange(s, -0.28f, 0.28f)) * cell, 0.015f, 0.985f);
                 float middle = 1f - Math.Abs(st.Along - 0.5f) * 2f;
-                float hot = index == hotA || index == hotB ? DrawHelpers.HashRange(s + 9, 1.20f, 1.40f) : 1f;
-                st.Boost = DrawHelpers.HashRange(s + 3, 0.86f, 1.20f) * (0.93f + 0.14f * middle) * hot;
+                float hot = index == hotA || index == hotB ? HashRange(s + 9, 1.20f, 1.40f) : 1f;
+                st.Boost = HashRange(s + 3, 0.86f, 1.20f) * (0.93f + 0.14f * middle) * hot;
                 st.Ignition = Math.Abs(st.Along - origin) * 0.70f;
-                st.Spread = cell * DrawHelpers.HashRange(s + 1, 0.45f, 0.60f);
+                st.Spread = cell * HashRange(s + 1, 0.45f, 0.60f);
             }
             else
             {
-                st.Along = Math.Clamp((index + 0.5f + DrawHelpers.HashRange(s, -0.30f, 0.30f)) / SideSites * 0.58f, 0.02f, 0.60f);
-                st.Boost = DrawHelpers.HashRange(s + 3, 0.62f, 0.92f) * (1f - 0.35f * st.Along);
+                st.Along = Math.Clamp((index + 0.5f + HashRange(s, -0.30f, 0.30f)) / SideSites * 0.58f, 0.02f, 0.60f);
+                st.Boost = HashRange(s + 3, 0.62f, 0.92f) * (1f - 0.35f * st.Along);
                 st.Ignition = 0.55f + st.Along * 0.85f;
                 st.Spread = 0.10f;
             }
-            st.OscPeriod = DrawHelpers.HashRange(s + 6, 0.70f, 1.90f);
-            st.OscPhase = DrawHelpers.HashRange(s + 7, 0f, MathF.PI * 2f);
+            st.OscPeriod = HashRange(s + 6, 0.70f, 1.90f);
+            st.OscPhase = HashRange(s + 7, 0f, MathF.PI * 2f);
         }
     }
 
@@ -119,24 +119,24 @@ public sealed class BurnsEffect : SceneEffect, IHasSwappableSlots
         }
 
         // Three-octave flicker drives the vignette, firelight and flame brightness together.
-        float flicker = 0.55f * DrawHelpers.Pulse(f.Time, 0.31f)
-                      + 0.30f * DrawHelpers.Pulse(f.Time, 0.17f, 0.35f)
-                      + 0.15f * DrawHelpers.Pulse(f.Time, 0.53f, 0.60f);
+        float flicker = 0.55f * Pulse(f.Time, 0.31f)
+                      + 0.30f * Pulse(f.Time, 0.17f, 0.35f)
+                      + 0.15f * Pulse(f.Time, 0.53f, 0.60f);
 
         scene.RequestVignette(Soot, 0.13f, f.Alpha * (0.42f + 0.22f * flicker), priority: 30, f.Color);
 
         // Firelight grows in over ~1.2s with a bright flash at ignition.
-        float reach = f.Short * 0.46f * DrawHelpers.EaseOutCubic(DrawHelpers.Saturate(f.Age / 1.2f));
+        float reach = f.Short * 0.46f * EaseOutCubic(Saturate(f.Age / 1.2f));
         scene.Pool(f.Size, reach, Glow, f.Alpha * (0.30f + 0.34f * MathF.Exp(-f.Age / 0.50f)) * (0.76f + 0.24f * flicker), f.Color);
 
-        _drift.EmitSmoke(scene, f.Time, f.Dt, f.Short, f.Alpha, DrawHelpers.Saturate((f.Age - 0.7f) / 1.4f), f.Color);
+        _drift.EmitSmoke(scene, f.Time, f.Dt, f.Short, f.Alpha, Saturate((f.Age - 0.7f) / 1.4f), f.Color);
 
         float level = f.Alpha * (0.88f + 0.24f * flicker) * (1f + 0.25f * MathF.Exp(-f.Age / 0.60f));
         EmitFlames(scene, in f, BottomLayers, true, level);
         EmitFlames(scene, in f, SideLayers, false, level);
 
         if (!_burst && f.Age > 0.25f) { _burst = true; _drift.BurstCinders(40, f.Time); }
-        float cinders = f.Age > 0.18f ? 0.35f + 0.65f * DrawHelpers.EaseOutCubic(DrawHelpers.Saturate((f.Age - 0.18f) / BuildSeconds)) : 0f;
+        float cinders = f.Age > 0.18f ? 0.35f + 0.65f * EaseOutCubic(Saturate((f.Age - 0.18f) / BuildSeconds)) : 0f;
         _drift.EmitCinders(scene, f.Time, f.Dt, f.Alpha, cinders, f.Color);
     }
 
@@ -154,8 +154,8 @@ public sealed class BurnsEffect : SceneEffect, IHasSwappableSlots
                 if (since < 0f) continue;
 
                 // Builds up from BuildFloor, flares briefly as it catches, then breathes.
-                float build = BuildFloor + (1f - BuildFloor) * DrawHelpers.EaseOutCubic(DrawHelpers.Saturate(since / BuildSeconds));
-                float breath = 0.85f + 0.30f * DrawHelpers.Pulse(f.Time, st.OscPeriod, st.OscPhase + layer.Variant * 0.9f);
+                float build = BuildFloor + (1f - BuildFloor) * EaseOutCubic(Saturate(since / BuildSeconds));
+                float breath = 0.85f + 0.30f * Pulse(f.Time, st.OscPeriod, st.OscPhase + layer.Variant * 0.9f);
                 float sizeMul = f.Px * st.Boost * build * breath * (1f + 0.25f * MathF.Exp(-since / 0.40f));
 
                 Vector2 at; Vector2 spread; float lean = 0f;

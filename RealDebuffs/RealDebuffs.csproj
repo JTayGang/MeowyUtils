@@ -14,4 +14,9 @@
   <ItemGroup>
     <None Include="RealDebuffs.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+
+  <!-- DrawHelpers members are called unprefixed -->
+  <ItemGroup>
+    <Using Include="RealDebuffs.Effects.Framework.DrawHelpers" Static="true" />
+  </ItemGroup>
 </Project>

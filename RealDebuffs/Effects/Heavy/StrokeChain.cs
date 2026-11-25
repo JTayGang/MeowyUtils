@@ -97,6 +97,8 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
         public StrandPath? Path; public float Time, Reveal, Width;  // what it was built from: a memo, rebuilt if any of these differ
         public bool Built, Valid;
         public int Count, LinkCount, RingK, Tier, Seed;  // Count: links laid; LinkCount: links the strand has, laid or not
+        public float[]?[] Adh = Array.Empty<float[]?>();  // each link half's adhesion by chart cell (rule 9), kept while the chart's tier and ring stay
+        public int AdhKey = -1;
         public float L, Total, Pitch, VisibleLen, Bar, Feather, Depth, Agit;
         public bool Closed, FullyRevealed;
         public float[] Cols = Cols7, ColsSq = Cols7Sq;
@@ -342,9 +344,12 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
         bool fits = Ladder[sn.Tier].rows <= M && Ladder[sn.Tier].sectors <= nc;
         if (!fits || want > sn.Tier || Ladder[want].rows * Ladder[want].sectors * halves * 1.3f <= charts.Share) sn.Tier = want;
         var (R, Vn) = Ladder[sn.Tier];
+        int adhKey = sn.Tier * 16 + sn.RingK;
+        if (sn.AdhKey != adhKey || sn.Adh.Length != sn.LinkCount * 2) { sn.Adh = new float[sn.LinkCount * 2][]; sn.AdhKey = adhKey; }
 
         Span<int> st = stackalloc int[R], ct = stackalloc int[Vn];
         PickRows(M, R, st); PickCols(nc, Vn, ct);
+        Span<float> along = stackalloc float[R], across = stackalloc float[Vn];
         Span<Vector2> p2 = stackalloc Vector2[M];
         Span<Vector3> ns = stackalloc Vector3[M], ts = stackalloc Vector3[M];
         float half = sn.L * BarDiameter * 0.5f;
@@ -380,6 +385,17 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
                     float lo = v > 0 ? 0.5f * (th + MathF.Asin(sn.Cols[ct[v - 1] + 1])) : -MathF.PI * 0.5f;
                     float hi = v < Vn - 1 ? 0.5f * (th + MathF.Asin(sn.Cols[ct[v + 1] + 1])) : MathF.PI * 0.5f;
                     ch.VAngle[v] = th; ch.VStep[v] = MathF.Max(0.25f, (hi - lo) * half);
+                    across[v] = (th + MathF.PI * 0.5f) / (MathF.PI * 0.5f);  // two lattice cells across the half of the bar the camera sees
+                }
+                // rule 9: patches of the bar that hold liquid badly, fixed to this link half, two bar diameters long; made once, then kept
+                int slot = lk.Index * 2 + (h > 0 ? 0 : 1);
+                float[]? kept = slot < sn.Adh.Length ? sn.Adh[slot] : null;
+                if (kept == null)
+                {
+                    for (int r = 0; r < R; r++) along[r] = ring.Arc[st[r]];
+                    kept = new float[R * Vn];
+                    CoatAdhesion.Field(sn.Seed * 31 + slot, along, BarDiameter * 2f, across, 0, kept);
+                    if (slot < sn.Adh.Length) sn.Adh[slot] = kept;
                 }
 
                 for (int r = 0; r < R; r++)
@@ -392,6 +408,8 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
                         q.Pos = p2[j] + new Vector2(n.X, n.Y) * half;  // the very vertex DrawHalf puts there
                         q.Normal = n; q.Side = Math.Clamp(zHalf, -1f, 1f); q.Radius = half; q.Visible = true; q.Holds = true;
                         q.Z = h * ring.Y[j] * sn.L * lk.Sin + n.Z * half;  // the bar's own depth at that station (its plane is rolled by Sin), then out along the normal
+                        float hold = kept[r * Vn + v];
+                        q.Pool = CoatAdhesion.Potential(hold); q.Slick = CoatAdhesion.Slick(hold);
                     }
 
                 for (int r = 0; r < R; r++)
@@ -429,6 +447,10 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
         }
     }
 
+#if REALDEBUFFS_PROFILE
+    internal static long FilmVerts, FilmBare;  // film mesh vertices drawn, and those under 5% opaque (harness builds only)
+#endif
+
     private readonly CoatChart?[] _laid = new CoatChart?[2 * MaxLinks];  // this frame's charts by link slot and half
     private readonly Coat?[] _byId = new Coat?[2 * MaxLinks + 2];
     private List<Coat>? _sib;
@@ -460,6 +482,7 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
         int R = coat.N, Vn = coat.V;
         if (R < 2 || Vn < 2 || R * Vn > 64) return;
         float px = coat.Px;
+        float dry = lm.Physics.WetMin * lm.Physics.Hold * px;  // where the film is thinner than the liquid wets, the bar shows
 
         Span<float> thick = stackalloc float[R * Vn];
         float maxTh = 0f;
@@ -505,7 +528,11 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
                     float tv = uc[v0 + 1] > uc[v0] ? Math.Clamp((u - uc[v0]) / (uc[v0 + 1] - uc[v0]), 0f, 1f) : 0f;
                     float th = Lerp(Lerp(thick[r0 * Vn + v0], thick[r0 * Vn + v0 + 1], tv), Lerp(thick[(r0 + 1) * Vn + v0], thick[(r0 + 1) * Vn + v0 + 1], tv), tr);
                     Vector3 n = ts[j] * u + ns[j] * sq;
-                    mb.VertexReserved(p2[j] + new Vector2(n.X, n.Y) * (half + th * 0.9f), lm.FilmShade(n, th, px, a, CoatDraw.Soft(u, 0.3f)));
+                    uint shade = lm.FilmShade(n, th, px, a, CoatDraw.Soft(u, 0.3f), dry);
+#if REALDEBUFFS_PROFILE
+                    FilmVerts++; if ((shade >> 24) < 13) FilmBare++;
+#endif
+                    mb.VertexReserved(p2[j] + new Vector2(n.X, n.Y) * (half + th * 0.9f), shade);
                 }
             }
         }

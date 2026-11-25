@@ -1,45 +1,42 @@
-using System.Numerics;
-
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>A rope or chain as Verlet point masses with fixed-length links; ends pinned unless PinStart/PinEnd say otherwise.</summary>
+/// A rope or chain as Verlet point masses with fixed-length links; ends pinned unless PinStart/PinEnd say otherwise.
 public sealed class VerletStrand
 {
     // Many small steps beat one big step with many iterations, which stretches and zigzags a long strand.
-    private const float SubstepSeconds = 1f / 360f;
-    private const int   MaxSubstepsPerFrame = 12;
+    const float SubstepSeconds = 1f / 360f;
+    const int   MaxSubstepsPerFrame = 12;
 
     public readonly int Count;
-    public readonly Vector2[] Pos;
-    public readonly Vector2[] Prev;
+    public readonly Vector2[] Pos, Prev;
 
-    /// <summary>Caller-owned guide pose: Drive follows it; with ShapeStiffness above zero each node is also sprung toward it.</summary>
+    /// Caller-owned guide pose: Drive follows it; with ShapeStiffness above zero each node is also sprung toward it.
     public readonly Vector2[] Target;
 
-    /// <summary>Spring toward Target in 1/s^2 (acceleration per px of error); 0 = off. Stable up to a few thousand.</summary>
+    /// Spring toward Target in 1/s^2 (acceleration per px of error); 0 = off. Stable up to a few thousand.
     public float ShapeStiffness;
 
-    /// <summary>Whether each end is held at its SetEnds position; an unpinned end swings free.</summary>
+    /// Whether each end is held at its SetEnds position; an unpinned end swings free.
     public bool PinStart = true, PinEnd = true;
 
-    /// <summary>Total length in pixels; may change every frame.</summary>
+    /// Total length in pixels; may change every frame.
     public float Length = 100f;
 
-    /// <summary>px/s^2, screen down is +Y.</summary>
+    /// px/s^2, screen down is +Y.
     public Vector2 Gravity = new(0f, 2400f);
 
-    /// <summary>Velocity damping in 1/s.</summary>
+    /// Velocity damping in 1/s.
     public float Drag = 1.0f;
 
-    /// <summary>Constraint passes per sub-step.</summary>
+    /// Constraint passes per sub-step.
     public int Iterations = 12;
 
-    /// <summary>0..1 resistance to folding into a hairpin.</summary>
+    /// 0..1 resistance to folding into a hairpin.
     public float BendStiffness = 0.35f;
 
-    private Vector2 _startFrom, _startTo, _endFrom, _endTo;
-    private float _lastH = SubstepSeconds;  // the substep length Prev was left at: velocity is (Pos - Prev) / this
-    private bool _anchored;
+    Vector2 _startFrom, _startTo, _endFrom, _endTo;
+    float _lastH = SubstepSeconds;  // the substep length Prev was left at: velocity is (Pos - Prev) / this
+    bool _anchored;
 
     public VerletStrand(int nodeCount)
     {
@@ -50,7 +47,7 @@ public sealed class VerletStrand
         Target = new Vector2[nodeCount];
     }
 
-    /// <summary>Drops every node onto one point, at rest.</summary>
+    /// Drops every node onto one point, at rest.
     public void Reset(Vector2 at)
     {
         for (int i = 0; i < Count; i++) { Pos[i] = at; Prev[i] = at; }
@@ -59,7 +56,7 @@ public sealed class VerletStrand
         _anchored = false;
     }
 
-    /// <summary>Puts every node on the pose, at rest.</summary>
+    /// Puts every node on the pose, at rest.
     public void Place(ReadOnlySpan<Vector2> pose)
     {
         for (int i = 0; i < Count; i++) { Pos[i] = pose[i]; Prev[i] = pose[i]; }
@@ -69,7 +66,7 @@ public sealed class VerletStrand
         _anchored = false;
     }
 
-    /// <summary>Where the pinned ends should end this frame; they travel there in a line through every sub-step.</summary>
+    /// Where the pinned ends should end this frame; they travel there in a line through every sub-step.
     public void SetEnds(Vector2 start, Vector2 end)
     {
         if (!_anchored)
@@ -84,7 +81,7 @@ public sealed class VerletStrand
         _startTo = start; _endTo = end;
     }
 
-    /// <summary>Puts every node on the pose with the velocity that implies, so a later Step carries on without a pop.</summary>
+    /// Puts every node on the pose with the velocity that implies, so a later Step carries on without a pop.
     public void Drive(ReadOnlySpan<Vector2> pose, float dt)
     {
         float k = dt > 1e-5f ? SubstepSeconds / dt : 0f;
@@ -97,7 +94,7 @@ public sealed class VerletStrand
         _lastH = SubstepSeconds;
     }
 
-    /// <summary>Instantly changes a node's velocity (Verlet keeps velocity implicitly in Prev).</summary>
+    /// Instantly changes a node's velocity (Verlet keeps velocity implicitly in Prev).
     public void Impulse(int node, Vector2 deltaVelocity)
     {
         if ((uint)node >= (uint)Count) return;
@@ -109,8 +106,8 @@ public sealed class VerletStrand
         if (!(dt > 1e-6f)) return;
 
         // Advance by EXACTLY dt, in a whole number of near-equal substeps.
-        dt = MathF.Min(dt, MaxSubstepsPerFrame * SubstepSeconds * 1.25f);  // a stall: run slow rather than leap
-        int steps = Math.Clamp((int)MathF.Round(dt / SubstepSeconds), 1, MaxSubstepsPerFrame);
+        dt = Min(dt, MaxSubstepsPerFrame * SubstepSeconds * 1.25f);  // a stall: run slow rather than leap
+        int steps = Math.Clamp((int)Round(dt / SubstepSeconds), 1, MaxSubstepsPerFrame);
         float h = dt / steps;
 
         for (int s = 0; s < steps; s++)
@@ -120,9 +117,9 @@ public sealed class VerletStrand
         }
     }
 
-    private void Substep(float h, Vector2 start, Vector2 end)
+    void Substep(float h, Vector2 start, Vector2 end)
     {
-        float dragK = MathF.Max(0f, 1f - Drag * h) * (h / _lastH);  // rescale keeps velocity right when the substep length changes
+        float dragK = Max(0f, 1f - Drag * h) * (h / _lastH);  // rescale keeps velocity right when the substep length changes
         float hh = h * h;
         _lastH = h;
 
@@ -171,7 +168,7 @@ public sealed class VerletStrand
         }
     }
 
-    private void Solve(int a, int b, float rest)
+    void Solve(int a, int b, float rest)
     {
         Vector2 d = Pos[b] - Pos[a];
         float len = d.Length();
@@ -192,7 +189,7 @@ public sealed class VerletStrand
         }
     }
 
-    /// <summary>Publishes the strand as a Catmull-Rom path resampled to samples points, arc table rebuilt.</summary>
+    /// Publishes the strand as a Catmull-Rom path resampled to samples points, arc table rebuilt.
     public void FillPath(StrandPath path, int samples)
     {
         samples = Math.Clamp(samples, 2, path.Points.Length);
@@ -202,20 +199,20 @@ public sealed class VerletStrand
     }
 }
 
-/// <summary>A sine ripple travelling along a draped strand.</summary>
+/// A sine ripple travelling along a draped strand.
 public readonly record struct Ripple(float Frac, float Cycles, float Hz, float Phase);
 
-/// <summary>Drape style: sag side (+-1), or the downhill side when Downhill (Side is then the near-vertical fallback)</summary>
+/// Drape style: sag side (+-1), or the downhill side when Downhill (Side is then the near-vertical fallback)
 public readonly record struct DrapeStyle(float Side, bool Downhill = false, float Skew = 0f, Ripple Ripple = default);
 
-/// <summary>Guide-curve helper for a strand being paid out between two ends.</summary>
+/// Guide-curve helper for a strand being paid out between two ends.
 public static class StrandGuide
 {
-    /// <summary>+1/-1 perpendicular side that points downhill; near-vertical spans take the fallback.</summary>
+    /// +1/-1 perpendicular side that points downhill; near-vertical spans take the fallback.
     public static float DownhillSide(Vector2 dir, float fallback) =>
-        MathF.Abs(dir.X) < 0.30f ? fallback : (dir.X >= 0f ? 1f : -1f);  // dir.X is the perpendicular's y
+        Abs(dir.X) < 0.30f ? fallback : (dir.X >= 0f ? 1f : -1f);  // dir.X is the perpendicular's y
 
-    /// <summary>Fills target at equal arc spacing with the drape (a parabola) of a strand carrying extra px of slack.</summary>
+    /// Fills target at equal arc spacing with the drape (a parabola) of a strand carrying extra px of slack.
     public static void Drape(Vector2 start, Vector2 head, Vector2 fallbackDir, float extra, in DrapeStyle style, float t, Vector2[] target)
     {
         const int Samples = 48;
@@ -241,16 +238,16 @@ public static class StrandGuide
             Trace(start, chord, perp, 0f, skew, rippleAmp, in ripple, t, pts, cum);
             rippleExtra = cum[Samples] - c;
         }
-        float want = rippleAmp > 0f ? MathF.Max(extra - rippleExtra, extra * 0.25f) : extra;
+        float want = rippleAmp > 0f ? Max(extra - rippleExtra, extra * 0.25f) : extra;
 
         // Sag grows with the square root of spare length, so a couple of secant steps converge.
-        float sag = MathF.Sqrt(3f * c * want / 8f);
+        float sag = Sqrt(3f * c * want / 8f);
         for (int pass = 0; pass < 3; pass++)
         {
             Trace(start, chord, perp, sag, skew, rippleAmp, in ripple, t, pts, cum);
             float got = cum[Samples] - c - rippleExtra;
             if (want < 1e-3f || got < 1e-3f) break;
-            sag *= MathF.Sqrt(want / got);
+            sag *= Sqrt(want / got);
         }
         Trace(start, chord, perp, sag, skew, rippleAmp, in ripple, t, pts, cum);
 
@@ -267,7 +264,7 @@ public static class StrandGuide
         }
     }
 
-    private static void Trace(Vector2 start, Vector2 chord, Vector2 perp, float sag, float skew, float rippleAmp,
+    static void Trace(Vector2 start, Vector2 chord, Vector2 perp, float sag, float skew, float rippleAmp,
                               in Ripple ripple, float t, Span<Vector2> pts, Span<float> cum)
     {
         int n = pts.Length - 1;
@@ -279,15 +276,15 @@ public static class StrandGuide
                 ? 4f * sag * f * (1f - f)
                 : sag * (4f * f * (1f - f) * (1f + skew * (1f - 2f * f)));
             if (rippleAmp > 0f)
-                lateral += rippleAmp * MathF.Sin(MathF.PI * f)
-                           * MathF.Sin(MathF.Tau * (ripple.Cycles * f - ripple.Hz * t) + ripple.Phase);
+                lateral += rippleAmp * Sin(PI * f)
+                           * Sin(Tau * (ripple.Cycles * f - ripple.Hz * t) + ripple.Phase);
             pts[j] = start + chord * f + perp * lateral;
             cum[j] = j == 0 ? 0f : cum[j - 1] + Vector2.Distance(pts[j], pts[j - 1]);
         }
     }
 }
 
-/// <summary>What Heavy's chains and Bind's ropes share: strand, published path, chord, and the throw/freeze/impact plumbing.</summary>
+/// What Heavy's chains and Bind's ropes share: strand, published path, chord, and the throw/freeze/impact plumbing.
 public abstract class StrandRig
 {
     public readonly VerletStrand Strand;
@@ -300,46 +297,46 @@ public abstract class StrandRig
 
     protected StrandRig(int nodes, int samples)
     {
-        Strand = new VerletStrand(nodes);
-        Path = new StrandPath(samples);
-        BasePath = new StrandPath(samples);
+        Strand = new(nodes);
+        Path = new(samples);
+        BasePath = new(samples);
     }
 
-    /// <summary>Sets both anchors and the chord facts derived from them.</summary>
+    /// Sets both anchors and the chord facts derived from them.
     public void SetChord(Vector2 a, Vector2 b)
     {
         Start = a; End = b;
         Vector2 chord = b - a;
-        ChordLen = MathF.Max(chord.Length(), 1e-3f);
+        ChordLen = Max(chord.Length(), 1e-3f);
         ChordDir = chord / ChordLen;
-        ChordPerp = new Vector2(-ChordDir.Y, ChordDir.X);
+        ChordPerp = new(-ChordDir.Y, ChordDir.X);
     }
 
-    /// <summary>Clears per-cast state and takes this rig's seed.</summary>
+    /// Clears per-cast state and takes this rig's seed.
     public virtual void Reset(int seed)
     {
         Seed = seed;
-        Phase = HashRange(seed + 999, 0f, MathF.Tau);
+        Phase = HashRange(seed + 999, 0f, Tau);
         Launched = Landed = PathFrozen = false;
         Agitation = 0f;
         Path.Count = 0;
     }
 
-    /// <summary>First frame of flight: every node on the start anchor, heavy and damped.</summary>
+    /// First frame of flight: every node on the start anchor, heavy and damped.
     public void Launch(float gravity, float drag)
     {
         Launched = true;
         Strand.Reset(Start);
-        Strand.Gravity = new Vector2(0f, gravity);
+        Strand.Gravity = new(0f, gravity);
         Strand.Drag = drag;
         Strand.Iterations = 8;
         Strand.BendStiffness = 0.75f;
     }
 
-    /// <summary>Head position along the throw, 0..1: a short launch ramp, then constant speed (never eased to a stop).</summary>
+    /// Head position along the throw, 0..1: a short launch ramp, then constant speed (never eased to a stop).
     public static float Travel(float tau) => (tau < 0.1f ? 5f * tau * tau : tau - 0.05f) / 0.95f;
 
-    /// <summary>Publishes the strand to Path; once frozen it's restored from BasePath each frame so overlays land clean.</summary>
+    /// Publishes the strand to Path; once frozen it's restored from BasePath each frame so overlays land clean.
     public void Publish(int samples, bool frozen)
     {
         if (!frozen)
@@ -361,7 +358,7 @@ public abstract class StrandRig
         }
     }
 
-    /// <summary>An anchor took a hit: debris is thrown back along the strand and into the screen.</summary>
+    /// An anchor took a hit: debris is thrown back along the strand and into the screen.
     public void ReportEnd(EffectScene scene, Vector2 size, bool fromStart, float strength, float alpha, int seed, Vector4? colorOverride)
     {
         Vector2 point, inward;
@@ -384,7 +381,7 @@ public abstract class StrandRig
             StrokeRole = PrimitiveRole.MainStroke,
             Position = point,
             Direction = dir,
-            Strength = Math.Clamp(strength * (1f - 0.4f * Depth), 0f, 1f),
+            Strength = Saturate(strength * (1f - 0.4f * Depth)),
             Brightness = alpha,
             Seed = seed,
             ColorOverride = colorOverride,
@@ -392,13 +389,13 @@ public abstract class StrandRig
     }
 }
 
-/// <summary>A fixed pool of rigs for one cast, drawn farthest first.</summary>
+/// A fixed pool of rigs for one cast, drawn farthest first.
 internal sealed class RigSet<T> where T : StrandRig, new()
 {
     public readonly T[] Rigs;
-    private readonly int[] _order;
+    readonly int[] _order;
 
-    /// <summary>Rigs in use this cast.</summary>
+    /// Rigs in use this cast.
     public int Count;
 
     public RigSet(int max)
@@ -408,7 +405,7 @@ internal sealed class RigSet<T> where T : StrandRig, new()
         for (int i = 0; i < max; i++) Rigs[i] = new T();
     }
 
-    /// <summary>The n-th rig in draw order (after Sort).</summary>
+    /// The n-th rig in draw order (after Sort).
     public T At(int n) => Rigs[_order[n]];
 
     public void Sort()

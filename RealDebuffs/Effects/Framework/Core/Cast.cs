@@ -1,26 +1,24 @@
-using System.Numerics;
-
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Everything an effect needs about one frame of a cast, derived once from Emit's arguments.</summary>
+/// Everything an effect needs about one frame of a cast, derived once from Emit's arguments.
 public readonly struct CastFrame
 {
     public readonly Vector2 Size;
     public readonly float Short, Px, Age, Time, Dt;
 
-    /// <summary>Manager alpha, or the envelope's faster fade-in when the tracker has one.</summary>
+    /// Manager alpha, or the envelope's faster fade-in when the tracker has one.
     public readonly float Alpha;
 
-    /// <summary>Full strength from the first frame, for the cast's own flash (envelope only).</summary>
+    /// Full strength from the first frame, for the cast's own flash (envelope only).
     public readonly float Gate;
 
-    /// <summary>0 while held, rising to 1 as the status lifts (envelope only).</summary>
+    /// 0 while held, rising to 1 as the status lifts (envelope only).
     public readonly float Leave;
 
-    /// <summary>Stable per cast: derived from its start time.</summary>
+    /// Stable per cast: derived from its start time.
     public readonly int Seed;
 
-    /// <summary>Fresh: first frame of a cast. Resized: screen size changed mid-cast. Leaving: alpha has started to fall.</summary>
+    /// Fresh: first frame of a cast. Resized: screen size changed mid-cast. Leaving: alpha has started to fall.
     public readonly bool Fresh, Resized, Leaving;
 
     public readonly Vector4? Color;
@@ -29,27 +27,27 @@ public readonly struct CastFrame
 
     public CastFrame(Vector2 size, float alpha, float gate, float leave, bool leaving, float age, float time, float dt, int seed, bool fresh, bool resized, Vector4? color)
     {
-        Size = size; Short = MathF.Min(size.X, size.Y); Px = PixelScale(size);
+        Size = size; Short = Min(size.X, size.Y); Px = PixelScale(size);
         Alpha = alpha; Gate = gate; Leave = leave; Leaving = leaving;
         Age = age; Time = time; Dt = dt; Seed = seed; Fresh = fresh; Resized = resized; Color = color;
     }
 }
 
-/// <summary>Tracks one effect's casts: a gap over a second between Emit calls means the status was re-applied.</summary>
+/// Tracks one effect's casts: a gap over a second between Emit calls means the status was re-applied.
 public sealed class CastTracker
 {
-    /// <summary>Seconds the host takes to fade an effect in; the cast envelope is timed against it.</summary>
+    /// Seconds the host takes to fade an effect in; the cast envelope is timed against it.
     public const float FadeInSeconds = 0.35f;
 
-    private const float NewCastGapSeconds = 1.0f;
-    private readonly CastEnvelope? _env;
-    private float _last = -100f, _start;
-    private Vector2 _lastSize;
+    const float NewCastGapSeconds = 1.0f;
+    readonly CastEnvelope? _env;
+    float _last = -100f, _start;
+    Vector2 _lastSize;
 
-    /// <summary>With an envelope, Alpha fades in faster and Gate/Leave/Leaving are reported (see CastEnvelope).</summary>
+    /// With an envelope, Alpha fades in faster and Gate/Leave/Leaving are reported (see CastEnvelope).
     public CastTracker(bool envelope = false) => _env = envelope ? new CastEnvelope() : null;
 
-    /// <summary>Call once per Emit.</summary>
+    /// Call once per Emit.
     public CastFrame Frame(Vector2 size, float alpha, float time, float dt, Vector4? color)
     {
         bool fresh = time - _last > NewCastGapSeconds;
@@ -70,25 +68,25 @@ public sealed class CastTracker
             _env.Update(alpha, age);
             alpha = _env.Alpha; gate = _env.Gate; leave = _env.Leave; leaving = _env.Leaving;
         }
-        return new CastFrame(size, alpha, gate, leave, leaving, age, time, dt, unchecked((int)(_start * 1000f)), fresh, resized, color);
+        return new(size, alpha, gate, leave, leaving, age, time, dt, unchecked((int)(_start * 1000f)), fresh, resized, color);
     }
 }
 
-/// <summary>Turns the manager's linear alpha into a punchier fade-in plus a leave signal; Begin per cast, Update per Emit.</summary>
+/// Turns the manager's linear alpha into a punchier fade-in plus a leave signal; Begin per cast, Update per Emit.
 internal sealed class CastEnvelope
 {
-    private float _lastAlpha, _peakAlpha, _rampLead;
+    float _lastAlpha, _peakAlpha, _rampLead;
 
-    /// <summary>Manager alpha with the fade-in sped up (up to 3x).</summary>
+    /// Manager alpha with the fade-in sped up (up to 3x).
     public float Alpha { get; private set; }
 
-    /// <summary>Like Alpha but full strength from the first frame, for the cast's own flash.</summary>
+    /// Like Alpha but full strength from the first frame, for the cast's own flash.
     public float Gate { get; private set; }
 
-    /// <summary>0 while held, rising to 1 as the status lifts.</summary>
+    /// 0 while held, rising to 1 as the status lifts.
     public float Leave { get; private set; }
 
-    /// <summary>True from the first frame alpha falls.</summary>
+    /// True from the first frame alpha falls.
     public bool Leaving { get; private set; }
 
     public void Begin(float dt)
@@ -103,33 +101,33 @@ internal sealed class CastEnvelope
         if (alpha > _lastAlpha + 1e-4f) Leaving = false;
         else if (alpha < _lastAlpha - 1e-4f) Leaving = true;
         _lastAlpha = alpha;
-        if (!Leaving) _peakAlpha = MathF.Max(_peakAlpha, alpha);
+        if (!Leaving) _peakAlpha = Max(_peakAlpha, alpha);
         Leave = Leaving && _peakAlpha > 0.01f ? Saturate(1f - alpha / _peakAlpha) : 0f;
 
         float gate = alpha;
         if (!Leaving && age + _rampLead < CastTracker.FadeInSeconds)
         {
-            float toFull = CastTracker.FadeInSeconds / MathF.Max(age + _rampLead, 0.001f);
-            gate = MathF.Min(alpha * toFull, 1f);
-            alpha *= MathF.Min(3f, toFull);
+            float toFull = CastTracker.FadeInSeconds / Max(age + _rampLead, 0.001f);
+            gate = Min(alpha * toFull, 1f);
+            alpha *= Min(3f, toFull);
         }
         Alpha = alpha;
         Gate = gate;
     }
 }
 
-/// <summary>A ring of excitement travelling through concentric rings: front radius (px), width, and strength.</summary>
+/// A ring of excitement travelling through concentric rings: front radius (px), width, and strength.
 internal readonly record struct ShockFront(float Front, float Width, float Gain)
 {
-    /// <summary>Summed, capped gaussian excitation of a ring at the given screen radius.</summary>
+    /// Summed, capped gaussian excitation of a ring at the given screen radius.
     public static float Excite(ReadOnlySpan<ShockFront> fronts, float screenRadius)
     {
         float e = 0f;
         foreach (var f in fronts)
         {
             float d = (screenRadius - f.Front) / f.Width;
-            e += f.Gain * MathF.Exp(-d * d);
+            e += f.Gain * Exp(-d * d);
         }
-        return MathF.Min(e, 1.8f);
+        return Min(e, 1.8f);
     }
 }

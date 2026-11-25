@@ -1,14 +1,12 @@
-using System.Numerics;
-
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>A sampled polyline for one strand. Spacing is uneven; use SampleAtArc for even steps.</summary>
+/// A sampled polyline for one strand. Spacing is uneven; use SampleAtArc for even steps.
 public sealed class StrandPath
 {
     public readonly Vector2[] Points;
     public readonly float[] Arc;
 
-    /// <summary>How many of Points/Arc are valid this frame.</summary>
+    /// How many of Points/Arc are valid this frame.
     public int Count;
 
     public StrandPath(int capacity)
@@ -21,7 +19,7 @@ public sealed class StrandPath
 
     public float Length => Count > 0 ? Arc[Count - 1] : 0f;
 
-    /// <summary>Resamples a control polyline to dstCount points on a Catmull-Rom spline ending on its ends; call BuildArc after.</summary>
+    /// Resamples a control polyline to dstCount points on a Catmull-Rom spline ending on its ends; call BuildArc after.
     public static void CatmullRomResample(Vector2[] src, int srcCount, Vector2[] dst, int dstCount)
     {
         float scale = (float)(srcCount - 1) / (dstCount - 1);
@@ -49,7 +47,7 @@ public sealed class StrandPath
         }
     }
 
-    /// <summary>Recomputes Arc from Points. Call once per frame after final points are in place.</summary>
+    /// Recomputes Arc from Points. Call once per frame after final points are in place.
     public void BuildArc()
     {
         if (Count <= 0) return;
@@ -58,13 +56,13 @@ public sealed class StrandPath
             Arc[i] = Arc[i - 1] + Vector2.Distance(Points[i - 1], Points[i]);
     }
 
-    /// <summary>Position and unit tangent at arc length s; outside [0, Length] it extrapolates along the end tangent.</summary>
+    /// Position and unit tangent at arc length s; outside [0, Length] it extrapolates along the end tangent.
     public void SampleAtArc(float s, out Vector2 pos, out Vector2 tangent)
     {
         if (Count < 2)
         {
             pos = Count == 1 ? Points[0] : default;
-            tangent = new Vector2(0f, -1f);
+            tangent = new(0f, -1f);
             return;
         }
 

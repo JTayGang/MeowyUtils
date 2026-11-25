@@ -1,8 +1,6 @@
-using System.Numerics;
-
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>A stream of launched parcels on parabolas: thins as it speeds, ripples pinch it into beads (thick stays a rope), fast ones shed spray.</summary>
+/// A stream of launched parcels on parabolas: thins as it speeds, ripples pinch it into beads (thick stays a rope), fast ones shed spray.
 public sealed class LiquidJet
 {
     internal const int Cap = 192, Bead = 7;  // parcels kept; parcels per bead (one ripple wavelength)
@@ -15,13 +13,13 @@ public sealed class LiquidJet
     public float Churn = 1f;  // how much it writhes, lumps and sheds
     public int Seed;
 
-    /// <summary>Shut off and fully drained: free to launch again.</summary>
+    /// Shut off and fully drained: free to launch again.
     public bool Idle => _hi == _lo && Flow <= 0f;
 
-    private readonly float[] _t0 = new float[Cap], _r = new float[Cap], _vx = new float[Cap], _vy = new float[Cap], _sp0 = new float[Cap];
-    private readonly float[] _ex = new float[Cap], _ey = new float[Cap], _er = new float[Cap], _evx = new float[Cap], _evy = new float[Cap];  // scratch: the parcels, oldest first
-    private long _lo, _hi;
-    private float _next, _dtau, _prevFlow, _shed;
+    readonly float[] _t0 = new float[Cap], _r = new float[Cap], _vx = new float[Cap], _vy = new float[Cap], _sp0 = new float[Cap];
+    readonly float[] _ex = new float[Cap], _ey = new float[Cap], _er = new float[Cap], _evx = new float[Cap], _evy = new float[Cap];  // scratch: the parcels, oldest first
+    long _lo, _hi;
+    float _next, _dtau, _prevFlow, _shed;
 
     // the path as drawn, top to bottom
     internal readonly Vector2[] Path = new Vector2[Cap + 8], PathV = new Vector2[Cap + 8];
@@ -33,16 +31,16 @@ public sealed class LiquidJet
     internal Vector2 Hit;
     internal float HitR, HitSpeed;
 
-    /// <summary>Launch-time jump between neighbouring rows that means the flow was off between them.</summary>
+    /// Launch-time jump between neighbouring rows that means the flow was off between them.
     internal float GapTime => 2.5f * _dtau;
 
-    private static readonly float[] HeadAngles = { 0.45f, 0.90f, 1.25f, 1.52f };
+    static readonly float[] HeadAngles = { 0.45f, 0.90f, 1.25f, 1.52f };
 
-    private static readonly float[] BeadCos = BuildBeadCos();
-    private static float[] BuildBeadCos()
+    static readonly float[] BeadCos = BuildBeadCos();
+    static float[] BuildBeadCos()
     {
         var t = new float[Bead];
-        for (int j = 0; j < Bead; j++) t[j] = MathF.Cos(MathF.Tau * j / Bead);
+        for (int j = 0; j < Bead; j++) t[j] = Cos(Tau * j / Bead);
         return t;
     }
 
@@ -51,7 +49,7 @@ public sealed class LiquidJet
         _lo = _hi = 0; _next = 0f; _prevFlow = 0f; _shed = 0f; Rows = 0; Wet = false; Flow = 0f;
     }
 
-    /// <summary>Starts a stream here: it must be Idle.</summary>
+    /// Starts a stream here: it must be Idle.
     internal void Start(LiquidField f)
     {
         Reset();
@@ -59,52 +57,52 @@ public sealed class LiquidJet
         Retune(f);
     }
 
-    /// <summary>Sets the bead spacing from the nominal radius and speed.</summary>
+    /// Sets the bead spacing from the nominal radius and speed.
     internal void Retune(LiquidField f)
     {
         var ph = f.Liquid.Phys;
-        float sigma = ph.Breakup * MathF.Pow(8f * f.Px / MathF.Max(Radius * 0.7f, f.Px), 1.5f);
+        float sigma = ph.Breakup * Pow(8f * f.Px / Max(Radius * 0.7f, f.Px), 1.5f);
         float ab = sigma > 0.1f ? Math.Clamp(3f / sigma, 0.1f, 1.2f) : 0.6f;  // when the ripples would close the neck
-        float vb = MathF.Sqrt(MathF.Pow(Speed * MathF.Sin(Angle), 2f) + MathF.Pow(Speed * MathF.Cos(Angle) + f.Gravity * ab, 2f));
-        float rb = Radius * MathF.Sqrt(MathF.Max(Speed, 1f) / MathF.Max(vb, 1f));
-        _dtau = Math.Clamp(9f * rb / MathF.Max(vb, 1f), 0.055f, 0.25f) / Bead;
+        float vb = Sqrt(Pow(Speed * Sin(Angle), 2f) + Pow(Speed * Cos(Angle) + f.Gravity * ab, 2f));
+        float rb = Radius * Sqrt(Max(Speed, 1f) / Max(vb, 1f));
+        _dtau = Math.Clamp(9f * rb / Max(vb, 1f), 0.055f, 0.25f) / Bead;
     }
 
-    private struct Parcel { public float X, Y, R, Vx, Vy, E; }
+    struct Parcel { public float X, Y, R, Vx, Vy, E; }
 
-    private float Eps(long i, float rLaunch, float rLoc, float a, LiquidField f)
+    float Eps(long i, float rLaunch, float rLoc, float a, LiquidField f)
     {
         var ph = f.Liquid.Phys;
         float e0 = ph.Ripple * (1f + 0.6f * Churn) * (0.55f + 0.9f * Hash01(Seed + (int)(i / Bead) * 31));
         // stretching slows ripple growth as thinning speeds it, so the stream's radius is the mean of its launch and local radius
-        float rEff = MathF.Sqrt(MathF.Max(rLaunch, 0.5f * f.Px) * MathF.Max(rLoc, 0.5f * f.Px));
-        float sigma = ph.Breakup * MathF.Pow(8f * f.Px / rEff, 1.5f);
-        return MathF.Min(1f, e0 * MathF.Exp(MathF.Min(sigma * a, 30f)));
+        float rEff = Sqrt(Max(rLaunch, 0.5f * f.Px) * Max(rLoc, 0.5f * f.Px));
+        float sigma = ph.Breakup * Pow(8f * f.Px / rEff, 1.5f);
+        return Min(1f, e0 * Exp(Min(sigma * a, 30f)));
     }
 
-    private Parcel Eval(long i, float T, LiquidField f)
+    Parcel Eval(long i, float T, LiquidField f)
     {
         int s = (int)(i % Cap);
-        float t0 = _t0[s], a = MathF.Max(T - t0, 0f), g = f.Gravity;
+        float t0 = _t0[s], a = Max(T - t0, 0f), g = f.Gravity;
         float vx = _vx[s], vy = _vy[s] + g * a;
-        float sp = MathF.Max(MathF.Sqrt(vx * vx + vy * vy), 1f);
+        float sp = Max(Sqrt(vx * vx + vy * vy), 1f);
 
         // it writhes across its own direction of travel
         float churn = Churn * f.Liquid.Phys.Churn;
-        float writhe = churn * f.Px * 9f * (a / MathF.Sqrt(a + 0.15f))
-                     * (MathF.Sin(t0 * 10.7f + Seed * 0.91f) + 0.5f * MathF.Sin(t0 * 24.5f + Seed * 1.7f));
+        float writhe = churn * f.Px * 9f * (a / Sqrt(a + 0.15f))
+                     * (Sin(t0 * 10.7f + Seed * 0.91f) + 0.5f * Sin(t0 * 24.5f + Seed * 1.7f));
 
-        float rLoc = _r[s] * MathF.Sqrt(_sp0[s] / sp);  // continuity: it thins as it speeds up
-        rLoc *= MathF.Max(0.55f, 1f + 0.20f * churn * Noise.Value(t0 * 6.3f + Seed * 0.7f, 3.1f));  // lumps, fixed to the parcel so they stretch as it speeds up
+        float rLoc = _r[s] * Sqrt(_sp0[s] / sp);  // continuity: it thins as it speeds up
+        rLoc *= Max(0.55f, 1f + 0.20f * churn * Noise.Value(t0 * 6.3f + Seed * 0.7f, 3.1f));  // lumps, fixed to the parcel so they stretch as it speeds up
         float e = Eps(i, _r[s], rLoc, a, f);
         float m = 1f - e * BeadCos[(int)(i % Bead)];  // the cross-section's ripple; zero is a closed neck
-        rLoc *= 1f + 0.14f * e * (Hash01(Seed + (int)(i / Bead) * 17 + 5) * 2f - 1f);  // as it breaks up, each bead carries its own share
-        return new Parcel
+        rLoc *= Lerp(1f, Hash01(Seed + (int)(i / Bead) * 17 + 5) * 2f, 0.14f * e);  // as it breaks up, each bead carries its own share
+        return new()
         {
             E = e,
             X = X + vx * a + writhe * (vy / sp),
             Y = Y + _vy[s] * a + 0.5f * g * a * a - writhe * (vx / sp),
-            R = rLoc * MathF.Sqrt(MathF.Max(m, 0f)),
+            R = rLoc * Sqrt(Max(m, 0f)),
             Vx = vx, Vy = vy,
         };
     }
@@ -112,17 +110,17 @@ public sealed class LiquidJet
     internal void Step(LiquidField f, float T, float dt)
     {
         // launch whatever fell due since the last frame; nothing is launched while the flow is off
-        float vx0 = Speed * MathF.Sin(Angle), vy0 = Speed * MathF.Cos(Angle);
+        float vx0 = Speed * Sin(Angle), vy0 = Speed * Cos(Angle);
         for (int guard = 0; _next <= T && guard < 64; guard++)
         {
-            float k = dt > 1e-5f ? Math.Clamp((_next - (T - dt)) / dt, 0f, 1f) : 1f;
-            float flow = _prevFlow + (Flow - _prevFlow) * k;
+            float k = dt > 1e-5f ? Saturate((_next - (T - dt)) / dt) : 1f;
+            float flow = Lerp(_prevFlow, Flow, k);
             if (flow > 0.002f)
             {
                 int s = (int)(_hi % Cap);
                 _t0[s] = _next;
-                _r[s] = Radius * MathF.Sqrt(flow);
-                _vx[s] = vx0; _vy[s] = vy0; _sp0[s] = MathF.Max(Speed, 1f);
+                _r[s] = Radius * Sqrt(flow);
+                _vx[s] = vx0; _vy[s] = vy0; _sp0[s] = Max(Speed, 1f);
                 _hi++;
             }
             _next += _dtau;
@@ -150,8 +148,8 @@ public sealed class LiquidJet
         Shed(f, dt);
     }
 
-    /// <summary>Evaluates the live parcels, oldest first; those that reached the water are retired, bar the last (it locates the crossing).</summary>
-    private int Gather(LiquidField f, float T, out int first)
+    /// Evaluates the live parcels, oldest first; those that reached the water are retired, bar the last (it locates the crossing).
+    int Gather(LiquidField f, float T, out int first)
     {
         int n = (int)(_hi - _lo);
         for (int k = 0; k < n; k++)
@@ -172,18 +170,18 @@ public sealed class LiquidJet
         return n;
     }
 
-    /// <summary>Gathers parcels lo..hi into one drop, sometimes with a satellite; a fast thin stream scatters as it breaks.</summary>
-    private void PinchOff(LiquidField f, long lo, long hi, float T)
+    /// Gathers parcels lo..hi into one drop, sometimes with a satellite; a fast thin stream scatters as it breaks.
+    void PinchOff(LiquidField f, long lo, long hi, float T)
     {
         float vol = 0f, cx = 0f, cy = 0f, cvx = 0f, cvy = 0f;
         for (long i = lo; i < hi; i++)
         {
             var p = Eval(i, T, f);
-            float w = MathF.PI * p.R * p.R * MathF.Sqrt(p.Vx * p.Vx + p.Vy * p.Vy) * _dtau;
+            float w = PI * p.R * p.R * Sqrt(p.Vx * p.Vx + p.Vy * p.Vy) * _dtau;
             vol += w; cx += p.X * w; cy += p.Y * w; cvx += p.Vx * w; cvy += p.Vy * w;
         }
         if (vol < 1e-3f) return;
-        float r = MathF.Cbrt(3f * vol / (4f * MathF.PI));
+        float r = Cbrt(3f * vol / (4f * PI));
         if (r < 0.45f * f.Px) return;
         var ph = f.Liquid.Phys;
         var at = new Vector2(cx / vol, cy / vol);
@@ -192,7 +190,7 @@ public sealed class LiquidJet
         Vector2 dir = sp > 1f ? v / sp : Vector2.UnitY, perp = new(-dir.Y, dir.X);
 
         // pressure atomises: the faster and thinner it is, the wider the drops scatter
-        float scatter = 0.05f * ph.Churn * Churn * MathF.Min(1.6f, _sp0[(int)(lo % Cap)] / (900f * f.Px)) * (f.Px * 4f / MathF.Max(r, f.Px));
+        float scatter = 0.05f * ph.Churn * Churn * Min(1.6f, _sp0[(int)(lo % Cap)] / (900f * f.Px)) * (f.Px * 4f / Max(r, f.Px));
         v += perp * (sp * scatter * f.Rand(-1f, 1f));
         f.SpawnDrop(at, v, r, ph.Drag * 0.3f, Seed + (int)lo, newWater: !Wet);  // a stream that never reaches the pool delivers its water as drops
 
@@ -200,13 +198,13 @@ public sealed class LiquidJet
             f.SpawnDrop(at - dir * (r * 2.6f), v * 0.97f + perp * (sp * scatter * f.Rand(-1f, 1f)), r * HashRange(Seed + (int)lo * 5, 0.18f, 0.32f), ph.Drag * 0.3f, Seed + (int)lo + 1);
     }
 
-    private static bool Off(LiquidField f, float x, float y, float r)
+    static bool Off(LiquidField f, float x, float y, float r)
     {
         float m = r + 24f * f.Px;
         return y < -m || x < -m || x > f.Size.X + m;
     }
 
-    private void BuildPath(LiquidField f, int n, int first)
+    void BuildPath(LiquidField f, int n, int first)
     {
         Rows = 0; Wet = first > 0;
         if (first >= n) { Wet = false; return; }  // nothing left above the water
@@ -224,10 +222,10 @@ public sealed class LiquidJet
         float sy0 = Wet ? f.SurfaceY(_ex[first]) : float.MaxValue;
         for (int k = top; k >= first && k >= 0; k--)
         {
-            Path[Rows] = new Vector2(_ex[k], _ey[k]);
-            PathV[Rows] = new Vector2(_evx[k], _evy[k]);
+            Path[Rows] = new(_ex[k], _ey[k]);
+            PathV[Rows] = new(_evx[k], _evy[k]);
             // water spreads where it leaves the lip and where it meets the pool
-            float edge = MathF.Max(MathF.Min(_ey[k], MathF.Min(_ex[k], f.Size.X - _ex[k])), 0f);
+            float edge = Max(Min(_ey[k], Min(_ex[k], f.Size.X - _ex[k])), 0f);
             float flare = 1f + 0.35f * Smooth(1f - edge / (46f * px)) + 0.30f * Smooth(1f - (sy0 - _ey[k]) / (34f * px));
             Rad[Rows] = k == top && tapers ? 0f : _er[k] * flare;
             Born[Rows] = _t0[(int)((_lo + k) % Cap)];
@@ -241,7 +239,7 @@ public sealed class LiquidJet
             Vector2 tip = Path[Rows - 1], tv = PathV[Rows - 1]; float r = Rad[Rows - 1], born = Born[Rows - 1];
             foreach (float a in HeadAngles)
             {
-                Path[Rows] = tip + d * (r * MathF.Sin(a)); PathV[Rows] = tv; Rad[Rows] = r * MathF.Cos(a); Born[Rows] = born; Rows++;
+                Path[Rows] = tip + d * (r * Sin(a)); PathV[Rows] = tv; Rad[Rows] = r * Cos(a); Born[Rows] = born; Rows++;
             }
         }
 
@@ -250,25 +248,25 @@ public sealed class LiquidJet
             // the last row is moved up onto the water
             float sy = f.SurfaceY(_ex[first]);
             float span = _ey[0] - _ey[first];
-            float t = span > 1e-3f ? Math.Clamp((sy - _ey[first]) / span, 0f, 1f) : 0f;
-            var cross = new Vector2(_ex[first] + (_ex[0] - _ex[first]) * t, sy);
-            float rc = _er[first] + (_er[0] - _er[first]) * t;
+            float t = span > 1e-3f ? Saturate((sy - _ey[first]) / span) : 0f;
+            var cross = new Vector2(Lerp(_ex[first], _ex[0], t), sy);
+            float rc = Lerp(_er[first], _er[0], t);
             if (Rows < Path.Length) { Path[Rows] = cross; PathV[Rows] = PathV[Rows - 1]; Rad[Rows] = rc; Born[Rows] = Born[Math.Max(Rows - 1, 0)]; Rows++; }
             Hit = cross; HitR = rc;
-            HitSpeed = MathF.Sqrt(_evx[0] * _evx[0] + _evy[0] * _evy[0]);
+            HitSpeed = Sqrt(_evx[0] * _evx[0] + _evy[0] * _evy[0]);
             if (Rows < 2 || rc < 0.4f * px) Wet = false;
         }
     }
 
-    /// <summary>A fast, churning stream strips fine droplets off its surface.</summary>
-    private void Shed(LiquidField f, float dt)
+    /// A fast, churning stream strips fine droplets off its surface.
+    void Shed(LiquidField f, float dt)
     {
         if (Rows < 4 || Flow < 0.05f) return;
         var ph = f.Liquid.Phys;
         float px = f.Px;
         int mid = Rows / 2;
         float sp = PathV[mid].Length();
-        _shed += ph.Splash * Churn * MathF.Min(Rad[mid] / (5f * px), 3f) * 10f * MathF.Min(sp / (1000f * px), 1.5f) * dt;
+        _shed += ph.Splash * Churn * Min(Rad[mid] / (5f * px), 3f) * 10f * Min(sp / (1000f * px), 1.5f) * dt;
         if (_shed > 4f) _shed = 0f;
         for (; _shed >= 1f; _shed -= 1f)
         {
@@ -280,12 +278,12 @@ public sealed class LiquidJet
             Vector2 d = Vector2.Normalize(dv), perp = new(-d.Y, d.X);
             float side = f.Rand() < 0.5f ? -1f : 1f;
             Vector2 v = PathV[k] + perp * (side * f.Rand(30f, 220f) * px) + new Vector2(f.Rand(-30f, 30f), f.Rand(-30f, 30f)) * px;
-            f.SpawnDrop(Path[k] + perp * (side * rr), v, MathF.Max(0.55f * px, rr * f.Rand(0.04f, 0.14f)), ph.Drag * 0.3f, Seed + k * 31 + (int)(f.Time * 113f), life: 2.4f);
+            f.SpawnDrop(Path[k] + perp * (side * rr), v, Max(0.55f * px, rr * f.Rand(0.04f, 0.14f)), ph.Drag * 0.3f, Seed + k * 31 + (int)(f.Time * 113f), life: 2.4f);
         }
     }
 }
 
-/// <summary>A ceiling drip site.</summary>
+/// A ceiling drip site.
 public sealed class LiquidSeep
 {
     public float X, Y;  // where it clings, px
@@ -297,12 +295,12 @@ public sealed class LiquidSeep
     internal int Cycles, Seed;
 }
 
-/// <summary>Jets and seeps feeding a wave-equation pool, with drops, splashes, bubbles, foam and lens beads, all driven by the liquid's physics.</summary>
+/// Jets and seeps feeding a wave-equation pool, with drops, splashes, bubbles, foam and lens beads, all driven by the liquid's physics.
 public sealed class LiquidField : IRegionState
 {
-    private const int MaxDrops = 360, MaxBubbles = 64, MaxHits = 48, MaxRebounds = 12, MaxBeads = 44, MaxTrails = 56, TrailPoints = 26, MaxCrowns = 14;
-    private const float MaxStep = 0.05f;
-    private const float PoolEddy = 28f, PoolDrag = 0.22f;  // eddy viscosity px^2/s, and the share of a liquid's Damping that drags long swells
+    const int MaxDrops = 360, MaxBubbles = 64, MaxHits = 48, MaxRebounds = 12, MaxBeads = 44, MaxTrails = 56, TrailPoints = 26, MaxCrowns = 14;
+    const float MaxStep = 0.05f;
+    const float PoolEddy = 28f, PoolDrag = 0.22f;  // eddy viscosity px^2/s, and the share of a liquid's Damping that drags long swells
 
     public Vector2 Size { get; private set; }
     public float Px { get; private set; }
@@ -318,14 +316,14 @@ public sealed class LiquidField : IRegionState
     internal float Leaving;  // 0..1: the cast is ending, so it drains faster
     internal double Landed, Drained, FromStreams;  // everything that arrived, everything that left, and the part that came as streams (px²)
     internal double Stored { get { double t = 0; for (int i = 0; i < PoolCols; i++) t += _vol[i]; return t; } }
-    internal float DeepestRel { get { float lo = float.MaxValue, hi = 0; for (int i = 0; i < PoolCols; i++) { lo = MathF.Min(lo, _vol[i]); hi = MathF.Max(hi, _vol[i]); } return hi > 0 ? (hi - lo) / ColW : 0f; } }  // deepest minus shallowest column, px
-    private const int PoolCols = 48;
-    private float PoolReach => 28f * Px;  // how far the pool extends into the screen: converts the jets' volumes (px³) to the pool's area (px²)
-    private float AreaOf(float r) => 4f / 3f * MathF.PI * r * r * r / PoolReach;  // the volume of a drop of radius r, as pool area
-    private readonly float[] _vol = new float[PoolCols];
-    private float ColW => Size.X / PoolCols;
+    internal float DeepestRel { get { float lo = float.MaxValue, hi = 0; for (int i = 0; i < PoolCols; i++) { lo = Min(lo, _vol[i]); hi = Max(hi, _vol[i]); } return hi > 0 ? (hi - lo) / ColW : 0f; } }  // deepest minus shallowest column, px
+    const int PoolCols = 48;
+    float PoolReach => 28f * Px;  // how far the pool extends into the screen: converts the jets' volumes (px³) to the pool's area (px²)
+    float AreaOf(float r) => 4f / 3f * PI * r * r * r / PoolReach;  // the volume of a drop of radius r, as pool area
+    readonly float[] _vol = new float[PoolCols];
+    float ColW => Size.X / PoolCols;
 
-    /// <summary>Adds area (px²) of liquid to the pool at x.</summary>
+    /// Adds area (px²) of liquid to the pool at x.
     internal void Deposit(float x, float area)
     {
         if (!Reservoir || area <= 0f || Size.X <= 0f) return;
@@ -335,34 +333,34 @@ public sealed class LiquidField : IRegionState
         Landed += area;
     }
 
-    /// <summary>How much deeper the stored water is at x than on average (px): a mound where it has just landed.</summary>
-    private float Mound(float x)
+    /// How much deeper the stored water is at x than on average (px): a mound where it has just landed.
+    float Mound(float x)
     {
         if (!Reservoir || Level <= 0f) return 0f;
         float u = Math.Clamp(x / ColW - 0.5f, 0f, PoolCols - 1.001f);
         int i = (int)u;
-        return (_vol[i] + (_vol[i + 1] - _vol[i]) * (u - i)) / ColW - Level;
+        return (Lerp(_vol[i], _vol[i + 1], (u - i))) / ColW - Level;
     }
 
-    private void StepReservoir(float dt)
+    void StepReservoir(float dt)
     {
         var ph = Liquid.Phys;
         float w = ColW;
         // a mound relaxes to the pool mean at twice the long-wave rate (c = sqrt(g h); slower if thick), mass-conserving
         double sum = 0;
         for (int i = 0; i < PoolCols; i++) sum += _vol[i];
-        float mean = (float)(sum / PoolCols), c = MathF.Sqrt(Gravity * MathF.Max(Level, 4f * Px));
-        float r = 1f - MathF.Exp(-2f * c / w * (1f - 0.85f * ph.Viscosity) * dt);  // a point source sends waves out both ways: the standing mound is S / 2c
+        float mean = (float)(sum / PoolCols), c = Sqrt(Gravity * Max(Level, 4f * Px));
+        float r = 1f - Exp(-2f * c / w * (1f - 0.85f * ph.Viscosity) * dt);  // a point source sends waves out both ways: the standing mound is S / 2c
         for (int i = 0; i < PoolCols; i++) _vol[i] -= r * (_vol[i] - mean);
 
         // drains as it deepens (orifice: outflow ~ depth^1.5, sized so typical inflow holds the reference depth), spilling over a weir above that
-        float hr = MathF.Max(PoolDepthRef, 1f), kd = PoolFluxRef / PoolCols / MathF.Pow(hr, 1.5f), boost = 1f + 4f * Leaving;
+        float hr = Max(PoolDepthRef, 1f), kd = PoolFluxRef / PoolCols / Pow(hr, 1.5f), boost = 1f + 4f * Leaving;
         double total = 0;
         for (int i = 0; i < PoolCols; i++)
         {
             float h = _vol[i] / w;
-            float q = kd * MathF.Pow(h, 1.5f) + 5f * MathF.Max(0f, h - 1.3f * hr) * w;
-            float d = MathF.Min(_vol[i], q * boost * dt);
+            float q = kd * Pow(h, 1.5f) + 5f * Max(0f, h - 1.3f * hr) * w;
+            float d = Min(_vol[i], q * boost * dt);
             _vol[i] -= d; Drained += d; total += _vol[i];
         }
         Level = (float)(total / Size.X);
@@ -374,17 +372,17 @@ public sealed class LiquidField : IRegionState
 
     internal float Gravity;
 
-    private readonly List<LiquidJet> _jets = new();
-    private readonly List<LiquidSeep> _seeps = new();
-    private readonly DropPool _drops = new(MaxDrops);
-    private DebuffKind _owner;
-    private int _seed;
-    private uint _rng;
+    readonly List<LiquidJet> _jets = new();
+    readonly List<LiquidSeep> _seeps = new();
+    readonly DropPool _drops = new(MaxDrops);
+    DebuffKind _owner;
+    int _seed;
+    uint _rng;
 
     // the pool
-    private int _n;
-    private float _dx;
-    private readonly PoolSurface _surf = new();
+    int _n;
+    float _dx;
+    readonly PoolSurface _surf = new();
     internal float[] H => _surf.H;
     internal float[] Foam = [];
 
@@ -399,29 +397,29 @@ public sealed class LiquidField : IRegionState
     internal int CrownCount;
 
     // beads clinging to the lens, and the wet trails they leave
-    private struct Bead { public Vector2 P; public float R, Speed, Burst, Heading, Wait, Age, Life; public int Seed, Trail; public bool Slides; }
+    struct Bead { public Vector2 P; public float R, Speed, Burst, Heading, Wait, Age, Life; public int Seed, Trail; public bool Slides; }
     internal struct Trail { public Vector3[] Pts; public int Count; public float Fade; public bool Live; }
-    private readonly Bead[] _beads = new Bead[MaxBeads];
+    readonly Bead[] _beads = new Bead[MaxBeads];
     internal readonly Trail[] Trails = new Trail[MaxTrails];
-    private int _beadCount;
-    private float _spatter;
+    int _beadCount;
+    float _spatter;
 
-    private struct Impact { public float X, V, R; }
-    private readonly Impact[] _splats = new Impact[MaxHits];
-    private int _splatCount;
+    struct Impact { public float X, V, R; }
+    readonly Impact[] _splats = new Impact[MaxHits];
+    int _splatCount;
 
-    private struct Rebound { public float At, X, V, R; }
-    private readonly Rebound[] _rebounds = new Rebound[MaxRebounds];
-    private int _reboundCount;
+    struct Rebound { public float At, X, V, R; }
+    readonly Rebound[] _rebounds = new Rebound[MaxRebounds];
+    int _reboundCount;
 
-    private float _spray, _fizz, _ripple;  // fractional droplets, bubbles and ripples owed to a jet in contact
+    float _spray, _fizz, _ripple;  // fractional droplets, bubbles and ripples owed to a jet in contact
 
     public LiquidField()
     {
         for (int i = 0; i < Trails.Length; i++) Trails[i].Pts = new Vector3[TrailPoints];
     }
 
-    /// <summary>Starts a new cast with this many stream and drip slots, all idle (call again on resize).</summary>
+    /// Starts a new cast with this many stream and drip slots, all idle (call again on resize).
     public void Begin(DebuffKind owner, Vector2 size, Liquid liquid, int seed, int jets, int seeps)
     {
         _owner = owner; Size = size; Px = PixelScale(size); Liquid = liquid; _seed = seed; _rng = (uint)seed | 1u;
@@ -430,26 +428,26 @@ public sealed class LiquidField : IRegionState
         _drops.Count = 0; BubbleCount = 0; CrownCount = 0; _splatCount = _reboundCount = _beadCount = 0; _spray = _fizz = _ripple = _spatter = 0f;
         for (int i = 0; i < Trails.Length; i++) { Trails[i].Count = 0; Trails[i].Fade = 0f; Trails[i].Live = false; }
 
-        while (_jets.Count < jets) _jets.Add(new LiquidJet());
-        while (_seeps.Count < seeps) _seeps.Add(new LiquidSeep());
+        while (_jets.Count < jets) _jets.Add(new());
+        while (_seeps.Count < seeps) _seeps.Add(new());
         foreach (var j in _jets) j.Reset();
         foreach (var s in _seeps) { s.Live = false; s.Fade = 0f; }
 
-        _n = Math.Clamp((int)MathF.Round(size.X / (5f * Px)), 96, 640);
+        _n = Math.Clamp((int)Round(size.X / (5f * Px)), 96, 640);
         _dx = size.X / (_n - 1);
         _surf.Begin(_n, size.X);
         if (Foam.Length != _n) Foam = new float[_n]; else Array.Clear(Foam);
         ApplyGravity();
     }
 
-    /// <summary>Starts a stream at (px): speed px/s and radius px at 1080p, angle in radians from straight down (+ toward +x); the jet must be Idle.</summary>
+    /// Starts a stream at (px): speed px/s and radius px at 1080p, angle in radians from straight down (+ toward +x); the jet must be Idle.
     public void Launch(LiquidJet j, Vector2 at, float speed, float angle, float radius, int seed)
     {
         j.X = at.X; j.Y = at.Y; j.Speed = speed * Px; j.Angle = angle; j.Radius = radius * Px; j.Seed = seed;
         j.Start(this);
     }
 
-    /// <summary>Hangs a drip at at (px) and lets it fill.</summary>
+    /// Hangs a drip at at (px) and lets it fill.
     public void Place(LiquidSeep s, Vector2 at, float scale, float rate, int seed)
     {
         var ph = Liquid.Phys;
@@ -458,7 +456,7 @@ public sealed class LiquidField : IRegionState
         s.Phase = Hash01(seed + 3) * PendantKeys.PinchAt * 0.6f;
     }
 
-    /// <summary>Swaps the liquid mid-cast; everything keeps its place.</summary>
+    /// Swaps the liquid mid-cast; everything keeps its place.
     public void SetLiquid(Liquid liquid)
     {
         if (liquid == Liquid) return;
@@ -471,7 +469,7 @@ public sealed class LiquidField : IRegionState
     public float Rand() { _rng = _rng * 1664525u + 1013904223u; return (_rng >> 8) * (1f / 16777216f); }
     public float Rand(float lo, float hi) => lo + Rand() * (hi - lo);
 
-    /// <summary>Surface height at x, px from the top (level, waves, and the water creeping up the screen edges).</summary>
+    /// Surface height at x, px from the top (level, waves, and the water creeping up the screen edges).
     public float SurfaceY(float x)
     {
         if (_n == 0) return Size.Y;
@@ -480,38 +478,38 @@ public sealed class LiquidField : IRegionState
         float creep = 0f;  // the meniscus climbs the glass at either edge
         if (Level > 0f)
         {
-            if (x < 90f * Px) creep += 3.2f * Px * MathF.Exp(-x / (10f * Px));
-            if (Size.X - x < 90f * Px) creep += 3.2f * Px * MathF.Exp(-(Size.X - x) / (10f * Px));
+            if (x < 90f * Px) creep += 3.2f * Px * Exp(-x / (10f * Px));
+            if (Size.X - x < 90f * Px) creep += 3.2f * Px * Exp(-(Size.X - x) / (10f * Px));
         }
-        float h = MathF.Max(H[i] + (H[i + 1] - H[i]) * (u - i), -0.45f * Level);  // a hollow can only go so deep before it meets the floor
+        float h = Max(Lerp(H[i], H[i + 1], (u - i)), -0.45f * Level);  // a hollow can only go so deep before it meets the floor
         return Size.Y - Level - h - creep - Swell(x) - Mound(x);
     }
 
     // gentle gravity ripples always running on open water (shorter ones slower), so a calm pool is never dead flat
-    private static readonly (float Wavelength, float Amp, float Dir, float Phase)[] Ripples = [(41f, 0.30f, 1f, 0.7f), (67f, 0.40f, -1f, 2.9f), (109f, 0.50f, 1f, 5.1f)];
+    static readonly (float Wavelength, float Amp, float Dir, float Phase)[] Ripples = [(41f, 0.30f, 1f, 0.7f), (67f, 0.40f, -1f, 2.9f), (109f, 0.50f, 1f, 5.1f)];
 
-    private readonly float[] _rippleK = new float[Ripples.Length], _rippleW = new float[Ripples.Length];
+    readonly float[] _rippleK = new float[Ripples.Length], _rippleW = new float[Ripples.Length];
 
-    private void ApplyGravity()
+    void ApplyGravity()
     {
         Gravity = Liquid.Phys.Gravity * Px;
         for (int i = 0; i < Ripples.Length; i++)
         {
-            float k = MathF.Tau / (Ripples[i].Wavelength * Px);
-            (_rippleK[i], _rippleW[i]) = (k, Ripples[i].Dir * MathF.Sqrt(Gravity * k));  // deep water: w^2 = g k
+            float k = Tau / (Ripples[i].Wavelength * Px);
+            (_rippleK[i], _rippleW[i]) = (k, Ripples[i].Dir * Sqrt(Gravity * k));  // deep water: w^2 = g k
         }
     }
 
-    private float Swell(float x)
+    float Swell(float x)
     {
         if (Level <= 0f) return 0f;
         float sum = 0f;
         for (int i = 0; i < Ripples.Length; i++)
-            sum += Ripples[i].Amp * MathF.Sin(_rippleK[i] * x - _rippleW[i] * Time + Ripples[i].Phase);
+            sum += Ripples[i].Amp * Sin(_rippleK[i] * x - _rippleW[i] * Time + Ripples[i].Phase);
         return sum * Px * Smooth(Level / (24f * Px));
     }
 
-    /// <summary>Digs (negative) or heaps (positive) the surface at x with a blow; the water shoved aside banks up in a rim round it.</summary>
+    /// Digs (negative) or heaps (positive) the surface at x with a blow; the water shoved aside banks up in a rim round it.
     internal void Dimple(float x, float reach, float push)
     {
         Disturb(x, reach, push);
@@ -520,25 +518,25 @@ public sealed class LiquidField : IRegionState
         Disturb(x + 1.7f * reach, reach * 0.9f, rim);
     }
 
-    /// <summary>Holds a hollow depth px deep under the stream at x (negative heaps), with the water it shoves aside banked up either side.</summary>
+    /// Holds a hollow depth px deep under the stream at x (negative heaps), with the water it shoves aside banked up either side.
     internal void Hollow(float x, float reach, float depth)
     {
-        if (depth > 0f) depth = MathF.Min(depth, 0.4f * Level);
+        if (depth > 0f) depth = Min(depth, 0.4f * Level);
         _surf.Press(x, reach, depth);
         float rim = -0.22f * depth * (1f - Liquid.Phys.Viscosity);
         _surf.Press(x - 1.6f * reach, reach * 0.55f, rim);
         _surf.Press(x + 1.6f * reach, reach * 0.55f, rim);
     }
 
-    /// <summary>How far the surface sits below its level at x (zero or more), px.</summary>
+    /// How far the surface sits below its level at x (zero or more), px.
     internal float Depression(float x)
     {
         float u = Math.Clamp(x / _dx, 0f, _n - 1.001f);
         int i = (int)u;
-        return MathF.Max(0f, -(H[i] + (H[i + 1] - H[i]) * (u - i)));
+        return Max(0f, -(Lerp(H[i], H[i + 1], (u - i))));
     }
 
-    /// <summary>Kicks the surface under a Gaussian; positive px/s is up.</summary>
+    /// Kicks the surface under a Gaussian; positive px/s is up.
     internal void Disturb(float x, float reach, float push) => _surf.Kick(x, reach, push);
 
     internal void AddFoam(float x, float reach, float amount)
@@ -548,66 +546,66 @@ public sealed class LiquidField : IRegionState
         for (int i = lo; i <= hi; i++)
         {
             float d = i * _dx - x;
-            Foam[i] = MathF.Min(Foam[i] + amount * MathF.Exp(-d * d * inv), 1.6f);
+            Foam[i] = Min(Foam[i] + amount * Exp(-d * d * inv), 1.6f);
         }
     }
 
     internal int Columns => _n;
     internal float Spacing => _dx;
 
-    /// <summary>Spawns a free drop (specks too small to mesh get the cheap look).</summary>
+    /// Spawns a free drop (specks too small to mesh get the cheap look).
     internal void SpawnDrop(Vector2 pos, Vector2 vel, float r, float drag, int seed, float life = 4f, bool newWater = false)
     {
         if (_drops.Full) return;
         _drops.Add(new DropPool.Drop
         {
-            Owner = _owner, Pos = pos, Vel = vel, Gravity = new Vector2(0f, Gravity), Drag = drag, Amount = newWater ? AreaOf(r) : 0f,
+            Owner = _owner, Pos = pos, Vel = vel, Gravity = new(0f, Gravity), Drag = drag, Amount = newWater ? AreaOf(r) : 0f,
             Born = Time - 0.3f * life, Life = life,  // born past the fade-in: a bead that has just let go is already there
             Released = Time, Size = r, Brightness = 1f, Seed = seed, ColorOverride = Color,
             Variant = r < 1.7f * Px ? GoopDraw.Speck : GoopDraw.Free,
         });
     }
 
-    /// <summary>Flings droplets in a cone (angle from straight down, spread rad, speed and radius at 1080p): one call is one puff, repeat for a burst.</summary>
+    /// Flings droplets in a cone (angle from straight down, spread rad, speed and radius at 1080p): one call is one puff, repeat for a burst.
     public void Spray(Vector2 at, float angle, float spread, float speed, int count, float radius)
     {
         var ph = Liquid.Phys;
         for (int k = 0; k < count; k++)
         {
             float a = angle + Rand(-1f, 1f) * spread, v = speed * Rand(0.35f, 1f) * Px;
-            float r = radius * (0.22f + 0.78f * MathF.Pow(Rand(), 2.5f)) * Px;
-            SpawnDrop(at + new Vector2(MathF.Sin(a), MathF.Cos(a)) * Rand(0f, 6f) * Px, new Vector2(MathF.Sin(a), MathF.Cos(a)) * v, r, ph.Drag * 0.3f, _seed + k * 37 + (int)(Time * 211f), life: 2.4f, newWater: true);
+            float r = radius * (0.22f + 0.78f * Pow(Rand(), 2.5f)) * Px;
+            SpawnDrop(at + new Vector2(Sin(a), Cos(a)) * Rand(0f, 6f) * Px, new Vector2(Sin(a), Cos(a)) * v, r, ph.Drag * 0.3f, _seed + k * 37 + (int)(Time * 211f), life: 2.4f, newWater: true);
         }
     }
 
-    /// <summary>Throws one drop (radius px at 1080p, velocity px/s at 1080p) from at.</summary>
+    /// Throws one drop (radius px at 1080p, velocity px/s at 1080p) from at.
     public void Fling(Vector2 at, Vector2 velocity, float radius) =>
         SpawnDrop(at, velocity * Px, radius * Px, Liquid.Phys.Drag * 0.3f, _seed + (int)(Time * 331f), life: 4f, newWater: true);
 
-    /// <summary>Water thrown at the lens: one big bead with a scatter of smaller ones round it.</summary>
+    /// Water thrown at the lens: one big bead with a scatter of smaller ones round it.
     public void Splat(Vector2 at, float radius, int count)
     {
         var ph = Liquid.Phys;
         for (int k = 0; k < count && _beadCount < MaxBeads; k++)
         {
-            float a = Rand(0f, MathF.Tau), d = k == 0 ? 0f : radius * Px * 3.6f * MathF.Pow(Rand(), 0.7f);
+            float a = Rand(0f, Tau), d = k == 0 ? 0f : radius * Px * 3.6f * Pow(Rand(), 0.7f);
             float r = (k == 0 ? Rand(0.85f, 1.15f) : Rand(0.14f, 0.55f)) * radius * Px;
-            _beads[_beadCount++] = new Bead
+            _beads[_beadCount++] = new()
             {
-                P = at + new Vector2(MathF.Cos(a), MathF.Sin(a)) * d, R = r, Life = Rand(14f, 30f), Trail = -1, Seed = _seed + k * 61 + (int)(Time * 53f),
+                P = at + Dir(a) * d, R = r, Life = Rand(14f, 30f), Trail = -1, Seed = _seed + k * 61 + (int)(Time * 53f),
                 Wait = k == 0 ? Rand(0.05f, 0.5f) : Rand(0.4f, 5f) * (1f + 5f * ph.Viscosity), Heading = Rand(-0.4f, 0.4f),
             };
         }
     }
 
-    private struct Landing : DropPool.IHook
+    struct Landing : DropPool.IHook
     {
         public LiquidField F;
         public bool Hit(ref DropPool.Drop d)
         {
             if (d.Vel.Y <= 0f || d.Pos.Y + 0.35f * d.Size < F.SurfaceY(d.Pos.X)) return false;
             F.Deposit(d.Pos.X, d.Amount);
-            if (F._splatCount < MaxHits) F._splats[F._splatCount++] = new Impact { X = d.Pos.X, V = d.Vel.Length(), R = d.Size };
+            if (F._splatCount < MaxHits) F._splats[F._splatCount++] = new() { X = d.Pos.X, V = d.Vel.Length(), R = d.Size };
             return true;
         }
     }
@@ -636,13 +634,13 @@ public sealed class LiquidField : IRegionState
         StepPool(dt);
     }
 
-    private void StepSeeps(float dt)
+    void StepSeeps(float dt)
     {
         var ph = Liquid.Phys;
         for (int i = 0; i < _seeps.Count; i++)
         {
             var s = _seeps[i];
-            s.Fade += ((s.Live ? 1f : 0f) - s.Fade) * MathF.Min(1f, 4f * dt);
+            s.Fade += ((s.Live ? 1f : 0f) - s.Fade) * Min(1f, 4f * dt);
             if (!s.Live) continue;
             s.Phase += dt / s.Cycle * s.Rate * s.Boost;
             if (s.Phase < PendantKeys.PinchAt) continue;
@@ -654,13 +652,13 @@ public sealed class LiquidField : IRegionState
             Vector2 anchor = new(s.X, s.Y), bead = anchor + Swing(s, l, 1f);
             _drops.Add(new DropPool.Drop
             {
-                Owner = _owner, Pos = bead, Vel = new Vector2(HashRange(cs + 7, -10f, 10f) * Px, HashRange(cs + 5, ph.ReleaseMin, ph.ReleaseMax) * Px),
-                Gravity = new Vector2(0f, Gravity), Drag = ph.Drag, Anchor = anchor, Pinch = bead,
+                Owner = _owner, Pos = bead, Vel = new(HashRange(cs + 7, -10f, 10f) * Px, HashRange(cs + 5, ph.ReleaseMin, ph.ReleaseMax) * Px),
+                Gravity = new(0f, Gravity), Drag = ph.Drag, Anchor = anchor, Pinch = bead,
                 Born = Time - 1.2f, Life = 4f, Released = Time, Variant = GoopDraw.Free, Size = rb, Brightness = 1f, Tether = neck, RecoilTime = 0.15f + 0.12f * ph.Stringiness,
                 Seed = cs, ColorOverride = Color, Amount = AreaOf(rb),
             });
             if (!_drops.Full && Hash01(cs + 8) < ph.Satellites)
-                SpawnDrop(Vector2.Lerp(anchor, bead, 0.62f), new Vector2(HashRange(cs + 9, -12f, 12f) * Px, ph.ReleaseMin * 0.35f * Px),
+                SpawnDrop(Vector2.Lerp(anchor, bead, 0.62f), new(HashRange(cs + 9, -12f, 12f) * Px, ph.ReleaseMin * 0.35f * Px),
                           rb * HashRange(cs + 10, 0.20f, 0.32f), ph.Drag, cs + 99, newWater: true);
 
             s.Cycles++;
@@ -669,52 +667,52 @@ public sealed class LiquidField : IRegionState
         }
     }
 
-    private static Vector2 Swing(LiquidSeep s, float len, float q)
+    static Vector2 Swing(LiquidSeep s, float len, float q)
     {
-        float swing = 0.06f * MathF.Sin(s.Phase * 5f + s.Seed * 0.37f) * q;
-        return new Vector2(MathF.Sin(swing), MathF.Cos(swing)) * len;
+        float swing = 0.06f * Sin(s.Phase * 5f + s.Seed * 0.37f) * q;
+        return new Vector2(Sin(swing), Cos(swing)) * len;
     }
 
-    /// <summary>A drop reaches the water.</summary>
-    private void Land(in Impact h)
+    /// A drop reaches the water.
+    void Land(in Impact h)
     {
         var ph = Liquid.Phys;
         float r = h.R / Px, v = h.V / (1500f * Px), s = r * v;  // strength: about 3.5 for a fat drop at speed
         float surface = SurfaceY(h.X);
 
         // a crater, and the ring that leaves it
-        float depth = MathF.Min(r * 1.6f, 15f) * MathF.Sqrt(Math.Clamp(v, 0.2f, 2f)) * Px;
-        float room = Math.Clamp(1f - Depression(h.X) / (14f * Px), 0f, 1f);  // spray lands again and again in one place: a crater cannot be dug twice
-        Dimple(h.X, MathF.Max(h.R * 1.3f, 3f * Px), -depth * 6f * room);
+        float depth = Min(r * 1.6f, 15f) * Sqrt(Math.Clamp(v, 0.2f, 2f)) * Px;
+        float room = Saturate(1f - Depression(h.X) / (14f * Px));  // spray lands again and again in one place: a crater cannot be dug twice
+        Dimple(h.X, Max(h.R * 1.3f, 3f * Px), -depth * 6f * room);
         AddFoam(h.X, h.R * 1.6f + 3f * Px, 0.18f * s * ph.Foam);
 
         if (r < 1.0f) return;
 
         // the sheet that stands up round a big drop, and falls back
         if (s > 1.2f && CrownCount < MaxCrowns)
-            Crowns[CrownCount++] = new Crown { X = h.X, R = h.R, Height = (h.R * 1.5f + 2f * Px) * Math.Clamp(v, 0.5f, 1.4f), Life = Rand(0.20f, 0.30f), Seed = _seed + (int)(h.X * 3f) };
+            Crowns[CrownCount++] = new() { X = h.X, R = h.R, Height = (h.R * 1.5f + 2f * Px) * Math.Clamp(v, 0.5f, 1.4f), Life = Rand(0.20f, 0.30f), Seed = _seed + (int)(h.X * 3f) };
 
         // the crown: droplets flung up and outward
-        int crown = (int)MathF.Round(ph.Splash * Math.Clamp(1.2f + 1.3f * s, 0f, 9f) * Rand(0.7f, 1.3f));
+        int crown = (int)Round(ph.Splash * Math.Clamp(1.2f + 1.3f * s, 0f, 9f) * Rand(0.7f, 1.3f));
         for (int k = 0; k < crown; k++)
         {
             float side = k % 2 == 0 ? -1f : 1f, ang = Rand(0.12f, 1.0f);
             float sp = h.V * Rand(0.07f, 0.20f) * (0.55f + 0.45f * ph.Splash);
-            SpawnDrop(new Vector2(h.X + side * h.R * Rand(0.4f, 1.1f), surface - 1.5f * Px),
-                      new Vector2(side * MathF.Sin(ang) * sp, -MathF.Cos(ang) * sp * Rand(0.8f, 1.5f)),
+            SpawnDrop(new(h.X + side * h.R * Rand(0.4f, 1.1f), surface - 1.5f * Px),
+                      new(side * Sin(ang) * sp, -Cos(ang) * sp * Rand(0.8f, 1.5f)),
                       h.R * Rand(0.14f, 0.34f), ph.Drag, _seed + k * 13 + (int)(h.X * 7f), life: 2.4f);
         }
 
         // air carried under
-        int bubbles = (int)MathF.Round(ph.Bubbles * Math.Clamp(s * 0.8f, 0f, 5f) * Rand(0.6f, 1.2f));
-        for (int k = 0; k < bubbles; k++) AddBubble(h.X + Rand(-1f, 1f) * h.R, surface + Rand(3f, 12f) * Px, Rand(0.9f, 2.6f) * Px, new Vector2(Rand(-20f, 20f) * Px, Rand(20f, 90f) * Px));
+        int bubbles = (int)Round(ph.Bubbles * Math.Clamp(s * 0.8f, 0f, 5f) * Rand(0.6f, 1.2f));
+        for (int k = 0; k < bubbles; k++) AddBubble(h.X + Rand(-1f, 1f) * h.R, surface + Rand(3f, 12f) * Px, Rand(0.9f, 2.6f) * Px, new(Rand(-20f, 20f) * Px, Rand(20f, 90f) * Px));
 
         // the jet that follows a big drop: the crater closes and throws a column up
         if (s > 2.2f && ph.Splash > 0.3f && _reboundCount < MaxRebounds)
-            _rebounds[_reboundCount++] = new Rebound { At = Time + Rand(0.06f, 0.10f), X = h.X, V = h.V * Rand(0.18f, 0.30f), R = h.R * Rand(0.4f, 0.6f) };
+            _rebounds[_reboundCount++] = new() { At = Time + Rand(0.06f, 0.10f), X = h.X, V = h.V * Rand(0.18f, 0.30f), R = h.R * Rand(0.4f, 0.6f) };
     }
 
-    private void StepCrowns(float dt)
+    void StepCrowns(float dt)
     {
         int w = 0;
         for (int i = 0; i < CrownCount; i++)
@@ -726,27 +724,27 @@ public sealed class LiquidField : IRegionState
         CrownCount = w;
     }
 
-    private void StepRebounds()
+    void StepRebounds()
     {
         int w = 0;
         for (int i = 0; i < _reboundCount; i++)
         {
             var b = _rebounds[i];
-            if (Time >= b.At) SpawnDrop(new Vector2(b.X, SurfaceY(b.X) - 2f * Px), new Vector2(Rand(-18f, 18f) * Px, -b.V), b.R, Liquid.Phys.Drag, _seed + i * 17, life: 2.4f);
+            if (Time >= b.At) SpawnDrop(new(b.X, SurfaceY(b.X) - 2f * Px), new(Rand(-18f, 18f) * Px, -b.V), b.R, Liquid.Phys.Drag, _seed + i * 17, life: 2.4f);
             else _rebounds[w++] = b;
         }
         _reboundCount = w;
     }
 
-    /// <summary>A stream meeting the pool: hollow, foam, ripples, spray, bubbles.</summary>
-    private void Pour(LiquidJet j, float dt)
+    /// A stream meeting the pool: hollow, foam, ripples, spray, bubbles.
+    void Pour(LiquidJet j, float dt)
     {
         var ph = Liquid.Phys;
         float r = j.HitR / Px, v = j.HitSpeed / (1500f * Px);
         float raw = r * r * v * 0.012f;  // about 1 for a 9 px stream at speed
         float F = 3f * raw / (3f + raw);  // a pool can only be dug so deep, however hard it is hit
         float x = j.Hit.X, reach = j.HitR * 1.3f + 5f * Px;
-        float brought = MathF.PI * j.HitR * j.HitR * j.HitSpeed * dt / PoolReach;  // the stream's volume per second, the same volume PinchOff conserves when it breaks into drops
+        float brought = PI * j.HitR * j.HitR * j.HitSpeed * dt / PoolReach;  // the stream's volume per second, the same volume PinchOff conserves when it breaks into drops
         Deposit(x, brought);
         if (Reservoir) FromStreams += brought;
 
@@ -761,27 +759,27 @@ public sealed class LiquidField : IRegionState
         for (; _ripple >= 1f; _ripple -= 1f)
             Disturb(x + Rand(-0.8f, 0.8f) * reach, reach * 0.5f, Rand(-1f, 1f) * (11f + 20f * F) * Px * (0.5f + Chop));
 
-        _spray += ph.Splash * MathF.Min(F * 22f, 60f) * dt;
+        _spray += ph.Splash * Min(F * 22f, 60f) * dt;
         for (; _spray >= 1f; _spray -= 1f)
         {
             float side = Rand() < 0.5f ? -1f : 1f, ang = Rand(0.15f, 1.1f), sp = j.HitSpeed * Rand(0.05f, 0.17f);
-            SpawnDrop(new Vector2(x + side * Rand(0.2f, 1.1f) * j.HitR, SurfaceY(x) - Px),
-                      new Vector2(side * MathF.Sin(ang) * sp, -MathF.Cos(ang) * sp), Rand(0.6f, 2.3f) * Px, ph.Drag, _seed + (int)(Time * 977f), life: 2.4f);
+            SpawnDrop(new(x + side * Rand(0.2f, 1.1f) * j.HitR, SurfaceY(x) - Px),
+                      new(side * Sin(ang) * sp, -Cos(ang) * sp), Rand(0.6f, 2.3f) * Px, ph.Drag, _seed + (int)(Time * 977f), life: 2.4f);
         }
 
-        _fizz += ph.Bubbles * MathF.Min(F * 6f, 14f) * dt;
+        _fizz += ph.Bubbles * Min(F * 6f, 14f) * dt;
         for (; _fizz >= 1f; _fizz -= 1f)
-            AddBubble(x + Rand(-1f, 1f) * j.HitR * 1.2f, SurfaceY(x) + Rand(4f, 18f) * Px, Rand(0.8f, 2.8f) * Px, new Vector2(Rand(-40f, 40f) * Px, Rand(40f, 160f) * Px));
+            AddBubble(x + Rand(-1f, 1f) * j.HitR * 1.2f, SurfaceY(x) + Rand(4f, 18f) * Px, Rand(0.8f, 2.8f) * Px, new(Rand(-40f, 40f) * Px, Rand(40f, 160f) * Px));
     }
 
-    private void AddBubble(float x, float y, float r, Vector2 v)
+    void AddBubble(float x, float y, float r, Vector2 v)
     {
         if (BubbleCount >= MaxBubbles) return;
-        Bubbles[BubbleCount++] = new Bubble { P = new Vector2(x, y), R = r, V = v, Phase = Rand(0f, MathF.Tau) };
+        Bubbles[BubbleCount++] = new() { P = new(x, y), R = r, V = v, Phase = Rand(0f, Tau) };
     }
 
-    /// <summary>Lens beads: spatter that merges, then wanders down the glass in fits and starts (thicker liquid clings longer).</summary>
-    private void StepBeads(float dt)
+    /// Lens beads: spatter that merges, then wanders down the glass in fits and starts (thicker liquid clings longer).
+    void StepBeads(float dt)
     {
         var ph = Liquid.Phys;
         float v = ph.Viscosity, crit = (2.8f + 6f * v) * Px;
@@ -790,16 +788,16 @@ public sealed class LiquidField : IRegionState
         for (; _spatter >= 1f && _beadCount < MaxBeads; _spatter -= 1f)
         {
             float x = Rand() < 0.62f ? Size.X * (Rand() < 0.5f ? Rand(0.01f, 0.24f) : Rand(0.76f, 0.99f)) : Rand(0.02f, 0.98f) * Size.X;
-            _beads[_beadCount++] = new Bead
+            _beads[_beadCount++] = new()
             {
-                P = new Vector2(x, Rand(0.03f, 0.66f) * Size.Y), R = (2.1f + 4.4f * MathF.Pow(Rand(), 1.8f)) * Px,
+                P = new(x, Rand(0.03f, 0.66f) * Size.Y), R = (2.1f + 4.4f * Pow(Rand(), 1.8f)) * Px,
                 Wait = Rand(0.4f, 5f) * (1f + 5f * v), Life = Rand(14f, 30f), Seed = _seed + _beadCount * 53 + (int)(Time * 97f), Trail = -1, Heading = Rand(-0.4f, 0.4f),
             };
         }
         if (_spatter > 3f) _spatter = 0f;
 
         for (int i = 0; i < Trails.Length; i++)
-            if (Trails[i].Fade > 0f && !Trails[i].Live) Trails[i].Fade = MathF.Max(0f, Trails[i].Fade - dt / (3f + 5f * v));
+            if (Trails[i].Fade > 0f && !Trails[i].Live) Trails[i].Fade = Max(0f, Trails[i].Fade - dt / (3f + 5f * v));
 
         for (int i = 0; i < _beadCount; i++)
         {
@@ -814,20 +812,20 @@ public sealed class LiquidField : IRegionState
             }
 
             // running: a drop on glass is slow, hesitates, and takes bursts when it gathers more water
-            float run = ph.Cling * Px * (0.15f + b.R / (5f * Px)) * MathF.Max(0.15f, 0.55f + 0.9f * Noise.Value(b.Seed * 0.13f, b.Age * 1.3f));
-            b.Speed += (run + b.Burst - b.Speed) * MathF.Min(1f, 5f * dt);
-            b.Burst *= MathF.Exp(-3f * dt);
+            float run = ph.Cling * Px * (0.15f + b.R / (5f * Px)) * Max(0.15f, 0.55f + 0.9f * Noise.Value(b.Seed * 0.13f, b.Age * 1.3f));
+            b.Speed += (run + b.Burst - b.Speed) * Min(1f, 5f * dt);
+            b.Burst *= Exp(-3f * dt);
 
             // the glass is rough, so the path wanders: neighbours share the roughness, and a big bead holds a straighter line
             float stiff = 1f / (1f + b.R / (3f * Px));
             float rough = 0.55f * Noise.Value(b.P.X * 0.011f / Px, b.P.Y * 0.006f / Px);
-            b.Heading += (rough * (0.6f + 0.8f * stiff) - b.Heading) * MathF.Min(1f, 1.8f * dt) + Rand(-1f, 1f) * 1.1f * stiff * MathF.Sqrt(dt);
+            b.Heading += (rough * (0.6f + 0.8f * stiff) - b.Heading) * Min(1f, 1.8f * dt) + Rand(-1f, 1f) * 1.1f * stiff * Sqrt(dt);
             b.Heading = Math.Clamp(b.Heading, -1f, 1f);
 
-            Vector2 dir = new(MathF.Sin(b.Heading), MathF.Cos(b.Heading));
+            Vector2 dir = new(Sin(b.Heading), Cos(b.Heading));
             float dist = b.Speed * dt;
             b.P += dir * dist;
-            b.R = MathF.Min(b.R + 0.027f * dist * Px, 5.8f * Px);
+            b.R = Min(b.R + 0.027f * dist * Px, 5.8f * Px);
             if (b.Trail >= 0) AppendTrail(b.Trail, b.P, b.R * 0.6f);
 
             if (Rand() < (0.5f + 0.9f * v) * dt)
@@ -838,8 +836,8 @@ public sealed class LiquidField : IRegionState
                 float rr = Rand(0.8f, 1.3f) * Px;
                 if (_beadCount < MaxBeads && rr * 3f < b.R)
                 {
-                    b.R = MathF.Cbrt(b.R * b.R * b.R - rr * rr * rr);
-                    _beads[_beadCount++] = new Bead { P = b.P - dir * (b.R * 1.4f), R = rr, Life = Rand(8f, 16f), Trail = -1, Seed = b.Seed + 5 };
+                    b.R = Cbrt(b.R * b.R * b.R - rr * rr * rr);
+                    _beads[_beadCount++] = new() { P = b.P - dir * (b.R * 1.4f), R = rr, Life = Rand(8f, 16f), Trail = -1, Seed = b.Seed + 5 };
                 }
             }
         }
@@ -851,9 +849,9 @@ public sealed class LiquidField : IRegionState
                 if (k == i || _beads[i].R <= 0f || _beads[k].R <= 0f || _beads[k].R > _beads[i].R || (_beads[k].R == _beads[i].R && k < i)) continue;
                 float reach = (_beads[i].R + _beads[k].R) * 0.75f;
                 if ((_beads[i].P - _beads[k].P).LengthSquared() > reach * reach) continue;
-                _beads[i].R = MathF.Cbrt(_beads[i].R * _beads[i].R * _beads[i].R + _beads[k].R * _beads[k].R * _beads[k].R);
+                _beads[i].R = Cbrt(_beads[i].R * _beads[i].R * _beads[i].R + _beads[k].R * _beads[k].R * _beads[k].R);
                 _beads[i].Burst += Rand(25f, 70f) * Px;
-                if (!_beads[i].Slides) _beads[i].Wait = MathF.Min(_beads[i].Wait, 0.1f);
+                if (!_beads[i].Slides) _beads[i].Wait = Min(_beads[i].Wait, 0.1f);
                 EndTrail(ref _beads[k]);
                 _beads[k].R = 0f;
             }
@@ -869,7 +867,7 @@ public sealed class LiquidField : IRegionState
         _beadCount = w;
     }
 
-    private int NewTrail(Vector2 at, float r)
+    int NewTrail(Vector2 at, float r)
     {
         int best = 0; float low = float.MaxValue;
         for (int i = 0; i < Trails.Length; i++)
@@ -878,12 +876,12 @@ public sealed class LiquidField : IRegionState
             if (Trails[i].Fade < low) { low = Trails[i].Fade; best = i; if (low <= 0f) break; }
         }
         ref var t = ref Trails[best];
-        t.Count = 1; t.Pts[0] = new Vector3(at.X, at.Y, r * 0.6f); t.Fade = 1f; t.Live = true;
+        t.Count = 1; t.Pts[0] = new(at.X, at.Y, r * 0.6f); t.Fade = 1f; t.Live = true;
         return best;
     }
 
     // the last point follows the bead; a new one is dropped every few pixels
-    private void AppendTrail(int index, Vector2 at, float w)
+    void AppendTrail(int index, Vector2 at, float w)
     {
         ref var t = ref Trails[index];
         var p = new Vector3(at.X, at.Y, w);
@@ -892,9 +890,9 @@ public sealed class LiquidField : IRegionState
         t.Pts[t.Count++] = p;
     }
 
-    private void EndTrail(ref Bead b) { if (b.Trail >= 0) { Trails[b.Trail].Live = false; b.Trail = -1; } }
+    void EndTrail(ref Bead b) { if (b.Trail >= 0) { Trails[b.Trail].Live = false; b.Trail = -1; } }
 
-    private void StepBubbles(float dt)
+    void StepBubbles(float dt)
     {
         float rise = Liquid.Phys.Rise * Px;
         int w = 0;
@@ -903,10 +901,10 @@ public sealed class LiquidField : IRegionState
             var b = Bubbles[i];
             b.Age += dt;
             float want = -rise * (0.55f + 0.45f * b.R / (2f * Px));
-            b.V.Y += (want - b.V.Y) * MathF.Min(1f, 3.2f * dt);
-            b.V.X *= MathF.Exp(-2.5f * dt);
+            b.V.Y += (want - b.V.Y) * Min(1f, 3.2f * dt);
+            b.V.X *= Exp(-2.5f * dt);
             b.P += b.V * dt;
-            b.P.X += MathF.Sin(b.Phase + b.Age * 7f) * 9f * Px * dt;
+            b.P.X += Sin(b.Phase + b.Age * 7f) * 9f * Px * dt;
 
             float s = SurfaceY(b.P.X);
             if (b.P.Y - b.R <= s) { AddFoam(b.P.X, b.R * 2f + 2f * Px, 0.05f * Liquid.Phys.Foam); Disturb(b.P.X, 3f * Px, b.R * 4f); continue; }
@@ -916,14 +914,14 @@ public sealed class LiquidField : IRegionState
         BubbleCount = w;
     }
 
-    private void StepPool(float dt)
+    void StepPool(float dt)
     {
         var ph = Liquid.Phys;
         float g = ph.Wave * ph.Wave * Px / 140f, nu = (PoolEddy + ph.Smooth) * Px * Px;
         _surf.Step(dt, Level, g, nu, PoolDrag * ph.Damping);
 
         // foam fades, and spreads a little along the surface
-        float fade = MathF.Exp(-dt / MathF.Max(ph.FoamLife, 0.05f));
+        float fade = Exp(-dt / Max(ph.FoamLife, 0.05f));
         float prev = Foam[0];
         for (int i = 0; i < _n; i++)
         {
@@ -933,7 +931,7 @@ public sealed class LiquidField : IRegionState
         }
     }
 
-    /// <summary>Hands the scene the pool region, swelling drips, beads and drops.</summary>
+    /// Hands the scene the pool region, swelling drips, beads and drops.
     public void Emit(EffectScene scene, float alpha)
     {
         scene.AddRegion(new RegionPrimitive { Min = Vector2.Zero, Max = Size, Bottom = true, Alpha = alpha, ColorOverride = Color, State = this });
@@ -943,7 +941,7 @@ public sealed class LiquidField : IRegionState
         {
             var s = _seeps[i];
             if (s.Fade < 0.02f) continue;
-            float q = Math.Clamp((s.Phase - PendantKeys.RestEnd) / (PendantKeys.PinchAt - PendantKeys.RestEnd), 0f, 1f);
+            float q = Saturate((s.Phase - PendantKeys.RestEnd) / (PendantKeys.PinchAt - PendantKeys.RestEnd));
             int cs = unchecked(s.Seed + s.Cycles * 7331);
             float rMax = HashRange(cs + 1, ph.SizeMin, ph.SizeMax) * Px * s.Scale;
             PendantKeys.Shape(q, rMax, rMax * (1.2f + 5.4f * ph.Stringiness), ph.Stringiness, out float rb, out float len, out float neck);
@@ -960,7 +958,7 @@ public sealed class LiquidField : IRegionState
             float fade = Smooth(b.Age / 0.4f) * Smooth((b.Life - b.Age) / 1.5f);
             scene.AddParticle(new ParticlePrimitive
             {
-                Position = b.P, Velocity = new Vector2(MathF.Sin(b.Heading), MathF.Cos(b.Heading)) * b.Speed, Size = b.R, Brightness = alpha * fade, Seed = b.Seed,
+                Position = b.P, Velocity = new Vector2(Sin(b.Heading), Cos(b.Heading)) * b.Speed, Size = b.R, Brightness = alpha * fade, Seed = b.Seed,
                 AgeRatio = 0.5f, Role = PrimitiveRole.Goop, ColorOverride = Color,
             });
         }

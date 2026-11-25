@@ -1,5 +1,3 @@
-using System.Numerics;
-
 namespace RealDebuffs.Effects.Framework;
 
 public readonly record struct FloatRange(float Min, float Max)
@@ -7,16 +5,16 @@ public readonly record struct FloatRange(float Min, float Max)
     public static implicit operator FloatRange((float Min, float Max) t) => new(t.Min, t.Max);
 }
 
-/// <summary>How a system moves its particles: gravity (px/s^2), drag (1/s), and a meandering sideways push (px/s^2) at WanderHz.</summary>
+/// How a system moves its particles: gravity (px/s^2), drag (1/s), and a meandering sideways push (px/s^2) at WanderHz.
 public readonly record struct ParticlePhysics(Vector2 Gravity = default, float Drag = 0f, float Wander = 0f, float WanderHz = 0.9f);
 
-/// <summary>Where a new particle appears and how it moves (both asked of its seed), and its lifespan (s) and size (px) ranges.</summary>
+/// Where a new particle appears and how it moves (both asked of its seed), and its lifespan (s) and size (px) ranges.
 public readonly record struct ParticleSpawn(Func<int, Vector2> Position, Func<int, Vector2> Velocity, FloatRange Life, FloatRange Size);
 
-/// <summary>How a system is shown this frame: one role, dimmed and tinted by the effect.</summary>
+/// How a system is shown this frame: one role, dimmed and tinted by the effect.
 public readonly record struct ParticleStyle(PrimitiveRole Role, float Brightness = 1f, Vector4? Color = null, float Sway = 0f, int Variant = 0);
 
-/// <summary>Fixed-size pool of short-lived particles; effects own one each, the stroke shed the shared one.</summary>
+/// Fixed-size pool of short-lived particles; effects own one each, the stroke shed the shared one.
 public sealed class ParticleSystem
 {
     public struct Particle
@@ -30,11 +28,11 @@ public sealed class ParticleSystem
         public Vector4? Color;
     }
 
-    private readonly Particle[] _pool;
-    private readonly ParticlePhysics _physics;
-    private readonly int _seedSalt;
-    private int _count;
-    private float _nextSpawnAt;
+    readonly Particle[] _pool;
+    readonly ParticlePhysics _physics;
+    readonly int _seedSalt;
+    int _count;
+    float _nextSpawnAt;
 
     public ParticleSystem(int capacity, int seedSalt = 0, ParticlePhysics physics = default)
     {
@@ -46,19 +44,19 @@ public sealed class ParticleSystem
     public bool Full => _count >= _pool.Length;
     public int Count => _count;
 
-    /// <summary>0 at spawn/despawn, 1 in the steady middle.</summary>
+    /// 0 at spawn/despawn, 1 in the steady middle.
     public static float FadeFor(float age01) =>
         age01 < 0.25f ? age01 / 0.25f
-        : age01 > 0.7f ? MathF.Max(0f, (1f - age01) / 0.3f)
+        : age01 > 0.7f ? Max(0f, (1f - age01) / 0.3f)
         : 1f;
 
-    /// <summary>Adds a fully specified particle; ignored when the pool is full.</summary>
+    /// Adds a fully specified particle; ignored when the pool is full.
     public void Add(in Particle p)
     {
         if (_count < _pool.Length) _pool[_count++] = p;
     }
 
-    /// <summary>Steps the system and spawns one particle whenever the random interval has elapsed.</summary>
+    /// Steps the system and spawns one particle whenever the random interval has elapsed.
     public void Stream(float time, float dt, FloatRange interval, in ParticleSpawn spawn)
     {
         Step(time, dt);
@@ -71,7 +69,7 @@ public sealed class ParticleSystem
         }
     }
 
-    /// <summary>One-shot spawn; each particle gets its own seed, so two bursts at the same time differ.</summary>
+    /// One-shot spawn; each particle gets its own seed, so two bursts at the same time differ.
     public void Burst(int count, float time, in ParticleSpawn spawn)
     {
         for (int i = 0; i < count && _count < _pool.Length; i++)
@@ -81,7 +79,7 @@ public sealed class ParticleSystem
         }
     }
 
-    /// <summary>Retires expired particles, then moves the rest.</summary>
+    /// Retires expired particles, then moves the rest.
     public void Step(float time, float dt)
     {
         int w = 0;
@@ -91,7 +89,7 @@ public sealed class ParticleSystem
         _count = w;
 
         bool shaped = _physics.Wander > 0f || _physics.Drag > 0f;
-        float dragK = _physics.Drag > 0f ? MathF.Max(0f, 1f - _physics.Drag * dt) : 1f;
+        float dragK = _physics.Drag > 0f ? Max(0f, 1f - _physics.Drag * dt) : 1f;
 
         for (int i = 0; i < _count; i++)
         {
@@ -102,8 +100,8 @@ public sealed class ParticleSystem
             {
                 if (_physics.Wander > 0f)
                 {
-                    float ph = time * _physics.WanderHz * MathF.Tau + p.Seed * 0.61f;
-                    float push = MathF.Sin(ph) * 0.65f + MathF.Sin(ph * 0.37f + p.Seed * 1.7f) * 0.35f;
+                    float ph = time * _physics.WanderHz * Tau + p.Seed * 0.61f;
+                    float push = Sin(ph) * 0.65f + Sin(ph * 0.37f + p.Seed * 1.7f) * 0.35f;
                     p.Vel.X += push * _physics.Wander * dt;
                 }
                 p.Vel *= dragK;
@@ -113,7 +111,7 @@ public sealed class ParticleSystem
         }
     }
 
-    /// <summary>Hands every particle to the scene as one role, owned by the effect currently emitting.</summary>
+    /// Hands every particle to the scene as one role, owned by the effect currently emitting.
     public void Emit(EffectScene scene, float time, in ParticleStyle style)
     {
         for (int i = 0; i < _count; i++)
@@ -129,7 +127,7 @@ public sealed class ParticleSystem
                 AgeRatio = t01,
                 Size = p.Size,
                 Brightness = p.Brightness * FadeFor(t01) * style.Brightness,
-                Sway = style.Sway > 0f ? MathF.Sin(age * 3.4f + p.Seed * 0.37f) * style.Sway : 0f,
+                Sway = style.Sway > 0f ? Sin(age * 3.4f + p.Seed * 0.37f) * style.Sway : 0f,
                 Seed = p.Seed,
                 Role = style.Role,
                 ColorOverride = style.Color,
@@ -138,7 +136,7 @@ public sealed class ParticleSystem
         }
     }
 
-    /// <summary>Hands every particle to the scene with the role, owner, material and colour it was added with.</summary>
+    /// Hands every particle to the scene with the role, owner, material and colour it was added with.
     public void EmitOwned(EffectScene scene, float time)
     {
         for (int i = 0; i < _count; i++)
@@ -161,14 +159,14 @@ public sealed class ParticleSystem
         }
     }
 
-    /// <summary>Drops every particle and resets the spawn timer.</summary>
+    /// Drops every particle and resets the spawn timer.
     public void Clear()
     {
         _count = 0;
         _nextSpawnAt = 0f;
     }
 
-    private Particle Make(int seed, float time, in ParticleSpawn s) => new()
+    Particle Make(int seed, float time, in ParticleSpawn s) => new()
     {
         Pos = s.Position(seed),
         Vel = s.Velocity(seed),

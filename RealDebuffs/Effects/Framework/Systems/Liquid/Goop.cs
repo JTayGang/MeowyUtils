@@ -1,35 +1,30 @@
-using System.Numerics;
-using Dalamud.Bindings.ImGui;
-
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Draws one viscous-liquid particle as lit geometry, for every ParticleGoop.</summary>
+/// Draws one viscous-liquid particle as lit geometry, for every ParticleGoop.
 internal static class GoopDraw
 {
-    private const int Half = 6;  // vertices across the visible half of the tube, minus one
-    private const int MaxRows = 30;  // profile samples: keeps Half+3 vertices per row under MeshDraw.MaxVerts
-    private const float MinRadius = 0.45f;  // a thread thinner than this still draws as a hairline
+    const int Half = 6;  // vertices across the visible half of the tube, minus one
+    const int MaxRows = 30;  // profile samples: keeps Half+3 vertices per row under MeshDraw.MaxVerts
+    const float MinRadius = 0.45f;  // a thread thinner than this still draws as a hairline
 
     // Level of detail by pixels covered: most drops are a few pixels across, where a ten-row shaded mesh has far more vertices than pixels.
-    private const float SpeckBelow = 1f;    // radius under this: the streak-and-glint fan, a sub-pixel pip
-    private const float DotBelow = 2.5f;    // under this: a lit disc (a fan) if it is resting; moving ones keep their tail in the reduced tube
-    private const float ReducedBelow = 4f;  // under this: the same tube with three columns and four bead rows; from here up, the full mesh
-    private const int HalfLo = 2;           // columns across the visible half of the reduced tube, minus one
+    const float SpeckBelow = 1f;    // radius under this: the streak-and-glint fan, a sub-pixel pip
+    const float DotBelow = 2.5f;    // under this: a lit disc (a fan) if it is resting; moving ones keep their tail in the reduced tube
+    const float ReducedBelow = 4f;  // under this: the same tube with three columns and four bead rows; from here up, the full mesh
+    const int HalfLo = 2;           // columns across the visible half of the reduced tube, minus one
 
-    /// <summary>ParticlePrimitive.Variant for a droplet too small to be worth a mesh: a streak with a glint.</summary>
+    /// ParticlePrimitive.Variant for a droplet too small to be worth a mesh: a streak with a glint.
     public const int Speck = 1;
 
-    /// <summary>Variant for a drop in free fall: wobbles long and flat, rounds and flattens with speed, keeps the tail its liquid would (needs Age).</summary>
+    /// Variant for a drop in free fall: wobbles long and flat, rounds and flattens with speed, keeps the tail its liquid would (needs Age).
     public const int Free = 2;
 
-    /// <summary>Everything about how this particle is coloured, resolved once.</summary>
-    private struct Look
+    /// Everything about how this particle is coloured, resolved once.
+    struct Look
     {
         public LiquidMatcap Liquid;
         public LiquidPhysics Phys;
-        public float Scale;
-        public float Alpha;
-        public float Feather;
+        public float Scale, Alpha, Feather;
         public bool  Overridden;
         public float Dye;
         public Vector2 Uv;
@@ -45,9 +40,9 @@ internal static class GoopDraw
         {
             Liquid = liquid.Matcap,
             Phys = liquid.Phys,
-            Scale = MathF.Max(ctx.ScreenScale, 0.25f),
+            Scale = Max(ctx.ScreenScale, 0.25f),
             Alpha = alpha > 1f ? 1f : alpha,
-            Feather = MathF.Max(0.8f, ctx.ScreenScale * 0.9f),
+            Feather = Max(0.8f, ctx.ScreenScale * 0.9f),
             Overridden = ColorOverrideActive,
             Dye = ColorOverrideChroma,
             Uv = MeshDraw.WhiteUv(ctx.Time),
@@ -70,8 +65,8 @@ internal static class GoopDraw
         else Bead(dl, in p, in look);
     }
 
-    /// <summary>A resting drop of a couple of pixels: a nine-vertex disc shaded by the same table, edge fading out.</summary>
-    private static void Dot(ImDrawListPtr dl, Vector2 at, float rb, in Look look)
+    /// A resting drop of a couple of pixels: a nine-vertex disc shaded by the same table, edge fading out.
+    static void Dot(ImDrawListPtr dl, Vector2 at, float rb, in Look look)
     {
         const int n = 8;
         Span<Vector2> rim = stackalloc Vector2[n];
@@ -79,7 +74,7 @@ internal static class GoopDraw
         float edge = rb + look.Feather * 0.4f;
         for (int k = 0; k < n; k++)
         {
-            float a = MathF.Tau * k / n, cx = MathF.Cos(a), sy = MathF.Sin(a);
+            float a = Tau * k / n, cx = Cos(a), sy = Sin(a);
             rim[k] = at + new Vector2(cx, sy) * edge;
             uint c = Pack(look.Liquid.Sample(cx * 0.85f, sy * 0.85f), 1f, in look);
             col[k] = (c & 0x00FFFFFFu) | ((((c >> 24) * 3u) >> 2) << 24);
@@ -88,14 +83,14 @@ internal static class GoopDraw
         GlintLite(dl, at, Vector2.UnitY, rb, rb, in look);
     }
 
-    /// <summary>A flying droplet at a few pixels: a soft motion-blur streak lit by the same table, with a glint when big enough.</summary>
-    private static void SpeckDraw(ImDrawListPtr dl, in ParticlePrimitive p, in Look look)
+    /// A flying droplet at a few pixels: a soft motion-blur streak lit by the same table, with a glint when big enough.
+    static void SpeckDraw(ImDrawListPtr dl, in ParticlePrimitive p, in Look look)
     {
         float rb = p.Size, speed = p.Velocity.Length();
         Vector2 d = speed > 1e-2f ? p.Velocity / speed : Vector2.UnitY;
         Vector2 perp = new(-d.Y, d.X);
-        float tail = MathF.Min(speed * (1f / 120f), rb * 9f) + rb * 0.6f;  // half a frame of travel
-        float w = MathF.Max(rb, 0.6f) + look.Feather * 0.4f;
+        float tail = Min(speed * (1f / 120f), rb * 9f) + rb * 0.6f;  // half a frame of travel
+        float w = Max(rb, 0.6f) + look.Feather * 0.4f;
 
         uint body = Pack(look.Liquid.Sample(-0.30f, -0.40f), 1f, in look);
         uint edge = (body & 0x00FFFFFFu) | ((((body >> 24) * 3u) >> 2) << 24);
@@ -113,27 +108,27 @@ internal static class GoopDraw
     }
 
     // Angles that never change are not worth a sine and a cosine per vertex, per row, per drop, per frame.
-    private static readonly float[] HalfSin = HalfTable(Half, cos: false), HalfCos = HalfTable(Half, cos: true);
-    private static readonly float[] HalfSinLo = HalfTable(HalfLo, cos: false), HalfCosLo = HalfTable(HalfLo, cos: true);
-    private static float[] HalfTable(int half, bool cos)
+    static readonly float[] HalfSin = HalfTable(Half, cos: false), HalfCos = HalfTable(Half, cos: true);
+    static readonly float[] HalfSinLo = HalfTable(HalfLo, cos: false), HalfCosLo = HalfTable(HalfLo, cos: true);
+    static float[] HalfTable(int half, bool cos)
     {
         var t = new float[half + 1];
-        for (int c = 0; c <= half; c++) { float theta = MathF.PI * (c / (float)half - 0.5f); t[c] = cos ? MathF.Cos(theta) : MathF.Sin(theta); }
+        for (int c = 0; c <= half; c++) { float theta = PI * (c / (float)half - 0.5f); t[c] = cos ? Cos(theta) : Sin(theta); }
         return t;
     }
-    private static readonly float[] PendantBeadCos = PhiCos(11), BeadCos = PhiCos(10);  // must match beadRows in Pendant and Bead
-    private static readonly float[] PendantBeadCosLo = PhiCos(4), BeadCosLo = PhiCos(4);  // the reduced rung
-    private static float[] PhiCos(int rows)
+    static readonly float[] PendantBeadCos = PhiCos(11), BeadCos = PhiCos(10);  // must match beadRows in Pendant and Bead
+    static readonly float[] PendantBeadCosLo = PhiCos(4), BeadCosLo = PhiCos(4);  // the reduced rung
+    static float[] PhiCos(int rows)
     {
         var t = new float[rows];
-        for (int k = 0; k < rows; k++) { float phi = MathF.PI * (k + 0.5f) / rows; t[k] = MathF.Cos(phi); }
+        for (int k = 0; k < rows; k++) { float phi = PI * (k + 0.5f) / rows; t[k] = Cos(phi); }
         return t;
     }
 
     // profiles: each fills s[] (distance along the axis) and r[] (radius there)
 
-    /// <summary>A drop hanging from the surface by a neck: anchor -&gt; flare -&gt; neck -&gt; bead.</summary>
-    private static void Pendant(ImDrawListPtr dl, in ParticlePrimitive p, in Look look)
+    /// A drop hanging from the surface by a neck: anchor -&gt; flare -&gt; neck -&gt; bead.
+    static void Pendant(ImDrawListPtr dl, in ParticlePrimitive p, in Look look)
     {
         Vector2 a = p.Anchor;
         Vector2 toBead = p.Position - a;
@@ -142,10 +137,10 @@ internal static class GoopDraw
 
         float rb = p.Size;
         bool lo = rb < ReducedBelow;
-        float rn = MathF.Max(MinRadius, rb * p.Tether);  // neck radius
-        float stretch = Math.Clamp(len / (rb * 4.5f), 0f, 1f);
+        float rn = Max(MinRadius, rb * p.Tether);  // neck radius
+        float stretch = Saturate(len / (rb * 4.5f));
         float hb = rb * (1f + 0.30f * stretch);  // bead half-length: a hanging drop is pear-shaped, longer than wide
-        float rTop = MathF.Min(rb * 0.95f, rn + rb * 0.42f);  // where it clings, the neck flares into a meniscus
+        float rTop = Min(rb * 0.95f, rn + rb * 0.42f);  // where it clings, the neck flares into a meniscus
         float fillet = rb * 1.1f;  // how generously neck and bead are blended
 
         Span<float> s = stackalloc float[MaxRows];
@@ -179,28 +174,28 @@ internal static class GoopDraw
         }
         s[n] = len + hb; r[n] = 0f; n++;  // the pole
 
-        Tube(dl, a, d, s, r, n, attachFade: MathF.Max(1.5f, rTop * 1.3f), in look, lo);
+        Tube(dl, a, d, s, r, n, attachFade: Max(1.5f, rTop * 1.3f), in look, lo);
         if (lo) GlintLite(dl, p.Position, d, hb, rb, in look); else Glint(dl, p.Position, d, hb, rb, in look);
     }
 
-    /// <summary>Radius of the pendant at distance s: the neck and the bead, blended into one fillet.</summary>
-    private static float Union(float s, float len, float hb, float rb, float rn, float rTop, float fillet)
+    /// Radius of the pendant at distance s: the neck and the bead, blended into one fillet.
+    static float Union(float s, float len, float hb, float rb, float rn, float rTop, float fillet)
     {
         // Neck: thin, flaring into a shoulder above the bead (pear-shaped, not a ball on a stick).
-        float flare = rn + (rTop - rn) * MathF.Exp(-4.4f * s / MathF.Max(len, rb * 2f));
-        float into = Math.Clamp((s - (len - hb * 4.6f)) / (hb * 4.6f), 0f, 1f);
+        float flare = Lerp(rn, rTop, Exp(-4.4f * s / Max(len, rb * 2f)));
+        float into = Saturate((s - (len - hb * 4.6f)) / (hb * 4.6f));
         float shoulder = rb * 0.46f * into * into * into * (1f - rn / rb);
-        float window = Math.Clamp((len + 0.35f * hb - s) / (0.7f * hb), 0f, 1f);
+        float window = Saturate((len + 0.35f * hb - s) / (0.7f * hb));
         float neck = (flare + shoulder) * window;
 
         float u = (s - len) / hb;
-        float bead = u * u < 1f ? rb * MathF.Sqrt(1f - u * u) : 0f;
+        float bead = u * u < 1f ? rb * Sqrt(1f - u * u) : 0f;
 
         return SmoothMax(neck, bead, fillet);
     }
 
-    /// <summary>A free bead: a sphere that elongates into a teardrop along its direction of travel.</summary>
-    private static void Bead(ImDrawListPtr dl, in ParticlePrimitive p, in Look look)
+    /// A free bead: a sphere that elongates into a teardrop along its direction of travel.
+    static void Bead(ImDrawListPtr dl, in ParticlePrimitive p, in Look look)
     {
         float rb = p.Size;
         float speed = p.Velocity.Length();
@@ -212,8 +207,8 @@ internal static class GoopDraw
         Teardrop(dl, p.Position, d, a, rb, tail, 1f, in look);
     }
 
-    /// <summary>A drop in free fall: wobbles long to flat at its own pace (thick liquid soon stops), big fast ones squash, the release tail draws back in.</summary>
-    private static void FreeDrop(ImDrawListPtr dl, in ParticlePrimitive p, in Look look)
+    /// A drop in free fall: wobbles long to flat at its own pace (thick liquid soon stops), big fast ones squash, the release tail draws back in.
+    static void FreeDrop(ImDrawListPtr dl, in ParticlePrimitive p, in Look look)
     {
         float rb = p.Size, speed = p.Velocity.Length(), age = p.Age, scale = look.Scale;
         Vector2 d = speed > 1e-2f ? p.Velocity / speed : Vector2.UnitY;
@@ -222,26 +217,26 @@ internal static class GoopDraw
         float big = Smooth(rb / (6f * scale));
 
         float freq = Lerp(9f, 4f, big);  // Hz: small drops ring faster
-        float ring = Lerp(1.2f, 0.07f, MathF.Pow(ph.Viscosity, 0.6f));  // seconds the ringing lasts
-        float wobble = (0.10f + 0.40f * h1) * MathF.Exp(-age / ring) * MathF.Cos(MathF.Tau * (freq * age + h2));
-        float fast = MathF.Min(1f, speed / (2400f * scale));
+        float ring = Lerp(1.2f, 0.07f, Pow(ph.Viscosity, 0.6f));  // seconds the ringing lasts
+        float wobble = (0.10f + 0.40f * h1) * Exp(-age / ring) * Cos(Tau * (freq * age + h2));
+        float fast = Min(1f, speed / (2400f * scale));
         float flat = 0.10f * Smooth(rb / (7f * scale)) * fast;
-        float blur = 0.58f * MathF.Pow(h5, 1.4f) * fast * (1f - 0.35f * big);  // fast drops are drawn stretched along their travel, each by its own amount
+        float blur = 0.58f * Pow(h5, 1.4f) * fast * (1f - 0.35f * big);  // fast drops are drawn stretched along their travel, each by its own amount
 
         float q = Math.Clamp((1f + wobble) * (1f + blur) - flat, 0.74f, 1.9f);  // long axis over short; the volume stays that of a sphere of radius rb
-        float b = rb / MathF.Cbrt(q), a = b * q;
+        float b = rb / Cbrt(q), a = b * q;
 
         float st = ph.Stringiness;
         float keep = Smooth(0.55f, 1f, h3);  // zero for most; some drops stay teardrops, each with its own length of tail
-        float tail = rb * ((0.5f + 2.2f * st) * (0.5f + h3) * MathF.Exp(-age / (0.07f + 0.25f * st)) + (1.1f * st + 1.7f * keep) * MathF.Min(1f, speed / (900f * scale)));
+        float tail = rb * ((0.5f + 2.2f * st) * (0.5f + h3) * Exp(-age / (0.07f + 0.25f * st)) + (1.1f * st + 1.7f * keep) * Min(1f, speed / (900f * scale)));
 
         var lk = look;
         lk.Alpha *= 0.84f + 0.16f * h4;
         Teardrop(dl, p.Position, d, a, b, tail, Smooth(tail / (1.3f * rb)), in lk);  // a short tail is thin too, so it fades out instead of leaving a nub
     }
 
-    /// <summary>A bead of half-length a and radius rb along d, drawing out into a pointed tail of the given length behind it.</summary>
-    private static void Teardrop(ImDrawListPtr dl, Vector2 at, Vector2 d, float a, float rb, float tail, float tailW, in Look look)
+    /// A bead of half-length a and radius rb along d, drawing out into a pointed tail of the given length behind it.
+    static void Teardrop(ImDrawListPtr dl, Vector2 at, Vector2 d, float a, float rb, float tail, float tailW, in Look look)
     {
         float sc = tail + a;  // axis distance from the tail tip to the bead's centre
         bool lo = rb < ReducedBelow;
@@ -273,24 +268,24 @@ internal static class GoopDraw
         if (lo) GlintLite(dl, at, d, a, rb, in look); else Glint(dl, at, d, a, rb, in look);
     }
 
-    private static float TeardropRadius(float s, float sc, float a, float rb, float tailW = 1f)
+    static float TeardropRadius(float s, float sc, float a, float rb, float tailW = 1f)
     {
         float u = (s - sc) / a;
-        float sphere = u * u < 1f ? rb * MathF.Sqrt(1f - u * u) : 0f;
+        float sphere = u * u < 1f ? rb * Sqrt(1f - u * u) : 0f;
         if (s >= sc) return sphere;
-        float t = Math.Clamp(s / MathF.Max(sc - a * 0.35f, 1e-3f), 0f, 1f);
-        float tailR = rb * 0.92f * MathF.Pow(t, 1.9f) * tailW;
+        float t = Saturate(s / Max(sc - a * 0.35f, 1e-3f));
+        float tailR = rb * 0.92f * Pow(t, 1.9f) * tailW;
         return SmoothMax(tailR, sphere, rb * 0.5f);
     }
 
-    private static void Stub(ImDrawListPtr dl, in ParticlePrimitive p, in Look look)
+    static void Stub(ImDrawListPtr dl, in ParticlePrimitive p, in Look look)
     {
         Vector2 toEnd = p.ThreadEnd - p.Anchor;
         float len = toEnd.Length();
         if (len < 1.2f) return;
         Vector2 d = toEnd / len;
 
-        float rs = MathF.Max(MinRadius, p.Size * p.Tether);
+        float rs = Max(MinRadius, p.Size * p.Tether);
         float rTop = rs * 1.7f;
 
         Span<float> s = stackalloc float[MaxRows];
@@ -301,29 +296,29 @@ internal static class GoopDraw
         for (int k = 0; k < rows; k++)
         {
             float sk = len * k / rows;
-            float flare = rs + (rTop - rs) * MathF.Exp(-4f * sk / len);
-            float cap = MathF.Sqrt(Math.Clamp((len - sk) / MathF.Max(len * 0.3f, 0.5f), 0f, 1f));  // rounds off the free end
-            s[n] = sk; r[n] = MathF.Max(MinRadius * 0.5f, flare * cap); n++;
+            float flare = Lerp(rs, rTop, Exp(-4f * sk / len));
+            float cap = Sqrt(Saturate((len - sk) / Max(len * 0.3f, 0.5f)));  // rounds off the free end
+            s[n] = sk; r[n] = Max(MinRadius * 0.5f, flare * cap); n++;
         }
         s[n] = len; r[n] = 0f; n++;
 
-        Tube(dl, p.Anchor, d, s, r, n, attachFade: MathF.Max(1.5f, rTop * 1.3f), in look, lo);
+        Tube(dl, p.Anchor, d, s, r, n, attachFade: Max(1.5f, rTop * 1.3f), in look, lo);
     }
 
     // glint: the hard specular core a per-vertex lookup cannot hold
 
-    private static readonly Vector2 KeyHalfXY = HalfXY(StudioLighting.Key);
-    private static readonly Vector2 FillHalfXY = HalfXY(StudioLighting.Fill);
+    static readonly Vector2 KeyHalfXY = HalfXY(StudioLighting.Key);
+    static readonly Vector2 FillHalfXY = HalfXY(StudioLighting.Fill);
 
-    /// <summary>Screen-plane half vector between a light and the viewer: where that light's highlight sits on a ball.</summary>
-    private static Vector2 HalfXY(Vector3 light)
+    /// Screen-plane half vector between a light and the viewer: where that light's highlight sits on a ball.
+    static Vector2 HalfXY(Vector3 light)
     {
         Vector3 h = Vector3.Normalize(light + Vector3.UnitZ);
-        return new Vector2(h.X, h.Y);
+        return new(h.X, h.Y);
     }
 
-    /// <summary>A bright spot where the bead's normal faces the half vector, plus a dimmer cool one for the fill light</summary>
-    private static void Glint(ImDrawListPtr dl, Vector2 centre, Vector2 axis, float halfLen, float radius, in Look look)
+    /// A bright spot where the bead's normal faces the half vector, plus a dimmer cool one for the fill light
+    static void Glint(ImDrawListPtr dl, Vector2 centre, Vector2 axis, float halfLen, float radius, in Look look)
     {
         if (radius < 1.1f) return;
         Vector2 perp = new(-axis.Y, axis.X);
@@ -335,7 +330,7 @@ internal static class GoopDraw
         Span<uint> cc = stackalloc uint[3];
 
         // Key: a hard core inside a soft halo.
-        float g = MathF.Max(0.75f, radius * 0.30f);
+        float g = Max(0.75f, radius * 0.30f);
         rr[0] = g * 0.55f; rr[1] = g * 0.95f; rr[2] = g * 1.7f;
         cc[0] = GlintColour(1.00f, 0.97f, 0.88f, 0.98f, in look);
         cc[1] = GlintColour(1.00f, 0.97f, 0.88f, 0.55f, in look);
@@ -343,7 +338,7 @@ internal static class GoopDraw
         MeshDraw.Radial(dl, OnBead(KeyHalfXY, 0.93f), look.Uv, cc[0], 8, rr, cc, 0f, 1f, 0, 0f);
 
         // Fill: smaller, cooler, dimmer, on the other side.
-        float f = MathF.Max(0.6f, radius * 0.16f);
+        float f = Max(0.6f, radius * 0.16f);
         rr[0] = f * 0.6f; rr[1] = f * 1.1f; rr[2] = f * 1.9f;
         cc[0] = GlintColour(0.82f, 0.93f, 1.00f, 0.62f, in look);
         cc[1] = GlintColour(0.82f, 0.93f, 1.00f, 0.30f, in look);
@@ -351,13 +346,13 @@ internal static class GoopDraw
         MeshDraw.Radial(dl, OnBead(FillHalfXY, 0.86f), look.Uv, cc[0], 8, rr, cc, 0f, 1f, 0, 0f);
     }
 
-    /// <summary>Key glint of a small drop: a hard bright core fading out, five vertices; the fill glint is sub-pixel here and omitted.</summary>
-    private static void GlintLite(ImDrawListPtr dl, Vector2 centre, Vector2 axis, float halfLen, float radius, in Look look)
+    /// Key glint of a small drop: a hard bright core fading out, five vertices; the fill glint is sub-pixel here and omitted.
+    static void GlintLite(ImDrawListPtr dl, Vector2 centre, Vector2 axis, float halfLen, float radius, in Look look)
     {
         if (radius < 1.1f) return;
         Vector2 perp = new(-axis.Y, axis.X);
         Vector2 at = centre + axis * (Vector2.Dot(KeyHalfXY, axis) * halfLen * 0.93f) + perp * (Vector2.Dot(KeyHalfXY, perp) * radius * 0.93f);
-        float g = MathF.Max(0.75f, radius * 0.30f) * 1.25f;
+        float g = Max(0.75f, radius * 0.30f) * 1.25f;
         uint core = GlintColour(1.00f, 0.97f, 0.88f, 0.98f, in look), clear = GlintColour(1.00f, 0.97f, 0.88f, 0.00f, in look);
         Span<Vector2> rim = stackalloc Vector2[4];
         Span<uint> col = stackalloc uint[4];
@@ -366,14 +361,14 @@ internal static class GoopDraw
         MeshDraw.Fan(dl, look.Uv, at, core, rim, col);
     }
 
-    private static uint GlintColour(float r, float g, float b, float a, in Look look)
+    static uint GlintColour(float r, float g, float b, float a, in Look look)
     {
         return Tint(DrawHelpers.Pack(r, g, b), a * look.Alpha, look.Overridden);
     }
 
     // the mesh: a ribbon of rows, each a cross-section of the surface of revolution
 
-    private static void Tube(ImDrawListPtr dl, Vector2 origin, Vector2 d, ReadOnlySpan<float> s, ReadOnlySpan<float> r,
+    static void Tube(ImDrawListPtr dl, Vector2 origin, Vector2 d, ReadOnlySpan<float> s, ReadOnlySpan<float> r,
                              int n, float attachFade, in Look look, bool lo = false)
     {
         if (n < 2) return;
@@ -399,7 +394,7 @@ internal static class GoopDraw
 
             float fade = attachFade > 0f ? Smooth(s[row] / attachFade) : 1f;
             int vb = row * stride;
-            float drawR = MathF.Max(rad, MinRadius);
+            float drawR = Max(rad, MinRadius);
 
             for (int c = 0; c <= half; c++)
             {
@@ -407,7 +402,7 @@ internal static class GoopDraw
 
                 // Normal of a surface of revolution: radial component minus the profile's slope along the axis.
                 Vector2 nxy = perp * sn - d * slope;
-                Vector3 nrm = Vector3.Normalize(new Vector3(nxy.X, nxy.Y, cs));
+                Vector3 nrm = Vector3.Normalize(new(nxy.X, nxy.Y, cs));
                 Vector4 lit = look.Liquid.Sample(nrm.X, nrm.Y);
 
                 outP[vb + 1 + c] = centre + perp * (sn * drawR);
@@ -425,35 +420,34 @@ internal static class GoopDraw
         MeshDraw.Grid(dl, stride - 1, n - 1, look.Uv);
     }
 
-    private static uint Pack(Vector4 lit, float fade, in Look look)
+    static uint Pack(Vector4 lit, float fade, in Look look)
     {
         Vector3 col = new(lit.X, lit.Y, lit.Z);
         if (look.Dye > 0f) col = BoostSaturation(col, look.Dye, SoftDye);
-        return Tint(DrawHelpers.Pack(col.X, col.Y, col.Z), lit.W * fade * look.Alpha, look.Overridden);
+        return Tint(DrawHelpers.Pack(col), lit.W * fade * look.Alpha, look.Overridden);
     }
 
     // small maths
 
-    /// <summary>Polynomial smooth maximum: max(a, b) with the corner rounded over a width k.</summary>
-    private static float SmoothMax(float a, float b, float k)
+    /// Polynomial smooth maximum: max(a, b) with the corner rounded over a width k.
+    static float SmoothMax(float a, float b, float k)
     {
-        float h = MathF.Max(k - MathF.Abs(a - b), 0f) / k;
-        return MathF.Max(a, b) + h * h * k * 0.25f;
+        float h = Max(k - Abs(a - b), 0f) / k;
+        return Max(a, b) + h * h * k * 0.25f;
     }
 
 }
 
-/// <summary>The keyframed pendant a ceiling seep hangs (LiquidField): where in its cycle it lets go, and its shape at swell q.</summary>
+/// The keyframed pendant a ceiling seep hangs (LiquidField): where in its cycle it lets go, and its shape at swell q.
 internal static class PendantKeys
 {
-    public const float RestEnd = 0.10f;
-    public const float PinchAt = 0.86f;
+    public const float RestEnd = 0.10f, PinchAt = 0.86f;
 
-    /// <summary>The drop at q (0..1 through its swell): bead radius, how far it hangs, and the neck's thickness as a fraction of the bead.</summary>
+    /// The drop at q (0..1 through its swell): bead radius, how far it hangs, and the neck's thickness as a fraction of the bead.
     public static void Shape(float q, float rMax, float lMax, float stringiness, out float rb, out float len, out float neck)
     {
-        rb = rMax * (0.40f + 0.60f * MathF.Sqrt(q));
-        len = rb * 0.45f + lMax * MathF.Pow(q, 2.4f);
-        neck = Lerp(0.66f, 0.10f + 0.10f * (1f - stringiness), MathF.Pow(q, 1.4f));
+        rb = rMax * (0.40f + 0.60f * Sqrt(q));
+        len = rb * 0.45f + lMax * Pow(q, 2.4f);
+        neck = Lerp(0.66f, 0.10f + 0.10f * (1f - stringiness), Pow(q, 1.4f));
     }
 }

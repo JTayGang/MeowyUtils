@@ -1,13 +1,11 @@
-using System.Numerics;
-
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>A colour ramp baked to a 256-entry opaque table; index with 0..1 (WithAlpha applies the override).</summary>
+/// A colour ramp baked to a 256-entry opaque table; index with 0..1 (WithAlpha applies the override).
 internal sealed class Palette
 {
-    private const int N = 256;
-    private readonly uint[] _lut = new uint[N];
-    private readonly uint[] _lutTint = new uint[N];  // the same ramp, lifted off grey (see IceColor.Tintable)
+    const int N = 256;
+    readonly uint[] _lut = new uint[N];
+    readonly uint[] _lutTint = new uint[N];  // the same ramp, lifted off grey (see IceColor.Tintable)
 
     public Palette(params (float T, float R, float G, float B)[] stops)
     {
@@ -18,13 +16,13 @@ internal sealed class Palette
             while (s < stops.Length - 2 && t > stops[s + 1].T) s++;
             var a = stops[s];
             var b = stops[s + 1];
-            float k = Math.Clamp((t - a.T) / (b.T - a.T), 0f, 1f);
-            _lut[i] = DrawHelpers.Pack(a.R + (b.R - a.R) * k, a.G + (b.G - a.G) * k, a.B + (b.B - a.B) * k);
+            float k = Saturate((t - a.T) / (b.T - a.T));
+            _lut[i] = DrawHelpers.Pack(Lerp(a.R, b.R, k), Lerp(a.G, b.G, k), Lerp(a.B, b.B, k));
             _lutTint[i] = IceColor.Tintable(_lut[i]);
         }
     }
 
-    /// <summary>Opaque colour at a 0..1 position (NaN = 0); lifted off grey under a colour override so it recolours smoothly.</summary>
+    /// Opaque colour at a 0..1 position (NaN = 0); lifted off grey under a colour override so it recolours smoothly.
     public uint Sample(float t)
     {
         t = t > 0f ? (t < 1f ? t : 1f) : 0f;
@@ -32,7 +30,7 @@ internal sealed class Palette
         return ColorOverrideActive ? _lutTint[i] : _lut[i];
     }
 
-    /// <summary>Sample without the override lift, for a colour baked at construction (the override is whatever happens to be pushed then).</summary>
+    /// Sample without the override lift, for a colour baked at construction (the override is whatever happens to be pushed then).
     public uint SampleBase(float t)
     {
         t = t > 0f ? (t < 1f ? t : 1f) : 0f;
@@ -40,7 +38,7 @@ internal sealed class Palette
     }
 }
 
-/// <summary>Black-body fire ramp: 0 = dull ember red, 1 = near-white.</summary>
+/// Black-body fire ramp: 0 = dull ember red, 1 = near-white.
 internal static class FireColor
 {
     public static readonly Palette Flame = new(
@@ -53,10 +51,10 @@ internal static class FireColor
         (1.00f, 1.00f, 0.985f, 0.880f));  // near-white
 }
 
-/// <summary>Cold palettes and colour helpers: the ice counterpart of FireColor.</summary>
+/// Cold palettes and colour helpers: the ice counterpart of FireColor.
 internal static class IceColor
 {
-    /// <summary>A colour override saturates near-grey colours (&lt; ~0.05), which would split pale ramps into steps.</summary>
+    /// A colour override saturates near-grey colours (&lt; ~0.05), which would split pale ramps into steps.
     public static uint Tintable(uint c)
     {
         uint r = c & 255, g = (c >> 8) & 255, b = (c >> 16) & 255;
@@ -69,7 +67,7 @@ internal static class IceColor
         return (c & 0xFF000000u) | r | (g << 8) | (b << 16);
     }
 
-    /// <summary>Override pulled toward white for white-by-nature things: keeps hue but stays pastel.</summary>
+    /// Override pulled toward white for white-by-nature things: keeps hue but stays pastel.
     public static Vector4? Pastel(Vector4? c, float keep = 0.45f)
     {
         if (c is not { } v) return null;
@@ -77,7 +75,7 @@ internal static class IceColor
         return new Vector4(rgb.X, rgb.Y, rgb.Z, v.W);
     }
 
-    /// <summary>DrawHelpers.Pack for a colour that may be near-white: lifted off grey while a colour override is active.</summary>
+    /// DrawHelpers.Pack for a colour that may be near-white: lifted off grey while a colour override is active.
     public static uint Pack(float r, float g, float b)
     {
         uint c = DrawHelpers.Pack(r, g, b);
@@ -88,24 +86,24 @@ internal static class IceColor
     public static readonly uint Core  = DrawHelpers.Pack(0.98f, 1.00f, 1.00f);  // near-white (greyscale under a colour override)
     public const uint White = 0xFFFFFFFFu;
 
-    /// <summary>Frost body: 0 = thin bluish film, 1 = dense milky white.</summary>
+    /// Frost body: 0 = thin bluish film, 1 = dense milky white.
     public static readonly Palette Frost = new(
         (0.00f, 0.42f, 0.60f, 0.82f),
         (0.35f, 0.66f, 0.80f, 0.94f),
         (0.70f, 0.86f, 0.93f, 1.00f),
         (1.00f, 0.97f, 0.99f, 1.00f));
 
-    /// <summary>Crystal edges and glints: pale blue to pure white.</summary>
+    /// Crystal edges and glints: pale blue to pure white.
     public static readonly Palette Crystal = new(
         (0.00f, 0.60f, 0.78f, 0.96f),
         (0.55f, 0.84f, 0.93f, 1.00f),
         (1.00f, 1.00f, 1.00f, 1.00f));
 }
 
-/// <summary>Curse magic: plum shadow through violet and orchid to hot pink and a pale pink-white core.</summary>
+/// Curse magic: plum shadow through violet and orchid to hot pink and a pale pink-white core.
 internal static class CurseColor
 {
-    /// <summary>Light, dim to hot: 0 = deep violet, 0.55 = orchid, 0.8 = hot pink, 1 = pale pink-white.</summary>
+    /// Light, dim to hot: 0 = deep violet, 0.55 = orchid, 0.8 = hot pink, 1 = pale pink-white.
     public static readonly Palette Glow = new(
         (0.00f, 0.20f, 0.030f, 0.38f),
         (0.30f, 0.50f, 0.100f, 0.78f),
@@ -113,9 +111,9 @@ internal static class CurseColor
         (0.78f, 1.00f, 0.480f, 0.86f),
         (1.00f, 1.00f, 0.880f, 0.97f));
 
-    /// <summary>Edge tint for the screen's vignette: very dark plum.</summary>
+    /// Edge tint for the screen's vignette: very dark plum.
     public static readonly uint Vignette = DrawHelpers.Pack(0.030f, 0.008f, 0.052f);
 
-    /// <summary>The white-hot flash a curse lands with (pink-tinged, so it stays chromatic under a colour override).</summary>
+    /// The white-hot flash a curse lands with (pink-tinged, so it stays chromatic under a colour override).
     public static readonly uint Flash = DrawHelpers.Pack(0.95f, 0.62f, 1.00f);
 }

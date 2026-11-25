@@ -1,11 +1,11 @@
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Cheap stateless 2D noise, ~[-1, 1]: Value for per-vertex hot paths, Perlin for slow, low-count uses.</summary>
+/// Cheap stateless 2D noise, ~[-1, 1]: Value for per-vertex hot paths, Perlin for slow, low-count uses.
 internal static class Noise
 {
     public static float Perlin(float x, float y)
     {
-        float fx = MathF.Floor(x), fy = MathF.Floor(y);
+        float fx = Floor(x), fy = Floor(y);
         int xi = (int)fx, yi = (int)fy;
         float xf = x - fx, yf = y - fy;
 
@@ -17,16 +17,16 @@ internal static class Noise
         float n01 = Grad(xi,     yi + 1, xf,      yf - 1f);
         float n11 = Grad(xi + 1, yi + 1, xf - 1f, yf - 1f);
 
-        float nx0 = n00 + u * (n10 - n00);
-        float nx1 = n01 + u * (n11 - n01);
-        return (nx0 + v * (nx1 - nx0)) * 1.4f;
+        float nx0 = Lerp(n00, n10, u);
+        float nx1 = Lerp(n01, n11, u);
+        return (Lerp(nx0, nx1, v)) * 1.4f;
     }
 
     // 256x256 random lattice in [-1, 1]: four reads and a few multiplies per sample; wraps every 256 units.
-    private const int TableSize = 256;
-    private static readonly float[] Table = BuildTable();
+    const int TableSize = 256;
+    static readonly float[] Table = BuildTable();
 
-    private static float[] BuildTable()
+    static float[] BuildTable()
     {
         var t = new float[TableSize * TableSize];
         for (int i = 0; i < t.Length; i++)
@@ -36,7 +36,7 @@ internal static class Noise
 
     public static float Value(float x, float y)
     {
-        float fx = MathF.Floor(x), fy = MathF.Floor(y);
+        float fx = Floor(x), fy = Floor(y);
         int xi = (int)fx & (TableSize - 1), yi = (int)fy & (TableSize - 1);
         float xf = x - fx, yf = y - fy;
         float u = xf * xf * xf * (xf * (xf * 6f - 15f) + 10f);
@@ -45,11 +45,11 @@ internal static class Noise
         int x1 = (xi + 1) & (TableSize - 1), y1 = (yi + 1) & (TableSize - 1);
         float a = Table[(yi << 8) | xi], b = Table[(yi << 8) | x1];
         float c = Table[(y1 << 8) | xi], d = Table[(y1 << 8) | x1];
-        float top = a + u * (b - a), bot = c + u * (d - c);
-        return (top + v * (bot - top)) * 1.25f;
+        float top = Lerp(a, b, u), bot = Lerp(c, d, u);
+        return (Lerp(top, bot, v)) * 1.25f;
     }
 
-    private static float Grad(int ix, int iy, float dx, float dy)
+    static float Grad(int ix, int iy, float dx, float dy)
     {
         uint h = unchecked((uint)ix * 0x27d4eb2du ^ (uint)iy * 0x165667b1u);
         h ^= h >> 15; h = unchecked(h * 0x85ebca6bu); h ^= h >> 13;
@@ -66,7 +66,7 @@ internal static class Noise
         }
     }
 
-    /// <summary>Fractal sum of value noise, ~[-1, 1]; each octave's domain is rotated so lattice creases don't stack.</summary>
+    /// Fractal sum of value noise, ~[-1, 1]; each octave's domain is rotated so lattice creases don't stack.
     public static float Fbm(float x, float y, int octaves)
     {
         float sum = 0f, amp = 1f, norm = 0f;
@@ -83,7 +83,7 @@ internal static class Noise
         return sum / norm;
     }
 
-    /// <summary>Value along a strand, sampled at arc length arc: noise that comes back to where it started.</summary>
+    /// Value along a strand, sampled at arc length arc: noise that comes back to where it started.
     public static float Along(float arc, float freq, float offset, float y, float total, bool closed)
     {
         float v = Value(arc * freq + offset, y);

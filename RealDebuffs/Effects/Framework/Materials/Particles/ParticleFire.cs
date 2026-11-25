@@ -1,23 +1,19 @@
-using System.Numerics;
-using Dalamud.Bindings.ImGui;
-
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>One flame tongue as a CPU-shaded mesh: noise-eroded density drives alpha and temperature.</summary>
+/// One flame tongue as a CPU-shaded mesh: noise-eroded density drives alpha and temperature.
 public sealed class ParticleEmber : IParticleMaterial, ICoatMatter
 {
-    private FlameMatter? _matter;
+    FlameMatter? _matter;
     // Straight alpha: a dim dark fringe would ink an outline round every tongue
-    private const float RimLo = 0.12f, RimHi = 0.52f;
-    private const float TempFloor = 0.20f;
+    const float RimLo = 0.12f, RimHi = 0.52f, TempFloor = 0.20f;
 
-    private readonly string _name;
-    private readonly Palette _ramp;
+    readonly string _name;
+    readonly Palette _ramp;
 
-    /// <summary>The orange black-body flame (particle.ember).</summary>
+    /// The orange black-body flame (particle.ember).
     public ParticleEmber() : this("particle.ember", FireColor.Flame, "fire", "flame", "flames", "ember", "embers", "burning", "burnt", "blazing", "fiery", "aflame", "ablaze", "scorching") { }
 
-    /// <summary>The same flame tongue on another temperature ramp: one registered per theme (see particle.hellfire).</summary>
+    /// The same flame tongue on another temperature ramp: one registered per theme (see particle.hellfire).
     internal ParticleEmber(string name, Palette ramp, params string[] words)
     {
         _name = name;
@@ -82,19 +78,19 @@ public sealed class ParticleEmber : IParticleMaterial, ICoatMatter
         for (int r = 0; r <= rows; r++)
         {
             float v = r / (float)rows;
-            float vPow = v * MathF.Sqrt(v);  // v^1.5: bends grow toward the tip
+            float vPow = v * Sqrt(v);  // v^1.5: bends grow toward the tip
 
             float sway = Noise.Value(sf * 3.1f + v * 1.25f, flickerPhase - t * 1.55f) * 0.60f
                        + Noise.Value(sf * 1.7f + v * 3.20f, flickerPhase * 1.7f - t * 3.60f) * 0.22f;
             float cx = b.X + lean * h * 0.50f * vPow + sway * w * 1.05f * v;
             float cy = b.Y - v * h;
 
-            float taper = MathF.Pow(1f - v, 0.85f);
+            float taper = Pow(1f - v, 0.85f);
             float belly = 0.50f + 0.50f * Smooth(v / 0.16f);
-            float wobble = 1f + 0.18f * MathF.Sin(v * 5.1f + t * 1.9f + flickerPhase);
+            float wobble = 1f + 0.18f * Sin(v * 5.1f + t * 1.9f + flickerPhase);
             float half = 0.5f * w * taper * belly * wobble;
 
-            float longi = MathF.Pow(1f - v, 0.55f);
+            float longi = Pow(1f - v, 0.55f);
             float erodeGain = (0.14f + 0.86f * Smooth(v / 0.75f)) * rough;
             float tipFade = Smooth((1f - v) / 0.10f);  // exactly 0 at the tip vertex
             bool fine = v > 0.22f;  // no fine octave near the base
@@ -102,10 +98,10 @@ public sealed class ParticleEmber : IParticleMaterial, ICoatMatter
             for (int c = 0; c <= cols; c++)
             {
                 float u = -1f + 2f * c / cols;
-                float au = MathF.Abs(u);
+                float au = Abs(u);
 
                 float cross = 1f - u * u;
-                cross *= MathF.Sqrt(cross);  // (1-u^2)^1.5
+                cross *= Sqrt(cross);  // (1-u^2)^1.5
 
                 float n1 = 0.5f + 0.5f * Noise.Value(u * 1.5f + sf * 5.3f, v * 2.7f - t * 2.6f + flickerPhase);
                 float n = n1;
@@ -119,14 +115,14 @@ public sealed class ParticleEmber : IParticleMaterial, ICoatMatter
                 float d = cross * longi + erode;
                 d *= 1f - Smooth((au - 0.62f) / 0.38f);  // silhouette edge is exactly 0
                 d *= tipFade;
-                d = d < 0f ? 0f : (d > 1f ? 1f : d);
+                d = Saturate(d);
 
                 float temp = d * (1.30f - 0.62f * v) * heat;
-                temp = TempFloor + (1f - TempFloor) * temp;
+                temp = Lerp(TempFloor, 1f, temp);
 
                 float a = Smooth((d - RimLo) / (RimHi - RimLo));
 
-                MeshDraw.P[i] = new Vector2(cx + u * half, cy);
+                MeshDraw.P[i] = new(cx + u * half, cy);
                 MeshDraw.C[i] = WithAlpha(_ramp.Sample(temp), a * k * alphaK);
                 i++;
             }
@@ -145,18 +141,18 @@ public sealed class ParticleEmber : IParticleMaterial, ICoatMatter
 
     public ReadOnlySpan<StrokeEmission> Emissions => Coat;
 
-    private static readonly StrokeEmission[] Coat = { StrokeEmission.Coated(PrimitiveRole.Ember) };
+    static readonly StrokeEmission[] Coat = { StrokeEmission.Coated(PrimitiveRole.Ember) };
 
     public CoatMatter Matter => _matter ??= new FlameMatter(_name, _ramp);
 }
 
-/// <summary>A fleck thrown off a fire: cools along the heat ramp as it ages, flickers, smears a streak from its velocity.</summary>
+/// A fleck thrown off a fire: cools along the heat ramp as it ages, flickers, smears a streak from its velocity.
 public sealed class ParticleCinder : IParticleMaterial
 {
     public string Name => "particle.cinder";
     public string[] NaturalLanguageWords { get; } = { "cinder", "cinders", "ash", "ashes" };
 
-    private static readonly uint White = Pack(1.00f, 0.97f, 0.85f);
+    static readonly uint White = Pack(1.00f, 0.97f, 0.85f);
 
     public void Draw(ImDrawListPtr dl, in ParticlePrimitive p, in MaterialContext ctx)
     {
@@ -177,7 +173,7 @@ public sealed class ParticleCinder : IParticleMaterial
         float speed = p.Velocity.Length();
         if (speed > 30f)
         {
-            float len = MathF.Min(speed * 0.045f, 42f * ctx.ScreenScale);
+            float len = Min(speed * 0.045f, 42f * ctx.ScreenScale);
             Vector2 dir = p.Velocity / speed;
             Vector2 nrm = new Vector2(-dir.Y, dir.X) * (r * 0.9f);
             Vector2 tail = pos - dir * len;
@@ -194,19 +190,19 @@ public sealed class ParticleCinder : IParticleMaterial
         MeshDraw.Radial(dl, pos, uv, WithAlpha(hot, a * 0.32f),
                         8, rr, cc, rotation: 0f, squashY: 1f, seed: p.Seed, irregular: 0f);
 
-        uint core = LerpColor(hot, White, MathF.Max(0f, 1f - age * 2.2f) * 0.75f);
+        uint core = LerpColor(hot, White, Max(0f, 1f - age * 2.2f) * 0.75f);
         dl.AddCircleFilled(pos, r, WithAlpha(core, a * 0.95f));
     }
 }
 
-/// <summary>Hot fleck: white core, gold halo, velocity trail; sharp grow-in and fast fade so it reads as impact.</summary>
+/// Hot fleck: white core, gold halo, velocity trail; sharp grow-in and fast fade so it reads as impact.
 public sealed class ParticleSpark : IParticleMaterial
 {
     public string Name => "particle.spark";
     public string[] NaturalLanguageWords { get; } = { "spark", "sparks" };
 
-    private static readonly uint White = Pack(1.00f, 1.00f, 0.96f);
-    private static readonly uint Gold  = Pack(1.00f, 0.78f, 0.32f);
+    static readonly uint White = Pack(1.00f, 1.00f, 0.96f);
+    static readonly uint Gold  = Pack(1.00f, 0.78f, 0.32f);
 
     public void Draw(ImDrawListPtr dl, in ParticlePrimitive p, in MaterialContext ctx)
     {
@@ -228,7 +224,7 @@ public sealed class ParticleSpark : IParticleMaterial
         float speed = p.Velocity.Length();
         if (speed > 40f)
         {
-            Vector2 tail = pos - p.Velocity / speed * MathF.Min(speed * 0.06f, 60f);
+            Vector2 tail = pos - p.Velocity / speed * Min(speed * 0.06f, 60f);
             float trailAlpha = alpha * 0.55f;
 
             dl.AddLine(tail, pos, WithAlpha(halo, trailAlpha * 0.45f), size * 2.2f);
@@ -254,7 +250,7 @@ public sealed class ParticleSpark : IParticleMaterial
     public ReadOnlySpan<StrokeEmission> Emissions => Shed;
 
     // Launched hard (1000-2000 px/s), pulled down; gusts ~0.45s apart share one direction (fan +-0.12 rad).
-    private static readonly StrokeEmission[] Shed =
+    static readonly StrokeEmission[] Shed =
     {
         new(Role: PrimitiveRole.Spark,
             DensityPer100px: 0.1f,

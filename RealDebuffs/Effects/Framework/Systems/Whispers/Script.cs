@@ -1,33 +1,31 @@
-using System.Numerics;
-
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>A single-stroke cursive alphabet: lowercase, a little punctuation and a heart (♥). Units: x-height 1, baseline 0, +Y down.</summary>
+/// A single-stroke cursive alphabet: lowercase, a little punctuation and a heart (♥). Units: x-height 1, baseline 0, +Y down.
 internal static class ScriptFont
 {
-    /// <summary>Ascender to descender, in x-heights.</summary>
+    /// Ascender to descender, in x-heights.
     public const float Height = 2.7f;
 
-    /// <summary>Space between letters, in x-heights.</summary>
+    /// Space between letters, in x-heights.
     public const float Tracking = 0.14f;
 
-    /// <summary>One flattened letter: per stroke the points, outward normals, a width factor (broad nib, tapered ends) and the curve radius at each point.</summary>
+    /// One flattened letter: per stroke the points, outward normals, a width factor (broad nib, tapered ends) and the curve radius at each point.
     public sealed class Glyph
     {
         public float Advance;
-        public Vector2[][] Points = Array.Empty<Vector2[]>();
-        public Vector2[][] Normals = Array.Empty<Vector2[]>();
-        public float[][] Width = Array.Empty<float[]>();
-        public float[][] Room = Array.Empty<float[]>();
+        public Vector2[][] Points = [];
+        public Vector2[][] Normals = [];
+        public float[][] Width = [];
+        public float[][] Room = [];
     }
 
     // The bowl shared by a, d, g and q.
-    private static readonly float[] Bowl = S(0.90f, -0.80f, 0.62f, -1.00f, 0.27f, -0.92f, 0.05f, -0.60f, 0.10f, -0.22f, 0.40f, 0.00f, 0.72f, -0.14f, 0.92f, -0.50f);
+    static readonly float[] Bowl = S(0.90f, -0.80f, 0.62f, -1.00f, 0.27f, -0.92f, 0.05f, -0.60f, 0.10f, -0.22f, 0.40f, 0.00f, 0.72f, -0.14f, 0.92f, -0.50f);
     // The bowl shared by b and p.
-    private static readonly float[] Belly = S(0.05f, -0.58f, 0.34f, -0.98f, 0.74f, -0.88f, 0.96f, -0.52f, 0.80f, -0.14f, 0.42f, 0.00f, 0.06f, -0.20f);
+    static readonly float[] Belly = S(0.05f, -0.58f, 0.34f, -0.98f, 0.74f, -0.88f, 0.96f, -0.52f, 0.80f, -0.14f, 0.42f, 0.00f, 0.06f, -0.20f);
 
-    private static readonly Glyph Blank = new() { Advance = 0.55f };
-    private static readonly Glyph[] Table = Build();
+    static readonly Glyph Blank = new() { Advance = 0.55f };
+    static readonly Glyph[] Table = Build();
 
     public static Glyph Of(char c) => c == '\u2665' ? Table[1] : c > 32 && c < 127 ? Table[c] : Blank;
 
@@ -35,12 +33,12 @@ internal static class ScriptFont
     {
         float w = 0f;
         foreach (char c in s) w += Of(c).Advance + Tracking;
-        return MathF.Max(0f, w - Tracking);
+        return Max(0f, w - Tracking);
     }
 
-    private static float[] S(params float[] xy) => xy;
+    static float[] S(params float[] xy) => xy;
 
-    private static Glyph[] Build()
+    static Glyph[] Build()
     {
         var t = new Glyph[128];
         void G(char c, float adv, params float[][] strokes) => t[c] = Make(adv, strokes);
@@ -85,7 +83,7 @@ internal static class ScriptFont
     }
 
     // A closed loop: marked with a leading NaN and ended on its first point, so the spline wraps without a kink.
-    private static float[] Closed(params float[] xy)
+    static float[] Closed(params float[] xy)
     {
         var r = new float[xy.Length + 3];
         r[0] = float.NaN;
@@ -94,9 +92,9 @@ internal static class ScriptFont
         return r;
     }
 
-    private const int Sub = 2;
+    const int Sub = 2;
 
-    private static Glyph Make(float advance, float[][] strokes)
+    static Glyph Make(float advance, float[][] strokes)
     {
         var g = new Glyph { Advance = advance };
         g.Points = new Vector2[strokes.Length][]; g.Normals = new Vector2[strokes.Length][]; g.Width = new float[strokes.Length][]; g.Room = new float[strokes.Length][];
@@ -106,7 +104,7 @@ internal static class ScriptFont
             bool loop = float.IsNaN(c[0]);
             int off = loop ? 1 : 0, n = (c.Length - off) / 2;
             var ctl = new Vector2[n];
-            for (int i = 0; i < n; i++) ctl[i] = new Vector2(c[off + i * 2], c[off + i * 2 + 1]);
+            for (int i = 0; i < n; i++) ctl[i] = new(c[off + i * 2], c[off + i * 2 + 1]);
 
             // Catmull-Rom through the control points, Sub steps a segment.
             Vector2 At(int j) => loop ? ctl[(j + (n - 1) * 4) % (n - 1)] : ctl[Math.Clamp(j, 0, n - 1)];
@@ -130,12 +128,12 @@ internal static class ScriptFont
                 Vector2 d = pts[Math.Min(m - 1, i + 1)] - pts[Math.Max(0, i - 1)];
                 float l = d.Length();
                 Vector2 tan = l > 1e-5f ? d / l : Vector2.UnitX;
-                nrm[i] = new Vector2(-tan.Y, tan.X);
+                nrm[i] = new(-tan.Y, tan.X);
 
                 // A broad nib held up and to the right: down-strokes are full, rising hairlines thin.
-                float cross = MathF.Abs(tan.X * -0.643f - tan.Y * 0.766f);
+                float cross = Abs(tan.X * -0.643f - tan.Y * 0.766f);
                 float u = arc[m - 1] > 1e-4f ? arc[i] / arc[m - 1] : 0.5f;
-                wid[i] = (0.42f + 0.58f * cross) * (0.55f + 0.45f * Smooth(MathF.Min(u, 1f - u) / 0.22f));
+                wid[i] = (0.42f + 0.58f * cross) * (0.55f + 0.45f * Smooth(Min(u, 1f - u) / 0.22f));
             }
             // How far either side of the stroke can be offset before the offset folds over itself.
             for (int i = 0; i < m; i++)
@@ -145,7 +143,7 @@ internal static class ScriptFont
                 Vector2 a = pts[i] - pts[i - 1], b = pts[i + 1] - pts[i];
                 float la = a.Length(), lb = b.Length();
                 if (la < 1e-5f || lb < 1e-5f) continue;
-                float turn = MathF.Acos(Math.Clamp(Vector2.Dot(a, b) / (la * lb), -1f, 1f));
+                float turn = Acos(Math.Clamp(Vector2.Dot(a, b) / (la * lb), -1f, 1f));
                 if (turn > 1e-3f) room[i] = 0.5f * (la + lb) / turn;
             }
             g.Points[s] = pts; g.Normals[s] = nrm; g.Width[s] = wid; g.Room[s] = room;

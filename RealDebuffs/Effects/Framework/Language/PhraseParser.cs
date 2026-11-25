@@ -7,13 +7,13 @@ public sealed class ParseResult
 {
     public static readonly ParseResult Empty = new(Array.Empty<Look>(), Array.Empty<string>(), Array.Empty<string>());
 
-    /// <summary>One Look per effect the text asks for, ordered by kind.</summary>
+    /// One Look per effect the text asks for, ordered by kind.
     public IReadOnlyList<Look> Looks { get; }
 
-    /// <summary>Parts that were understood but have nowhere to go ("eyes can't be shed by Heavy").</summary>
+    /// Parts that were understood but have nowhere to go ("eyes can't be shed by Heavy").
     public IReadOnlyList<string> Notes { get; }
 
-    /// <summary>Typo suggestions and code warnings, for the settings tester only.</summary>
+    /// Typo suggestions and code warnings, for the settings tester only.
     public IReadOnlyList<string> Hints { get; }
 
     public ParseResult(IReadOnlyList<Look> looks, IReadOnlyList<string> notes, IReadOnlyList<string> hints)
@@ -22,20 +22,18 @@ public sealed class ParseResult
     }
 }
 
-/// <summary>Status text to Looks: a colour sticks to the next noun, modifiers bind to their effect noun, leftovers trigger their own effect.</summary>
+/// Status text to Looks: a colour sticks to the next noun, modifiers bind to their effect noun, leftovers trigger their own effect.
 public static class PhraseParser
 {
-    private enum IK { Word, Colour, Link, Comma, And, Stop }
+    enum IK { Word, Colour, Link, Comma, And, Stop }
 
-    private sealed class Item
+    sealed class Item
     {
         public IK Kind;
         public string Text = "";
-        public LookColor? Colour;
-        public LookColor? Tag;
-        public LookColor? Attached;
+        public LookColor? Colour, Tag, Attached;
         public bool Made;
-        public EffectHit[] Effects = Array.Empty<EffectHit>();
+        public EffectHit[] Effects = [];
         public MaterialHit? Mat;
         public bool Det, Breaker;
         public int Owner = -1;
@@ -45,20 +43,20 @@ public static class PhraseParser
         public LookColor? Paint => Attached ?? Tag;
     }
 
-    private sealed class Np
+    sealed class Np
     {
         public int Head, Start, LinkTo = -1, LinkedFrom = -1;
         public bool Made;
         public readonly List<int> Attrs = new();
     }
 
-    private readonly record struct Raw(string Text, int Start, char Punct, bool HyphenNext);
+    readonly record struct Raw(string Text, int Start, char Punct, bool HyphenNext);
 
-    private static readonly Regex TagToken = new(
+    static readonly Regex TagToken = new(
         @"\[color=(?<color>[0-9a-z]+)\]|\[/color\]|\[glow=[0-9a-z]+\]|\[/glow\]|\[i\]|\[/i\]",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
-    private static readonly Regex Token = new(
+    static readonly Regex Token = new(
         @"#[0-9A-Fa-f]{3}(?:[0-9A-Fa-f]{3})?(?![0-9A-Za-z])|[A-Za-z]+(?:'[A-Za-z]+)?(?:-[A-Za-z]+(?:'[A-Za-z]+)?)*|[,;:.!?()\n]",
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
@@ -96,14 +94,14 @@ public static class PhraseParser
 
     // ---- tokenising ------------------------------------------------------------------------------------------------
 
-    private static List<Item> Tokenize(string plain, List<(int Start, int End, LookColor Color)> runs, Lexicon lex)
+    static List<Item> Tokenize(string plain, List<(int Start, int End, LookColor Color)> runs, Lexicon lex)
     {
         var raw = new List<Raw>();
         foreach (Match m in Token.Matches(plain))
         {
             string s = m.Value;
-            if (s.Length == 1 && ",;:.!?()\n".Contains(s[0])) { raw.Add(new Raw("", m.Index, s[0], false)); continue; }
-            if (s[0] == '#') { raw.Add(new Raw(s, m.Index, '#', false)); continue; }
+            if (s.Length == 1 && ",;:.!?()\n".Contains(s[0])) { raw.Add(new("", m.Index, s[0], false)); continue; }
+            if (s[0] == '#') { raw.Add(new(s, m.Index, '#', false)); continue; }
 
             var parts = s.ToLowerInvariant().Split('-');
             int at = m.Index;
@@ -112,7 +110,7 @@ public static class PhraseParser
                 string w = parts[p];
                 int ap = w.IndexOf('\'');
                 if (ap >= 0) w = w[..ap];
-                raw.Add(new Raw(w, at, 'w', p < parts.Length - 1));
+                raw.Add(new(w, at, 'w', p < parts.Length - 1));
                 at += parts[p].Length + 1;
             }
         }
@@ -123,11 +121,11 @@ public static class PhraseParser
             var r = raw[i];
             var tag = TagAt(runs, r.Start);
 
-            if (r.Punct == ',') { items.Add(new Item { Kind = IK.Comma }); continue; }
-            if (r.Punct != 'w' && r.Punct != '#') { items.Add(new Item { Kind = IK.Stop }); continue; }
+            if (r.Punct == ',') { items.Add(new() { Kind = IK.Comma }); continue; }
+            if (r.Punct != 'w' && r.Punct != '#') { items.Add(new() { Kind = IK.Stop }); continue; }
             if (r.Punct == '#')
             {
-                if (ColorLexicon.TryHex(r.Text, out var hex)) items.Add(new Item { Kind = IK.Colour, Colour = hex, Text = r.Text, Tag = tag });
+                if (ColorLexicon.TryHex(r.Text, out var hex)) items.Add(new() { Kind = IK.Colour, Colour = hex, Text = r.Text, Tag = tag });
                 continue;
             }
 
@@ -158,15 +156,15 @@ public static class PhraseParser
                 && (ColorLexicon.IsShade(w) || ColorLexicon.IsPrefix(w) || r.HyphenNext) && !ColorLexicon.TryWord(w, out _))
             {
                 var c = ColorLexicon.IsShade(w) ? ColorLexicon.ApplyShade(w, next) : next;
-                items.Add(new Item { Kind = IK.Colour, Colour = c, Text = w + " " + raw[i + 1].Text, Tag = tag });
+                items.Add(new() { Kind = IK.Colour, Colour = c, Text = w + " " + raw[i + 1].Text, Tag = tag });
                 i++;
                 continue;
             }
 
-            if (ColorLexicon.TryWord(w, out var col)) { items.Add(new Item { Kind = IK.Colour, Colour = col, Text = w, Tag = tag }); continue; }
-            if (w == "and") { items.Add(new Item { Kind = IK.And }); continue; }
-            if (w == "but") { items.Add(new Item { Kind = IK.Stop }); continue; }
-            if (lex.TryLink(w, out bool made)) { items.Add(new Item { Kind = IK.Link, Made = made, Text = w, Tag = tag }); continue; }
+            if (ColorLexicon.TryWord(w, out var col)) { items.Add(new() { Kind = IK.Colour, Colour = col, Text = w, Tag = tag }); continue; }
+            if (w == "and") { items.Add(new() { Kind = IK.And }); continue; }
+            if (w == "but") { items.Add(new() { Kind = IK.Stop }); continue; }
+            if (lex.TryLink(w, out bool made)) { items.Add(new() { Kind = IK.Link, Made = made, Text = w, Tag = tag }); continue; }
 
             var it = new Item { Kind = IK.Word, Text = w, Tag = tag, Det = lex.IsDet(w), Breaker = lex.IsBreaker(w) };
             var effects = lex.EffectsFor(w);
@@ -179,7 +177,7 @@ public static class PhraseParser
 
     // ---- analysis --------------------------------------------------------------------------------------------------
 
-    private static void Analyse(List<Item> items, Dictionary<DebuffKind, Look> looks, List<string> notes)
+    static void Analyse(List<Item> items, Dictionary<DebuffKind, Look> looks, List<string> notes)
     {
         AttachColours(items);
 
@@ -202,7 +200,7 @@ public static class PhraseParser
         }
     }
 
-    private static void AttachColours(List<Item> items)
+    static void AttachColours(List<Item> items)
     {
         int n = items.Count;
         for (int i = 0; i < n; i++)
@@ -232,8 +230,8 @@ public static class PhraseParser
         }
     }
 
-    /// <summary>The noun phrase around a head: adjective forms and adjacent noun adjuncts to its left become attributes.</summary>
-    private static Np BuildNp(List<Item> items, int h)
+    /// The noun phrase around a head: adjective forms and adjacent noun adjuncts to its left become attributes.
+    static Np BuildNp(List<Item> items, int h)
     {
         var np = new Np { Head = h, Start = h };
         var head = items[h];
@@ -274,8 +272,8 @@ public static class PhraseParser
         return np;
     }
 
-    /// <summary>Joins "head [,] link phrase" to the next noun phrase when only filler sits between.</summary>
-    private static void LinkNps(List<Item> items, List<Np> nps)
+    /// Joins "head [,] link phrase" to the next noun phrase when only filler sits between.
+    static void LinkNps(List<Item> items, List<Np> nps)
     {
         int n = items.Count;
         for (int i = 0; i < nps.Count - 1; i++)
@@ -297,9 +295,9 @@ public static class PhraseParser
         }
     }
 
-    private enum Target { None, Body, Modifier }
+    enum Target { None, Body, Modifier }
 
-    private sealed class State
+    sealed class State
     {
         public DebuffKind Kind;
         public string? Body, Modifier;
@@ -307,7 +305,7 @@ public static class PhraseParser
         public LookColor? BodyColor, ModifierColor, RootColor;
     }
 
-    private static void Chain(List<Item> items, List<Np> chain, Dictionary<DebuffKind, Look> looks, List<string> notes)
+    static void Chain(List<Item> items, List<Np> chain, Dictionary<DebuffKind, Look> looks, List<string> notes)
     {
         int ci = 0;
         while (ci < chain.Count)
@@ -334,14 +332,14 @@ public static class PhraseParser
 
             foreach (var st in states) Emit(st, looks);
             foreach (var it in released)
-                foreach (var e in it.Effects) Merge(looks, new Look(e.Kind, BodyColor: it.Paint));
+                foreach (var e in it.Effects) Merge(looks, new(e.Kind, BodyColor: it.Paint));
 
             ci = next;
         }
     }
 
-    /// <summary>Applies a material word to every kind of a root; true if the first kind could take it (or it only repeats the effect).</summary>
-    private static bool ApplyAll(State[] states, Item it, bool made, bool isHead, List<Item> released, List<string> notes, bool probe = false)
+    /// Applies a material word to every kind of a root; true if the first kind could take it (or it only repeats the effect).
+    static bool ApplyAll(State[] states, Item it, bool made, bool isHead, List<Item> released, List<string> notes, bool probe = false)
     {
         if (it.Mat is not { } mat) return true;
 
@@ -361,7 +359,7 @@ public static class PhraseParser
         return firstOk;
     }
 
-    private static bool Apply(State st, Item it, MaterialHit mat, bool made, bool probe)
+    static bool Apply(State st, Item it, MaterialHit mat, bool made, bool probe)
     {
         foreach (var e in it.Effects)
             if (e.Kind == st.Kind) return true;
@@ -387,7 +385,7 @@ public static class PhraseParser
         return true;
     }
 
-    private static Target Classify(DebuffKind kind, MaterialHit mat, bool made)
+    static Target Classify(DebuffKind kind, MaterialHit mat, bool made)
     {
         var body = EffectRegistry.BodyFor(kind);
         if (body is null) return Target.None;
@@ -409,17 +407,17 @@ public static class PhraseParser
         return Target.None;
     }
 
-    private static void Emit(State st, Dictionary<DebuffKind, Look> looks)
+    static void Emit(State st, Dictionary<DebuffKind, Look> looks)
     {
         var bodyColor = st.BodyColor ?? st.RootColor;
-        Merge(looks, new Look(st.Kind, st.Body, st.Modifier, bodyColor, st.ModifierClaimed ? st.ModifierColor : null));
+        Merge(looks, new(st.Kind, st.Body, st.Modifier, bodyColor, st.ModifierClaimed ? st.ModifierColor : null));
     }
 
-    private static void Merge(Dictionary<DebuffKind, Look> looks, Look look) =>
+    static void Merge(Dictionary<DebuffKind, Look> looks, Look look) =>
         looks[look.Kind] = looks.TryGetValue(look.Kind, out var have) ? have.Fill(look) : look;
 
-    /// <summary>A material equal to the slot's own default says nothing, so it is dropped.</summary>
-    private static Look Normalise(Look look)
+    /// A material equal to the slot's own default says nothing, so it is dropped.
+    static Look Normalise(Look look)
     {
         string? body = look.Body, mod = look.Modifier;
         if (body is not null && EffectRegistry.BodyFor(look.Kind) is { } bs
@@ -429,7 +427,7 @@ public static class PhraseParser
         return body == look.Body && mod == look.Modifier ? look : look with { Body = body, Modifier = mod };
     }
 
-    private static void SuggestTypos(List<Item> items, Lexicon lex, List<string> hints)
+    static void SuggestTypos(List<Item> items, Lexicon lex, List<string> hints)
     {
         foreach (var it in items)
         {
@@ -441,14 +439,14 @@ public static class PhraseParser
 
     // ---- markup ----------------------------------------------------------------------------------------------------
 
-    private static LookColor? TagAt(List<(int Start, int End, LookColor Color)> runs, int idx)
+    static LookColor? TagAt(List<(int Start, int End, LookColor Color)> runs, int idx)
     {
         foreach (var r in runs) if (idx >= r.Start && idx < r.End) return r.Color;
         return null;
     }
 
-    /// <summary>Strips markup and records which stretch of the result each [color=] run covers.</summary>
-    private static (string Plain, List<(int Start, int End, LookColor Color)> Runs) StripTags(string raw)
+    /// Strips markup and records which stretch of the result each [color=] run covers.
+    static (string Plain, List<(int Start, int End, LookColor Color)> Runs) StripTags(string raw)
     {
         var plain = new StringBuilder(raw.Length);
         var runs = new List<(int, int, LookColor)>();

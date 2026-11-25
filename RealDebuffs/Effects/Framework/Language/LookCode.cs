@@ -1,26 +1,24 @@
-using System.Numerics;
 using System.Text;
 using System.Text.RegularExpressions;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Exact, copyable form of a Look: "RD" + base62 (case-sensitive, checksummed); only pasted, never typed.</summary>
+/// Exact, copyable form of a Look: "RD" + base62 (case-sensitive, checksummed); only pasted, never typed.
 public static class LookCode
 {
-    private const string Alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-    private const int FormatVersion = 0;
-    private const int CheckBits = 6;
+    const string Alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    const int FormatVersion = 0, CheckBits = 6;
 
-    private enum Family { Stroke, Particle, Region }
+    enum Family { Stroke, Particle, Region }
 
-    private static readonly Regex Rx = new(@"(?<![A-Za-z0-9])RD[A-Za-z0-9]{5,}(?![A-Za-z0-9])", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    static readonly Regex Rx = new(@"(?<![A-Za-z0-9])RD[A-Za-z0-9]{5,}(?![A-Za-z0-9])", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
-    /// <summary>Test hook: write the wide (8-bit) fields as if a table had outgrown the narrow ones.</summary>
+    /// Test hook: write the wide (8-bit) fields as if a table had outgrown the narrow ones.
     internal static bool ForceWide { get; set; }
 
     public static IEnumerable<Match> Find(string text) => Rx.Matches(text);
 
-    /// <summary>A material name without its family prefix or hyphens, lowercased: how test descriptions spell materials.</summary>
+    /// A material name without its family prefix or hyphens, lowercased: how test descriptions spell materials.
     public static string Compact(string materialName)
     {
         int dot = materialName.IndexOf('.');
@@ -29,7 +27,7 @@ public static class LookCode
 
     // MSB first, leading 1 marks the start: kind 5, wide 1, flags 5, body, modifier, colours, slots (list/bitmap), check 6; ids widen to 8 bits when outgrown.
 
-    /// <summary>Null when a material, colour or slot has no number in CodeIds yet (the audit says which).</summary>
+    /// Null when a material, colour or slot has no number in CodeIds yet (the audit says which).
     public static string? Encode(Look look)
     {
         var kind = look.Kind;
@@ -56,7 +54,7 @@ public static class LookCode
                     if (!Add(addr, FamilyOf(slot.Type), v)) return null;
                 }
                 if (slot.Type == SlotType.Stroke && d.TryGetValue(MaterialOverrideKey.ForStrokeEmit(kind, slot.Role), out var e))
-                    if (!Add(new Addr(AddrType.Emit, (int)slot.Role), Family.Particle, e)) return null;
+                    if (!Add(new(AddrType.Emit, (int)slot.Role), Family.Particle, e)) return null;
             }
 
         bool Add(Addr addr, Family fam, string material)
@@ -113,7 +111,7 @@ public static class LookCode
         return "RD" + ToBase62(w.Bits);
     }
 
-    /// <summary>Decodes one code; Look is null if it is cut short, edited or from a newer plugin, and Warnings say why or what was skipped.</summary>
+    /// Decodes one code; Look is null if it is cut short, edited or from a newer plugin, and Warnings say why or what was skipped.
     public static (Look? Look, List<string> Warnings) Decode(string code)
     {
         var warn = new List<string>();
@@ -209,7 +207,7 @@ public static class LookCode
         catch (InvalidOperationException) { return Damaged(); }
     }
 
-    /// <summary>Problems that would make codes unstable: a material, colour or slot without a number, a repeated entry, a number too big to pack.</summary>
+    /// Problems that would make codes unstable: a material, colour or slot without a number, a repeated entry, a number too big to pack.
     public static IEnumerable<string> VocabularyProblems()
     {
         foreach (var (label, table, names) in new[] { ("Stroke", CodeIds.Stroke, MaterialRegistry.StrokeNames), ("Particle", CodeIds.Particle, MaterialRegistry.ParticleNames), ("Region", CodeIds.Region, MaterialRegistry.RegionNames) })
@@ -241,7 +239,7 @@ public static class LookCode
         if (Enum.GetValues<DebuffKind>().Any(k => (int)k > 63)) yield return "a DebuffKind is above 63, which short codes can't hold";
     }
 
-    private static string AddrText(Addr a) => a.Type switch
+    static string AddrText(Addr a) => a.Type switch
     {
         AddrType.Stroke => $"S(PrimitiveRole.{(PrimitiveRole)a.Role})",
         AddrType.Particle => $"P(PrimitiveRole.{(PrimitiveRole)a.Role})",
@@ -249,27 +247,27 @@ public static class LookCode
         _ => $"R(RegionKind.{(RegionKind)a.Role})",
     };
 
-    private static Family FamilyOf(SlotType t) => t switch { SlotType.Stroke => Family.Stroke, SlotType.Particle => Family.Particle, _ => Family.Region };
+    static Family FamilyOf(SlotType t) => t switch { SlotType.Stroke => Family.Stroke, SlotType.Particle => Family.Particle, _ => Family.Region };
 
-    private static Family FamilyOf(AddrType t) => t switch { AddrType.Stroke => Family.Stroke, AddrType.Region => Family.Region, _ => Family.Particle };
+    static Family FamilyOf(AddrType t) => t switch { AddrType.Stroke => Family.Stroke, AddrType.Region => Family.Region, _ => Family.Particle };
 
-    private static string[] Table(Family f) => f switch { Family.Stroke => CodeIds.Stroke, Family.Particle => CodeIds.Particle, _ => CodeIds.Region };
+    static string[] Table(Family f) => f switch { Family.Stroke => CodeIds.Stroke, Family.Particle => CodeIds.Particle, _ => CodeIds.Region };
 
-    private static int IdOf(Family f, string name) => Array.FindIndex(Table(f), n => string.Equals(n, name, StringComparison.OrdinalIgnoreCase));
+    static int IdOf(Family f, string name) => Array.FindIndex(Table(f), n => string.Equals(n, name, StringComparison.OrdinalIgnoreCase));
 
-    private static string? NameOf(Family f, int id, bool wide) => id >= 0 && id < Table(f).Length && id != Cap(f, wide) ? Table(f)[id] : null;
+    static string? NameOf(Family f, int id, bool wide) => id >= 0 && id < Table(f).Length && id != Cap(f, wide) ? Table(f)[id] : null;
 
-    private static int AddrBits(bool wide) => wide ? 8 : 6;
+    static int AddrBits(bool wide) => wide ? 8 : 6;
 
-    private static int Bits(Family f, bool wide) => wide ? 8 : f switch { Family.Stroke => 5, Family.Particle => 6, _ => 4 };
+    static int Bits(Family f, bool wide) => wide ? 8 : f switch { Family.Stroke => 5, Family.Particle => 6, _ => 4 };
 
-    /// <summary>The all-ones value is reserved ("sheds nothing"), so it is also the capacity of a width.</summary>
-    private static int Cap(Family f, bool wide) => (1 << Bits(f, wide)) - 1;
+    /// The all-ones value is reserved ("sheds nothing"), so it is also the capacity of a width.
+    static int Cap(Family f, bool wide) => (1 << Bits(f, wide)) - 1;
 
-    /// <summary>Named colours take 0 to this minus one; the two values above are custom and rainbow.</summary>
-    private static int ColorCap(bool wide) => (wide ? 255 : 63) - 1;
+    /// Named colours take 0 to this minus one; the two values above are custom and rainbow.
+    static int ColorCap(bool wide) => (wide ? 255 : 63) - 1;
 
-    private static int ColorId(LookColor c)
+    static int ColorId(LookColor c)
     {
         if (c.Rainbow) return int.MaxValue;
         for (int i = 0; i < CodeIds.Color.Length; i++)
@@ -277,31 +275,31 @@ public static class LookCode
         return -1;
     }
 
-    private static void WriteColor(BitWriter w, LookColor c, int id, bool wide)
+    static void WriteColor(BitWriter w, LookColor c, int id, bool wide)
     {
         int bits = wide ? 8 : 6, rainbow = (1 << bits) - 1, custom = rainbow - 1;
         if (id == int.MaxValue) { w.Write(rainbow, bits); return; }
         if (id >= 0 && id < custom) { w.Write(id, bits); return; }
         w.Write(custom, bits);
-        w.Write((int)MathF.Round(c.Rgb.X * 255f), 8); w.Write((int)MathF.Round(c.Rgb.Y * 255f), 8); w.Write((int)MathF.Round(c.Rgb.Z * 255f), 8);
+        w.Write((int)Round(c.Rgb.X * 255f), 8); w.Write((int)Round(c.Rgb.Y * 255f), 8); w.Write((int)Round(c.Rgb.Z * 255f), 8);
     }
 
-    private static int ReadColor(BitReader r, bool wide, out long rgb)
+    static int ReadColor(BitReader r, bool wide, out long rgb)
     {
         int bits = wide ? 8 : 6, v = r.Read(bits);
         rgb = v == (1 << bits) - 2 ? r.Read(24) : -1;
         return v;
     }
 
-    private static LookColor? ColorOf(int id, long rgb, bool wide)
+    static LookColor? ColorOf(int id, long rgb, bool wide)
     {
         int rainbow = (wide ? 255 : 63);
         if (id == rainbow) return new LookColor(ColorLexicon.RainbowAt(0), true);
-        if (id == rainbow - 1) return new LookColor(new Vector4(((rgb >> 16) & 255) / 255f, ((rgb >> 8) & 255) / 255f, (rgb & 255) / 255f, 1f));
+        if (id == rainbow - 1) return new LookColor(new(((rgb >> 16) & 255) / 255f, ((rgb >> 8) & 255) / 255f, (rgb & 255) / 255f, 1f));
         return id < CodeIds.Color.Length && ColorLexicon.Named.TryGetValue(CodeIds.Color[id], out var named) ? new LookColor(named) : null;
     }
 
-    private static string? SlotKey(DebuffKind kind, Addr addr)
+    static string? SlotKey(DebuffKind kind, Addr addr)
     {
         foreach (var slot in EffectRegistry.SlotsFor(kind))
         {
@@ -318,7 +316,7 @@ public static class LookCode
         return null;
     }
 
-    private static int Check(List<bool> bits, int p)
+    static int Check(List<bool> bits, int p)
     {
         uint h = unchecked((2166136261u ^ (uint)FormatVersion) * 16777619u);
         h = unchecked((h ^ (uint)p) * 16777619u);
@@ -332,7 +330,7 @@ public static class LookCode
         return (int)(h & ((1u << CheckBits) - 1));
     }
 
-    private static string ToBase62(List<bool> bits)
+    static string ToBase62(List<bool> bits)
     {
         var n = BigInteger.One;
         foreach (bool bit in bits) n = (n << 1) | (bit ? BigInteger.One : BigInteger.Zero);
@@ -346,7 +344,7 @@ public static class LookCode
         return sb.ToString();
     }
 
-    private static List<bool>? FromBase62(string s)
+    static List<bool>? FromBase62(string s)
     {
         var n = BigInteger.Zero;
         foreach (char c in s)
@@ -363,16 +361,16 @@ public static class LookCode
         return bits;
     }
 
-    private sealed class BitWriter
+    sealed class BitWriter
     {
         public readonly List<bool> Bits = new();
         public int Count => Bits.Count;
         public void Write(int value, int bits) { for (int k = bits - 1; k >= 0; k--) Bits.Add(((value >> k) & 1) == 1); }
     }
 
-    private sealed class BitReader
+    sealed class BitReader
     {
-        private readonly List<bool> _bits;
+        readonly List<bool> _bits;
         public int Position { get; private set; }
         public BitReader(List<bool> bits) { _bits = bits; }
         public int Read(int n)

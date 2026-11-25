@@ -1,9 +1,6 @@
-using System.Numerics;
-using Dalamud.Bindings.ImGui;
-
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>What a coat is made of: how it arrives, clings, runs and is drawn. A particle material that implements ICoatMatter hands one out.</summary>
+/// What a coat is made of: how it arrives, clings, runs and is drawn. A particle material that implements ICoatMatter hands one out.
 public abstract class CoatMatter
 {
     public string Material { get; }
@@ -26,20 +23,20 @@ public abstract class CoatMatter
     internal abstract void Draw(ImDrawListPtr dl, Coat c, float alpha, in MaterialContext ctx);
 }
 
-/// <summary>Water, blood, slime: a film that clings, runs, pools, hangs as a drop on a thinning neck and lets go.</summary>
+/// Water, blood, slime: a film that clings, runs, pools, hangs as a drop on a thinning neck and lets go.
 public sealed class LiquidMatter : CoatMatter
 {
-    private readonly Liquid _liq;
+    readonly Liquid _liq;
     internal LiquidPhysics Physics => _liq.Phys;
 
-    /// <summary>The colour of this liquid's film where the surface faces n, th px thick: lit by the host's own surface frame, darker where thick. dry > 0: below that thickness (px) the surface stays bare, and the film fades in over the next 0.3 hold.</summary>
+    /// The colour of this liquid's film where the surface faces n, th px thick: lit by the host's own surface frame, darker where thick. dry > 0: below that thickness (px) the surface stays bare, and the film fades in over the next 0.3 hold.
     internal uint FilmShade(Vector3 n, float th, float px, float alpha, float soft, float dry = 0f)
     {
         Vector4 lit = _liq.Matcap.Sample(n.X, n.Y);
         float show = Smooth(th / (_liq.Phys.Hold * px * 0.9f));
-        float dark = 0.5f + 0.5f * MathF.Exp(-_liq.Phys.Absorb * th / px);
-        float spec = MathF.Max(0f, lit.X + lit.Y + lit.Z - 1.9f) * 1.4f;  // the matcap's highlights read as a wet sheen
-        float a = Math.Clamp(lit.W * (0.45f + 0.55f * show) * 0.85f + spec * 0.35f, 0f, 1f) * alpha * soft * soft;
+        float dark = 0.5f + 0.5f * Exp(-_liq.Phys.Absorb * th / px);
+        float spec = Max(0f, lit.X + lit.Y + lit.Z - 1.9f) * 1.4f;  // the matcap's highlights read as a wet sheen
+        float a = Saturate(lit.W * (0.45f + 0.55f * show) * 0.85f + spec * 0.35f) * alpha * soft * soft;
         if (dry > 0f) a *= Smooth((th - dry) / (0.3f * _liq.Phys.Hold * px));
         return CoatDraw.Pack(Vector3.Min(new Vector3(lit.X, lit.Y, lit.Z) * dark + new Vector3(spec * 0.35f), Vector3.One), a);
     }
@@ -61,7 +58,7 @@ public sealed class LiquidMatter : CoatMatter
         var ph = _liq.Phys;
         float px = c.Px, ds = c.Ds;
         float mcrit = ph.DropArea * px * px;
-        int gap = Math.Max(1, (int)MathF.Round(ph.Spacing * 0.5f * px / ds)), nv = c.V;
+        int gap = Math.Max(1, (int)Round(ph.Spacing * 0.5f * px / ds)), nv = c.V;
 
         for (int k = 0; k < Coat.MaxPendants; k++)
         {
@@ -80,8 +77,8 @@ public sealed class LiquidMatter : CoatMatter
                     float avail = c.M[j] - ph.Hold * px * c.A[j] * 0.85f;
                     if (avail <= 0f) continue;
                     int sd = Math.Abs(s2 - psec); if (c.SeamV) sd = Math.Min(sd, nv - sd);  // round a ring the short way
-                    float w = (1f - MathF.Abs(jr - prow) / (gap + 1f)) * (nv == 1 ? 1f : 1f - (float)sd / nv);
-                    float q = MathF.Min(avail, c.M[j] * ph.Feed * (0.4f + face) * w * h);
+                    float w = (1f - Abs(jr - prow) / (gap + 1f)) * (nv == 1 ? 1f : 1f - (float)sd / nv);
+                    float q = Min(avail, c.M[j] * ph.Feed * (0.4f + face) * w * h);
                     c.Debit(j, q); got += q;
                 }
             p.M += got;
@@ -92,19 +89,19 @@ public sealed class LiquidMatter : CoatMatter
             float load = p.M / mcrit;
             if (load < 1f)
             {
-                p.Neck = Lerp(0.66f, 0.42f, MathF.Pow(load, 1.4f));
-                p.L = MathF.Sqrt(p.M / MathF.PI) * 0.92f * (0.5f + 0.9f * load * load);
+                p.Neck = Lerp(0.66f, 0.42f, Pow(load, 1.4f));
+                p.L = Sqrt(p.M / PI) * 0.92f * (0.5f + 0.9f * load * load);
             }
             else
             {
                 // strain rate falls as the string lengthens; a shear-thinning liquid then thickens, so its neck lasts longer (n = 1: no change)
-                float tau = MathF.Max(0.05f, ph.Thread) * MathF.Pow(MathF.Max(1f, p.L / MathF.Max(1e-3f, 2f * MathF.Sqrt(p.M / MathF.PI) * 0.92f)), 1f - Index);
+                float tau = Max(0.05f, ph.Thread) * Pow(Max(1f, p.L / Max(1e-3f, 2f * Sqrt(p.M / PI) * 0.92f)), 1f - Index);
                 p.Neck -= h * 0.42f * load / tau;
                 p.L += h * ph.Stretch * px * load;
                 if (ph.Bridge > 0f)
                 {
                     c.AnchorOf(p.Cell, out Vector2 anchor);
-                    if (c.Set.TryBridge(c, k, anchor, Hang(c, in p, anchor), MathF.Sqrt(p.M / MathF.PI) * 0.92f, ph.Bridge, ph.Hold * px)) continue;
+                    if (c.Set.TryBridge(c, k, anchor, Hang(c, in p, anchor), Sqrt(p.M / PI) * 0.92f, ph.Bridge, ph.Hold * px)) continue;
                 }
             }
             if (p.Neck <= 0.09f || load >= 2.4f) Release(c, k);  // refused when the drop pool is full: it stays hanging and tries again
@@ -124,12 +121,12 @@ public sealed class LiquidMatter : CoatMatter
             int slot = -1;
             for (int s = 0; s < Coat.MaxPendants; s++) if (!c.Pend[s].Live) { slot = s; break; }
             if (slot < 0) break;
-            c.Pend[slot] = new Coat.Pendant { Live = true, Cell = i, Neck = 0.66f, Salt = c.Salt * 131 + c.Serial++ * 17 + i };
+            c.Pend[slot] = new() { Live = true, Cell = i, Neck = 0.66f, Salt = c.Salt * 131 + c.Serial++ * 17 + i };
             c.PendAt[i] = (sbyte)slot;
         }
     }
 
-    /// <summary>Lets pendant k go as a drop (and maybe a satellite); false, with nothing changed, if the pool has no room.</summary>
+    /// Lets pendant k go as a drop (and maybe a satellite); false, with nothing changed, if the pool has no room.
     internal bool Release(Coat c, int k)
     {
         if (c.Set.Drops.Items.Length - c.Set.Drops.Count < 2) return false;
@@ -154,21 +151,21 @@ public sealed class LiquidMatter : CoatMatter
         return true;
     }
 
-    /// <summary>A drop of this liquid from the coat; false if the pool is full (the caller keeps the liquid).</summary>
+    /// A drop of this liquid from the coat; false if the pool is full (the caller keeps the liquid).
     internal bool TryDrop(Coat c, Vector2 pos, Vector2 anchor, int salt, float area, float neck) => Spawn(c, _liq.Phys, pos, anchor, salt, area, neck, main: true);
 
-    private bool Spawn(Coat c, in LiquidPhysics ph, Vector2 pos, Vector2 anchor, int salt, float area, float neck, bool main)
+    bool Spawn(Coat c, in LiquidPhysics ph, Vector2 pos, Vector2 anchor, int salt, float area, float neck, bool main)
     {
-        float px = c.Px, r = MathF.Sqrt(area / MathF.PI) * 0.95f;
+        float px = c.Px, r = Sqrt(area / PI) * 0.95f;
         return c.Set.Drops.Add(new DropPool.Drop
         {
             Owner = c.Owner, Pos = pos, Amount = area,
             Vel = new Vector2(HashRange(salt + 7, -14f, 14f), HashRange(salt + 8, ph.ReleaseMin, ph.ReleaseMax) * 0.8f) * px,
-            Gravity = new Vector2(0f, ph.Gravity * px),
+            Gravity = new(0f, ph.Gravity * px),
             Anchor = anchor, Pinch = pos,
             Born = c.Time, Life = HashRange(salt + 9, ph.LifeMin, ph.LifeMax),
             Size = r, Brightness = c.Bright,
-            Tether = main ? MathF.Max(neck, 0.12f) * (0.5f + ph.Stringiness) : 0f,
+            Tether = main ? Max(neck, 0.12f) * (0.5f + ph.Stringiness) : 0f,
             RecoilTime = main ? 0.18f + 0.35f * ph.Stringiness : 0f,
             Drag = ph.Drag, Seed = salt, HostSeed = c.Seed,
             Variant = r < 1.7f * px ? GoopDraw.Speck : GoopDraw.Free,
@@ -176,10 +173,10 @@ public sealed class LiquidMatter : CoatMatter
         });
     }
 
-    private static Vector2 Hang(Coat c, in Coat.Pendant p, Vector2 anchor)
+    static Vector2 Hang(Coat c, in Coat.Pendant p, Vector2 anchor)
     {
-        float swing = 0.12f * MathF.Sin(c.Time * 1.9f + p.Salt * 0.37f);
-        return anchor + Vector2.Normalize(new Vector2(swing, 1f)) * p.L;
+        float swing = 0.12f * Sin(c.Time * 1.9f + p.Salt * 0.37f);
+        return anchor + Vector2.Normalize(new(swing, 1f)) * p.L;
     }
 
     internal override void Emit(EffectScene scene, Coat c, float time)
@@ -191,7 +188,7 @@ public sealed class LiquidMatter : CoatMatter
         {
             ref readonly var p = ref c.Pend[k];
             if (!p.Live) continue;
-            float rb = MathF.Sqrt(p.M / MathF.PI) * 0.92f;
+            float rb = Sqrt(p.M / PI) * 0.92f;
             if (rb < 0.6f * c.Px) continue;
             float face = c.AnchorOf(p.Cell, out Vector2 anchor);
             Vector2 bead = Hang(c, in p, anchor);
@@ -206,7 +203,7 @@ public sealed class LiquidMatter : CoatMatter
         }
     }
 
-    /// <summary>A string between two hosts: a lit tube along a drooping curve, thinnest in the middle where it is stretched.</summary>
+    /// A string between two hosts: a lit tube along a drooping curve, thinnest in the middle where it is stretched.
     internal void DrawFilament(ImDrawListPtr dl, in CoatSet.Bridge br, Vector2[] pts, float alpha, in MaterialContext ctx)
     {
         const int N = 14, Cols = 5;
@@ -224,20 +221,20 @@ public sealed class LiquidMatter : CoatMatter
         {
             Vector2 d = pts[Math.Min(i + 1, N - 1)] - pts[Math.Max(i - 1, 0)];
             Vector2 n = d.LengthSquared() > 1e-6f ? new Vector2(-d.Y, d.X) / d.Length() : new Vector2(1f, 0f);
-            float r = r0 * (0.65f + 0.35f * MathF.Abs(2f * i / (N - 1f) - 1f));
+            float r = r0 * (0.65f + 0.35f * Abs(2f * i / (N - 1f) - 1f));
             for (int j = 0; j < Cols; j++)
             {
                 float x = -1f + 2f * j / (Cols - 1);
                 Vector4 lit = _liq.Matcap.Sample(x * n.X, x * n.Y);
-                mb.VertexReserved(pts[i] + n * (x * r), CoatDraw.Pack(new Vector3(lit.X, lit.Y, lit.Z), lit.W * alpha * CoatDraw.Soft(x, 0.4f)));
+                mb.VertexReserved(pts[i] + n * (x * r), CoatDraw.Pack(new(lit.X, lit.Y, lit.Z), lit.W * alpha * CoatDraw.Soft(x, 0.4f)));
             }
         }
         mb.StitchGrid(first, N, Cols);
         mb.Flush(dl, MeshDraw.WhiteUv(ctx.Time));
     }
 
-    /// <summary>True if a pendant of this chart or of the charts a few places either side of it in the stroke hangs within r of the point.</summary>
-    private static bool CrowdedOnChart(Coat c, Vector2 at, float r)
+    /// True if a pendant of this chart or of the charts a few places either side of it in the stroke hangs within r of the point.
+    static bool CrowdedOnChart(Coat c, Vector2 at, float r)
     {
         float r2 = r * r;
         var sibs = c.Siblings;
@@ -258,7 +255,7 @@ public sealed class LiquidMatter : CoatMatter
     }
 
     // Beads sitting on the face where the film is thick: stateless, a few per cell, thicker film more and bigger.
-    private void Beads(EffectScene scene, Coat c)
+    void Beads(EffectScene scene, Coat c)
     {
         var ph = _liq.Phys;
         float px = c.Px, hold = ph.Hold * px;
@@ -267,7 +264,7 @@ public sealed class LiquidMatter : CoatMatter
             if (!c.Vis[i]) continue;
             float th = c.M[i] / c.A[i], k = Smooth((th - 0.5f * hold) / hold);
             int seed = c.Salt * 53 + i * 11;
-            float dens = c.V == 1 ? 1f : MathF.Min(1f, c.A[i] / (10f * px));  // a strand cell is ~10 px of film; a chart's cells are smaller, so each takes its share
+            float dens = c.V == 1 ? 1f : Min(1f, c.A[i] / (10f * px));  // a strand cell is ~10 px of film; a chart's cells are smaller, so each takes its share
             if (k <= 0.02f || Hash01(seed) > k * 0.6f * dens) continue;
             c.Set.BeadsDrawn++;
             float size = HashRange(seed + 3, 1.3f, 2.7f) * px * (0.7f + 0.5f * Saturate(th / (ph.MaxThick * px)));
@@ -283,7 +280,7 @@ public sealed class LiquidMatter : CoatMatter
     internal override void Draw(ImDrawListPtr dl, Coat c, float alpha, in MaterialContext ctx)
     {
         if (c.V > 1) return;  // a chart is drawn by its host, in the host's own passes
-        float a = MathF.Min(1f, alpha * ctx.Alpha);
+        float a = Min(1f, alpha * ctx.Alpha);
         var skin = new Skin { L = _liq, Alpha = a * c.Opt.Skin };
         CoatDraw.Band(dl, c, ref skin, in ctx);
         var film = new Film { L = _liq, Alpha = a };
@@ -291,7 +288,7 @@ public sealed class LiquidMatter : CoatMatter
     }
 
     // A thin glossy layer over the whole strand, whichever way it faces: what makes it read as wet.
-    private struct Skin : IBand
+    struct Skin : IBand
     {
         public Liquid L;
         public float Alpha;
@@ -300,7 +297,7 @@ public sealed class LiquidMatter : CoatMatter
         public float Extent(Coat c, int i, out float uIn, out float uOut, out float sign)
         {
             float th = c.M[i] / c.Ds;
-            uIn = -c.R[i]; uOut = c.R[i] + MathF.Min(th * 0.3f, c.R[i] * 0.3f);
+            uIn = -c.R[i]; uOut = c.R[i] + Min(th * 0.3f, c.R[i] * 0.3f);
             sign = 1f;
             return Smooth(th / (L.Phys.Hold * c.Px * 0.6f));
         }
@@ -308,21 +305,21 @@ public sealed class LiquidMatter : CoatMatter
         public uint Color(Coat c, int i, float x, Vector2 dir, float show)
         {
             Vector4 lit = L.Matcap.Sample(x * dir.X, x * dir.Y);
-            return CoatDraw.Pack(new Vector3(lit.X, lit.Y, lit.Z), lit.W * show * Alpha * 0.45f * CoatDraw.Soft(x, 0.2f));
+            return CoatDraw.Pack(new(lit.X, lit.Y, lit.Z), lit.W * show * Alpha * 0.45f * CoatDraw.Soft(x, 0.2f));
         }
     }
 
     // The matter hanging off the lower edge: thick where it has pooled, fading as the surface turns from facing down.
-    private struct Film : IBand
+    struct Film : IBand
     {
         public Liquid L;
         public float Alpha;
 
         public float Extent(Coat c, int i, out float uIn, out float uOut, out float sign)
         {
-            float r = c.R[i], th = MathF.Min(c.M[i] / c.Ds, 0.7f * r + 2f * c.Px);  // never wider than the limb it hangs from
+            float r = c.R[i], th = Min(c.M[i] / c.Ds, 0.7f * r + 2f * c.Px);  // never wider than the limb it hangs from
             uOut = r + th * 1.1f;
-            uIn = r - MathF.Min(th * 1.2f + c.Px, r * 0.8f);
+            uIn = r - Min(th * 1.2f + c.Px, r * 0.8f);
             sign = 1f;
             return Smooth(th / (L.Phys.Hold * c.Px * 0.9f)) * Smooth(c.Face[i] / 0.3f);
         }
@@ -331,21 +328,21 @@ public sealed class LiquidMatter : CoatMatter
         {
             // a half-cylinder across the band: the normal leans toward the side's edge
             Vector4 lit = L.Matcap.Sample(x * dir.X, x * dir.Y);
-            float dark = 0.5f + 0.5f * MathF.Exp(-L.Phys.Absorb * MathF.Min(c.M[i] / c.Ds, c.R[i]) / c.Px);  // Beer-Lambert: a thicker film is darker
+            float dark = 0.5f + 0.5f * Exp(-L.Phys.Absorb * Min(c.M[i] / c.Ds, c.R[i]) / c.Px);  // Beer-Lambert: a thicker film is darker
             return CoatDraw.Pack(new Vector3(lit.X, lit.Y, lit.Z) * dark, lit.W * show * Alpha * CoatDraw.Soft(x, 0.3f) * (x < 0f ? 0.7f : 1f));
         }
     }
 }
 
-/// <summary>Fire: fuel clings to the strand; heat spreads between neighbours and burns it, throwing flames, cinders and smoke and leaving glowing char.</summary>
+/// Fire: fuel clings to the strand; heat spreads between neighbours and burns it, throwing flames, cinders and smoke and leaving glowing char.
 public sealed class FlameMatter : CoatMatter
 {
-    private const float BurnRate = 0.30f, CharRate = 0.06f, CharMax = 0.85f;  // px/s of fuel at full heat; 1/s
-    private static readonly FlameLayer Back = new(FlameLayer.Back, 1.15f, 1, 20f, 34f);
-    private static readonly FlameLayer Body = new(FlameLayer.Body, 0.85f, 2, 18f, 32f);
-    private static readonly FlameLayer Front = new(FlameLayer.Front, 0.60f, 1, 12f, 22f);
+    const float BurnRate = 0.30f, CharRate = 0.06f, CharMax = 0.85f;  // px/s of fuel at full heat; 1/s
+    static readonly FlameLayer Back = new(FlameLayer.Back, 1.15f, 1, 20f, 34f);
+    static readonly FlameLayer Body = new(FlameLayer.Body, 0.85f, 2, 18f, 32f);
+    static readonly FlameLayer Front = new(FlameLayer.Front, 0.60f, 1, 12f, 22f);
 
-    private readonly Palette _ramp;
+    readonly Palette _ramp;
 
     internal FlameMatter(string material, Palette ramp) : base(material)
     {
@@ -373,15 +370,15 @@ public sealed class FlameMatter : CoatMatter
         {
             total += c.Heat[i];
             float fuel = Saturate(c.M[i] / ds / (0.45f * px));
-            float nb = MathF.Max(i > 0 ? c.Heat[i - 1] : (c.Closed ? c.Heat[n - 1] : 0f), i < n - 1 ? c.Heat[i + 1] : (c.Closed ? c.Heat[0] : 0f));
+            float nb = Max(i > 0 ? c.Heat[i - 1] : (c.Closed ? c.Heat[n - 1] : 0f), i < n - 1 ? c.Heat[i + 1] : (c.Closed ? c.Heat[0] : 0f));
             float ign = (nb > 0.4f ? 1.8f : 0f) + (c.Char[i] > 0.35f ? 0.7f * c.Char[i] : 0f);  // a neighbour's flame, or embers still glowing in the char
             c.Heat[i] = Saturate(c.Heat[i] + (ign * fuel * (1f - c.Heat[i]) - 1.5f * (1f - fuel) * c.Heat[i]) * h);
 
             float heat = c.Heat[i];
             if (heat < 0.02f) continue;
-            float used = MathF.Min(c.M[i], BurnRate * px * ds * heat * fuel * h);
+            float used = Min(c.M[i], BurnRate * px * ds * heat * fuel * h);
             c.Debit(i, used); c.Out += used; c.Set.Sunk[(int)CoatSet.Sink.Burned] += used;
-            c.Char[i] = MathF.Min(CharMax, c.Char[i] + CharRate * heat * h * (1f - c.Char[i]));
+            c.Char[i] = Min(CharMax, Lerp(c.Char[i], 1f, CharRate * heat * h));
 
             int salt = c.Seed + i * 977 + (int)(c.Time * 997f);
             Vector2 top = c.P[i] - c.Nm[i] * (c.R[i] * 0.6f);
@@ -412,11 +409,11 @@ public sealed class FlameMatter : CoatMatter
     internal override void Emit(EffectScene scene, Coat c, float time)
     {
         float px = c.Px;
-        int stride = Math.Max(1, (int)MathF.Round(44f * px / c.Ds)), half = stride / 2;
+        int stride = Math.Max(1, (int)Round(44f * px / c.Ds)), half = stride / 2;
         for (int i = half; i < c.Live; i += stride)
         {
             float heat = 0f;
-            for (int j = Math.Max(0, i - half); j <= Math.Min(c.Live - 1, i + half); j++) heat = MathF.Max(heat, c.Heat[j]);
+            for (int j = Math.Max(0, i - half); j <= Math.Min(c.Live - 1, i + half); j++) heat = Max(heat, c.Heat[j]);
             if (heat < 0.12f || !c.Vis[i]) continue;
             Vector2 at = c.P[i] - c.Nm[i] * (c.R[i] * 0.55f);
             int site = c.Seed * 61 + i * 17;
@@ -431,14 +428,14 @@ public sealed class FlameMatter : CoatMatter
 
     internal override void Draw(ImDrawListPtr dl, Coat c, float alpha, in MaterialContext ctx)
     {
-        float a = MathF.Min(1f, alpha * ctx.Alpha);
+        float a = Min(1f, alpha * ctx.Alpha);
         var soot = new Soot { Alpha = a };
         CoatDraw.Band(dl, c, ref soot, in ctx);
         var glow = new Glow { Alpha = a, Ramp = _ramp };
         CoatDraw.Band(dl, c, ref glow, in ctx);
     }
 
-    private struct Soot : IBand
+    struct Soot : IBand
     {
         public float Alpha;
         public bool Continuous => true;
@@ -447,7 +444,7 @@ public sealed class FlameMatter : CoatMatter
             Tint(Pack(0.05f, 0.045f, 0.04f), show * 0.55f * Alpha * CoatDraw.Soft(x, 0f), false);
     }
 
-    private struct Glow : IBand
+    struct Glow : IBand
     {
         public float Alpha;
         public Palette Ramp;
@@ -455,16 +452,16 @@ public sealed class FlameMatter : CoatMatter
         public float Extent(Coat c, int i, out float uIn, out float uOut, out float sign) { uIn = -c.R[i] * 0.8f; uOut = c.R[i] * 0.8f; sign = 1f; return c.Heat[i]; }
         public uint Color(Coat c, int i, float x, Vector2 dir, float show)
         {
-            float flicker = 0.85f + 0.15f * MathF.Sin(c.Time * 9f + i * 1.7f);
+            float flicker = 0.85f + 0.15f * Sin(c.Time * 9f + i * 1.7f);
             return WithAlpha(Ramp.Sample(0.30f + 0.55f * show * (1f - x * x * 0.6f)), show * 0.42f * Alpha * flicker * CoatDraw.Soft(x, 0f));
         }
     }
 }
 
-/// <summary>Snow and the like: settles on whatever faces up, banks into drifts, creeps off steep slopes, and drops lumps when overloaded.</summary>
+/// Snow and the like: settles on whatever faces up, banks into drifts, creeps off steep slopes, and drops lumps when overloaded.
 public sealed class GranularMatter : CoatMatter
 {
-    private static readonly Matcap Powder = new(new SurfaceSpec(new Vector3(0.80f, 0.86f, 0.95f), new Vector3(0.04f), 0f, 0.92f, 0.22f, 0.28f, 0.45f, new Vector3(0.35f, 0.50f, 0.80f)));
+    static readonly Matcap Powder = new(new SurfaceSpec(new(0.80f, 0.86f, 0.95f), new(0.04f), 0f, 0.92f, 0.22f, 0.28f, 0.45f, new(0.35f, 0.50f, 0.80f)));
 
     internal GranularMatter(string material) : base(material)
     {
@@ -487,8 +484,8 @@ public sealed class GranularMatter : CoatMatter
             int salt = c.Seed * 7 + i * 131 + (int)(c.Time * 97f);
             c.Set.Lumps.Add(new ParticleSystem.Particle
             {
-                Pos = c.P[i] + c.Nm[i] * c.R[i], Vel = new Vector2(HashRange(salt, -30f, 30f), 20f) * px, Gravity = new Vector2(0f, 900f * px),
-                Born = c.Time, Life = HashRange(salt + 1, 1.4f, 2.0f), Size = MathF.Sqrt(m / MathF.PI) * 0.8f,
+                Pos = c.P[i] + c.Nm[i] * c.R[i], Vel = new Vector2(HashRange(salt, -30f, 30f), 20f) * px, Gravity = new(0f, 900f * px),
+                Born = c.Time, Life = HashRange(salt + 1, 1.4f, 2.0f), Size = Sqrt(m / PI) * 0.8f,
                 Brightness = c.Bright, Seed = salt, Role = PrimitiveRole.Snow, Owner = c.Owner, Color = c.Color,
             });
         }
@@ -496,11 +493,11 @@ public sealed class GranularMatter : CoatMatter
 
     internal override void Draw(ImDrawListPtr dl, Coat c, float alpha, in MaterialContext ctx)
     {
-        var band = new Bank { Alpha = MathF.Min(1f, alpha * ctx.Alpha) };
+        var band = new Bank { Alpha = Min(1f, alpha * ctx.Alpha) };
         CoatDraw.Band(dl, c, ref band, in ctx);
     }
 
-    private struct Bank : IBand
+    struct Bank : IBand
     {
         public float Alpha;
 
@@ -508,7 +505,7 @@ public sealed class GranularMatter : CoatMatter
         {
             float th = c.M[i] / c.Ds * (0.7f + 0.6f * Hash01(c.Seed * 29 + i * 7)), r = c.R[i];  // drifts are lumpy
             uOut = r + th * 1.3f;
-            uIn = r - MathF.Min(th * 0.8f, r * 0.6f);
+            uIn = r - Min(th * 0.8f, r * 0.6f);
             sign = -1f;  // the upper side
             return Smooth(th / (0.8f * c.Px)) * Smooth(c.Face[i] / 0.3f);
         }

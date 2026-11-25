@@ -1,27 +1,24 @@
-using System.Numerics;
-using Dalamud.Bindings.ImGui;
-
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>One band of film along a coat: where it lies across the strand and what colour each point is.</summary>
+/// One band of film along a coat: where it lies across the strand and what colour each point is.
 internal interface IBand
 {
-    /// <summary>For cell i: side (+1 underside, -1 upper), where the band starts and ends in px from the strand's centre, and how strongly it shows (0..1).</summary>
+    /// For cell i: side (+1 underside, -1 upper), where the band starts and ends in px from the strand's centre, and how strongly it shows (0..1).
     float Extent(Coat c, int i, out float uIn, out float uOut, out float sign);
 
-    /// <summary>Colour at x across the band (-1 inner edge .. 1 outer edge); dir is the screen direction of the side.</summary>
+    /// Colour at x across the band (-1 inner edge .. 1 outer edge); dir is the screen direction of the side.
     uint Color(Coat c, int i, float x, Vector2 dir, float show);
 
-    /// <summary>True for a band that spans the strand: it takes the side that varies smoothly, not the underside.</summary>
+    /// True for a band that spans the strand: it takes the side that varies smoothly, not the underside.
     bool Continuous => false;
 }
 
 internal static class CoatDraw
 {
-    private const int Cols = 7;
+    const int Cols = 7;
     internal static readonly MeshBuilder Mb = new();
 
-    /// <summary>Lays a band of vertices along the cells and stitches them into one lit strip.</summary>
+    /// Lays a band of vertices along the cells and stitches them into one lit strip.
     public static void Band<T>(ImDrawListPtr dl, Coat c, ref T band, in MaterialContext ctx) where T : struct, IBand
     {
         int n = c.Live;
@@ -48,7 +45,7 @@ internal static class CoatDraw
         Mb.Flush(dl, MeshDraw.WhiteUv(ctx.Time));
     }
 
-    /// <summary>Smooths the drawn strand (positions, then side and underside) so bands don't show polyline corners; the simulation keeps the host's samples.</summary>
+    /// Smooths the drawn strand (positions, then side and underside) so bands don't show polyline corners; the simulation keeps the host's samples.
     internal static void Interpolate(Coat c, int n, bool wrap, Span<Vector2> p, Span<Vector2> sd, Span<Vector2> nm)
     {
         for (int i = 0; i < n; i++) p[i] = c.P[i];
@@ -83,15 +80,15 @@ internal static class CoatDraw
         }
     }
 
-    /// <summary>A lit colour and opacity as a vertex colour, recoloured when the effect carries a colour override.</summary>
+    /// A lit colour and opacity as a vertex colour, recoloured when the effect carries a colour override.
     public static uint Pack(Vector3 rgb, float alpha)
     {
         float dye = ColorOverrideChroma;
         if (dye > 0f) rgb = BoostSaturation(rgb, dye, SoftDye);
-        return Tint(DrawHelpers.Pack(rgb.X, rgb.Y, rgb.Z), alpha, ColorOverrideActive);
+        return Tint(DrawHelpers.Pack(rgb), alpha, ColorOverrideActive);
     }
 
-    /// <summary>1 across the middle of a band falling to `edge` at its sides.</summary>
+    /// 1 across the middle of a band falling to `edge` at its sides.
     public static float Soft(float x, float edge)
     {
         float x2 = x * x;

@@ -1,24 +1,21 @@
-using System.Numerics;
-using Dalamud.Bindings.ImGui;
-
 namespace RealDebuffs.Effects.Framework;
 
 internal static partial class LiquidDraw
 {
-    private const float WaterIndex = 1.333f;
-    private const int Planes = 8;  // depth slices the light is traced to
+    const float WaterIndex = 1.333f;
+    const int Planes = 8;  // depth slices the light is traced to
 
     // the key light's travel across the screen (y down), its tilt, and how far the water bends it
-    private static readonly Vector2 AirDir = Vector2.Normalize(new Vector2(-StudioLighting.Key.X, -StudioLighting.Key.Y));
-    private static readonly float AirTilt = AirDir.X / AirDir.Y;
-    private static readonly float WaterTilt = FlatTilt();
+    static readonly Vector2 AirDir = Vector2.Normalize(new(-StudioLighting.Key.X, -StudioLighting.Key.Y));
+    static readonly float AirTilt = AirDir.X / AirDir.Y;
+    static readonly float WaterTilt = FlatTilt();
 
-    private static float FlatTilt() { var t = Refract(0f); return t.X / t.Y; }
+    static float FlatTilt() { var t = Refract(0f); return t.X / t.Y; }
 
-    private static float[] _y = new float[512], _slope = new float[512];
+    static float[] _y = new float[512], _slope = new float[512];
 
-    /// <summary>Surface height and slope at every column.</summary>
-    private static void Sample(LiquidField f)
+    /// Surface height and slope at every column.
+    static void Sample(LiquidField f)
     {
         int n = f.Columns;
         if (_y.Length < n) { _y = new float[n]; _slope = new float[n]; }
@@ -30,25 +27,25 @@ internal static partial class LiquidDraw
         }
     }
 
-    private static float SurfaceAt(float x, LiquidField f)
+    static float SurfaceAt(float x, LiquidField f)
     {
         float u = Math.Clamp(x / f.Spacing, 0f, f.Columns - 1.001f);
         int i = (int)u;
-        return _y[i] + (_y[i + 1] - _y[i]) * (u - i);
+        return Lerp(_y[i], _y[i + 1], (u - i));
     }
 
-    /// <summary>The key light after the water bends it, for a surface that falls s px per px to the right (zero if it cannot enter).</summary>
-    private static Vector2 Refract(float s)
+    /// The key light after the water bends it, for a surface that falls s px per px to the right (zero if it cannot enter).
+    static Vector2 Refract(float s)
     {
-        Vector2 nrm = new Vector2(s, -1f) / MathF.Sqrt(1f + s * s);
+        Vector2 nrm = new Vector2(s, -1f) / Sqrt(1f + s * s);
         float cosI = -Vector2.Dot(nrm, AirDir), eta = 1f / WaterIndex;
         if (cosI <= 0.02f) return default;
-        return eta * AirDir + (eta * cosI - MathF.Sqrt(1f - eta * eta * (1f - cosI * cosI))) * nrm;
+        return eta * AirDir + (eta * cosI - Sqrt(1f - eta * eta * (1f - cosI * cosI))) * nrm;
     }
 
     // the pool
 
-    private static void Body(LiquidField f, in Look k)
+    static void Body(LiquidField f, in Look k)
     {
         var look = k.L.Look; var ph = k.L.Phys;
         int n = f.Columns; float dx = f.Spacing, px = k.Px, H = f.Size.Y;
@@ -62,7 +59,7 @@ internal static partial class LiquidDraw
         float aTop = 0.12f + 0.50f * ph.Viscosity, aDeep = look.Opacity;
 
         Span<float> zr = stackalloc float[R];
-        for (int r = 0; r < R; r++) zr[r] = 1f - MathF.Exp(-rows[r] * px / reach);
+        for (int r = 0; r < R; r++) zr[r] = 1f - Exp(-rows[r] * px / reach);
 
         Mb.Reserve(n * R, (n - 1) * (R - 1) * 6);
         int first = Mb.Vertices;
@@ -72,8 +69,8 @@ internal static partial class LiquidDraw
             for (int r = 0; r < R; r++)
             {
                 float y = y0 + rows[r] * px, z = zr[r];
-                if (y > H) { y = H; z = 1f - MathF.Exp(-(H - y0) / reach); }
-                Mb.VertexReserved(new Vector2(x, y), Col(in k, Vector3.Lerp(skin, deep, z), Lerp(aTop, aDeep, z) * fade));
+                if (y > H) { y = H; z = 1f - Exp(-(H - y0) / reach); }
+                Mb.VertexReserved(new(x, y), Col(in k, Vector3.Lerp(skin, deep, z), Lerp(aTop, aDeep, z) * fade));
             }
         }
         Mb.StitchGrid(first, n, R);
@@ -81,13 +78,13 @@ internal static partial class LiquidDraw
 
     // light shafts: the key light is traced through the real surface to a few depth slices, so waves focus bright filaments and starve gaps
 
-    private static float[] _lux = new float[Planes * 800], _rayX = new float[800], _rayQ = new float[800], _rayW = new float[800], _rayE = new float[800], _row = new float[800];
-    private static readonly float[] PlaneD = new float[Planes];
-    private static int _luxCols, _luxExt;
-    private static float _luxRest, _luxLevel, _luxReach;
-    private static bool _luxOn;
+    static float[] _lux = new float[Planes * 800], _rayX = new float[800], _rayQ = new float[800], _rayW = new float[800], _rayE = new float[800], _row = new float[800];
+    static readonly float[] PlaneD = new float[Planes];
+    static int _luxCols, _luxExt;
+    static float _luxRest, _luxLevel, _luxReach;
+    static bool _luxOn;
 
-    private static void Shafts(LiquidField f, in Look k)
+    static void Shafts(LiquidField f, in Look k)
     {
         _luxOn = false;
         var look = k.L.Look;
@@ -96,7 +93,7 @@ internal static partial class LiquidDraw
         if (gain < 0.02f || level < 10f * px) return;
 
         int n = f.Columns; float dx = f.Spacing, W = f.Size.X, rest = f.Size.Y - level;
-        int ext = (int)MathF.Ceiling(level * WaterTilt / dx) + 2, cols = n + 2 * ext;
+        int ext = (int)Ceiling(level * WaterTilt / dx) + 2, cols = n + 2 * ext;
         if (_rayX.Length < cols)
         {
             int m = cols + 64;
@@ -113,18 +110,18 @@ internal static partial class LiquidDraw
             Vector2 t = Refract(s);
             _rayX[e] = (e - ext) * dx;
             _rayQ[e] = t.Y > 0.05f ? t.X / t.Y : 0f;
-            _rayW[e] = t.Y > 0.05f ? Math.Max(0f, 1f - AirTilt * s) : 0f;
+            _rayW[e] = t.Y > 0.05f ? Max(0f, 1f - AirTilt * s) : 0f;
         }
 
         for (int j = 0; j < Planes; j++)
         {
-            float d = level * MathF.Pow(j / (Planes - 1f), 1.35f);
+            float d = level * Pow(j / (Planes - 1f), 1.35f);
             PlaneD[j] = d;
             int o = j * cols;
             for (int e = 0; e < cols; e++)
             {
                 float b = (_rayX[e] + d * (_rayQ[e] - WaterTilt) - _rayE[e] * _rayQ[e]) / dx + ext, w = _rayW[e];
-                int c = (int)MathF.Floor(b);
+                int c = (int)Floor(b);
                 if (c < 0 || c + 1 >= cols) continue;
                 float fr = b - c;
                 _lux[o + c] += w * (1f - fr); _lux[o + c + 1] += w * fr;
@@ -141,55 +138,55 @@ internal static partial class LiquidDraw
 
         Vector3 glow = Lit(Vector3.Lerp(look.Thin, Vector3.One, 0.55f) * StudioLighting.KeyColor * 1.3f);
         Vector3 shade = Lit(look.Deep * 0.5f);
-        int lo = Math.Max(1, ext - (int)MathF.Ceiling(level * WaterTilt / dx) - 1), hi = Math.Min(cols - 2, ext + n), span = (hi - lo) / 2 + 2;  // every second bin: the light is soft enough
+        int lo = Math.Max(1, ext - (int)Ceiling(level * WaterTilt / dx) - 1), hi = Math.Min(cols - 2, ext + n), span = (hi - lo) / 2 + 2;  // every second bin: the light is soft enough
         Mb.Reserve(Planes * span, (span - 1) * (Planes - 1) * 6);
         int first = Mb.Vertices;
         for (int j = 0; j < Planes; j++)
         {
             float d = PlaneD[j], sink = 1f - d / level;
-            float strength = gain * MathF.Exp(-d / (0.9f * _luxReach)) * Smooth(d / (4f * px));
+            float strength = gain * Exp(-d / (0.9f * _luxReach)) * Smooth(d / (4f * px));
             for (int q = 0; q < span; q++)
             {
                 int c = Math.Min(lo + 2 * q, cols - 2);
                 float x = (c - ext) * dx + d * WaterTilt, lux = _lux[j * cols + c];
-                float over = MathF.Min(MathF.Max(lux - 1f, 0f), 2.5f);
-                float lift = MathF.Min(0.32f, strength * 0.42f * over / (1f + 0.3f * over));
-                float dim = strength * 0.30f * MathF.Min(MathF.Max(1f - lux, 0f), 1f);
-                Mb.VertexReserved(new Vector2(x, rest + d + (SurfaceAt(x, f) - rest) * sink), lift >= dim ? Col(in k, glow, lift) : Col(in k, shade, dim));
+                float over = Min(Max(lux - 1f, 0f), 2.5f);
+                float lift = Min(0.32f, strength * 0.42f * over / (1f + 0.3f * over));
+                float dim = strength * 0.30f * Min(Max(1f - lux, 0f), 1f);
+                Mb.VertexReserved(new(x, rest + d + (SurfaceAt(x, f) - rest) * sink), lift >= dim ? Col(in k, glow, lift) : Col(in k, shade, dim));
             }
         }
         Mb.StitchGrid(first, Planes, span);
     }
 
-    /// <summary>How much more (or less) than the plain key light reaches a point in the water; 1 when the shafts are off.</summary>
-    private static float LightAt(float x, float y, float dx)
+    /// How much more (or less) than the plain key light reaches a point in the water; 1 when the shafts are off.
+    static float LightAt(float x, float y, float dx)
     {
         float d = y - _luxRest;
         if (!_luxOn || d <= 0f || d >= _luxLevel) return 1f;
         int j = 0;
         while (j + 2 < Planes && PlaneD[j + 1] < d) j++;
-        float tj = Math.Clamp((d - PlaneD[j]) / MathF.Max(PlaneD[j + 1] - PlaneD[j], 1e-3f), 0f, 1f);
+        float tj = Saturate((d - PlaneD[j]) / Max(PlaneD[j + 1] - PlaneD[j], 1e-3f));
         float b = Math.Clamp((x - d * WaterTilt) / dx + _luxExt, 0f, _luxCols - 1.001f);
         int c = (int)b; float fr = b - c;
         float a = _lux[j * _luxCols + c] * (1f - fr) + _lux[j * _luxCols + c + 1] * fr;
         float z = _lux[(j + 1) * _luxCols + c] * (1f - fr) + _lux[(j + 1) * _luxCols + c + 1] * fr;
-        return a + (z - a) * tj;
+        return Lerp(a, z, tj);
     }
 
-    /// <summary>Air dragged under where a stream lands: a streaky white column that widens, slows and thins with depth.</summary>
-    private static void Plunges(LiquidField f, in Look k)
+    /// Air dragged under where a stream lands: a streaky white column that widens, slows and thins with depth.
+    static void Plunges(LiquidField f, in Look k)
     {
         var ph = k.L.Phys;
         if (ph.Bubbles <= 0.05f || f.Level < 6f * k.Px) return;
         const int Rz = 14, Cx = 7;
         float px = k.Px;
-        Vector3 milk = Lit(Vector3.Lerp(new Vector3(0.85f, 0.93f, 1f), k.L.Look.Thin * 1.5f, 0.3f + 0.6f * ph.Viscosity) * (StudioLighting.FillColor * 1.2f + StudioLighting.KeyColor * 0.4f));
+        Vector3 milk = Lit(Vector3.Lerp(new(0.85f, 0.93f, 1f), k.L.Look.Thin * 1.5f, 0.3f + 0.6f * ph.Viscosity) * (StudioLighting.FillColor * 1.2f + StudioLighting.KeyColor * 0.4f));
         for (int i = 0; i < f.Jets.Count; i++)
         {
             var j = f.Jets[i];
             if (!j.Wet) continue;
             float w0 = j.HitR * 1.25f + 6f * px;
-            float reach = MathF.Min(f.Size.Y - j.Hit.Y, j.HitR * 3.2f + 42f * px);
+            float reach = Min(f.Size.Y - j.Hit.Y, j.HitR * 3.2f + 42f * px);
             if (reach < 8f * px) continue;
             float strength = Math.Clamp(j.HitR / (12f * px), 0.3f, 1f) * 0.42f * ph.Bubbles;
             Vector2 v = j.PathV[Math.Max(j.Rows - 1, 0)];
@@ -199,15 +196,15 @@ internal static partial class LiquidDraw
             int first = Mb.Vertices;
             for (int r = 0; r < Rz; r++)
             {
-                float u = r / (Rz - 1f), z = reach * MathF.Pow(u, 1.2f);
-                float w = w0 * (0.8f + 0.9f * u), cx = j.Hit.X + lean * reach * 0.5f * (1f - MathF.Exp(-u * 2.5f));
-                float fade = MathF.Exp(-1.9f * u) * (1f - u) * Smooth(z / (3f * px));
+                float u = r / (Rz - 1f), z = reach * Pow(u, 1.2f);
+                float w = w0 * (0.8f + 0.9f * u), cx = j.Hit.X + lean * reach * 0.5f * (1f - Exp(-u * 2.5f));
+                float fade = Exp(-1.9f * u) * (1f - u) * Smooth(z / (3f * px));
                 for (int c = 0; c < Cx; c++)
                 {
                     float q = c / (Cx - 1f) * 2f - 1f;
                     float streak = 0.55f + 0.45f * Noise.Value(q * 2.6f + j.Seed * 0.37f, z / (16f * px) - k.Time * 1.5f);  // bubbles stream down the column
-                    float a = strength * fade * MathF.Pow(1f - q * q, 1.3f) * streak;
-                    Mb.VertexReserved(new Vector2(cx + q * w, j.Hit.Y + z), Col(in k, milk, a));
+                    float a = strength * fade * Pow(1f - q * q, 1.3f) * streak;
+                    Mb.VertexReserved(new(cx + q * w, j.Hit.Y + z), Col(in k, milk, a));
                 }
             }
             Mb.StitchGrid(first, Rz, Cx);
@@ -216,12 +213,12 @@ internal static partial class LiquidDraw
 
     // bubbles carried under
 
-    private static void Bubbles(ImDrawListPtr dl, LiquidField f, in Look k)
+    static void Bubbles(ImDrawListPtr dl, LiquidField f, in Look k)
     {
         if (f.BubbleCount == 0) return;
         Span<float> rr = stackalloc float[3];
         Span<uint> cc = stackalloc uint[3];
-        Vector3 rim = Lit(Vector3.Lerp(new Vector3(0.8f, 0.92f, 1f), k.L.Look.Thin, 0.35f) * 1.1f);
+        Vector3 rim = Lit(Vector3.Lerp(new(0.8f, 0.92f, 1f), k.L.Look.Thin, 0.35f) * 1.1f);
         Vector3 core = Lit(k.L.Look.Deep * 0.5f);
         for (int i = 0; i < f.BubbleCount; i++)
         {
@@ -244,8 +241,8 @@ internal static partial class LiquidDraw
         }
     }
 
-    /// <summary>Specks hanging in clear water: they drift on a slow current, and flash as they cross a shaft of light.</summary>
-    private static void Motes(ImDrawListPtr dl, LiquidField f, in Look k)
+    /// Specks hanging in clear water: they drift on a slow current, and flash as they cross a shaft of light.
+    static void Motes(ImDrawListPtr dl, LiquidField f, in Look k)
     {
         var look = k.L.Look;
         float clear = (1f - look.Opacity) * (1f - k.L.Phys.Viscosity), px = k.Px, level = f.Level, W = f.Size.X;
@@ -257,23 +254,23 @@ internal static partial class LiquidDraw
         for (int i = 0; i < count; i++)
         {
             int h = i * 131 + 17;
-            float t = k.Time, p = Hash01(h + 2) * MathF.Tau;
-            float x = Wrap(Hash01(h) * W + t * (5f + 9f * Hash01(h + 3)) * px + 30f * px * MathF.Sin(t * 0.11f + p), W);
+            float t = k.Time, p = Hash01(h + 2) * Tau;
+            float x = Wrap(Hash01(h) * W + t * (5f + 9f * Hash01(h + 3)) * px + 30f * px * Sin(t * 0.11f + p), W);
             float s = SurfaceAt(x, f), depth = f.Size.Y - s;
             float d = 0.10f + 0.84f * Hash01(h + 1);
-            float y = s + depth * d + 4f * px * MathF.Sin(t * 0.37f + p);
+            float y = s + depth * d + 4f * px * Sin(t * 0.37f + p);
             float lit = Math.Clamp(LightAt(x, y, f.Spacing) - 0.4f, 0f, 1.6f) / 1.6f;
             float a = clear * (0.10f + 0.36f * lit) * Smooth(d / 0.14f) * Smooth(depth / (30f * px));
             float r = (0.7f + 1.1f * Hash01(h + 4)) * px * (0.8f + 0.5f * lit);
             rr[0] = r * 0.5f; rr[1] = r;
             cc[0] = Col(in k, dust, a * 0.5f); cc[1] = Col(in k, dust, 0f);
-            MeshDraw.Radial(dl, new Vector2(x, y), k.Uv, Col(in k, dust, a), 6, rr, cc, 0f, 1f, 0, 0f);
+            MeshDraw.Radial(dl, new(x, y), k.Uv, Col(in k, dust, a), 6, rr, cc, 0f, 1f, 0, 0f);
         }
     }
 
     // the waterline: the meniscus, and under it the silvery band where the surface mirrors the water from below
 
-    private static void Surface(LiquidField f, in Look k)
+    static void Surface(LiquidField f, in Look k)
     {
         var look = k.L.Look; var ph = k.L.Phys;
         int n = f.Columns; float dx = f.Spacing, px = k.Px;
@@ -292,32 +289,32 @@ internal static partial class LiquidDraw
             float x = i * dx, y0 = _y[i];
             float micro = 0.14f * Noise.Value(x * 0.55f / px, k.Time * 2.6f);  // ripples too fine for the mesh still sparkle
             float s = _slope[i] + micro;
-            float glint = MathF.Exp(-MathF.Pow((s + 0.30f) / 0.20f, 2f)) + 0.10f;
+            float glint = Exp(-Pow((s + 0.30f) / 0.20f, 2f)) + 0.10f;
             float lit = Math.Clamp((1f - AirTilt * s - 0.5f) / 1.0f, 0f, 1.2f);  // a face turned to the light is brighter
             float broken = 0.55f + 0.45f * Smooth(-0.2f, 0.7f, Noise.Value(x * 0.03f / px, k.Time * 0.35f));
             float fade = Smooth((f.Size.Y - y0) / (30f * px));
 
-            Vector3 line = Vector3.Lerp(sky, key, MathF.Min(1f, glint * sheen));
+            Vector3 line = Vector3.Lerp(sky, key, Min(1f, glint * sheen));
             float aLine = Math.Clamp(0.26f + 0.50f * glint * sheen + 0.18f * lit, 0f, 0.95f);
             float aBand = (0.10f + 0.22f * sheen * lit) * clear * broken * fade;
 
-            Mb.VertexReserved(new Vector2(x, y0 - 3.2f * px), Col(in k, line, 0f));
-            Mb.VertexReserved(new Vector2(x, y0 - 0.5f * px), Col(in k, line, aLine));
-            Mb.VertexReserved(new Vector2(x, y0 + 1.0f * px), Col(in k, Vector3.Lerp(line, under, 0.5f), aLine * 0.75f));
-            Mb.VertexReserved(new Vector2(x, y0 + 2.6f * px), Col(in k, under, aBand));
-            Mb.VertexReserved(new Vector2(x, y0 + 6.5f * px), Col(in k, under, aBand * 0.45f));
-            Mb.VertexReserved(new Vector2(x, y0 + 14f * px), Col(in k, under, 0f));
+            Mb.VertexReserved(new(x, y0 - 3.2f * px), Col(in k, line, 0f));
+            Mb.VertexReserved(new(x, y0 - 0.5f * px), Col(in k, line, aLine));
+            Mb.VertexReserved(new(x, y0 + 1.0f * px), Col(in k, Vector3.Lerp(line, under, 0.5f), aLine * 0.75f));
+            Mb.VertexReserved(new(x, y0 + 2.6f * px), Col(in k, under, aBand));
+            Mb.VertexReserved(new(x, y0 + 6.5f * px), Col(in k, under, aBand * 0.45f));
+            Mb.VertexReserved(new(x, y0 + 14f * px), Col(in k, under, 0f));
         }
         Mb.StitchGrid(first, n, R);
     }
 
-    /// <summary>Foam: ragged patches that sit on the surface and thin out below it, never an even glow.</summary>
-    private static void Foam(LiquidField f, in Look k)
+    /// Foam: ragged patches that sit on the surface and thin out below it, never an even glow.
+    static void Foam(LiquidField f, in Look k)
     {
         var look = k.L.Look; var ph = k.L.Phys;
         if (ph.Foam <= 0.01f || f.Level < 0.5f * k.Px) return;
         int n = f.Columns; float dx = f.Spacing, px = k.Px;
-        Vector3 white = Lit(Vector3.Lerp(new Vector3(0.90f, 0.95f, 0.98f), look.Thin * 1.6f, MathF.Min(0.95f, 0.30f + 1.1f * ph.Viscosity)) * (StudioLighting.FillColor * 1.3f + StudioLighting.KeyColor * 0.55f));
+        Vector3 white = Lit(Vector3.Lerp(new(0.90f, 0.95f, 0.98f), look.Thin * 1.6f, Min(0.95f, 0.30f + 1.1f * ph.Viscosity)) * (StudioLighting.FillColor * 1.3f + StudioLighting.KeyColor * 0.55f));
 
         const int R = 5;
         Mb.Reserve(n * R, (n - 1) * (R - 1) * 6);
@@ -327,28 +324,28 @@ internal static partial class LiquidDraw
             float x = i * dx, y0 = _y[i];
             if (f.Foam[i] < 0.02f)
             {
-                for (int r = 0; r < R; r++) Mb.VertexReserved(new Vector2(x, y0), Col(in k, white, 0f));
+                for (int r = 0; r < R; r++) Mb.VertexReserved(new(x, y0), Col(in k, white, 0f));
                 continue;
             }
             float cell = 0.5f + 0.35f * Noise.Value(x * 0.035f / px, k.Time * 0.6f) + 0.15f * Noise.Value(x * 0.09f / px, k.Time * 1.3f);
-            float body = Smooth(0.04f, 0.95f, MathF.Min(f.Foam[i], 1.4f) * (0.45f + 0.8f * cell));
+            float body = Smooth(0.04f, 0.95f, Min(f.Foam[i], 1.4f) * (0.45f + 0.8f * cell));
             float th = (1.4f + 9f * body) * px, a = body * 0.78f;
-            Mb.VertexReserved(new Vector2(x, y0 - th), Col(in k, white, 0f));
-            Mb.VertexReserved(new Vector2(x, y0 - th * 0.55f), Col(in k, white, a * 0.85f));
-            Mb.VertexReserved(new Vector2(x, y0 + th * 0.15f), Col(in k, white, a));
-            Mb.VertexReserved(new Vector2(x, y0 + th * 1.10f), Col(in k, white * 0.85f, a * 0.25f));
-            Mb.VertexReserved(new Vector2(x, y0 + th * 2.00f), Col(in k, white * 0.85f, 0f));
+            Mb.VertexReserved(new(x, y0 - th), Col(in k, white, 0f));
+            Mb.VertexReserved(new(x, y0 - th * 0.55f), Col(in k, white, a * 0.85f));
+            Mb.VertexReserved(new(x, y0 + th * 0.15f), Col(in k, white, a));
+            Mb.VertexReserved(new(x, y0 + th * 1.10f), Col(in k, white * 0.85f, a * 0.25f));
+            Mb.VertexReserved(new(x, y0 + th * 2.00f), Col(in k, white * 0.85f, 0f));
         }
         Mb.StitchGrid(first, n, R);
     }
 
-    /// <summary>Beads of air riding on thick foam: each one forms, lasts a moment and pops, at its own time.</summary>
-    private static void FoamBubbles(ImDrawListPtr dl, LiquidField f, in Look k)
+    /// Beads of air riding on thick foam: each one forms, lasts a moment and pops, at its own time.
+    static void FoamBubbles(ImDrawListPtr dl, LiquidField f, in Look k)
     {
         float px = k.Px; int n = f.Columns;
         Span<float> rr = stackalloc float[3];
         Span<uint> cc = stackalloc uint[3];
-        Vector3 rim = Lit(Vector3.Lerp(new Vector3(0.8f, 0.9f, 1f), k.L.Look.Thin, 0.4f) * 0.9f);
+        Vector3 rim = Lit(Vector3.Lerp(new(0.8f, 0.9f, 1f), k.L.Look.Thin, 0.4f) * 0.9f);
         int drawn = 0;
         for (int i = 1; i < n - 1 && drawn < 110; i++)
         {
@@ -361,7 +358,7 @@ internal static partial class LiquidDraw
                 int cycle = (int)u;
                 float born = u - cycle;
                 if (Hash01(h + cycle * 31) > amt * 0.8f) continue;
-                float env = MathF.Sqrt(MathF.Sin(MathF.PI * born));
+                float env = Sqrt(Sin(PI * born));
                 float r = HashRange(h + cycle * 17, 0.9f, 2.6f) * px;
                 var at = new Vector2(i * f.Spacing + HashRange(h + cycle * 29, -3.5f, 3.5f) * px, _y[i] - r * 0.3f - Hash01(h + cycle * 7) * 4f * px);
                 rr[0] = r * 0.7f; rr[1] = r; rr[2] = r * 1.25f;
@@ -372,13 +369,13 @@ internal static partial class LiquidDraw
         }
     }
 
-    /// <summary>Water thrown up round a landing stream or a big drop: a thin bright-edged sheet that rises and falls back.</summary>
-    private static void Sheets(LiquidField f, in Look k)
+    /// Water thrown up round a landing stream or a big drop: a thin bright-edged sheet that rises and falls back.
+    static void Sheets(LiquidField f, in Look k)
     {
         var look = k.L.Look; var ph = k.L.Phys;
         if (f.Level < 0.5f * k.Px || ph.Splash <= 0.02f) return;
         float px = k.Px, amp = 0.25f + 0.75f * ph.Splash;
-        Vector3 wet = Lit(Vector3.Lerp(new Vector3(0.88f, 0.95f, 1f), look.Thin * 1.6f, MathF.Min(0.9f, 0.2f + 1.1f * ph.Viscosity)) * (StudioLighting.FillColor * 1.4f + StudioLighting.KeyColor * 0.6f));
+        Vector3 wet = Lit(Vector3.Lerp(new(0.88f, 0.95f, 1f), look.Thin * 1.6f, Min(0.9f, 0.2f + 1.1f * ph.Viscosity)) * (StudioLighting.FillColor * 1.4f + StudioLighting.KeyColor * 0.6f));
 
         for (int i = 0; i < f.Jets.Count; i++)
         {
@@ -391,13 +388,13 @@ internal static partial class LiquidDraw
         for (int i = 0; i < f.CrownCount; i++)
         {
             ref readonly var c = ref f.Crowns[i];
-            float u = c.Age / c.Life, env = MathF.Pow(MathF.Sin(MathF.PI * u), 0.8f);
+            float u = c.Age / c.Life, env = Pow(Sin(PI * u), 0.8f);
             Sheet(f, in k, c.X, c.R * 0.8f, c.R * (1.6f + 2.2f * u), c.Height * env * amp, c.Seed, 0.9f * env, wet);
         }
     }
 
     // one sheet either side of x: tallest against the stream, lower and raggeder further out
-    private static void Sheet(LiquidField f, in Look k, float x, float halfW, float reach, float height, int seed, float alpha, Vector3 col)
+    static void Sheet(LiquidField f, in Look k, float x, float halfW, float reach, float height, int seed, float alpha, Vector3 col)
     {
         if (height < 0.8f * k.Px || alpha < 0.02f) return;
         const int M = 7;
@@ -410,11 +407,11 @@ internal static partial class LiquidDraw
             {
                 float u = c / (float)(M - 1);
                 float xx = x + side * (halfW + reach * u), yb = f.SurfaceY(xx);
-                float h = height * MathF.Pow(1f - u, 0.9f) * (0.75f + 0.25f * Noise.Value(seed * 0.1f + c * 1.7f + side * 5f, k.Time * 5f));
-                Mb.VertexReserved(new Vector2(xx, yb + px), Col(in k, col, 0.10f * alpha));
-                Mb.VertexReserved(new Vector2(xx, yb - h * 0.55f), Col(in k, col, 0.30f * alpha));
-                Mb.VertexReserved(new Vector2(xx, yb - h), Col(in k, col, 0.70f * alpha));
-                Mb.VertexReserved(new Vector2(xx, yb - h - 1.6f * px), Col(in k, col, 0f));
+                float h = height * Pow(1f - u, 0.9f) * (0.75f + 0.25f * Noise.Value(seed * 0.1f + c * 1.7f + side * 5f, k.Time * 5f));
+                Mb.VertexReserved(new(xx, yb + px), Col(in k, col, 0.10f * alpha));
+                Mb.VertexReserved(new(xx, yb - h * 0.55f), Col(in k, col, 0.30f * alpha));
+                Mb.VertexReserved(new(xx, yb - h), Col(in k, col, 0.70f * alpha));
+                Mb.VertexReserved(new(xx, yb - h - 1.6f * px), Col(in k, col, 0f));
             }
             for (int c = 0; c + 1 < M; c++)
                 for (int r = 0; r < 3; r++) { int a = first + c * 4 + r, b = a + 4; Mb.QuadReserved(a, a + 1, b, b + 1); }

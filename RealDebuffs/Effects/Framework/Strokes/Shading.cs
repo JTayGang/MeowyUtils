@@ -1,24 +1,21 @@
-using System.Numerics;
-using Dalamud.Bindings.ImGui;
-
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>The shared lighting rig: warm key (upper left/front), cold fill (lower right), cold rim; sets shadow direction.</summary>
+/// The shared lighting rig: warm key (upper left/front), cold fill (lower right), cold rim; sets shadow direction.
 public static class StudioLighting
 {
-    public static readonly Vector3 Key  = Vector3.Normalize(new Vector3(-0.52f, -0.70f, 0.50f));
-    public static readonly Vector3 Fill = Vector3.Normalize(new Vector3( 0.70f,  0.45f, 0.55f));
-    public static readonly Vector3 Rim  = Vector3.Normalize(new Vector3( 0.80f, -0.30f, -0.52f));
+    public static readonly Vector3 Key  = Vector3.Normalize(new(-0.52f, -0.70f, 0.50f));
+    public static readonly Vector3 Fill = Vector3.Normalize(new( 0.70f,  0.45f, 0.55f));
+    public static readonly Vector3 Rim  = Vector3.Normalize(new( 0.80f, -0.30f, -0.52f));
 
     public static readonly Vector3 KeyColor  = new(1.00f, 0.90f, 0.76f);
     public static readonly Vector3 FillColor = new(0.34f, 0.40f, 0.52f);
     public static readonly Vector3 RimColor  = new(0.62f, 0.78f, 1.00f);
 
-    /// <summary>Screen-space unit vector pointing the way shadows fall (directly away from the key light).</summary>
-    public static readonly Vector2 ShadowDirection = Vector2.Normalize(new Vector2(-Key.X, -Key.Y));
+    /// Screen-space unit vector pointing the way shadows fall (directly away from the key light).
+    public static readonly Vector2 ShadowDirection = Vector2.Normalize(new(-Key.X, -Key.Y));
 }
 
-/// <summary>How a surface answers light. Authored in linear space; the matcap converts to display space.</summary>
+/// How a surface answers light. Authored in linear space; the matcap converts to display space.
 public readonly record struct SurfaceSpec(
     Vector3 Albedo,  // diffuse colour of the non-metallic part
     Vector3 F0,  // reflectance at normal incidence: the tint of the metal
@@ -31,70 +28,70 @@ public readonly record struct SurfaceSpec(
 
 public static class SurfacePresets
 {
-    /// <summary>Blackened forged iron: dark, cool, with a tight hard highlight and a bluish edge.</summary>
+    /// Blackened forged iron: dark, cool, with a tight hard highlight and a bluish edge.
     public static readonly SurfaceSpec BlackIron = new(
         Albedo: new(0.030f, 0.030f, 0.034f), F0: new(0.25f, 0.255f, 0.275f),
         Metalness: 0.94f, Roughness: 0.44f, EnvStrength: 0.80f, Ambient: 0.006f);
 
-    /// <summary>Worn steel: lighter, with a broader, brighter sheen where it has been polished by friction.</summary>
+    /// Worn steel: lighter, with a broader, brighter sheen where it has been polished by friction.
     public static readonly SurfaceSpec WornSteel = new(
         Albedo: new(0.050f, 0.050f, 0.054f), F0: new(0.40f, 0.41f, 0.43f),
         Metalness: 0.96f, Roughness: 0.38f, EnvStrength: 0.90f, Ambient: 0.008f);
 
-    /// <summary>Iron gone warm and dull: a brown cast, rougher, less mirror.</summary>
+    /// Iron gone warm and dull: a brown cast, rougher, less mirror.
     public static readonly SurfaceSpec AgedIron = new(
         Albedo: new(0.060f, 0.042f, 0.030f), F0: new(0.30f, 0.255f, 0.215f),
         Metalness: 0.82f, Roughness: 0.56f, EnvStrength: 0.62f, Ambient: 0.010f);
 
-    /// <summary>Hemp: warm tan plant fibre; fully diffuse, rough as felt, with only a faint broad sheen at grazing light.</summary>
+    /// Hemp: warm tan plant fibre; fully diffuse, rough as felt, with only a faint broad sheen at grazing light.
     public static readonly SurfaceSpec Hemp = new(
         Albedo: new(0.40f, 0.27f, 0.13f), F0: new(0.05f, 0.045f, 0.04f),
         Metalness: 0.0f, Roughness: 0.93f, EnvStrength: 0.05f, Ambient: 0.014f);
 
-    /// <summary>Manila: paler and yellower than hemp, a little silkier.</summary>
+    /// Manila: paler and yellower than hemp, a little silkier.
     public static readonly SurfaceSpec Manila = new(
         Albedo: new(0.52f, 0.40f, 0.21f), F0: new(0.06f, 0.055f, 0.045f),
         Metalness: 0.0f, Roughness: 0.88f, EnvStrength: 0.06f, Ambient: 0.016f);
 
-    /// <summary>Tarred rope: near-black brown with a dull wet sheen. Reads as a dark rope against a dark scene.</summary>
+    /// Tarred rope: near-black brown with a dull wet sheen. Reads as a dark rope against a dark scene.
     public static readonly SurfaceSpec Tarred = new(
         Albedo: new(0.085f, 0.060f, 0.040f), F0: new(0.07f, 0.065f, 0.060f),
         Metalness: 0.0f, Roughness: 0.62f, EnvStrength: 0.20f, Ambient: 0.008f);
 
-    /// <summary>Parasite flesh: sickly olive-green satin (the gloss is a separate WetCoat, since slime comes and goes)</summary>
+    /// Parasite flesh: sickly olive-green satin (the gloss is a separate WetCoat, since slime comes and goes)
     public static readonly SurfaceSpec ParasiteFlesh = new(
         Albedo: new(0.215f, 0.245f, 0.125f), F0: new(0.04f, 0.04f, 0.035f),
         Metalness: 0.0f, Roughness: 0.50f, EnvStrength: 0.22f, Ambient: 0.020f,
         Wrap: 0.42f, Scatter: new(0.060f, 0.082f, 0.020f));
 
-    /// <summary>A clear liquid film over something else: no colour, only a hard highlight and a reflection of the surroundings.</summary>
+    /// A clear liquid film over something else: no colour, only a hard highlight and a reflection of the surroundings.
     public static readonly SurfaceSpec WetCoat = new(
         Albedo: new(0f, 0f, 0f), F0: new(0.34f, 0.34f, 0.34f),
         Metalness: 0.0f, Roughness: 0.16f, EnvStrength: 0.95f, Ambient: 0f);
 
-    /// <summary>Rust scale: pure diffuse, orange-brown, nearly matte. Blended over any of the above as patina.</summary>
+    /// Rust scale: pure diffuse, orange-brown, nearly matte. Blended over any of the above as patina.
     public static readonly SurfaceSpec Rust = new(
         Albedo: new(0.110f, 0.044f, 0.020f), F0: new(0.05f, 0.03f, 0.02f),
         Metalness: 0.04f, Roughness: 0.92f, EnvStrength: 0.04f, Ambient: 0.012f);
 
-    /// <summary>Horn: near-black keratin with a smooth satin skin</summary>
+    /// Horn: near-black keratin with a smooth satin skin
     public static readonly SurfaceSpec Horn = new(
         Albedo: new(0.012f, 0.009f, 0.008f), F0: new(0.050f, 0.046f, 0.042f),
         Metalness: 0.0f, Roughness: 0.42f, EnvStrength: 0.20f, Ambient: 0.003f,
         Wrap: 0.28f, Scatter: new(0.050f, 0.010f, 0.004f));
 
-    /// <summary>Candle tallow: ivory, soft and waxy; wrapped diffuse and a warm amber bleed at the terminator</summary>
+    /// Candle tallow: ivory, soft and waxy; wrapped diffuse and a warm amber bleed at the terminator
     public static readonly SurfaceSpec Tallow = new(
         Albedo: new(0.62f, 0.54f, 0.38f), F0: new(0.050f, 0.046f, 0.040f),
         Metalness: 0.0f, Roughness: 0.58f, EnvStrength: 0.10f, Ambient: 0.020f,
         Wrap: 0.55f, Scatter: new(0.150f, 0.075f, 0.022f));
 }
 
-/// <summary>A "material capture": lit colour by facing direction baked to a small table</summary>
+/// A "material capture": lit colour by facing direction baked to a small table
 public sealed class Matcap
 {
-    private const int N = 48;
-    private readonly Vector4[] _rgb = new Vector4[N * N];  // w unused: one 16-byte load per texel
+    const int N = 48;
+    readonly Vector4[] _rgb = new Vector4[N * N];  // w unused: one 16-byte load per texel
 
     public Matcap(in SurfaceSpec spec)
     {
@@ -104,21 +101,21 @@ public sealed class Matcap
             float nx = x / (N - 1f) * 2f - 1f;
             float ny = y / (N - 1f) * 2f - 1f;
             float r2 = nx * nx + ny * ny;
-            if (r2 > 1f) { float k = 1f / MathF.Sqrt(r2); nx *= k; ny *= k; r2 = 1f; }
-            var n = new Vector3(nx, ny, MathF.Sqrt(MathF.Max(0f, 1f - r2)));
+            if (r2 > 1f) { float k = 1f / Sqrt(r2); nx *= k; ny *= k; r2 = 1f; }
+            var n = new Vector3(nx, ny, Sqrt(Max(0f, 1f - r2)));
 
             Vector3 c = Shade(n, in spec);
-            _rgb[y * N + x] = new Vector4(c, 0f);
+            _rgb[y * N + x] = new(c, 0f);
         }
     }
 
-    /// <summary>Display-space colour for a unit view-space normal (only X and Y are needed; Z is implied).</summary>
+    /// Display-space colour for a unit view-space normal (only X and Y are needed; Z is implied).
     public Vector3 Sample(float nx, float ny)
     {
         float fx = (nx * 0.5f + 0.5f) * (N - 1);
         float fy = (ny * 0.5f + 0.5f) * (N - 1);
-        fx = fx < 0f ? 0f : (fx > N - 1.001f ? N - 1.001f : fx);
-        fy = fy < 0f ? 0f : (fy > N - 1.001f ? N - 1.001f : fy);
+        fx = Math.Clamp(fx, 0f, N - 1.001f);
+        fy = Math.Clamp(fy, 0f, N - 1.001f);
 
         int x0 = (int)fx, y0 = (int)fy;
         float tx = fx - x0, ty = fy - y0;
@@ -126,16 +123,16 @@ public sealed class Matcap
 
         float w00 = (1f - tx) * (1f - ty), w10 = tx * (1f - ty), w01 = (1f - tx) * ty, w11 = tx * ty;
         Vector4 c = _rgb[i00] * w00 + _rgb[i00 + 1] * w10 + _rgb[i00 + N] * w01 + _rgb[i00 + N + 1] * w11;
-        return new Vector3(c.X, c.Y, c.Z);
+        return new(c.X, c.Y, c.Z);
     }
 
-    /// <summary>Samples two matcaps at the same normal.</summary>
+    /// Samples two matcaps at the same normal.
     public static void SamplePair(Matcap a, Matcap b, float nx, float ny, out Vector3 ca, out Vector3 cb)
     {
         float fx = (nx * 0.5f + 0.5f) * (N - 1);
         float fy = (ny * 0.5f + 0.5f) * (N - 1);
-        fx = fx < 0f ? 0f : (fx > N - 1.001f ? N - 1.001f : fx);
-        fy = fy < 0f ? 0f : (fy > N - 1.001f ? N - 1.001f : fy);
+        fx = Math.Clamp(fx, 0f, N - 1.001f);
+        fy = Math.Clamp(fy, 0f, N - 1.001f);
 
         int x0 = (int)fx, y0 = (int)fy;
         float tx = fx - x0, ty = fy - y0;
@@ -144,26 +141,26 @@ public sealed class Matcap
         float w00 = (1f - tx) * (1f - ty), w10 = tx * (1f - ty), w01 = (1f - tx) * ty, w11 = tx * ty;
         Vector4[] ra = a._rgb, rb = b._rgb;
         Vector4 c = ra[i00] * w00 + ra[i00 + 1] * w10 + ra[i00 + N] * w01 + ra[i00 + N + 1] * w11;
-        ca = new Vector3(c.X, c.Y, c.Z);
+        ca = new(c.X, c.Y, c.Z);
         c = rb[i00] * w00 + rb[i00 + 1] * w10 + rb[i00 + N] * w01 + rb[i00 + N + 1] * w11;
-        cb = new Vector3(c.X, c.Y, c.Z);
+        cb = new(c.X, c.Y, c.Z);
     }
 
-    private static Vector3 Shade(Vector3 n, in SurfaceSpec s)
+    static Vector3 Shade(Vector3 n, in SurfaceSpec s)
     {
         Vector3 v = Vector3.UnitZ;
 
-        float ndlKey  = MathF.Max(0f, Vector3.Dot(n, StudioLighting.Key));
-        float ndlFill = MathF.Max(0f, Vector3.Dot(n, StudioLighting.Fill));
-        float ndlRim  = MathF.Max(0f, Vector3.Dot(n, StudioLighting.Rim));
+        float ndlKey  = Max(0f, Vector3.Dot(n, StudioLighting.Key));
+        float ndlFill = Max(0f, Vector3.Dot(n, StudioLighting.Fill));
+        float ndlRim  = Max(0f, Vector3.Dot(n, StudioLighting.Rim));
 
         // diffuse: wrapped lighting spills past the terminator; specular keeps the unwrapped dots.
         float dKey = ndlKey, dFill = ndlFill;
         if (s.Wrap > 0f)
         {
             float inv = 1f / (1f + s.Wrap);
-            dKey  = MathF.Max(0f, (Vector3.Dot(n, StudioLighting.Key)  + s.Wrap) * inv);
-            dFill = MathF.Max(0f, (Vector3.Dot(n, StudioLighting.Fill) + s.Wrap) * inv);
+            dKey  = Max(0f, (Vector3.Dot(n, StudioLighting.Key)  + s.Wrap) * inv);
+            dFill = Max(0f, (Vector3.Dot(n, StudioLighting.Fill) + s.Wrap) * inv);
         }
         Vector3 irradiance = StudioLighting.KeyColor * (1.30f * dKey)
                            + StudioLighting.FillColor * (0.22f * dFill)
@@ -173,17 +170,17 @@ public sealed class Matcap
         // Subsurface bleed: a glow peaking where the key light just stops reaching, strongest toward the silhouette.
         if (s.Scatter != Vector3.Zero)
         {
-            float terminator = MathF.Exp(-MathF.Pow(Vector3.Dot(n, StudioLighting.Key) / 0.42f, 2f));
+            float terminator = Exp(-Pow(Vector3.Dot(n, StudioLighting.Key) / 0.42f, 2f));
             diffuse += s.Scatter * (terminator * (0.35f + 0.65f * (1f - n.Z)) * (1f - s.Metalness));
         }
 
         // key highlight: tight lobe plus a broad sheen, Fresnel-weighted
         Vector3 h = Vector3.Normalize(StudioLighting.Key + v);
-        float nh = MathF.Max(0f, Vector3.Dot(n, h));
-        float vh = MathF.Max(0f, Vector3.Dot(v, h));
+        float nh = Max(0f, Vector3.Dot(n, h));
+        float vh = Max(0f, Vector3.Dot(v, h));
         float pTight = 12f + 520f * (1f - s.Roughness) * (1f - s.Roughness);
-        float lobe = MathF.Pow(nh, pTight) * 1.7f + MathF.Pow(nh, MathF.Max(3f, pTight * 0.11f)) * 0.16f;
-        float fres = MathF.Pow(1f - vh, 5f);
+        float lobe = Pow(nh, pTight) * 1.7f + Pow(nh, Max(3f, pTight * 0.11f)) * 0.16f;
+        float fres = Pow(1f - vh, 5f);
         Vector3 fSchlick = s.F0 + (Vector3.One - s.F0) * fres;
         Vector3 spec = fSchlick * StudioLighting.KeyColor * (lobe * ndlKey);
 
@@ -193,12 +190,12 @@ public sealed class Matcap
         float blur = s.Roughness * s.Roughness * 1.6f;
         blur = blur > 0.85f ? 0.85f : blur;
         Vector3 reflected = Vector3.Lerp(Environment(r), EnvAverage, blur) * s.EnvStrength;
-        float grazing = MathF.Pow(1f - n.Z, 3f);  // reflections strengthen toward the silhouette
+        float grazing = Pow(1f - n.Z, 3f);  // reflections strengthen toward the silhouette
         Vector3 envF = s.F0 + (Vector3.One - s.F0) * (grazing * 0.55f);
         Vector3 refl = reflected * envF * (0.55f + 0.45f * s.Metalness);
 
         // cold rim from behind: only where the surface turns away from the viewer
-        float rim = MathF.Pow(1f - n.Z, 2.4f) * ndlRim;
+        float rim = Pow(1f - n.Z, 2.4f) * ndlRim;
         Vector3 rimLight = StudioLighting.RimColor * (0.30f * rim) * (0.25f + 0.75f * s.Metalness);
 
         Vector3 lin = diffuse + spec + refl + rimLight;
@@ -207,7 +204,7 @@ public sealed class Matcap
 
     internal static readonly Vector3 EnvAverage = new(0.050f, 0.055f, 0.068f);
 
-    /// <summary>A mostly dark surround (black ground, cool sky, cold backlight) so iron reads as mirror-like.</summary>
+    /// A mostly dark surround (black ground, cool sky, cold backlight) so iron reads as mirror-like.
     internal static Vector3 Environment(Vector3 r)
     {
         float up = -r.Y;  // screen up is -Y
@@ -217,40 +214,40 @@ public sealed class Matcap
         Vector3 zenith = new(0.085f, 0.100f, 0.135f);
         Vector3 env = Vector3.Lerp(ground, zenith, sky);
 
-        float band = MathF.Exp(-MathF.Pow((up + 0.02f) / 0.20f, 2f));
+        float band = Exp(-Pow((up + 0.02f) / 0.20f, 2f));
         env += new Vector3(0.38f, 0.25f, 0.15f) * (band * 0.30f * Smooth(-0.6f, 0.4f, r.Z));
 
-        float back = MathF.Max(0f, Vector3.Dot(r, StudioLighting.Rim));
-        env += StudioLighting.RimColor * (MathF.Pow(back, 7f) * 0.85f);
+        float back = Max(0f, Vector3.Dot(r, StudioLighting.Rim));
+        env += StudioLighting.RimColor * (Pow(back, 7f) * 0.85f);
 
-        float key = MathF.Max(0f, Vector3.Dot(r, StudioLighting.Key));
-        env += StudioLighting.KeyColor * (MathF.Pow(key, 12f) * 0.55f);  // softbox glow in the reflection
+        float key = Max(0f, Vector3.Dot(r, StudioLighting.Key));
+        env += StudioLighting.KeyColor * (Pow(key, 12f) * 0.55f);  // softbox glow in the reflection
         return env;
     }
 
-    /// <summary>Soft-shoulder tone map, then linear to display (sRGB-ish).</summary>
+    /// Soft-shoulder tone map, then linear to display (sRGB-ish).
     internal static Vector3 ToDisplay(Vector3 lin)
     {
         static float F(float x)
         {
-            x = MathF.Max(0f, x);
-            x = 1f - MathF.Exp(-1.55f * x);  // shoulders highlights instead of clipping them
-            return MathF.Pow(x, 1f / 2.2f);
+            x = Max(0f, x);
+            x = 1f - Exp(-1.55f * x);  // shoulders highlights instead of clipping them
+            return Pow(x, 1f / 2.2f);
         }
-        return new Vector3(F(lin.X), F(lin.Y), F(lin.Z));
+        return new(F(lin.X), F(lin.Y), F(lin.Z));
     }
 }
 
-/// <summary>Shared by lit strand materials: far-strand haze, soft cast shadow, growing-tip glint (scale = strand size in px).</summary>
+/// Shared by lit strand materials: far-strand haze, soft cast shadow, growing-tip glint (scale = strand size in px).
 internal static class StrandShading
 {
-    /// <summary>Colour a strand hazes toward as its Depth approaches 1.</summary>
+    /// Colour a strand hazes toward as its Depth approaches 1.
     public static readonly Vector3 DepthFog = new(0.105f, 0.125f, 0.165f);
 
     public static readonly uint ShadowTint = Pack(0.015f, 0.016f, 0.022f);
     public static readonly uint FlareWarm  = Pack(1.00f, 0.80f, 0.52f);
 
-    /// <summary>Soft cast band under the strand, displaced away from the key light.</summary>
+    /// Soft cast band under the strand, displaced away from the key light.
     public static void DrawShadow(ImDrawListPtr dl, StrandPath path, float scale, float depth, float alpha,
                                   in MaterialContext ctx, bool closed, float visibleLen)
     {
@@ -278,12 +275,12 @@ internal static class StrandShading
             if (closed) SampleLoop(path, sArc, total, (s1 - s0) / rows * 0.5f, out p, out t);
             else        path.SampleAtArc(sArc, out p, out t);
             Vector2 nrm = new(-t.Y, t.X);
-            float edgeFade = closed ? 1f : MathF.Min(1f, MathF.Min(r, rows - r) / 1.5f);
+            float edgeFade = closed ? 1f : Min(1f, Min(r, rows - r) / 1.5f);
 
             for (int c = 0; c < 5; c++)
             {
                 float w = across[c];
-                MeshDraw.P[v] = p + offset + nrm * (w * (hw + soft * 0.5f * MathF.Abs(w)));
+                MeshDraw.P[v] = p + offset + nrm * (w * (hw + soft * 0.5f * Abs(w)));
                 MeshDraw.C[v] = WithAlpha(ShadowTint, a * prof[c] * edgeFade);
                 v++;
             }
@@ -291,8 +288,8 @@ internal static class StrandShading
         MeshDraw.Grid(dl, 4, rows, MeshDraw.WhiteUv(ctx.Time));
     }
 
-    /// <summary>Position and tangent at arc length s on a closed loop; the wrapping central difference hides the seam.</summary>
-    private static void SampleLoop(StrandPath path, float s, float total, float h, out Vector2 p, out Vector2 t)
+    /// Position and tangent at arc length s on a closed loop; the wrapping central difference hides the seam.
+    static void SampleLoop(StrandPath path, float s, float total, float h, out Vector2 p, out Vector2 t)
     {
         path.SampleAtArc(DrawHelpers.Wrap(s, total), out p, out _);
         path.SampleAtArc(DrawHelpers.Wrap(s + h, total), out Vector2 ahead, out _);
@@ -302,7 +299,7 @@ internal static class StrandShading
         t = len > 1e-4f ? d / len : new Vector2(1f, 0f);
     }
 
-    /// <summary>A bright pip with a warm halo, for the tip of a strand that is still growing or flying.</summary>
+    /// A bright pip with a warm halo, for the tip of a strand that is still growing or flying.
     public static void DrawFlare(ImDrawListPtr dl, Vector2 tip, float bar, float k, in MaterialContext ctx)
     {
         if (k <= 0.004f) return;

@@ -1,8 +1,6 @@
-using Dalamud.Bindings.ImGui;
-
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>The pool, streams, foam and bubbles of a LiquidField, drawn in the liquid the field was given.</summary>
+/// The pool, streams, foam and bubbles of a LiquidField, drawn in the liquid the field was given.
 public sealed class RegionLiquid : RegionMaterial<LiquidField>
 {
     public override string Name => "region.liquid";

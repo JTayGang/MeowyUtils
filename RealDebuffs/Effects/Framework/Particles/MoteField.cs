@@ -1,14 +1,12 @@
-using System.Numerics;
-
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Motes filling the camera's frustum: far ones small and sharp, near ones big soft discs; they rise and sway.</summary>
+/// Motes filling the camera's frustum: far ones small and sharp, near ones big soft discs; they rise and sway.
 internal sealed class MoteField
 {
-    private struct Mote { public float Fx, Fy, Z, Speed, Sway, Phase, Size; public int Seed; }
+    struct Mote { public float Fx, Fy, Z, Speed, Sway, Phase, Size; public int Seed; }
 
-    private readonly Mote[] _m;
-    private readonly float _near, _far, _speedLo, _speedHi, _swayLo, _swayHi, _sizeLo, _sizeHi;
+    readonly Mote[] _m;
+    readonly float _near, _far, _speedLo, _speedHi, _swayLo, _swayHi, _sizeLo, _sizeHi;
 
     public MoteField(int count, float near, float far, (float lo, float hi) speed, (float lo, float hi) sway, (float lo, float hi) size)
     {
@@ -22,21 +20,21 @@ internal sealed class MoteField
         for (int i = 0; i < _m.Length; i++)
         {
             int s = seed + i * 6151 + 11;
-            _m[i] = new Mote
+            _m[i] = new()
             {
                 Fx = HashRange(s + 2, -1.12f, 1.12f),
                 Fy = HashRange(s + 3, -1.12f, 1.12f),
-                Z = _far + (_near - _far) * MathF.Pow(Hash01(s + 1), 1.5f),
+                Z = Lerp(_far, _near, Pow(Hash01(s + 1), 1.5f)),
                 Speed = HashRange(s + 4, _speedLo, _speedHi),
                 Sway = HashRange(s + 5, _swayLo, _swayHi),
-                Phase = Hash01(s + 6) * MathF.Tau,
+                Phase = Hash01(s + 6) * Tau,
                 Size = HashRange(s + 7, _sizeLo, _sizeHi),
                 Seed = s,
             };
         }
     }
 
-    /// <summary>dist = camera distance px; level scales brightness; blurDim dims near motes; twinkle (0..1) flickers.</summary>
+    /// dist = camera distance px; level scales brightness; blurDim dims near motes; twinkle (0..1) flickers.
     public void Emit(EffectScene scene, in LayerCamera cam, float dist, Vector2 size, float px, float age,
                      float level, float blurDim, float twinkle, Vector4? color)
     {
@@ -46,12 +44,12 @@ internal sealed class MoteField
         foreach (var m in _m)
         {
             float z = m.Z * px;
-            float s = dist / MathF.Max(dist * 0.12f, dist - z);
+            float s = dist / Max(dist * 0.12f, dist - z);
 
             // Rise at a world speed (near ones cross faster), wrapped in screen fractions.
             float fy = m.Fy - m.Speed * px * s * age / halfH;
             fy = Wrap(fy + 1.12f, 2.24f) - 1.12f;
-            float fx = m.Fx + (m.Sway * px * s / halfW) * 0.5f * MathF.Sin(age * 0.43f + m.Phase);
+            float fx = m.Fx + (m.Sway * px * s / halfW) * 0.5f * Sin(age * 0.43f + m.Phase);
 
             Vector2 at = cam.Project(fx * halfW / s, fy * halfH / s, z, out float scale);
             if (at.X < -80f || at.Y < -80f || at.X > size.X + 80f || at.Y > size.Y + 80f) continue;

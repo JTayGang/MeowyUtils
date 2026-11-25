@@ -1,6 +1,6 @@
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Cross-checks effects, slots and materials; returns what would silently misbehave at runtime.</summary>
+/// Cross-checks effects, slots and materials; returns what would silently misbehave at runtime.
 public static class RegistryAudit
 {
     public static List<string> Run(IEnumerable<ISceneEffect> effects)
@@ -55,12 +55,12 @@ public static class RegistryAudit
         return problems;
     }
 
-    private static void CheckEmissions(string owner, ReadOnlySpan<StrokeEmission> emissions, List<string> problems)
+    static void CheckEmissions(string owner, ReadOnlySpan<StrokeEmission> emissions, List<string> problems)
     {
         foreach (var e in emissions) CheckRender(owner, e.RenderMaterial, problems);
     }
 
-    private static void CheckRender(string owner, string? name, List<string> problems)
+    static void CheckRender(string owner, string? name, List<string> problems)
     {
         if (name is not null && MaterialRegistry.TryGetParticle(name) is null)
             problems.Add($"{owner} sheds unknown particle material \"{name}\"");

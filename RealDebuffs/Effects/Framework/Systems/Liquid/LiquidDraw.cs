@@ -1,14 +1,11 @@
-using System.Numerics;
-using Dalamud.Bindings.ImGui;
-
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Draws a LiquidField (pool, surface, foam, bubbles, streams) shaded by its liquid's table; the pool half is in LiquidDraw.Pool.cs.</summary>
+/// Draws a LiquidField (pool, surface, foam, bubbles, streams) shaded by its liquid's table; the pool half is in LiquidDraw.Pool.cs.
 internal static partial class LiquidDraw
 {
-    private const int Half = 8;  // a stream's cross-section: Half + 1 visible vertices, and a soft-edge vertex each side
+    const int Half = 8;  // a stream's cross-section: Half + 1 visible vertices, and a soft-edge vertex each side
 
-    private struct Look
+    struct Look
     {
         public Liquid L;
         public float Alpha, Dye, Px, Time, Feather;
@@ -16,18 +13,18 @@ internal static partial class LiquidDraw
         public Vector2 Uv;
     }
 
-    private static readonly MeshBuilder Mb = new();
+    static readonly MeshBuilder Mb = new();
 
-    private static readonly float[] HalfSin = HalfTable(false), HalfCos = HalfTable(true);
-    private static float[] HalfTable(bool cos)
+    static readonly float[] HalfSin = HalfTable(false), HalfCos = HalfTable(true);
+    static float[] HalfTable(bool cos)
     {
         var t = new float[Half + 1];
-        for (int c = 0; c <= Half; c++) { float th = MathF.PI * (c / (float)Half - 0.5f); t[c] = cos ? MathF.Cos(th) : MathF.Sin(th); }
+        for (int c = 0; c <= Half; c++) { float th = PI * (c / (float)Half - 0.5f); t[c] = cos ? Cos(th) : Sin(th); }
         return t;
     }
 
-    private static readonly Vector3 KeyH = Vector3.Normalize(StudioLighting.Key + Vector3.UnitZ);
-    private static readonly Vector3 FillH = Vector3.Normalize(StudioLighting.Fill + Vector3.UnitZ);
+    static readonly Vector3 KeyH = Vector3.Normalize(StudioLighting.Key + Vector3.UnitZ);
+    static readonly Vector3 FillH = Vector3.Normalize(StudioLighting.Fill + Vector3.UnitZ);
 
     public static void Draw(ImDrawListPtr dl, LiquidField f, float alpha, in MaterialContext ctx)
     {
@@ -35,7 +32,7 @@ internal static partial class LiquidDraw
         var k = new Look
         {
             L = f.Liquid, Alpha = alpha > 1f ? 1f : alpha, Px = f.Px, Time = f.Time,
-            Feather = MathF.Max(0.8f, ctx.ScreenScale * 0.9f),
+            Feather = Max(0.8f, ctx.ScreenScale * 0.9f),
             Over = ColorOverrideActive, Dye = ColorOverrideChroma, Uv = MeshDraw.WhiteUv(ctx.Time),
         };
         Sample(f);
@@ -59,16 +56,16 @@ internal static partial class LiquidDraw
         FoamBubbles(dl, f, in k);
     }
 
-    private static uint Col(in Look k, Vector3 display, float a)
+    static uint Col(in Look k, Vector3 display, float a)
     {
         if (k.Dye > 0f) display = BoostSaturation(display, k.Dye, SoftDye);
-        return Tint(Pack(display.X, display.Y, display.Z), a * k.Alpha, k.Over);
+        return Tint(Pack(display), a * k.Alpha, k.Over);
     }
 
-    private static Vector3 Lit(Vector3 lin) => Matcap.ToDisplay(lin);
+    static Vector3 Lit(Vector3 lin) => Matcap.ToDisplay(lin);
 
-    /// <summary>Wet streaks left on the lens by running beads: a faint ribbon that follows their path and dries from the old end.</summary>
-    private static void Trails(LiquidField f, in Look k)
+    /// Wet streaks left on the lens by running beads: a faint ribbon that follows their path and dries from the old end.
+    static void Trails(LiquidField f, in Look k)
     {
         Vector3 wet = Lit(Vector3.Lerp(k.L.Look.Thin, Vector3.One, 0.35f) * (StudioLighting.FillColor * 1.2f + StudioLighting.KeyColor * 0.4f));
         for (int i = 0; i < f.Trails.Length; i++)
@@ -86,7 +83,7 @@ internal static partial class LiquidDraw
                 Vector2 d = dv.LengthSquared() > 1e-4f ? Vector2.Normalize(dv) : Vector2.UnitY;
                 Vector2 perp = new(-d.Y, d.X);
                 float u = p / (float)(n - 1);
-                float w = MathF.Max(t.Pts[p].Z, 0.7f * k.Px) * (0.45f + 0.55f * u);
+                float w = Max(t.Pts[p].Z, 0.7f * k.Px) * (0.45f + 0.55f * u);
                 Mb.VertexReserved(at - perp * w, Col(in k, wet, 0f));
                 Mb.VertexReserved(at, Col(in k, wet, aMax * Smooth(u * 1.4f)));
                 Mb.VertexReserved(at + perp * w, Col(in k, wet, 0f));
@@ -102,7 +99,7 @@ internal static partial class LiquidDraw
 
     // streams
 
-    private static void Stream(LiquidJet j, in Look k)
+    static void Stream(LiquidJet j, in Look k)
     {
         int rows = j.Rows;
         if (rows < 2) return;
@@ -112,7 +109,7 @@ internal static partial class LiquidDraw
 
         Mb.Reserve(rows * (stride + 6), (rows - 1) * ((stride - 1) + 4) * 6);
         int first = Mb.Vertices;
-        Vector3 foam = Lit(Vector3.Lerp(new Vector3(0.90f, 0.95f, 0.98f), k.L.Look.Thin * 1.6f, 0.35f + 0.5f * ph.Viscosity) * (StudioLighting.FillColor * 1.4f + StudioLighting.KeyColor * 0.6f));
+        Vector3 foam = Lit(Vector3.Lerp(new(0.90f, 0.95f, 0.98f), k.L.Look.Thin * 1.6f, 0.35f + 0.5f * ph.Viscosity) * (StudioLighting.FillColor * 1.4f + StudioLighting.KeyColor * 0.6f));
         Vector3 spark = Lit(StudioLighting.KeyColor * 2.4f);
         Vector3 shade = Lit(k.L.Look.Deep * 0.45f);
 
@@ -124,12 +121,12 @@ internal static partial class LiquidDraw
             float len = dv.Length();
             Vector2 d = len > 1e-3f ? dv / len : Vector2.UnitY;
             Vector2 perp = new(-d.Y, d.X);
-            float rad = MathF.Max(j.Rad[i], 0.45f), born = j.Born[i];
+            float rad = Max(j.Rad[i], 0.45f), born = j.Born[i];
             float slope = len > 1e-3f ? Math.Clamp((j.Rad[i1] - j.Rad[i0]) / len, -3f, 3f) : 0f;
-            float age = MathF.Max(k.Time - born, 0f);
+            float age = Max(k.Time - born, 0f);
 
             // how rough the water is: fast, thick and churning is ragged and white; slow and thin runs clear
-            float turb = j.Churn * ph.Churn * Smooth(rad / (3f * px)) * (0.35f + 0.65f * MathF.Min(1f, j.PathV[i].Length() / (900f * px)));
+            float turb = j.Churn * ph.Churn * Smooth(rad / (3f * px)) * (0.35f + 0.65f * Min(1f, j.PathV[i].Length() / (900f * px)));
             float gain = ph.Foam * Smooth(age / 0.25f) * Smooth(rad / (4f * px)) * (0.25f + 0.75f * turb);
             float tail = Smooth(j.Rad[i] / (1.3f * px));
 
@@ -142,7 +139,7 @@ internal static partial class LiquidDraw
             {
                 float sn = HalfSin[c], cs = HalfCos[c];
                 Vector2 nxy = perp * sn - d * slope;
-                Vector3 nrm = Vector3.Normalize(new Vector3(nxy.X, nxy.Y, cs));
+                Vector3 nrm = Vector3.Normalize(new(nxy.X, nxy.Y, cs));
                 Vector4 lit = lm.Sample(nrm.X, nrm.Y);
                 Vector3 col = new(lit.X, lit.Y, lit.Z);
                 float a = lit.W;
@@ -155,12 +152,12 @@ internal static partial class LiquidDraw
                     a += (1f - a) * ae * 0.70f;
                     a *= 1f - 0.45f * Smooth(0.82f, 0.97f, 0.5f + 0.5f * Noise.Value(sn * 3.3f + seed * 0.6f, born * 19f)) * gain;  // gaps in the froth
                 }
-                float sp = ph.Foam > 0f ? Smooth(0.80f, 0.97f, 0.5f + 0.5f * Noise.Value(sn * 6.5f + seed * 0.3f, born * 33f + 3f)) * MathF.Min(1f, rad / (2.5f * px)) * k.L.Look.Gloss : 0f;
-                if (sp > 0.01f) { col = Vector3.Lerp(col, spark, sp * 0.85f); a = MathF.Max(a, 0.55f * sp); }
+                float sp = ph.Foam > 0f ? Smooth(0.80f, 0.97f, 0.5f + 0.5f * Noise.Value(sn * 6.5f + seed * 0.3f, born * 33f + 3f)) * Min(1f, rad / (2.5f * px)) * k.L.Look.Gloss : 0f;
+                if (sp > 0.01f) { col = Vector3.Lerp(col, spark, sp * 0.85f); a = Max(a, 0.55f * sp); }
                 Vector2 at = p + perp * (sn * rad * (sn < 0f ? eL : eR));
                 Mb.VertexReserved(at, Col(in k, col, a * tail));
             }
-            float edge = rad * MathF.Max(eL, eR) + k.Feather;
+            float edge = rad * Max(eL, eR) + k.Feather;
             Vector2 el = p - perp * edge, er = p + perp * edge;
             Mb.VertexReserved(el, halo);
             Mb.VertexReserved(er, halo);
@@ -178,8 +175,8 @@ internal static partial class LiquidDraw
         Highlights(j, in k);
     }
 
-    /// <summary>Hard highlight lines (key and fill) that per-vertex shading cannot hold; they break up where the water is rough.</summary>
-    private static void Highlights(LiquidJet j, in Look k)
+    /// Hard highlight lines (key and fill) that per-vertex shading cannot hold; they break up where the water is rough.
+    static void Highlights(LiquidJet j, in Look k)
     {
         int rows = j.Rows;
         float px = k.Px;
@@ -204,12 +201,12 @@ internal static partial class LiquidDraw
                 Vector2 perp = new(-d.Y, d.X);
                 float rad = j.Rad[i];
 
-                float ax = Vector2.Dot(perp, new Vector2(h.X, h.Y));
-                float u = ax / MathF.Sqrt(ax * ax + h.Z * h.Z);
+                float ax = Vector2.Dot(perp, new(h.X, h.Y));
+                float u = ax / Sqrt(ax * ax + h.Z * h.Z);
                 float n = Noise.Value(j.Born[i] * 14f + j.Seed + pass * 7f, k.Time * 2.3f);
                 float shimmer = 1f - rough * (1f - Smooth(-0.35f, 0.55f, n));  // dashes and gaps, more of them the rougher it runs
                 float a = strength * shimmer * (0.4f + 0.6f * gloss) * Smooth(rad / (2.2f * px));
-                float w = MathF.Max(0.8f * px, rad * (pass == 0 ? 0.09f : 0.12f)) * (0.75f + 0.5f * (0.5f + 0.5f * n));
+                float w = Max(0.8f * px, rad * (pass == 0 ? 0.09f : 0.12f)) * (0.75f + 0.5f * (0.5f + 0.5f * n));
                 Vector2 c = p + perp * (u * rad * 0.9f + rough * 0.06f * rad * n);
                 Mb.VertexReserved(c - perp * w, Col(in k, colr, 0f));
                 Mb.VertexReserved(c, Col(in k, colr, a));

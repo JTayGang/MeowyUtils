@@ -1,29 +1,25 @@
-using System.Numerics;
-using RealDebuffs.Effects.Framework.Materials;
-
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Phrases on a breeze: Begin per cast, Update per frame, Emit per depth (0 near, 1 mid, 2 far); belowVeil draws under Veil regions.</summary>
+/// Phrases on a breeze: Begin per cast, Update per frame, Emit per depth (0 near, 1 mid, 2 far); belowVeil draws under Veil regions.
 internal sealed class WhisperField
 {
-    private const int Max = 3, Calm = 2;                              // never more than Max on screen; Calm is the usual ceiling, a chorus may reach Max
-    private static readonly float[] DepthSize  = { 50f, 29f, 18f };   // x-height px at 1080p: near, mid, far
-    private static readonly float[] DepthAlpha = { 1.00f, 0.88f, 0.60f };
-    private static readonly (float Lo, float Hi)[] DepthLife = { (5.2f, 6.6f), (6.2f, 8.0f), (7.6f, 9.6f) };
-    private static readonly (float Lo, float Hi) Gap = (3.0f, 4.6f), EarlyGap = (1.6f, 2.3f), ChorusEvery = (22f, 36f);   // seconds between words, early on, and between chorus
-    private static readonly float[] DepthDrift = { 16f, 10f, 6f };   // px a second downwind at 1080p: near words drift faster than far
+    const int Max = 3, Calm = 2;                              // never more than Max on screen; Calm is the usual ceiling, a chorus may reach Max
+    static readonly float[] DepthSize  = { 50f, 29f, 18f };   // x-height px at 1080p: near, mid, far
+    static readonly float[] DepthAlpha = { 1.00f, 0.88f, 0.60f };
+    static readonly (float Lo, float Hi)[] DepthLife = { (5.2f, 6.6f), (6.2f, 8.0f), (7.6f, 9.6f) };
+    static readonly (float Lo, float Hi) Gap = (3.0f, 4.6f), EarlyGap = (1.6f, 2.3f), ChorusEvery = (22f, 36f);   // seconds between words, early on, and between chorus
+    static readonly float[] DepthDrift = { 16f, 10f, 6f };   // px a second downwind at 1080p: near words drift faster than far
 
-    private struct Whisper { public bool On; public int Phrase, Seed, Depth; public Vector2 At, Half, Breath; public float Size, Tilt, Spin, Born, Life; public int In, Out; }
+    struct Whisper { public bool On; public int Phrase, Seed, Depth; public Vector2 At, Half, Breath; public float Size, Tilt, Spin, Born, Life; public int In, Out; }
 
-    private readonly string[] _phrases;
-    private readonly float _opacity;
-    private readonly bool _belowVeil;
-    private readonly Whisper[] _w = new Whisper[Max];
-    private readonly int[] _bag;
-    private int _seed, _bagAt, _spawned, _ticks, _lastIn, _lastOut;
-    private float _gustA, _gustB, _windSpeed;
-    private float _nextWhisper, _nextChorus, _chorusEnds;
-    private Vector2 _chorusAt;
+    readonly string[] _phrases;
+    readonly float _opacity;
+    readonly bool _belowVeil;
+    readonly Whisper[] _w = new Whisper[Max];
+    readonly int[] _bag;
+    int _seed, _bagAt, _spawned, _ticks, _lastIn, _lastOut;
+    float _gustA, _gustB, _windSpeed, _nextWhisper, _nextChorus, _chorusEnds;
+    Vector2 _chorusAt;
 
     public WhisperField(string[] phrases, float opacity = 1f, bool belowVeil = false)
     {
@@ -33,10 +29,10 @@ internal sealed class WhisperField
         _bag = new int[phrases.Length];
     }
 
-    /// <summary>The bearing of the breeze, radians.</summary>
+    /// The bearing of the breeze, radians.
     public float WindAngle { get; private set; }
 
-    /// <summary>Drops every phrase on screen (after a resize, say).</summary>
+    /// Drops every phrase on screen (after a resize, say).
     public void Clear() => Array.Clear(_w);
 
     public void Begin(int seed, float firstAt)
@@ -44,10 +40,10 @@ internal sealed class WhisperField
         _seed = seed;
 
         // The wind: mostly along the screen, either way, steady with slow gusts.
-        WindAngle = HashRange(seed + 1, -0.8f, 0.8f) + (Hash01(seed + 2) < 0.5f ? 0f : MathF.PI);
+        WindAngle = HashRange(seed + 1, -0.8f, 0.8f) + (Hash01(seed + 2) < 0.5f ? 0f : PI);
         _windSpeed = HashRange(seed + 3, 0.75f, 1.30f);
-        _gustA = Hash01(seed + 4) * MathF.Tau;
-        _gustB = Hash01(seed + 5) * MathF.Tau;
+        _gustA = Hash01(seed + 4) * Tau;
+        _gustB = Hash01(seed + 5) * Tau;
 
         Array.Clear(_w);
         for (int i = 0; i < _bag.Length; i++) _bag[i] = i;
@@ -63,9 +59,9 @@ internal sealed class WhisperField
         _chorusEnds = 0f;
     }
 
-    /// <summary>How far the wind has carried something by age t (arbitrary units): a steady breeze with slow gusts, integrated.</summary>
+    /// How far the wind has carried something by age t (arbitrary units): a steady breeze with slow gusts, integrated.
     public float Wind(float t)
-        => _windSpeed * (t - 0.35f / 0.37f * (MathF.Cos(0.37f * t + _gustA) - MathF.Cos(_gustA)) - 0.18f / 0.91f * (MathF.Cos(0.91f * t + _gustB) - MathF.Cos(_gustB)));
+        => _windSpeed * (t - 0.35f / 0.37f * (Cos(0.37f * t + _gustA) - Cos(_gustA)) - 0.18f / 0.91f * (Cos(0.91f * t + _gustB) - Cos(_gustB)));
 
     public void Update(in CastFrame f)
     {
@@ -78,10 +74,10 @@ internal sealed class WhisperField
         // Now and then a few are spoken at once, close together, as if from one mouth.
         if (age >= _nextChorus && age >= _chorusEnds)
         {
-            _chorusAt = new Vector2(HashRange(_seed + _spawned * 31 + 11, 0.2f, 0.8f) * f.Size.X, HashRange(_seed + _spawned * 31 + 12, 0.25f, 0.75f) * f.Size.Y);
+            _chorusAt = new(HashRange(_seed + _spawned * 31 + 11, 0.2f, 0.8f) * f.Size.X, HashRange(_seed + _spawned * 31 + 12, 0.25f, 0.75f) * f.Size.Y);
             _chorusEnds = age + HashRange(_seed + _spawned * 31 + 13, 1.0f, 1.5f);
             _nextChorus = _chorusEnds + HashRange(_seed + _spawned * 31 + 14, ChorusEvery.Lo, ChorusEvery.Hi);
-            _nextWhisper = MathF.Min(_nextWhisper, age);
+            _nextWhisper = Min(_nextWhisper, age);
         }
 
         if (age < _nextWhisper) return;
@@ -95,14 +91,14 @@ internal sealed class WhisperField
         _nextWhisper = age + gap;
     }
 
-    private int Showing()
+    int Showing()
     {
         int n = 0;
         for (int i = 0; i < Max; i++) if (_w[i].On) n++;
         return n;
     }
 
-    private void Spawn(in CastFrame f, bool chorus)
+    void Spawn(in CastFrame f, bool chorus)
     {
         float age = f.Age;
         int slot = Array.FindIndex(_w, w => !w.On);
@@ -125,9 +121,9 @@ internal sealed class WhisperField
         float spin = (Hash01(s + 13) < 0.5f ? -1f : 1f) * HashRange(s + 14, 0.008f, 0.022f);
 
         // The room it takes once tilted (at its most turned), and where the wind will have carried it by the end.
-        float reach = MathF.Abs(tilt) + MathF.Abs(spin) * life;
-        var half = new Vector2(0.5f * (width * MathF.Cos(reach) + height * MathF.Sin(reach)), 0.5f * (width * MathF.Sin(reach) + height * MathF.Cos(reach)));
-        var downwind = new Vector2(MathF.Cos(WindAngle), MathF.Sin(WindAngle));
+        float reach = Abs(tilt) + Abs(spin) * life;
+        var half = new Vector2(0.5f * (width * Cos(reach) + height * Sin(reach)), 0.5f * (width * Sin(reach) + height * Cos(reach)));
+        var downwind = Dir(WindAngle);
         Vector2 travel = downwind * (DepthDrift[depth] * _windSpeed * life * f.Px);
 
         // Somewhere clear: not on top of another phrase, and (mostly) wholly on screen, now and when it has drifted.
@@ -138,38 +134,38 @@ internal sealed class WhisperField
             if (chorus)
                 at = _chorusAt + new Vector2(HashRange(s + 20 + attempt, -0.26f, 0.26f) * f.Size.X, HashRange(s + 40 + attempt, -0.20f, 0.20f) * f.Size.Y);
             else
-                at = new Vector2(Hash01(s + 20 + attempt) * f.Size.X, Hash01(s + 40 + attempt) * f.Size.Y);
+                at = new(Hash01(s + 20 + attempt) * f.Size.X, Hash01(s + 40 + attempt) * f.Size.Y);
 
             float mx = MathF.Max(0f, half.X - width * bleed) + 20f * f.Px, my = half.Y + 20f * f.Px;
-            at = new Vector2(Fit(at.X, mx - MathF.Min(0f, travel.X), f.Size.X - mx - MathF.Max(0f, travel.X)),
-                             Fit(at.Y, my - MathF.Min(0f, travel.Y), f.Size.Y - my - MathF.Max(0f, travel.Y)));
+            at = new(Fit(at.X, mx - Min(0f, travel.X), f.Size.X - mx - MathF.Max(0f, travel.X)),
+                             Fit(at.Y, my - Min(0f, travel.Y), f.Size.Y - my - MathF.Max(0f, travel.Y)));
 
             bool clear = true;
             for (int j = 0; j < Max && clear; j++)
             {
                 ref readonly Whisper o = ref _w[j];
                 if (!o.On) continue;
-                clear = MathF.Abs(at.X - o.At.X) > (half.X + o.Half.X) * 0.9f || MathF.Abs(at.Y - o.At.Y) > (half.Y + o.Half.Y) * 1.05f;
+                clear = Abs(at.X - o.At.X) > (half.X + o.Half.X) * 0.9f || Abs(at.Y - o.At.Y) > (half.Y + o.Half.Y) * 1.05f;
             }
             if (!clear && attempt < 13) continue;
             if (!clear) return;
 
             float bearing = WindAngle + HashRange(s + 3, -0.5f, 0.5f);
-            _w[slot] = new Whisper
+            _w[slot] = new()
             {
                 On = true, Phrase = phrase, Seed = s, Depth = depth, At = at, Half = half, Size = size, Born = age, In = arrive, Out = depart,
                 Life = life, Tilt = tilt, Spin = spin,
-                Breath = new Vector2(MathF.Cos(bearing), MathF.Sin(bearing)) * HashRange(s + 6, 28f, 64f) * f.Px,
+                Breath = Dir(bearing) * HashRange(s + 6, 28f, 64f) * f.Px,
             };
             return;
         }
     }
 
-    /// <summary>v kept within lo..hi; centred if there is no room.</summary>
-    private static float Fit(float v, float lo, float hi) => hi <= lo ? 0.5f * (lo + hi) : Math.Clamp(v, lo, hi);
+    /// v kept within lo..hi; centred if there is no room.
+    static float Fit(float v, float lo, float hi) => hi <= lo ? 0.5f * (lo + hi) : Math.Clamp(v, lo, hi);
 
-    /// <summary>A style that isn't the one just used, so neighbouring phrases never move alike.</summary>
-    private static int Fresh(ref int last, int count, int seed)
+    /// A style that isn't the one just used, so neighbouring phrases never move alike.
+    static int Fresh(ref int last, int count, int seed)
     {
         int pick = (int)(Hash01(seed) * count) % count;
         if (pick == last) pick = (pick + 1 + (int)(Hash01(seed + 1) * (count - 1))) % count;
@@ -179,7 +175,7 @@ internal sealed class WhisperField
     public void Emit(EffectScene scene, in CastFrame f, int depth)
     {
         float intro = Smooth(f.Age / 0.8f);
-        var downwind = new Vector2(MathF.Cos(WindAngle), MathF.Sin(WindAngle));
+        var downwind = Dir(WindAngle);
         for (int i = 0; i < Max; i++)
         {
             ref readonly Whisper w = ref _w[i];
@@ -188,11 +184,11 @@ internal sealed class WhisperField
             // Words hang in the fog: carried downwind with it, and rocking gently.
             float age = f.Age - w.Born;
             Vector2 drift = downwind * ((Wind(f.Age) - Wind(w.Born)) * DepthDrift[depth] * f.Px);
-            Vector2 rock = new Vector2(MathF.Sin(age * 0.53f + w.Seed), MathF.Sin(age * 0.37f + w.Seed * 0.7f)) * (0.14f * w.Size);
+            Vector2 rock = new Vector2(Sin(age * 0.53f + w.Seed), Sin(age * 0.37f + w.Seed * 0.7f)) * (0.14f * w.Size);
             scene.AddParticle(new ParticlePrimitive
             {
                 Position = w.At + drift + rock, Velocity = w.Breath, Size = w.Size, AgeRatio = age / w.Life,
-                Brightness = f.Alpha * DepthAlpha[depth] * intro * (1f - f.Leave) * _opacity, Seed = w.Seed, Rotation = w.Tilt + w.Spin * age + 0.03f * MathF.Sin(age * 0.41f + w.Seed * 1.3f),
+                Brightness = f.Alpha * DepthAlpha[depth] * intro * (1f - f.Leave) * _opacity, Seed = w.Seed, Rotation = w.Tilt + w.Spin * age + 0.03f * Sin(age * 0.41f + w.Seed * 1.3f),
                 Variant = (w.Phrase + 1) | (depth << ParticleWhisper.DepthShift) | (w.In << ParticleWhisper.ArriveShift) | (w.Out << ParticleWhisper.DepartShift), Role = PrimitiveRole.Whisper, ColorOverride = f.Color, BelowVeil = _belowVeil,
             });
         }

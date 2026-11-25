@@ -1,6 +1,6 @@
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>What a status asks of one effect: a body swap, one modifier, two colours, and raw slot overrides (codes only).</summary>
+/// What a status asks of one effect: a body swap, one modifier, two colours, and raw slot overrides (codes only).
 public sealed record Look(
     DebuffKind Kind,
     string? Body = null,
@@ -9,14 +9,14 @@ public sealed record Look(
     LookColor? ModifierColor = null,
     IReadOnlyDictionary<string, string>? Details = null)
 {
-    /// <summary>Modifier value meaning "a stroke body sheds nothing".</summary>
+    /// Modifier value meaning "a stroke body sheds nothing".
     public const string NoShed = "__none__";
 
-    /// <summary>How much the status specified; the richer Look wins when statuses collide.</summary>
+    /// How much the status specified; the richer Look wins when statuses collide.
     public int Score =>
         (Body is null ? 0 : 1) + (Modifier is null ? 0 : 1) + (BodyColor is null ? 0 : 1) + (ModifierColor is null ? 0 : 1) + (Details?.Count ?? 0);
 
-    /// <summary>This Look with gaps filled from other (first non-null wins per field).</summary>
+    /// This Look with gaps filled from other (first non-null wins per field).
     public Look Fill(Look other)
     {
         IReadOnlyDictionary<string, string>? details = Details;
@@ -37,10 +37,10 @@ public sealed record Look(
     }
 }
 
-/// <summary>Looks to the existing override keys, and back; everything below this layer is unchanged.</summary>
+/// Looks to the existing override keys, and back; everything below this layer is unchanged.
 public static class LookApply
 {
-    /// <summary>Writes the override keys a Look implies: details, then body, then modifier.</summary>
+    /// Writes the override keys a Look implies: details, then body, then modifier.
     public static void Overrides(Look look, IDictionary<string, string> into)
     {
         var kind = look.Kind;
@@ -61,7 +61,7 @@ public static class LookApply
         }
     }
 
-    /// <summary>The override key the modifier of this kind lands on, or null if the effect has nowhere to put one.</summary>
+    /// The override key the modifier of this kind lands on, or null if the effect has nowhere to put one.
     public static string? ModifierKey(DebuffKind kind)
     {
         if (EffectRegistry.ModifierFor(kind) is { } modSlot) return MaterialOverrideKey.For(kind, modSlot);
@@ -69,7 +69,7 @@ public static class LookApply
         return null;
     }
 
-    /// <summary>Reads a Look back out of live overrides (the generator edits overrides; the phrase and code derive from them).</summary>
+    /// Reads a Look back out of live overrides (the generator edits overrides; the phrase and code derive from them).
     public static Look FromOverrides(DebuffKind kind, IReadOnlyDictionary<string, string> overrides, LookColor? bodyColor, LookColor? modifierColor)
     {
         string? body = null, modifier = null;
@@ -94,7 +94,7 @@ public static class LookApply
             if (slot.Type == SlotType.Stroke) Collect(MaterialOverrideKey.ForStrokeEmit(kind, slot.Role));
         }
 
-        return new Look(kind, body, modifier, bodyColor, modifierColor, details);
+        return new(kind, body, modifier, bodyColor, modifierColor, details);
 
         void Collect(string key)
         {

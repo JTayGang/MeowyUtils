@@ -2,10 +2,10 @@ namespace RealDebuffs.Effects.Framework;
 
 internal enum AddrType { Stroke, Particle, Region, Emit }
 
-/// <summary>Where a slot override lands: a stroke or particle role, a region kind, or a stroke role's emit axis.</summary>
+/// Where a slot override lands: a stroke or particle role, a region kind, or a stroke role's emit axis.
 internal readonly record struct Addr(AddrType Type, int Role);
 
-/// <summary>Append-only: a position here is the number in short codes, so never reorder, insert or remove; add at the end (the audit names any missing).</summary>
+/// Append-only: a position here is the number in short codes, so never reorder, insert or remove; add at the end (the audit names any missing).
 internal static class CodeIds
 {
     public static readonly string[] Stroke =
@@ -58,8 +58,8 @@ internal static class CodeIds
         P(PrimitiveRole.Shard),
     };
 
-    private static Addr S(PrimitiveRole r) => new(AddrType.Stroke, (int)r);
-    private static Addr P(PrimitiveRole r) => new(AddrType.Particle, (int)r);
-    private static Addr E(PrimitiveRole r) => new(AddrType.Emit, (int)r);
-    private static Addr R(RegionKind k) => new(AddrType.Region, (int)k);
+    static Addr S(PrimitiveRole r) => new(AddrType.Stroke, (int)r);
+    static Addr P(PrimitiveRole r) => new(AddrType.Particle, (int)r);
+    static Addr E(PrimitiveRole r) => new(AddrType.Emit, (int)r);
+    static Addr R(RegionKind k) => new(AddrType.Region, (int)k);
 }

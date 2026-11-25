@@ -1,9 +1,6 @@
-using System.Numerics;
-using Dalamud.Bindings.ImGui;
-
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>Shared by the strokes drawn out of light: resamples a path evenly by arc length and computes brightness per sample.</summary>
+/// Shared by the strokes drawn out of light: resamples a path evenly by arc length and computes brightness per sample.
 internal sealed class LightStrand
 {
     public const int MaxSamples = 1100;
@@ -16,12 +13,12 @@ internal sealed class LightStrand
     public readonly uint[]    Col = new uint[MaxSamples];
     public int Count;
 
-    /// <summary>Samples along the first visibleLen px of the path: every original corner is kept</summary>
+    /// Samples along the first visibleLen px of the path: every original corner is kept
     public void Resample(StrandPath path, float visibleLen, float stepPx)
     {
         float total = path.Length;
-        visibleLen = MathF.Min(visibleLen, total);
-        stepPx = MathF.Max(1f, stepPx);
+        visibleLen = Min(visibleLen, total);
+        stepPx = Max(1f, stepPx);
 
         // Coarsen rather than overflow: a very long path just gets a larger step.
         if (visibleLen / stepPx + path.Count > MaxSamples - 2) stepPx = visibleLen / (MaxSamples - 2 - path.Count);
@@ -37,7 +34,7 @@ internal sealed class LightStrand
             bool last = a1 >= visibleLen;
             if (last) { a1 = visibleLen; len = a1 - a0; if (len < 1e-3f) break; }
 
-            int pieces = Math.Max(1, (int)MathF.Ceiling(len / stepPx));
+            int pieces = Math.Max(1, (int)Ceiling(len / stepPx));
             Vector2 p0 = path.Points[i - 1], p1 = path.Points[i];
             float full = path.Arc[i] - a0;
             for (int k = 1; k <= pieces && n < MaxSamples; k++)
@@ -53,12 +50,12 @@ internal sealed class LightStrand
         MeshBuilder.MiterNormals(Pts.AsSpan(0, Count), Nrm.AsSpan(0, Count));
     }
 
-    /// <summary>Fills Lum (about 0.5 to 1.7): a slow shimmer, three pulses running along the line, a flicker while agitated.</summary>
+    /// Fills Lum (about 0.5 to 1.7): a slow shimmer, three pulses running along the line, a flicker while agitated.
     public void Light(in StrokePrimitive s, float time, float total, float width, float px, float dashPeriod)
     {
         bool closed = s.Closed;
-        float agit = Math.Clamp(s.Agitation, 0f, 1f);
-        float pulseW = MathF.Max(34f * px, width * 2.4f);
+        float agit = Saturate(s.Agitation);
+        float pulseW = Max(34f * px, width * 2.4f);
 
         Span<float> at = stackalloc float[3];
         Span<float> gain = stackalloc float[3];
@@ -66,7 +63,7 @@ internal sealed class LightStrand
         {
             float h = Hash01(s.Seed * 13 + k * 101 + 5);
             float speed = (110f + 120f * Hash01(s.Seed + k * 37 + 9)) * px * (h < 0.5f ? 1f : -1f);
-            float p = (Hash01(s.Seed + k * 17 + 3) + s.Phase * 0.173f + time * speed / MathF.Max(total, 1f)) % 1f;
+            float p = (Hash01(s.Seed + k * 17 + 3) + s.Phase * 0.173f + time * speed / Max(total, 1f)) % 1f;
             at[k] = (p < 0f ? p + 1f : p) * total;
             gain[k] = 0.62f + 0.38f * Hash01(s.Seed + k * 29 + 1);
         }
@@ -75,22 +72,22 @@ internal sealed class LightStrand
         for (int i = 0; i < Count; i++)
         {
             float a = Arc[i];
-            float lum = 0.60f + 0.10f * MathF.Sin(shimmerPhase + a * 0.0042f) + 0.05f * MathF.Sin(time * 3.1f + a * 0.011f);
+            float lum = 0.60f + 0.10f * Sin(shimmerPhase + a * 0.0042f) + 0.05f * Sin(time * 3.1f + a * 0.011f);
 
             for (int k = 0; k < 3; k++)
             {
-                float d = MathF.Abs(a - at[k]);
-                if (closed) d = MathF.Min(d, total - d);
+                float d = Abs(a - at[k]);
+                if (closed) d = Min(d, total - d);
                 float g = d / pulseW;
-                if (g < 3f) lum += gain[k] * 0.95f * MathF.Exp(-g * g);
+                if (g < 3f) lum += gain[k] * 0.95f * Exp(-g * g);
             }
 
-            if (agit > 0.001f) lum += agit * (0.35f + 0.25f * MathF.Sin(time * 37f + a * 0.05f));
+            if (agit > 0.001f) lum += agit * (0.35f + 0.25f * Sin(time * 37f + a * 0.05f));
 
             if (dashPeriod > 0f)
             {
                 float u = a / dashPeriod;
-                u -= MathF.Floor(u);
+                u -= Floor(u);
                 const float duty = 0.58f, soft = 0.10f;
                 float mask = Smooth(u / soft) * (1f - Smooth((u - (duty - soft)) / soft));
                 lum *= mask;
@@ -99,23 +96,23 @@ internal sealed class LightStrand
         }
     }
 
-    /// <summary>The dash period that fits a whole number of times into a closed loop (no stub at the seam), or the plain period.</summary>
+    /// The dash period that fits a whole number of times into a closed loop (no stub at the seam), or the plain period.
     public static float FitDash(float period, float total, bool closed) =>
-        closed && period > 1f ? total / MathF.Max(1f, MathF.Round(total / period)) : period;
+        closed && period > 1f ? total / Max(1f, Round(total / period)) : period;
 }
 
-/// <summary>Light drawn as a line: a wide soft bloom, an orchid glow, a hot-pink body and a pale core</summary>
+/// Light drawn as a line: a wide soft bloom, an orchid glow, a hot-pink body and a pale core
 public sealed class StrokeSigil : IStrokeMaterial
 {
-    private readonly string _name;
-    private readonly Palette _palette;
-    private readonly StrokeEmission[] _shed;
-    private readonly ImpactEmission[] _hit;
+    readonly string _name;
+    readonly Palette _palette;
+    readonly StrokeEmission[] _shed;
+    readonly ImpactEmission[] _hit;
 
-    /// <summary>The curse-violet sigil (stroke.sigil).</summary>
+    /// The curse-violet sigil (stroke.sigil).
     public StrokeSigil() : this("stroke.sigil", CurseColor.Glow, "particle.mote", "sigil", "sigils", "arcane", "neon") { }
 
-    /// <summary>The same line of light in another palette: one per theme (see stroke.brand); moteMaterial is what it sheds.</summary>
+    /// The same line of light in another palette: one per theme (see stroke.brand); moteMaterial is what it sheds.
     internal StrokeSigil(string name, Palette palette, string moteMaterial, params string[] words)
     {
         _name = name;
@@ -150,27 +147,27 @@ public sealed class StrokeSigil : IStrokeMaterial
     public string Name => _name;
     public string[] NaturalLanguageWords { get; }
 
-    private static readonly LightStrand Strand = new();
-    private static readonly MeshBuilder Mb = new();
+    static readonly LightStrand Strand = new();
+    static readonly MeshBuilder Mb = new();
 
     public void Draw(ImDrawListPtr dl, in StrokePrimitive s, in MaterialContext ctx)
     {
         var path = s.Path;
         float alpha = s.Brightness * ctx.Alpha;
-        float reveal = Math.Clamp(s.Reveal, 0f, 1f);
+        float reveal = Saturate(s.Reveal);
         if (path.Count < 2 || alpha <= 0.004f || reveal <= 0.001f) return;
 
         float total = path.Length;
         if (total < 4f) return;
 
         float px = ctx.ScreenScale;
-        float width = MathF.Max(3f * px, s.WidthHint);
-        float depth = Math.Clamp(s.Depth, 0f, 1f);
+        float width = Max(3f * px, s.WidthHint);
+        float depth = Saturate(s.Depth);
         float visibleLen = total * reveal;
 
         float dash = s.Dash > 0f ? LightStrand.FitDash(s.Dash * px, total, s.Closed) : 0f;
         float step = Math.Clamp(width * 1.4f, 12f * px, 20f * px);
-        if (dash > 0f) step = MathF.Min(step, dash * 0.2f);
+        if (dash > 0f) step = Min(step, dash * 0.2f);
 
         var st = Strand;
         st.Resample(path, visibleLen, step);
@@ -193,45 +190,45 @@ public sealed class StrokeSigil : IStrokeMaterial
 
         // 1. Bloom: a wide, faint tent, strongest where the light is (stronger on a thin line, which has no glow ribbon).
         bool fat = width >= 13f * px;
-        float reach = MathF.Max(8f * px, width * 0.9f * soften);
+        float reach = Max(8f * px, width * 0.9f * soften);
         float bloom = fat ? 0.17f : 0.27f;
         for (int i = 0; i < n; i++)
         {
             half[i] = reach;
-            col[i] = Tint(_palette.Sample(0.20f), alpha * bloom * near * Math.Min(lum[i], 1.6f), overridden);
+            col[i] = Tint(_palette.Sample(0.20f), alpha * bloom * near * Min(lum[i], 1.6f), overridden);
         }
         Mb.Tent(pts, nrm, half, col);
 
         // 2. Glow.
         if (fat)
         {
-            float glowHalf = MathF.Max(0.8f * px, width * 0.10f);
-            float glowFeather = MathF.Max(3f * px, width * 0.34f * soften);
+            float glowHalf = Max(0.8f * px, width * 0.10f);
+            float glowFeather = Max(3f * px, width * 0.34f * soften);
             for (int i = 0; i < n; i++)
             {
                 half[i] = glowHalf;
-                col[i] = Tint(_palette.Sample(0.36f + 0.12f * lum[i] - heat), alpha * 0.46f * near * Math.Min(lum[i], 1.5f), overridden);
+                col[i] = Tint(_palette.Sample(0.36f + 0.12f * lum[i] - heat), alpha * 0.46f * near * Min(lum[i], 1.5f), overridden);
             }
             Mb.Ribbon(pts, nrm, half, col, glowFeather);
         }
 
         // 3. Body.
-        float bodyHalf = MathF.Max(0.8f * px, width * 0.060f);
+        float bodyHalf = Max(0.8f * px, width * 0.060f);
         for (int i = 0; i < n; i++)
         {
             half[i] = bodyHalf;
-            col[i] = Tint(_palette.Sample(0.50f + 0.34f * (lum[i] - 0.55f) - heat), alpha * 0.92f * near * Math.Min(lum[i], 1.25f), overridden);
+            col[i] = Tint(_palette.Sample(0.50f + 0.34f * (lum[i] - 0.55f) - heat), alpha * 0.92f * near * Min(lum[i], 1.25f), overridden);
         }
         Mb.Ribbon(pts, nrm, half, col, 1.0f * px);
 
         // 4. Core: the hot line down the middle, only where the light is up (not on a line too faint to show one).
         if (alpha * near > 0.35f)
         {
-            float coreHalf = MathF.Max(0.5f * px, width * 0.024f);
+            float coreHalf = Max(0.5f * px, width * 0.024f);
             for (int i = 0; i < n; i++)
             {
                 half[i] = coreHalf;
-                float k = Math.Clamp((lum[i] - 0.35f) / 0.9f, 0f, 1f);
+                float k = Saturate((lum[i] - 0.35f) / 0.9f);
                 col[i] = Tint(_palette.Sample(0.88f), alpha * near * (0.30f + 0.70f * k), overridden);
             }
             Mb.Ribbon(pts, nrm, half, col, 0.8f * px);
@@ -241,12 +238,12 @@ public sealed class StrokeSigil : IStrokeMaterial
 
         // The pen: a bright pip where the line is still drawing itself.
         if (reveal < 0.999f && s.TipFlare > 0.001f)
-            DrawTip(dl, pts[n - 1], width, Math.Clamp(s.TipFlare, 0f, 1f) * alpha, ctx);
+            DrawTip(dl, pts[n - 1], width, Saturate(s.TipFlare) * alpha, ctx);
     }
 
-    private static uint Tint(uint rgb, float a, bool overridden) => DrawHelpers.Tint(rgb, a, overridden);
+    static uint Tint(uint rgb, float a, bool overridden) => DrawHelpers.Tint(rgb, a, overridden);
 
-    private void DrawTip(ImDrawListPtr dl, Vector2 tip, float width, float k, in MaterialContext ctx)
+    void DrawTip(ImDrawListPtr dl, Vector2 tip, float width, float k, in MaterialContext ctx)
     {
         if (k <= 0.004f) return;
         Span<float> rr = stackalloc float[2] { width * 0.35f, width * 1.1f };
@@ -264,16 +261,16 @@ public sealed class StrokeSigil : IStrokeMaterial
     public ReadOnlySpan<ImpactEmission> ImpactEmissions => _hit;
 }
 
-/// <summary>A bare band of soft light along a path, no line in it: lay it under any stroke (chain, rope) to wrap it in glow.</summary>
+/// A bare band of soft light along a path, no line in it: lay it under any stroke (chain, rope) to wrap it in glow.
 public sealed class StrokeGlow : IStrokeMaterial
 {
-    private readonly string _name;
-    private readonly Palette _palette;
+    readonly string _name;
+    readonly Palette _palette;
 
-    /// <summary>The curse-violet glow (stroke.glow).</summary>
+    /// The curse-violet glow (stroke.glow).
     public StrokeGlow() : this("stroke.glow", CurseColor.Glow, "glow", "halo", "aura") { }
 
-    /// <summary>The same band of light in another palette: one registered per theme (see stroke.corona).</summary>
+    /// The same band of light in another palette: one registered per theme (see stroke.corona).
     internal StrokeGlow(string name, Palette palette, params string[] words)
     {
         _name = name;
@@ -284,8 +281,8 @@ public sealed class StrokeGlow : IStrokeMaterial
     public string Name => _name;
     public string[] NaturalLanguageWords { get; }
 
-    private static readonly LightStrand Strand = new();
-    private static readonly MeshBuilder Mb = new();
+    static readonly LightStrand Strand = new();
+    static readonly MeshBuilder Mb = new();
 
     public void Draw(ImDrawListPtr dl, in StrokePrimitive s, in MaterialContext ctx)
     {
@@ -297,12 +294,12 @@ public sealed class StrokeGlow : IStrokeMaterial
         if (total < 4f) return;
 
         float px = ctx.ScreenScale;
-        float width = MathF.Max(6f * px, s.WidthHint);
-        float depth = Math.Clamp(s.Depth, 0f, 1f);
+        float width = Max(6f * px, s.WidthHint);
+        float depth = Saturate(s.Depth);
 
         // The glow is soft, so it can be sampled coarsely.
         var st = Strand;
-        st.Resample(path, total * Math.Clamp(s.Reveal, 0f, 1f), Math.Clamp(width * 0.6f, 12f * px, 24f * px));
+        st.Resample(path, total * Saturate(s.Reveal), Math.Clamp(width * 0.6f, 12f * px, 24f * px));
         st.Light(in s, ctx.Time, total, width, px, 0f);
         int n = st.Count;
 
@@ -314,7 +311,7 @@ public sealed class StrokeGlow : IStrokeMaterial
         for (int i = 0; i < n; i++)
         {
             half[i] = width * 0.5f;
-            float l = Math.Min(st.Lum[i], 1.7f);
+            float l = Min(st.Lum[i], 1.7f);
             col[i] = DrawHelpers.Tint(_palette.Sample(0.26f + 0.22f * l), alpha * 0.30f * near * l, overridden);
         }
 

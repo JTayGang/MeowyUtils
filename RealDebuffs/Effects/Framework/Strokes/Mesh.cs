@@ -1,28 +1,26 @@
-using System.Numerics;
 using System.Runtime.CompilerServices;
-using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Collects triangles managed-side and hands them to ImGui in one go: Clear, add, Flush when Full and at the end.</summary>
+/// Collects triangles managed-side and hands them to ImGui in one go: Clear, add, Flush when Full and at the end.
 internal sealed class MeshBuilder
 {
-    /// <summary>Flush point. Well under MeshDraw.MaxMeshVerts so one primitive can always finish.</summary>
-    private const int FlushAt = 48000;
+    /// Flush point. Well under MeshDraw.MaxMeshVerts so one primitive can always finish.
+    const int FlushAt = 48000;
 
-    private Vector2[] _pos = new Vector2[4096];
-    private uint[]    _col = new uint[4096];
-    private ushort[]  _idx = new ushort[16384];
-    private int _vn, _in;
+    Vector2[] _pos = new Vector2[4096];
+    uint[]    _col = new uint[4096];
+    ushort[]  _idx = new ushort[16384];
+    int _vn, _in;
 
     public bool Full => _vn >= FlushAt;
 
-    /// <summary>Vertices so far: the index the next vertex gets.</summary>
+    /// Vertices so far: the index the next vertex gets.
     public int Vertices => _vn;
 
     public void Clear() { _vn = 0; _in = 0; }
 
-    private void Room(int verts, int idx)
+    void Room(int verts, int idx)
     {
         if (_vn + verts > _pos.Length)
         {
@@ -32,10 +30,10 @@ internal sealed class MeshBuilder
         if (_in + idx > _idx.Length) Array.Resize(ref _idx, Math.Max(_idx.Length * 2, _in + idx));
     }
 
-    /// <summary>Makes room for this many more vertices and indices, so the *Reserved calls (no capacity test) are safe.</summary>
+    /// Makes room for this many more vertices and indices, so the *Reserved calls (no capacity test) are safe.
     public void Reserve(int verts, int idx) => Room(verts, idx);
 
-    /// <summary>Appends the first count entries of two parallel arrays as vertices; returns the first index.</summary>
+    /// Appends the first count entries of two parallel arrays as vertices; returns the first index.
     public int AddBlockReserved(Vector2[] pos, uint[] col, int count)
     {
         int first = _vn;
@@ -51,14 +49,14 @@ internal sealed class MeshBuilder
         return _vn++;
     }
 
-    /// <summary>One triangle. No capacity test: Reserve first.</summary>
+    /// One triangle. No capacity test: Reserve first.
     public void TriReserved(int a, int b, int c)
     {
         _idx[_in] = (ushort)a; _idx[_in + 1] = (ushort)b; _idx[_in + 2] = (ushort)c;
         _in += 3;
     }
 
-    /// <summary>Stitches rows x cols of reserved vertices (row-major from first) into quads. Reserve first.</summary>
+    /// Stitches rows x cols of reserved vertices (row-major from first) into quads. Reserve first.
     public void StitchGrid(int first, int rows, int cols)
     {
         for (int i = 0; i + 1 < rows; i++)
@@ -69,7 +67,7 @@ internal sealed class MeshBuilder
         }
     }
 
-    /// <summary>The quad a b / c d as the two triangles (a, b, d) and (a, d, c). No capacity test: Reserve first.</summary>
+    /// The quad a b / c d as the two triangles (a, b, d) and (a, d, c). No capacity test: Reserve first.
     public void QuadReserved(int a, int b, int c, int d)
     {
         ushort[] idx = _idx; int i = _in;
@@ -84,7 +82,7 @@ internal sealed class MeshBuilder
         Clear();
     }
 
-    /// <summary>Per-point offset of a polyline: normals scaled by 1/cos(half turn) at bends (clamped).</summary>
+    /// Per-point offset of a polyline: normals scaled by 1/cos(half turn) at bends (clamped).
     public static void MiterNormals(ReadOnlySpan<Vector2> pts, Span<Vector2> normals)
     {
         int n = pts.Length;
@@ -121,7 +119,7 @@ internal sealed class MeshBuilder
         }
     }
 
-    /// <summary>Soft-edged strip: a solid core (per-point half-width) fading to transparent over feather px.</summary>
+    /// Soft-edged strip: a solid core (per-point half-width) fading to transparent over feather px.
     public void Ribbon(ReadOnlySpan<Vector2> pts, ReadOnlySpan<Vector2> normals, ReadOnlySpan<float> halfWidth, uint color, float feather)
     {
         int n = pts.Length;
@@ -134,7 +132,7 @@ internal sealed class MeshBuilder
         for (int k = 0; k < n; k++)
         {
             Vector2 p = pts[k], nm = normals[k];
-            float hw = MathF.Max(0f, halfWidth[k]);
+            float hw = Max(0f, halfWidth[k]);
             P[v] = p - nm * (hw + feather); C[v] = edge;  v++;
             P[v] = p - nm * hw;             C[v] = color; v++;
             P[v] = p + nm * hw;             C[v] = color; v++;
@@ -155,7 +153,7 @@ internal sealed class MeshBuilder
         _in = w;
     }
 
-    /// <summary>Cheaper strip: three vertices per point, alpha falling linearly to px either side.</summary>
+    /// Cheaper strip: three vertices per point, alpha falling linearly to px either side.
     public void Tent(ReadOnlySpan<Vector2> pts, ReadOnlySpan<Vector2> normals, ReadOnlySpan<float> reach, uint color)
     {
         int n = pts.Length;
@@ -168,7 +166,7 @@ internal sealed class MeshBuilder
         for (int k = 0; k < n; k++)
         {
             Vector2 p = pts[k];
-            Vector2 off = normals[k] * MathF.Max(0f, reach[k]);
+            Vector2 off = normals[k] * Max(0f, reach[k]);
             P[v] = p - off; C[v] = edge;  v++;
             P[v] = p;       C[v] = color; v++;
             P[v] = p + off; C[v] = edge;  v++;
@@ -187,7 +185,7 @@ internal sealed class MeshBuilder
         _in = w;
     }
 
-    /// <summary>Ribbon with a colour (so an alpha) per point, for light that varies along a strand.</summary>
+    /// Ribbon with a colour (so an alpha) per point, for light that varies along a strand.
     public void Ribbon(ReadOnlySpan<Vector2> pts, ReadOnlySpan<Vector2> normals, ReadOnlySpan<float> halfWidth, ReadOnlySpan<uint> colors, float feather)
     {
         int n = pts.Length;
@@ -199,7 +197,7 @@ internal sealed class MeshBuilder
         for (int k = 0; k < n; k++)
         {
             Vector2 p = pts[k], nm = normals[k];
-            float hw = MathF.Max(0f, halfWidth[k]);
+            float hw = Max(0f, halfWidth[k]);
             uint color = colors[k];
             uint edge = color & 0x00FFFFFFu;
             P[v] = p - nm * (hw + feather); C[v] = edge;  v++;
@@ -224,7 +222,7 @@ internal sealed class MeshBuilder
         _in = w;
     }
 
-    /// <summary>Tent with a colour and a reach per point: a soft underlay whose strength follows the strand's own light.</summary>
+    /// Tent with a colour and a reach per point: a soft underlay whose strength follows the strand's own light.
     public void Tent(ReadOnlySpan<Vector2> pts, ReadOnlySpan<Vector2> normals, ReadOnlySpan<float> reach, ReadOnlySpan<uint> colors)
     {
         int n = pts.Length;
@@ -236,7 +234,7 @@ internal sealed class MeshBuilder
         for (int k = 0; k < n; k++)
         {
             Vector2 p = pts[k];
-            Vector2 off = normals[k] * MathF.Max(0f, reach[k]);
+            Vector2 off = normals[k] * Max(0f, reach[k]);
             uint color = colors[k];
             uint edge = color & 0x00FFFFFFu;
             P[v] = p - off; C[v] = edge;  v++;
@@ -258,13 +256,13 @@ internal sealed class MeshBuilder
         _in = w;
     }
 
-    /// <summary>A single tapering spike: soft root (rootReach px either side) to a point tip, four vertices.</summary>
+    /// A single tapering spike: soft root (rootReach px either side) to a point tip, four vertices.
     public void Sliver(Vector2 root, Vector2 tip, float rootReach, uint rootColor, uint tipColor)
     {
         Vector2 d = tip - root;
         float l2 = d.LengthSquared();
         if (l2 < 1e-6f || ((rootColor | tipColor) >> 24) == 0) return;
-        Vector2 off = new Vector2(-d.Y, d.X) * (rootReach / MathF.Sqrt(l2));
+        Vector2 off = new Vector2(-d.Y, d.X) * (rootReach / Sqrt(l2));
 
         Room(4, 6);
         uint edge = rootColor & 0x00FFFFFFu;
@@ -279,24 +277,24 @@ internal sealed class MeshBuilder
         _idx[_in++] = (ushort)(a + 1); _idx[_in++] = (ushort)(a + 2); _idx[_in++] = (ushort)(a + 3);
     }
 
-    private static Vector2 Dir(Vector2 d)
+    static Vector2 Dir(Vector2 d)
     {
         float l2 = d.LengthSquared();
-        return l2 > 1e-8f ? d / MathF.Sqrt(l2) : default;
+        return l2 > 1e-8f ? d / Sqrt(l2) : default;
     }
 }
 
-/// <summary>After PrimReserve, write exactly that many vertices and indices and advance the cursors.</summary>
+/// After PrimReserve, write exactly that many vertices and indices and advance the cursors.
 internal static unsafe partial class MeshDraw
 {
     public const int MaxVerts = 512;
     public static readonly Vector2[] P = new Vector2[MaxVerts];
     public static readonly uint[]    C = new uint[MaxVerts];
 
-    private static Vector2 _whiteUv;
-    private static float   _whiteStamp = float.NaN;
+    static Vector2 _whiteUv;
+    static float   _whiteStamp = float.NaN;
 
-    /// <summary>UV of the font atlas' white pixel, refreshed each frame (the atlas can be rebuilt).</summary>
+    /// UV of the font atlas' white pixel, refreshed each frame (the atlas can be rebuilt).
     public static Vector2 WhiteUv(float frameTime)
     {
         if (frameTime != _whiteStamp)
@@ -310,11 +308,11 @@ internal static unsafe partial class MeshDraw
     }
 
     // Batching: small draws in a run are staged and handed over in one ordered reservation; only mesh primitives between BeginBatch and EndBatch.
-    private const int BatchVerts = 12_000, BatchIdx = 48_000;
-    private static bool _batching;
-    private static ImDrawVert* _bv;
-    private static ushort* _bi;
-    private static int _bn, _bin;
+    const int BatchVerts = 12_000, BatchIdx = 48_000;
+    static bool _batching;
+    static ImDrawVert* _bv;
+    static ushort* _bi;
+    static int _bn, _bin;
 
     public static void BeginBatch()
     {
@@ -327,10 +325,10 @@ internal static unsafe partial class MeshDraw
         _bn = _bin = 0; _batching = true;
     }
 
-    /// <summary>Drops anything staged without drawing it (a frame that was cut short).</summary>
+    /// Drops anything staged without drawing it (a frame that was cut short).
     public static void AbortBatch() { _batching = false; _bn = _bin = 0; }
 
-    /// <summary>Hands everything staged to the draw list and goes back to drawing directly.</summary>
+    /// Hands everything staged to the draw list and goes back to drawing directly.
     public static void EndBatch(ImDrawListPtr dl)
     {
         if (!_batching) return;
@@ -338,7 +336,7 @@ internal static unsafe partial class MeshDraw
         _batching = false;
     }
 
-    private static void FlushBatch(ImDrawListPtr dl)
+    static void FlushBatch(ImDrawListPtr dl)
     {
         if (_bn == 0) return;
         int probe = FrameProbe.Enter();
@@ -353,9 +351,9 @@ internal static unsafe partial class MeshDraw
         FrameProbe.Leave(probe);
     }
 
-    private static bool Staged(ImDrawVert* v) => _bv != null && v >= _bv && v < _bv + BatchVerts;
+    static bool Staged(ImDrawVert* v) => _bv != null && v >= _bv && v < _bv + BatchVerts;
 
-    private static void Begin(ImDrawListPtr dl, int idxCount, int vtxCount,
+    static void Begin(ImDrawListPtr dl, int idxCount, int vtxCount,
                               out ImDrawVert* v, out ushort* ix, out uint b)
     {
         if (_batching)
@@ -376,7 +374,7 @@ internal static unsafe partial class MeshDraw
         b = h->VtxCurrentIdx;
     }
 
-    private static void End(ImDrawListPtr dl, ImDrawVert* v, ushort* ix, int vtxCount, int idxCount, uint b)
+    static void End(ImDrawListPtr dl, ImDrawVert* v, ushort* ix, int vtxCount, int idxCount, uint b)
     {
         if (_batching && Staged(v))
         {
@@ -393,7 +391,7 @@ internal static unsafe partial class MeshDraw
 
     // Recording and replay: A finished mesh can be copied out of the draw list as it is written
 
-    /// <summary>One recorded run of triangles.</summary>
+    /// One recorded run of triangles.
     internal sealed class MeshCache
     {
         public ImDrawVert[] V = new ImDrawVert[8192];
@@ -402,16 +400,16 @@ internal static unsafe partial class MeshDraw
         public bool Valid;
     }
 
-    private static MeshCache? _rec;
+    static MeshCache? _rec;
 
-    /// <summary>Starts copying everything drawn from now on into cache, replacing what it held.</summary>
+    /// Starts copying everything drawn from now on into cache, replacing what it held.
     public static void BeginRecord(MeshCache cache)
     {
         _rec = cache;
         cache.Vn = 0; cache.In = 0; cache.Valid = true;
     }
 
-    /// <summary>Stops recording. False if nothing was drawn or it didn't fit 16-bit indices (the cache isn't valid for replay).</summary>
+    /// Stops recording. False if nothing was drawn or it didn't fit 16-bit indices (the cache isn't valid for replay).
     public static bool EndRecord()
     {
         MeshCache? c = _rec;
@@ -421,7 +419,7 @@ internal static unsafe partial class MeshDraw
         return c.Valid;
     }
 
-    private static void Record(ImDrawVert* v, ushort* ix, int vtxCount, int idxCount, uint b)
+    static void Record(ImDrawVert* v, ushort* ix, int vtxCount, int idxCount, uint b)
     {
         MeshCache c = _rec!;
         if (!c.Valid) return;
@@ -436,7 +434,7 @@ internal static unsafe partial class MeshDraw
         c.Vn += vtxCount; c.In += idxCount;
     }
 
-    /// <summary>Writes a recording back into the draw list. Indices are re-based on wherever the draw list is now.</summary>
+    /// Writes a recording back into the draw list. Indices are re-based on wherever the draw list is now.
     public static void Replay(ImDrawListPtr dl, MeshCache c)
     {
         if (!c.Valid || c.Vn == 0 || c.In == 0) return;
@@ -449,7 +447,7 @@ internal static unsafe partial class MeshDraw
     }
 
     // End without recording (a replay must not record itself if a recording is open).
-    private static void h_End(ImDrawListPtr dl, ImDrawVert* v, ushort* ix, int vtxCount, int idxCount, uint b)
+    static void h_End(ImDrawListPtr dl, ImDrawVert* v, ushort* ix, int vtxCount, int idxCount, uint b)
     {
         ImDrawList* h = dl.Handle;
         h->VtxWritePtr = v + vtxCount;
@@ -457,8 +455,8 @@ internal static unsafe partial class MeshDraw
         h->VtxCurrentIdx = b + (uint)vtxCount;
     }
 
-    /// <summary>dst[k] = src[k] + delta (16-bit wrap), a vector at a time.</summary>
-    private static void AddDelta(ushort* src, ushort* dst, int n, ushort delta)
+    /// dst[k] = src[k] + delta (16-bit wrap), a vector at a time.
+    static void AddDelta(ushort* src, ushort* dst, int n, ushort delta)
     {
         int k = 0;
         if (Vector.IsHardwareAccelerated)
@@ -471,7 +469,7 @@ internal static unsafe partial class MeshDraw
         for (; k < n; k++) dst[k] = unchecked((ushort)(src[k] + delta));
     }
 
-    /// <summary>Draws the (cols+1) x (rows+1) vertex grid currently in P/C (row-major) as 2*cols*rows triangles.</summary>
+    /// Draws the (cols+1) x (rows+1) vertex grid currently in P/C (row-major) as 2*cols*rows triangles.
     public static void Grid(ImDrawListPtr dl, int cols, int rows, Vector2 uv)
     {
         int stride = cols + 1;
@@ -510,7 +508,7 @@ internal static unsafe partial class MeshDraw
         End(dl, v, ix, vtx, idxCount, b);
     }
 
-    /// <summary>Soft radial blob: a centre plus one ring per ringRadius (innermost first); irregular wobbles slices.</summary>
+    /// Soft radial blob: a centre plus one ring per ringRadius (innermost first); irregular wobbles slices.
     public static void Radial(ImDrawListPtr dl, Vector2 center, Vector2 uv, uint centerCol,
                               int segs, ReadOnlySpan<float> ringRadius, ReadOnlySpan<uint> ringColor,
                               float rotation, float squashY, int seed, float irregular)
@@ -529,9 +527,9 @@ internal static unsafe partial class MeshDraw
             for (int j = 0; j < segs; j++)
             {
                 float wob = 1f + irregular * (Hash01(seed + j * 7919) * 2f - 1f) * 0.5f;
-                float ang = rotation + MathF.Tau * j / segs;
+                float ang = rotation + Tau * j / segs;
                 float rad = ringRadius[r] * wob;
-                v[n].Pos = new Vector2(center.X + MathF.Cos(ang) * rad, center.Y + MathF.Sin(ang) * rad * squashY);
+                v[n].Pos = new(center.X + Cos(ang) * rad, center.Y + Sin(ang) * rad * squashY);
                 v[n].Uv = uv;
                 v[n].Col = ringColor[r];
                 n++;
@@ -568,7 +566,7 @@ internal static unsafe partial class MeshDraw
         End(dl, v, ix, vtx, idxCount, b);
     }
 
-    /// <summary>One quad with a color per corner (a-b-c-d in winding order).</summary>
+    /// One quad with a color per corner (a-b-c-d in winding order).
     public static void Quad(ImDrawListPtr dl, Vector2 uv,
                             Vector2 a, uint ca, Vector2 b, uint cb, Vector2 c, uint cc, Vector2 d, uint cd)
     {
@@ -585,13 +583,13 @@ internal static unsafe partial class MeshDraw
         End(dl, v, ix, 4, 6, i);
     }
 
-    /// <summary>One mesh must fit in a single draw command, whose indices are 16-bit.</summary>
+    /// One mesh must fit in a single draw command, whose indices are 16-bit.
     public const int MaxMeshVerts = 60000;
 
-    private static int[] _sparseMap   = new int[4096];
-    private static int[] _sparseCells = new int[4096];
+    static int[] _sparseMap   = new int[4096];
+    static int[] _sparseCells = new int[4096];
 
-    /// <summary>Draws only the visible cells of a vertex grid (all-transparent cells and untouched vertices are skipped).</summary>
+    /// Draws only the visible cells of a vertex grid (all-transparent cells and untouched vertices are skipped).
     public static void SparseGrid(ImDrawListPtr dl, int cols, int rows, Vector2[] pos, uint[] col, Vector2 uv)
     {
         int stride = cols + 1;
@@ -655,7 +653,7 @@ internal static unsafe partial class MeshDraw
         End(dl, v, ix, used, cells * 6, b);
     }
 
-    /// <summary>A closed triangle fan: a centre vertex and a ring of rim vertices with their own colours (stars, flares).</summary>
+    /// A closed triangle fan: a centre vertex and a ring of rim vertices with their own colours (stars, flares).
     public static void Fan(ImDrawListPtr dl, Vector2 uv, Vector2 center, uint centerCol,
                            ReadOnlySpan<Vector2> rim, ReadOnlySpan<uint> rimCol)
     {
@@ -676,7 +674,7 @@ internal static unsafe partial class MeshDraw
         End(dl, v, ix, n + 1, n * 3, b);
     }
 
-    /// <summary>Draws a caller-built indexed triangle list (see MeshBuilder) with one reserve; keep it under MaxMeshVerts.</summary>
+    /// Draws a caller-built indexed triangle list (see MeshBuilder) with one reserve; keep it under MaxMeshVerts.
     public static void Mesh(ImDrawListPtr dl, Vector2[] pos, uint[] col, ushort[] idx,
                             int vtxCount, int idxCount, Vector2 uv)
     {
@@ -701,17 +699,17 @@ internal static unsafe partial class MeshDraw
     }
 }
 
-/// <summary>Smooth tangents and a forward-only sampler along a path, for tube materials that lay rows of vertices.</summary>
+/// Smooth tangents and a forward-only sampler along a path, for tube materials that lay rows of vertices.
 internal sealed class PathRows
 {
-    /// <summary>Fraction up the dome for each end-cap row, tip last. 0 is where the cap meets the body.</summary>
+    /// Fraction up the dome for each end-cap row, tip last. 0 is where the cap meets the body.
     public static readonly float[] DomeT = { 1.0f, 0.95f, 0.80f, 0.50f, 0.0f };
 
-    private readonly Vector2[] _tan;
+    readonly Vector2[] _tan;
 
     public PathRows(int maxPoints) => _tan = new Vector2[maxPoints];
 
-    /// <summary>Smooth tangent at every path point; rows interpolate them so a coarse path shades without facets.</summary>
+    /// Smooth tangent at every path point; rows interpolate them so a coarse path shades without facets.
     public void Prepare(StrandPath path, int pn, bool closed)
     {
         var pts = path.Points;
@@ -727,7 +725,7 @@ internal sealed class PathRows
         }
     }
 
-    /// <summary>Position and direction at arc length s, advancing a cursor (s only ever increases).</summary>
+    /// Position and direction at arc length s, advancing a cursor (s only ever increases).
     public void SampleAt(StrandPath path, int pn, ref int seg, float s, out Vector2 p, out Vector2 t)
     {
         var arc = path.Arc;
@@ -735,7 +733,7 @@ internal sealed class PathRows
         while (seg < pn - 2 && arc[seg + 1] < s) seg++;
 
         float span = arc[seg + 1] - arc[seg];
-        float f = span > 1e-5f ? Math.Clamp((s - arc[seg]) / span, 0f, 1f) : 0f;
+        float f = span > 1e-5f ? Saturate((s - arc[seg]) / span) : 0f;
         p = Vector2.Lerp(pts[seg], pts[seg + 1], f);
 
         Vector2 d = Vector2.Lerp(_tan[seg], _tan[seg + 1], f);
@@ -743,11 +741,11 @@ internal sealed class PathRows
         t = len > 1e-4f ? d / len : _tan[seg];
     }
 
-    /// <summary>Shaping of a row on a rounded end: width factor and how far the normal leans along the strand.</summary>
+    /// Shaping of a row on a rounded end: width factor and how far the normal leans along the strand.
     public static void Cap(float endSign, float domeT, out float capW, out float capAxial)
     {
         if (endSign == 0f) { capW = 1f; capAxial = 0f; return; }
-        capW = MathF.Sqrt(MathF.Max(0f, 1f - domeT * domeT));
+        capW = Sqrt(Max(0f, 1f - domeT * domeT));
         capAxial = endSign * domeT;
     }
 }

@@ -2,17 +2,17 @@ namespace RealDebuffs.Effects.Framework;
 
 public enum SlotType { Stroke, Particle, Region }
 
-/// <summary>Which region layer a slot drives: regions with an edge mask are EdgeGlow, the rest FlatFill.</summary>
+/// Which region layer a slot drives: regions with an edge mask are EdgeGlow, the rest FlatFill.
 public enum RegionKind { FlatFill, EdgeGlow }
 
-/// <summary>One material slot an effect exposes to the UI; Hero is what a "made of X" body replaces, Modifier the particle layer "with X" replaces.</summary>
+/// One material slot an effect exposes to the UI; Hero is what a "made of X" body replaces, Modifier the particle layer "with X" replaces.
 public readonly record struct SwappableSlot(SlotType Type, PrimitiveRole Role, string Label, string DefaultMaterial, RegionKind Region = default, bool Hero = false, bool Modifier = false)
 {
-    /// <summary>Role for strokes and particles, region layer for regions.</summary>
+    /// Role for strokes and particles, region layer for regions.
     public int Key => Type == SlotType.Region ? (int)Region : (int)Role;
 }
 
-/// <summary>E.g. Slot.Particle(PrimitiveRole.Ember, "Flames", "particle.ember", hero: true); at most one hero and one modifier per effect.</summary>
+/// E.g. Slot.Particle(PrimitiveRole.Ember, "Flames", "particle.ember", hero: true); at most one hero and one modifier per effect.
 public static class Slot
 {
     public static SwappableSlot Stroke(PrimitiveRole role, string label, string material, bool hero = false) => new(SlotType.Stroke, role, label, material, Hero: hero);
@@ -25,14 +25,14 @@ public interface IHasSwappableSlots
     IReadOnlyList<SwappableSlot> Slots { get; }
 }
 
-/// <summary>Every effect's slots and defaults, registered once by Plugin.</summary>
+/// Every effect's slots and defaults, registered once by Plugin.
 public static class EffectRegistry
 {
-    private static readonly Dictionary<(DebuffKind, SlotType, int), string> Defaults = new();
-    private static readonly Dictionary<DebuffKind, SwappableSlot[]> SlotsByKind = new();
-    private static readonly Dictionary<DebuffKind, SwappableSlot> BodyByKind = new();
-    private static readonly Dictionary<DebuffKind, SwappableSlot> ModifierByKind = new();
-    private static DebuffKind[]? _kinds;
+    static readonly Dictionary<(DebuffKind, SlotType, int), string> Defaults = new();
+    static readonly Dictionary<DebuffKind, SwappableSlot[]> SlotsByKind = new();
+    static readonly Dictionary<DebuffKind, SwappableSlot> BodyByKind = new();
+    static readonly Dictionary<DebuffKind, SwappableSlot> ModifierByKind = new();
+    static DebuffKind[]? _kinds;
 
     public static void Register(ISceneEffect effect)
     {
@@ -61,10 +61,10 @@ public static class EffectRegistry
     public static string? DefaultFor(DebuffKind kind, RegionKind region) =>
         Defaults.GetValueOrDefault((kind, SlotType.Region, (int)region));
 
-    /// <summary>The slot "made of X" replaces.</summary>
+    /// The slot "made of X" replaces.
     public static SwappableSlot? BodyFor(DebuffKind kind) => BodyByKind.TryGetValue(kind, out var s) ? s : null;
 
-    /// <summary>The particle slot "with X" replaces; null means a stroke body's shed (emit axis) takes the modifier instead.</summary>
+    /// The particle slot "with X" replaces; null means a stroke body's shed (emit axis) takes the modifier instead.
     public static SwappableSlot? ModifierFor(DebuffKind kind) => ModifierByKind.TryGetValue(kind, out var s) ? s : null;
 
     public static SwappableSlot[] SlotsFor(DebuffKind kind) =>

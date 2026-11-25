@@ -1,12 +1,9 @@
-using System.Numerics;
-using Dalamud.Bindings.ImGui;
-
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>A rimless soft puff: smoke, mist, dust and miasma are one mesh with different Looks; a Look with a Ramp draws as a lit, noise-shaped billow.</summary>
+/// A rimless soft puff: smoke, mist, dust and miasma are one mesh with different Looks; a Look with a Ramp draws as a lit, noise-shaped billow.
 public sealed class ParticlePuff : IParticleMaterial
 {
-    /// <summary>Colour runs Warm to Cool over CoolSpan (0 = Warm); radius = Size*(GrowFrom + GrowBy*smooth(age)); with a Ramp, Variant = squash %, Rotation = stretch.</summary>
+    /// Colour runs Warm to Cool over CoolSpan (0 = Warm); radius = Size*(GrowFrom + GrowBy*smooth(age)); with a Ramp, Variant = squash %, Rotation = stretch.
     internal readonly record struct Look(
         uint Warm, uint Cool, float CoolSpan,
         float GrowFrom, float GrowBy,
@@ -63,10 +60,10 @@ public sealed class ParticlePuff : IParticleMaterial
 
     public static readonly ParticlePuff[] All = { Smoke, Mist, Dust, Miasma };
 
-    private const int Segs = 12;
+    const int Segs = 12;
 
-    private readonly Look _look;
-    private readonly StrokeEmission[] _emissions;
+    readonly Look _look;
+    readonly StrokeEmission[] _emissions;
 
     internal ParticlePuff(string name, string[] words, in Look look, params StrokeEmission[] emissions)
     {
@@ -85,7 +82,7 @@ public sealed class ParticlePuff : IParticleMaterial
 
         float age = p.AgeRatio;
         float radius = p.Size * (L.GrowFrom + L.GrowBy * Smooth(age));
-        float fade = (L.FadeIn > 0f ? MathF.Min(age / L.FadeIn, 1f) : 1f)
+        float fade = (L.FadeIn > 0f ? Min(age / L.FadeIn, 1f) : 1f)
                    * (L.FadeOutAt < 1f ? 1f - Smooth((age - L.FadeOutAt) / (1f - L.FadeOutAt)) : 1f);
         float a = k * fade * L.Alpha * (1f - L.Thin * Smooth(age));
         if (a <= 0.002f || radius <= L.MinSize) return;
@@ -99,7 +96,7 @@ public sealed class ParticlePuff : IParticleMaterial
         uint body = L.CoolSpan > 0f ? LerpColor(L.Warm, L.Cool, Smooth(age / L.CoolSpan)) : L.Warm;
         Vector2 pos = p.DrawPos;
         Vector2 uv = MeshDraw.WhiteUv(ctx.Time);
-        float rot = Hash01(p.Seed + 9) * MathF.Tau;
+        float rot = Hash01(p.Seed + 9) * Tau;
 
         Blob(dl, pos, uv, body, a, 1f, radius, rot, L.Squash, p.Seed, L.Irregular);
 
@@ -111,26 +108,26 @@ public sealed class ParticlePuff : IParticleMaterial
     }
 
     // The billow: a polar mesh whose every vertex is shaded from a warped noise field, lit from the screen's middle.
-    private const int BillowRings = 7, BillowSegs = 28;
-    private static readonly MeshBuilder Mb = new();
-    private static readonly (float C, float S)[] Dir = BuildDirs();
+    const int BillowRings = 7, BillowSegs = 28;
+    static readonly MeshBuilder Mb = new();
+    static readonly (float C, float S)[] Dir = BuildDirs();
 
-    private static (float, float)[] BuildDirs()
+    static (float, float)[] BuildDirs()
     {
         var d = new (float, float)[BillowSegs];
-        for (int j = 0; j < BillowSegs; j++) d[j] = (MathF.Cos(MathF.Tau * j / BillowSegs), MathF.Sin(MathF.Tau * j / BillowSegs));
+        for (int j = 0; j < BillowSegs; j++) d[j] = (Cos(Tau * j / BillowSegs), Sin(Tau * j / BillowSegs));
         return d;
     }
 
-    private static void Billow(ImDrawListPtr dl, in ParticlePrimitive p, in MaterialContext ctx, Palette ramp,
+    static void Billow(ImDrawListPtr dl, in ParticlePrimitive p, in MaterialContext ctx, Palette ramp,
                                float radius, float a, float squash, float irregular, float time)
     {
         Vector2 c = p.DrawPos;
-        float cosR = MathF.Cos(p.Rotation), sinR = MathF.Sin(p.Rotation);
+        float cosR = Cos(p.Rotation), sinR = Sin(p.Rotation);
 
         // The turn of the pattern: it slowly swirls about the billow's heart, one way or the other.
-        float swirl = Hash01(p.Seed + 12) * MathF.Tau + time * HashRange(p.Seed + 13, -0.07f, 0.07f);
-        float cosP = MathF.Cos(swirl), sinP = MathF.Sin(swirl);
+        float swirl = Hash01(p.Seed + 12) * Tau + time * HashRange(p.Seed + 13, -0.07f, 0.07f);
+        float cosP = Cos(swirl), sinP = Sin(swirl);
         float ox = HashRange(p.Seed + 14, 0f, 200f) + time * 0.035f, oy = HashRange(p.Seed + 15, 0f, 200f);
         float freq = HashRange(p.Seed + 16, 0.95f, 1.45f);
 
@@ -142,7 +139,7 @@ public sealed class ParticlePuff : IParticleMaterial
         // A billow right at the light is lit all round, not from one side.
         float side = Saturate(tl / (radius * 1.2f));
         float lux = (toLight.X * cosR + toLight.Y * sinR), luy = (-toLight.X * sinR + toLight.Y * cosR) / squash;
-        float ll = MathF.Sqrt(lux * lux + luy * luy);
+        float ll = Sqrt(lux * lux + luy * luy);
         lux /= ll; luy /= ll;
         float lnx = (cosP * lux - sinP * luy) * 0.70f * side, lny = (sinP * lux + cosP * luy) * 0.70f * side;
 
@@ -170,7 +167,7 @@ public sealed class ParticlePuff : IParticleMaterial
                 float sx = ux * wob, sy = uy * wob * squash;
                 Vector2 pos = c + new Vector2(sx * cosR - sy * sinR, sx * sinR + sy * cosR) * radius;
                 // Thin fog at a rim stays rosy instead of washing out to white.
-                float thick = edge * MathF.Pow(dens, 1.3f);
+                float thick = edge * Pow(dens, 1.3f);
                 Mb.VertexReserved(pos, WithAlpha(ramp.Sample(lit * (0.72f + 0.28f * Saturate(thick * 1.8f))), a * thick));
             }
         }
@@ -189,7 +186,7 @@ public sealed class ParticlePuff : IParticleMaterial
     }
 
     // Centre at alpha * centre, mid ring at 0.65 of that, outer ring transparent.
-    private static void Blob(ImDrawListPtr dl, Vector2 pos, Vector2 uv, uint color, float a, float centre,
+    static void Blob(ImDrawListPtr dl, Vector2 pos, Vector2 uv, uint color, float a, float centre,
                              float radius, float rot, float squash, int seed, float irregular)
     {
         Span<float> rr = stackalloc float[2] { radius * 0.5f, radius };
@@ -202,7 +199,7 @@ public sealed class ParticlePuff : IParticleMaterial
     }
 }
 
-/// <summary>The generic puffs; themed puffs register with their theme.</summary>
+/// The generic puffs; themed puffs register with their theme.
 internal sealed class PuffMaterials : IMaterialPack
 {
     public IEnumerable<IMaterial> Materials => ParticlePuff.All;

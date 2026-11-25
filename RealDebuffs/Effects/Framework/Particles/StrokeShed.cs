@@ -1,44 +1,33 @@
-using System.Numerics;
-
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Owns what strokes shed and carry: particles, coats (drips, flames, snow) and impact bursts; update once per frame after effects emit.</summary>
+/// Owns what strokes shed and carry: particles, coats (drips, flames, snow) and impact bursts; update once per frame after effects emit.
 public sealed class StrokeShed
 {
-    private const int FreeCapacity = 2000;
-    private const int FlowCapacity = 600;
+    const int FreeCapacity = 2000, FlowCapacity = 600;
 
-    private struct FlowingParticle
+    struct FlowingParticle
     {
         public DebuffKind Owner;
         public int   StrokeSeed;
         public string? MaterialName;
 
-        public float Born;
-        public float Lifespan;
-        public float Size;
-        public float Brightness;
+        public float Born, Lifespan, Size, Brightness;
         public PrimitiveRole Role;
         public Vector4? ColorOverride;
 
-        public float Arc;
-        public float BaseSpeed;
+        public float Arc, BaseSpeed;
         public bool  FlowToTip;
 
-        public float WobblePhase;
-        public float WobbleFreq;
-        public float WobbleAmp;
-        public float ObstacleSpacing;
-        public float LateralOffsetFrac;
+        public float WobblePhase, WobbleFreq, WobbleAmp, ObstacleSpacing, LateralOffsetFrac;
         public int   SideSign;
     }
 
-    private readonly ParticleSystem _free = new(FreeCapacity);
-    private readonly FlowingParticle[] _flows = new FlowingParticle[FlowCapacity];
-    private readonly CoatSet _coats = new();
+    readonly ParticleSystem _free = new(FreeCapacity);
+    readonly FlowingParticle[] _flows = new FlowingParticle[FlowCapacity];
+    readonly CoatSet _coats = new();
     internal CoatSet Coats => _coats;
-    private int _flowCount;
-    private Vector2 _screen;
+    int _flowCount;
+    Vector2 _screen;
 
     public void Update(EffectScene scene, float time, float dt)
     {
@@ -98,7 +87,7 @@ public sealed class StrokeShed
         FrameProbe.Mark(FrameProbe.Phase.Gap);
     }
 
-    private void SpawnFromStroke(in StrokePrimitive s, in StrokeEmission e, string? forcedMaterial, float time, float dt)
+    void SpawnFromStroke(in StrokePrimitive s, in StrokeEmission e, string? forcedMaterial, float time, float dt)
     {
         float visibleLen = s.Path.Length * s.Reveal;
         if (visibleLen < 8f) return;
@@ -146,8 +135,8 @@ public sealed class StrokeShed
         }
     }
 
-    /// <summary>Resolves and spawns what the impacted stroke's material throws (overrides and "made of X" apply).</summary>
-    private void SpawnImpact(EffectScene scene, in ImpactPrimitive hit, float time)
+    /// Resolves and spawns what the impacted stroke's material throws (overrides and "made of X" apply).
+    void SpawnImpact(EffectScene scene, in ImpactPrimitive hit, float time)
     {
         if (hit.Strength <= 0.001f) return;
 
@@ -173,7 +162,7 @@ public sealed class StrokeShed
                     t.Role,
                     CountMin: 3, CountMax: 3 + Math.Clamp((int)(t.DensityPer100px * 2f), 1, 10),
                     t.SpeedMin, t.SpeedMax, t.LifespanMin, t.LifespanMax, t.SizeMin, t.SizeMax,
-                    ConeRadians: MathF.Max(t.SpreadRadians, 0.7f),
+                    ConeRadians: Max(t.SpreadRadians, 0.7f),
                     Gravity: t.Gravity,
                     RenderMaterial: t.RenderMaterial ?? emitName);
                 SpawnBurst(in tinted, dir, in burst, e, time);
@@ -188,9 +177,9 @@ public sealed class StrokeShed
             SpawnBurst(in hit, dir, in impacts[e], e, time);
     }
 
-    private void SpawnBurst(in ImpactPrimitive hit, Vector2 dir, in ImpactEmission e, int salt, float time)
+    void SpawnBurst(in ImpactPrimitive hit, Vector2 dir, in ImpactEmission e, int salt, float time)
     {
-        float k = Math.Clamp(hit.Strength, 0f, 1f);
+        float k = Saturate(hit.Strength);
 
         int seed0 = unchecked(hit.Seed + (int)e.Role * 7919 + salt * 4421);
         float countF = HashRange(seed0, e.CountMin, e.CountMax + 0.999f);
@@ -226,7 +215,7 @@ public sealed class StrokeShed
         }
     }
 
-    private void SpawnFreeFly(in StrokePrimitive s, in StrokeEmission e,
+    void SpawnFreeFly(in StrokePrimitive s, in StrokeEmission e,
                                      string? particleMaterial, int seed, float visibleLen,
                                      float time, Vector2? clusterBaseDir)
     {
@@ -274,25 +263,25 @@ public sealed class StrokeShed
         });
     }
 
-    /// <summary>False if debris is limited to the screen edge (EmitEdgeReach) and this point is further in or off-screen.</summary>
-    private bool WithinEmitReach(in StrokePrimitive s, Vector2 p)
+    /// False if debris is limited to the screen edge (EmitEdgeReach) and this point is further in or off-screen.
+    bool WithinEmitReach(in StrokePrimitive s, Vector2 p)
     {
         if (s.EmitEdgeReach <= 0f || _screen.X <= 0f) return true;
 
-        float edge = MathF.Min(MathF.Min(p.X, _screen.X - p.X), MathF.Min(p.Y, _screen.Y - p.Y));
+        float edge = Min(Min(p.X, _screen.X - p.X), Min(p.Y, _screen.Y - p.Y));
         return edge >= 0f && edge <= s.EmitEdgeReach * PixelScale(_screen);
     }
 
-    /// <summary>The EmitEndReach window in arc px, or 0 if unrestricted (unset, or the windows cover the whole strand).</summary>
-    private float EndReachArc(in StrokePrimitive s, float visibleLen)
+    /// The EmitEndReach window in arc px, or 0 if unrestricted (unset, or the windows cover the whole strand).
+    float EndReachArc(in StrokePrimitive s, float visibleLen)
     {
         if (s.EmitEndReach <= 0f) return 0f;
         float reach = s.EmitEndReach * PixelScale(_screen);
         return 2f * reach >= visibleLen ? 0f : reach;
     }
 
-    /// <summary>Where along the strand to spawn: anywhere, or only in the stretches by its two ends (EmitEndReach).</summary>
-    private float PickArc(in StrokePrimitive s, float visibleLen, int seed)
+    /// Where along the strand to spawn: anywhere, or only in the stretches by its two ends (EmitEndReach).
+    float PickArc(in StrokePrimitive s, float visibleLen, int seed)
     {
         float u = Hash01(seed);
         float reach = EndReachArc(in s, visibleLen);
@@ -302,7 +291,7 @@ public sealed class StrokeShed
         return t < reach ? t : visibleLen - reach + (t - reach);
     }
 
-    private void SpawnFlow(in StrokePrimitive s, in StrokeEmission e, in StrokeFlowOptions f,
+    void SpawnFlow(in StrokePrimitive s, in StrokeEmission e, in StrokeFlowOptions f,
                                   string? particleMaterial, int seed, float visibleLen, bool flowToTip, float time)
     {
         if (_flowCount >= FlowCapacity) return;
@@ -314,7 +303,7 @@ public sealed class StrokeShed
             if (!WithinEmitReach(in s, at)) return;
         }
 
-        _flows[_flowCount++] = new FlowingParticle
+        _flows[_flowCount++] = new()
         {
             Owner = s.Owner,
             StrokeSeed = s.Seed,
@@ -331,7 +320,7 @@ public sealed class StrokeShed
             BaseSpeed = HashRange(seed + 3, f.SpeedMin, f.SpeedMax),
             FlowToTip = flowToTip,
 
-            WobblePhase = HashRange(seed + 4, 0f, MathF.Tau),
+            WobblePhase = HashRange(seed + 4, 0f, Tau),
             WobbleFreq = f.WobbleFrequencyHz,
             WobbleAmp = f.WobbleAmplitude,
             ObstacleSpacing = f.ObstacleSpacingPx,
@@ -340,7 +329,7 @@ public sealed class StrokeShed
         };
     }
 
-    private void CullFlows(float time)
+    void CullFlows(float time)
     {
         int w = 0;
         for (int i = 0; i < _flowCount; i++)
@@ -351,9 +340,9 @@ public sealed class StrokeShed
         _flowCount = w;
     }
 
-    private void AdvanceFlows(EffectScene scene, float time, float dt)
+    void AdvanceFlows(EffectScene scene, float time, float dt)
     {
-        float shortSide = _screen.X > 0f ? MathF.Min(_screen.X, _screen.Y) : 1080f;
+        float shortSide = _screen.X > 0f ? Min(_screen.X, _screen.Y) : 1080f;
         for (int i = 0; i < _flowCount; i++)
         {
             ref var d = ref _flows[i];
@@ -366,8 +355,8 @@ public sealed class StrokeShed
             float totalLen = path.Length * s.Reveal;
             if (totalLen < 1f) continue;
 
-            float obstaclePhase = d.Arc / MathF.Max(1f, d.ObstacleSpacing) * MathF.Tau;
-            float speedFactor = 0.6f + 0.4f * MathF.Cos(obstaclePhase);
+            float obstaclePhase = d.Arc / Max(1f, d.ObstacleSpacing) * Tau;
+            float speedFactor = 0.6f + 0.4f * Cos(obstaclePhase);
             float currentSpeed = d.BaseSpeed * speedFactor;
             d.Arc += (d.FlowToTip ? 1f : -1f) * currentSpeed * dt;
 
@@ -380,13 +369,13 @@ public sealed class StrokeShed
             // Ride the strand's actual surface: a tapered material knows how thick it is here, a plain one uses its WidthHint.
             float halfWidth = scene.Materials.Stroke(s.Owner, s.Role).Material is { } strokeMaterial
                 ? strokeMaterial.RadiusAt(in s, d.Arc, shortSide)
-                : MathF.Max(1f, s.WidthHint * 0.5f);
-            float wobble = MathF.Sin(time * d.WobbleFreq * MathF.Tau + d.WobblePhase) * d.WobbleAmp;
+                : Max(1f, s.WidthHint * 0.5f);
+            float wobble = Sin(time * d.WobbleFreq * Tau + d.WobblePhase) * d.WobbleAmp;
             float lateral = (d.LateralOffsetFrac * halfWidth + wobble) * d.SideSign;
             Vector2 finalPos = pos + perp * lateral;
 
             float age = time - d.Born;
-            float ageT = Math.Clamp(age / d.Lifespan, 0f, 1f);
+            float ageT = Saturate(age / d.Lifespan);
 
             scene.AddParticleForOwner(new ParticlePrimitive
             {
@@ -404,7 +393,7 @@ public sealed class StrokeShed
         }
     }
 
-    private static StrokePrimitive? FindStroke(EffectScene scene, DebuffKind owner, int seed)
+    static StrokePrimitive? FindStroke(EffectScene scene, DebuffKind owner, int seed)
     {
         for (int i = 0; i < scene.Strokes.Count; i++)
         {

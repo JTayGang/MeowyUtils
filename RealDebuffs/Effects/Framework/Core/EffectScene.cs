@@ -1,5 +1,3 @@
-using System.Numerics;
-
 namespace RealDebuffs.Effects.Framework;
 
 public sealed class EffectScene
@@ -10,24 +8,24 @@ public sealed class EffectScene
     public readonly List<ImpactPrimitive>   Impacts   = new(8);
     public readonly List<CoatPrimitive>     Coats     = new(16);
 
-    /// <summary>Display size in pixels, set by the host each frame. Zero means unknown.</summary>
+    /// Display size in pixels, set by the host each frame. Zero means unknown.
     public Vector2 ScreenSize;
 
-    /// <summary>Resolves slots to materials under this frame's overrides, for the renderer, the shed and effects whose physics depends on a slot.</summary>
+    /// Resolves slots to materials under this frame's overrides, for the renderer, the shed and effects whose physics depends on a slot.
     public readonly MaterialResolver Materials = new();
 
-    /// <summary>The material overrides in force this frame; replace the instance to change them.</summary>
+    /// The material overrides in force this frame; replace the instance to change them.
     public IReadOnlyDictionary<string, string>? Overrides
     {
         get => Materials.Overrides;
         set => Materials.Overrides = value;
     }
 
-    private IReadOnlyDictionary<DebuffKind, Vector4>? _modifierColors;
-    private Vector4?[] _modColor = Array.Empty<Vector4?>();
-    private ulong[] _modRoles = Array.Empty<ulong>();
+    IReadOnlyDictionary<DebuffKind, Vector4>? _modifierColors;
+    Vector4?[] _modColor = [];
+    ulong[] _modRoles = [];
 
-    /// <summary>Second colour per effect for its modifier layer; absent means the effect's colour. Replace the instance to change it.</summary>
+    /// Second colour per effect for its modifier layer; absent means the effect's colour. Replace the instance to change it.
     public IReadOnlyDictionary<DebuffKind, Vector4>? ModifierColors
     {
         get => _modifierColors;
@@ -35,7 +33,7 @@ public sealed class EffectScene
         {
             if (ReferenceEquals(value, _modifierColors)) return;
             _modifierColors = value;
-            if (value is null || value.Count == 0) { _modColor = Array.Empty<Vector4?>(); _modRoles = Array.Empty<ulong>(); return; }
+            if (value is null || value.Count == 0) { _modColor = []; _modRoles = []; return; }
 
             int size = (int)value.Keys.Max() + 1;
             _modColor = new Vector4?[size];
@@ -48,7 +46,7 @@ public sealed class EffectScene
         }
     }
 
-    /// <summary>The modifier colour for an effect, if its status named one.</summary>
+    /// The modifier colour for an effect, if its status named one.
     public Vector4? ModifierColorFor(DebuffKind owner) => (uint)owner < (uint)_modColor.Length ? _modColor[(int)owner] : null;
 
     public VignetteRequest Vignette;
@@ -78,7 +76,7 @@ public sealed class EffectScene
     public void AddCoat(in CoatPrimitive c) => Coats.Add(c);
     public void AddImpact(in ImpactPrimitive i) { var c = i; c.Owner = CurrentOwner; Impacts.Add(c); }
 
-    /// <summary>For post-effect emission passes where CurrentOwner isn't the right effect anymore.</summary>
+    /// For post-effect emission passes where CurrentOwner isn't the right effect anymore.
     public void AddParticleForOwner(in ParticlePrimitive p, DebuffKind owner)
     {
         var copy = p; copy.Owner = owner; Particles.Add(copy);
@@ -89,7 +87,7 @@ public sealed class EffectScene
         if (!Vignette.Active || priority > Vignette.Priority ||
             (priority == Vignette.Priority && alpha > Vignette.Alpha))
         {
-            Vignette = new VignetteRequest
+            Vignette = new()
             {
                 Active = true, Tint = tint, ThicknessFrac = thicknessFrac,
                 Alpha = alpha, Priority = priority, ColorOverride = colorOverride, Over = over,

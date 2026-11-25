@@ -1,8 +1,6 @@
-using System.Numerics;
-
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Slot key; values are pinned (they seed particle randomness), so use an unused number. [Fallback] names the particle for an empty slot.</summary>
+/// Slot key; values are pinned (they seed particle randomness), so use an unused number. [Fallback] names the particle for an empty slot.
 public enum PrimitiveRole
 {
     MainStroke = 0,
@@ -48,89 +46,82 @@ public struct StrokePrimitive
     public StrandPath Path;
     public PrimitiveRole Role;
     public Vector4? ColorOverride;
-    public float Reveal;
-    public float WidthHint;
-    public float Brightness;
-    public float TipFlare;
+    public float Reveal, WidthHint, Brightness, TipFlare;
     public int   Seed;
     public float Phase;
     public bool  FlushStart;
 
     // optional hints; zero is neutral
 
-    /// <summary>The path is a closed loop (last point == first), so repeating elements (links, beads) wrap cleanly.</summary>
+    /// The path is a closed loop (last point == first), so repeating elements (links, beads) wrap cleanly.
     public bool  Closed;
 
-    /// <summary>0 = at the focal plane (crisp, full contrast); 1 = far (hazier, lower contrast, softer edges, shorter shadow).</summary>
+    /// 0 = at the focal plane (crisp, full contrast); 1 = far (hazier, lower contrast, softer edges, shorter shadow).
     public float Depth;
 
-    /// <summary>0..1: how hard the strand is being shaken right now (decays after an impact or a tug).</summary>
+    /// 0..1: how hard the strand is being shaken right now (decays after an impact or a tug).
     public float Agitation;
 
-    /// <summary>0 = shed along the whole strand; above 0, trickles only spawn within this many px (at 1080p) of a screen edge.</summary>
+    /// 0 = shed along the whole strand; above 0, trickles only spawn within this many px (at 1080p) of a screen edge.
     public float EmitEdgeReach;
 
-    /// <summary>0 = unrestricted; above 0, trickles only spawn within this arc distance (px at 1080p) of either end.</summary>
+    /// 0 = unrestricted; above 0, trickles only spawn within this arc distance (px at 1080p) of either end.
     public float EmitEndReach;
 
-    /// <summary>Rotation about the strand's axis at its middle, radians (zero at anchored ends).</summary>
+    /// Rotation about the strand's axis at its middle, radians (zero at anchored ends).
     public float Twist;
 
-    /// <summary>0 = solid; above 0, the line is dashed, this many px (at 1080p) from the start of one dash to the next.</summary>
+    /// 0 = solid; above 0, the line is dashed, this many px (at 1080p) from the start of one dash to the next.
     public float Dash;
 
-    /// <summary>Where a bolt of current is racing along the strand: 0 at the start, 1 at the end (needs SurgeGain above 0).</summary>
+    /// Where a bolt of current is racing along the strand: 0 at the start, 1 at the end (needs SurgeGain above 0).
     public float SurgeAt;
 
-    /// <summary>How brightly that surge lights the strand: 0 none, ~1 a clear run, 2+ blinding.</summary>
+    /// How brightly that surge lights the strand: 0 none, ~1 a clear run, 2+ blinding.
     public float SurgeGain;
 }
 
 public struct ParticlePrimitive
 {
     public DebuffKind Owner;
-    public Vector2 Position;
-    public Vector2 Velocity;
+    public Vector2 Position, Velocity;
     public Vector4? ColorOverride;
-    public float AgeRatio;
-    public float Size;
-    public float Brightness;
-    public float Sway;
+    public float AgeRatio, Size, Brightness, Sway;
     public int   Seed;
 
     public PrimitiveRole Role;
 
-    /// <summary>Forces this particle to render with a specific material name, bypassing role lookup.</summary>
+    /// Forces this particle to render with a specific material name, bypassing role lookup.
     public string? MaterialName;
 
-    /// <summary>Material-defined sub-kind. particle.ember uses it for flame layers (0 body, 1 back, 2 front, 3 bed).</summary>
+    /// Material-defined sub-kind. particle.ember uses it for flame layers (0 body, 1 back, 2 front, 3 bed).
     public int Variant;
 
-    /// <summary>Position with the horizontal sway applied: where the particle is actually drawn.</summary>
+    /// Position with the horizontal sway applied: where the particle is actually drawn.
     public readonly Vector2 DrawPos => new(Position.X + Sway, Position.Y);
 
-    /// <summary>Which way the particle's own "up" points, in radians clockwise from screen-up.</summary>
+    /// Which way the particle's own "up" points, in radians clockwise from screen-up.
     public float Rotation;
 
-    /// <summary>Seconds since it came loose, for materials that animate a free particle's shape (Goop's Free variant).</summary>
+    /// Seconds since it came loose, for materials that animate a free particle's shape (Goop's Free variant).
     public float Age;
 
     // Optional thread. Zero is neutral, so a particle that never sets these draws as it always did.
 
-    /// <summary>Filament thickness joining the particle to a point it is attached to</summary>
+    /// Filament thickness joining the particle to a point it is attached to
     public float Tether;
 
-    /// <summary>The thread's fixed end in screen px, where it clings to the surface (read only when Tether is above 0).</summary>
+    /// The thread's fixed end in screen px, where it clings to the surface (read only when Tether is above 0).
     public Vector2 Anchor;
 
-    /// <summary>The thread's free end: equals Position while attached</summary>
+    /// The thread's free end: equals Position while attached
     public Vector2 ThreadEnd;
 
-    /// <summary>Set when the particle belongs to a stroke (identified by owner and HostSeed).</summary>
+    /// Set when the particle belongs to a stroke (identified by owner and HostSeed).
     public bool HasHost;
     public int  HostSeed;
 
-    /// <summary>Drawn after the other regions but before the Veil ones, so a Veil region lies over it.</summary>
+    /// Drawn after the other regions but before the Veil ones, so a Veil region lies over it.
     public bool BelowVeil;
 }
 
@@ -143,10 +134,10 @@ public struct RegionPrimitive
     public float Alpha;
     public bool Top, Bottom, Left, Right;
 
-    /// <summary>Drawn after the BelowVeil particles instead of before them.</summary>
+    /// Drawn after the BelowVeil particles instead of before them.
     public bool Veil;
 
-    /// <summary>Optional effect-built data too large for a primitive; materials ignore state they don't recognise.</summary>
+    /// Optional effect-built data too large for a primitive; materials ignore state they don't recognise.
     public IRegionState? State;
 
     public readonly bool HasEdge => Top || Bottom || Left || Right;
@@ -154,7 +145,7 @@ public struct RegionPrimitive
     public readonly RegionKind Kind => HasEdge ? RegionKind.EdgeGlow : RegionKind.FlatFill;
 }
 
-/// <summary>A coat to draw right after its host stroke: the film of matter lying on it.</summary>
+/// A coat to draw right after its host stroke: the film of matter lying on it.
 public struct CoatPrimitive
 {
     public DebuffKind Owner;
@@ -164,20 +155,20 @@ public struct CoatPrimitive
     public Vector4? ColorOverride;
 }
 
-/// <summary>A one-frame impact: the effect says where and how hard; the stroke material decides what it throws.</summary>
+/// A one-frame impact: the effect says where and how hard; the stroke material decides what it throws.
 public struct ImpactPrimitive
 {
     public DebuffKind Owner;
 
-    /// <summary>The owner's stroke role whose material should answer (almost always MainStroke).</summary>
+    /// The owner's stroke role whose material should answer (almost always MainStroke).
     public PrimitiveRole StrokeRole;
 
     public Vector2 Position;
 
-    /// <summary>Unit vector debris is thrown along (typically away from the surface that was hit).</summary>
+    /// Unit vector debris is thrown along (typically away from the surface that was hit).
     public Vector2 Direction;
 
-    /// <summary>0..1. Scales how much is thrown, and how hard.</summary>
+    /// 0..1. Scales how much is thrown, and how hard.
     public float Strength;
 
     public float Brightness;
@@ -189,11 +180,10 @@ public struct VignetteRequest
 {
     public bool  Active;
     public uint  Tint;
-    public float ThicknessFrac;
-    public float Alpha;
+    public float ThicknessFrac, Alpha;
     public int   Priority;
     public Vector4? ColorOverride;
 
-    /// <summary>Drawn over the regions instead of under them (so a region can sit behind the vignette).</summary>
+    /// Drawn over the regions instead of under them (so a region can sit behind the vignette).
     public bool  Over;
 }

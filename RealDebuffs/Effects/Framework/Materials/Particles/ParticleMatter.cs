@@ -1,33 +1,30 @@
-using System.Numerics;
-using Dalamud.Bindings.ImGui;
-
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>Spin, flip and glint of a tumbling bit: the plate foreshortens as it flips and flashes once per turn.</summary>
+/// Spin, flip and glint of a tumbling bit: the plate foreshortens as it flips and flashes once per turn.
 internal readonly struct Tumble
 {
     public readonly float Spin, Squash, Glint;
 
     public Tumble(int seed, float time, float spinRate, float flipLo, float flipHi, float squashMin, float glintShift, float glintPower)
     {
-        Spin = Hash01(seed + 1) * MathF.Tau + time * HashRange(seed + 2, -spinRate, spinRate);
-        float flip = Hash01(seed + 3) * MathF.Tau + time * HashRange(seed + 4, flipLo, flipHi);
-        Squash = squashMin + (1f - squashMin) * MathF.Abs(MathF.Cos(flip));
-        Glint = MathF.Pow(MathF.Max(0f, MathF.Cos(flip - glintShift)), glintPower);
+        Spin = Hash01(seed + 1) * Tau + time * HashRange(seed + 2, -spinRate, spinRate);
+        float flip = Hash01(seed + 3) * Tau + time * HashRange(seed + 4, flipLo, flipHi);
+        Squash = Lerp(squashMin, 1f, Abs(Cos(flip)));
+        Glint = Pow(Max(0f, Cos(flip - glintShift)), glintPower);
     }
 }
 
-/// <summary>A tumbling chip of rust, scale or paint: a foreshortened glinting pentagon, streaked when fast.</summary>
+/// A tumbling chip of rust, scale or paint: a foreshortened glinting pentagon, streaked when fast.
 public sealed class ParticleFlake : IParticleMaterial
 {
     public string Name => "particle.flake";
     public string[] NaturalLanguageWords { get; } = { "rust", "rusty", "debris", "scrap" };
 
-    private static readonly uint Rust  = Pack(0.58f, 0.24f, 0.08f);
-    private static readonly uint Scale = Pack(0.16f, 0.15f, 0.16f);
-    private static readonly uint Metal = Pack(0.78f, 0.74f, 0.68f);
+    static readonly uint Rust  = Pack(0.58f, 0.24f, 0.08f);
+    static readonly uint Scale = Pack(0.16f, 0.15f, 0.16f);
+    static readonly uint Metal = Pack(0.78f, 0.74f, 0.68f);
 
-    private const int Corners = 5;
+    const int Corners = 5;
 
     public void Draw(ImDrawListPtr dl, in ParticlePrimitive p, in MaterialContext ctx)
     {
@@ -43,36 +40,36 @@ public sealed class ParticleFlake : IParticleMaterial
         uint lit = LerpColor(baseCol, Metal, tumble.Glint * 0.65f);
 
         float size = p.Size * (1f - 0.25f * p.AgeRatio);
-        float cs = MathF.Cos(tumble.Spin), sn = MathF.Sin(tumble.Spin);
+        float cs = Cos(tumble.Spin), sn = Sin(tumble.Spin);
         Vector2 pos = p.DrawPos;
 
         // Irregular pentagon, squashed along the tilt axis, then rotated.
         Span<Vector2> pts = stackalloc Vector2[Corners];
         for (int i = 0; i < Corners; i++)
         {
-            float a = i * (MathF.Tau / Corners) + HashRange(seed + 20 + i, -0.35f, 0.35f);
+            float a = i * (Tau / Corners) + HashRange(seed + 20 + i, -0.35f, 0.35f);
             float r = size * HashRange(seed + 30 + i, 0.55f, 1.15f);
-            float lx = MathF.Cos(a) * r;
-            float ly = MathF.Sin(a) * r * tumble.Squash;
+            float lx = Cos(a) * r;
+            float ly = Sin(a) * r * tumble.Squash;
             pts[i] = pos + new Vector2(lx * cs - ly * sn, lx * sn + ly * cs);
         }
 
         float speed = p.Velocity.Length();
         if (speed > 160f)
         {
-            float len = MathF.Min(speed * 0.028f, 26f);
-            dl.AddLine(pos, pos - p.Velocity / speed * len, WithAlpha(lit, k * 0.22f), MathF.Max(1f, size * 0.7f));
+            float len = Min(speed * 0.028f, 26f);
+            dl.AddLine(pos, pos - p.Velocity / speed * len, WithAlpha(lit, k * 0.22f), Max(1f, size * 0.7f));
         }
 
         dl.AddConvexPolyFilled(ref pts[0], Corners, WithAlpha(lit, k * (0.55f + 0.45f * tone)));
 
         if (tumble.Glint > 0.55f)
-            dl.AddCircleFilled(pos, MathF.Max(0.6f, size * 0.38f), WithAlpha(0xFFFFFFFFu, k * 0.60f * tumble.Glint));
+            dl.AddCircleFilled(pos, Max(0.6f, size * 0.38f), WithAlpha(0xFFFFFFFFu, k * 0.60f * tumble.Glint));
     }
 
     public ReadOnlySpan<StrokeEmission> Emissions => Shed;
 
-    private static readonly StrokeEmission[] Shed =
+    static readonly StrokeEmission[] Shed =
     {
         new(Role: PrimitiveRole.Flake,
             DensityPer100px: 0.50f,
@@ -86,17 +83,17 @@ public sealed class ParticleFlake : IParticleMaterial
     };
 }
 
-/// <summary>A loose filament of hemp, wool or hair drifting down: a hair-thin three-segment curl that glints in the light.</summary>
+/// A loose filament of hemp, wool or hair drifting down: a hair-thin three-segment curl that glints in the light.
 public sealed class ParticleFibre : IParticleMaterial
 {
     public string Name => "particle.fibre";
     public string[] NaturalLanguageWords { get; } = { "fibre", "fibres", "fiber", "fibers", "lint", "fluff" };
 
-    private static readonly uint Lit   = Pack(0.86f, 0.74f, 0.54f);
-    private static readonly uint Dull  = Pack(0.52f, 0.42f, 0.28f);
-    private static readonly uint Glint = Pack(1.00f, 0.94f, 0.80f);
+    static readonly uint Lit   = Pack(0.86f, 0.74f, 0.54f);
+    static readonly uint Dull  = Pack(0.52f, 0.42f, 0.28f);
+    static readonly uint Glint = Pack(1.00f, 0.94f, 0.80f);
 
-    private const int Segments = 3;
+    const int Segments = 3;
 
     public void Draw(ImDrawListPtr dl, in ParticlePrimitive p, in MaterialContext ctx)
     {
@@ -114,29 +111,29 @@ public sealed class ParticleFibre : IParticleMaterial
 
         float step = p.Size * (1f - 0.20f * p.AgeRatio) / Segments;
         float bend = HashRange(seed + 6, -1.1f, 1.1f);
-        float width = MathF.Max(0.9f, ctx.ScreenScale * 1.05f);
+        float width = Max(0.9f, ctx.ScreenScale * 1.05f);
 
         float heading = tumble.Spin;
         Vector2 prev = p.DrawPos;
         for (int i = 0; i < Segments; i++)
         {
             heading += bend / Segments;
-            Vector2 next = prev + new Vector2(MathF.Cos(heading), MathF.Sin(heading) * tumble.Squash) * step;
+            Vector2 next = prev + new Vector2(Cos(heading), Sin(heading) * tumble.Squash) * step;
             dl.AddLine(prev, next, WithAlpha(col, k * 0.80f * (1f - 0.28f * i)), width);
             prev = next;
         }
     }
 
-    private static uint Dyed(uint packed, float saturation)
+    static uint Dyed(uint packed, float saturation)
     {
         var c = new Vector3((packed & 255) / 255f, ((packed >> 8) & 255) / 255f, ((packed >> 16) & 255) / 255f);
         c = WithSaturation(c, saturation);
-        return Pack(c.X, c.Y, c.Z);
+        return Pack(c);
     }
 
     public ReadOnlySpan<StrokeEmission> Emissions => Shed;
 
-    private static readonly StrokeEmission[] Shed =
+    static readonly StrokeEmission[] Shed =
     {
         new(Role: PrimitiveRole.Fibre,
             DensityPer100px: 0.55f,
@@ -150,19 +147,19 @@ public sealed class ParticleFibre : IParticleMaterial
     };
 }
 
-/// <summary>Base for liquid particles (water, blood, slime): a GoopDraw drop shaded by its LiquidSpec, dripping as its viscosity dictates.</summary>
+/// Base for liquid particles (water, blood, slime): a GoopDraw drop shaded by its LiquidSpec, dripping as its viscosity dictates.
 public abstract class ParticleGoop : IParticleMaterial, ICoatMatter, IBatchedParticleMaterial
 {
-    private static readonly StrokeEmission[] Coat = { StrokeEmission.Coated(PrimitiveRole.Goop) };
-    private LiquidMatter? _matter;
+    static readonly StrokeEmission[] Coat = { StrokeEmission.Coated(PrimitiveRole.Goop) };
+    LiquidMatter? _matter;
 
     protected ParticleGoop(in LiquidSpec look)
     {
-        Liquid = new Liquid(in look);
+        Liquid = new(in look);
     }
 
     public abstract string Name { get; }
-    public virtual string[] NaturalLanguageWords => Array.Empty<string>();
+    public virtual string[] NaturalLanguageWords => [];
 
     public Liquid Liquid { get; }
 
@@ -176,7 +173,7 @@ public abstract class ParticleGoop : IParticleMaterial, ICoatMatter, IBatchedPar
     public bool DrawsWithHost => true;
 }
 
-/// <summary>Thick, translucent, sickly-green mucus: hangs in long strings, lets go, falls as a glossy teardrop.</summary>
+/// Thick, translucent, sickly-green mucus: hangs in long strings, lets go, falls as a glossy teardrop.
 public sealed class ParticleSlime : ParticleGoop
 {
     public ParticleSlime() : base(LiquidPresets.Slime) { }
@@ -186,7 +183,7 @@ public sealed class ParticleSlime : ParticleGoop
         { "slime", "slimy", "ooze", "oozing", "goo", "goop", "mucus", "gunk" };
 }
 
-/// <summary>Blood: runnier and darker than slime, so it hangs in shorter necks.</summary>
+/// Blood: runnier and darker than slime, so it hangs in shorter necks.
 public sealed class ParticleBlood : ParticleGoop
 {
     public ParticleBlood() : base(LiquidPresets.Blood) { }
@@ -196,7 +193,7 @@ public sealed class ParticleBlood : ParticleGoop
         { "blood", "bloody", "bloodied", "gore", "gory" };
 }
 
-/// <summary>Water: clear, quick to let go, falling as a bright bead.</summary>
+/// Water: clear, quick to let go, falling as a bright bead.
 public sealed class ParticleWater : ParticleGoop
 {
     public ParticleWater() : base(LiquidPresets.Water) { }

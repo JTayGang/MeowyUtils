@@ -1,9 +1,6 @@
-using System.Numerics;
-using Dalamud.Bindings.ImGui;
-
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>A dusty tunnel seen from inside; with no TunnelField it is a flat fill.</summary>
+/// A dusty tunnel seen from inside; with no TunnelField it is a flat fill.
 internal sealed class RegionTunnel : RegionMaterial<TunnelField>
 {
     public override string Name => "region.haunt-tunnel";
@@ -28,7 +25,7 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
 
     // The frame's shared numbers
 
-    private readonly struct Env
+    readonly struct Env
     {
         public readonly float A, Light, Dusty;
         public readonly bool Override;
@@ -58,85 +55,84 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
         }
     }
 
-    private static uint Col(Vector3 rgb, float alpha, bool overridden)
+    static uint Col(Vector3 rgb, float alpha, bool overridden)
         => VertexColor(rgb, alpha, AlphaBits(alpha), overridden);
 
     // The tone curve is the same for every vertex: look it up instead of exp and pow each time.
-    private const int LutSize = 512;
-    private const float LutMax = 3f;
-    private static readonly float[] DisplayLut = BuildDisplayLut();
+    const int LutSize = 512;
+    const float LutMax = 3f;
+    static readonly float[] DisplayLut = BuildDisplayLut();
 
-    private static float[] BuildDisplayLut()
+    static float[] BuildDisplayLut()
     {
         var lut = new float[LutSize + 2];
         for (int i = 0; i < lut.Length; i++)
         {
             float x = i * LutMax / LutSize;
-            lut[i] = MathF.Pow(1f - MathF.Exp(-1.55f * x), 1f / 2.2f);
+            lut[i] = Pow(1f - Exp(-1.55f * x), 1f / 2.2f);
         }
         return lut;
     }
 
-    private static float Display(float x)
+    static float Display(float x)
     {
         float p = Math.Clamp(x, 0f, LutMax) * (LutSize / LutMax);
         int i = (int)p;
-        return DisplayLut[i] + (DisplayLut[i + 1] - DisplayLut[i]) * (p - i);
+        return Lerp(DisplayLut[i], DisplayLut[i + 1], (p - i));
     }
 
-    private static Vector3 Display(Vector3 lin) => new(Display(lin.X), Display(lin.Y), Display(lin.Z));
+    static Vector3 Display(Vector3 lin) => new(Display(lin.X), Display(lin.Y), Display(lin.Z));
 
     // Unit vectors round a turn per ring segment count: rotating one by the twist is four multiplies, not cos and sin.
-    private static readonly Dictionary<int, (float[] C, float[] S)> Turns = new();
+    static readonly Dictionary<int, (float[] C, float[] S)> Turns = new();
 
-    private static (float[] C, float[] S) TurnTable(int segs)
+    static (float[] C, float[] S) TurnTable(int segs)
     {
         if (Turns.TryGetValue(segs, out var t)) return t;
         var c = new float[segs + 1]; var s = new float[segs + 1];
-        for (int j = 0; j <= segs; j++) { c[j] = MathF.Cos(MathF.Tau * j / segs); s[j] = MathF.Sin(MathF.Tau * j / segs); }
+        for (int j = 0; j <= segs; j++) { c[j] = Cos(Tau * j / segs); s[j] = Sin(Tau * j / segs); }
         return Turns[segs] = (c, s);
     }
 
     // One tessellation for every strip and lip: a changing vertex count would resample the grime and shift the wall.
-    private const int WallSegments = 64;
+    const int WallSegments = 64;
 
-    /// <summary>Fades a detail in as a rib comes near (0 below lo, 1 above hi); a hard threshold popped.</summary>
-    private static float Near(float scale, float lo, float hi) => Smooth((scale - lo) / (hi - lo));
+    /// Fades a detail in as a rib comes near (0 below lo, 1 above hi); a hard threshold popped.
+    static float Near(float scale, float lo, float hi) => Smooth((scale - lo) / (hi - lo));
 
-    private static readonly Vector3 FarLight = new(0.62f, 0.90f, 1.00f);
-    private static readonly Vector3 Ambient = new(0.40f, 0.52f, 0.64f);
-    private static readonly Vector3 DustTint = new(0.86f, 0.88f, 0.84f);
-    private static readonly Vector3 ShaftTint = new(0.80f, 0.90f, 0.88f);
+    static readonly Vector3 FarLight = new(0.62f, 0.90f, 1.00f);
+    static readonly Vector3 Ambient = new(0.40f, 0.52f, 0.64f);
+    static readonly Vector3 DustTint = new(0.86f, 0.88f, 0.84f);
+    static readonly Vector3 ShaftTint = new(0.80f, 0.90f, 0.88f);
 
     // The glow at the far end
 
-    private static void DrawGlow(ImDrawListPtr dl, TunnelField f, in Env e)
+    static void DrawGlow(ImDrawListPtr dl, TunnelField f, in Env e)
     {
         float s = f.Short, k = e.A * e.Light;
         Span<float> rr = stackalloc float[3] { 0.06f * s, 0.20f * s, 0.46f * s };
         Span<uint> rc = stackalloc uint[3]
         {
-            Col(new Vector3(0.50f, 0.74f, 0.80f), 0.085f * k, e.Override),
-            Col(new Vector3(0.34f, 0.52f, 0.60f), 0.040f * k, e.Override),
-            Col(new Vector3(0.20f, 0.32f, 0.40f), 0f, e.Override),
+            Col(new(0.50f, 0.74f, 0.80f), 0.085f * k, e.Override),
+            Col(new(0.34f, 0.52f, 0.60f), 0.040f * k, e.Override),
+            Col(new(0.20f, 0.32f, 0.40f), 0f, e.Override),
         };
-        MeshDraw.Radial(dl, e.VanishingPoint, e.Uv, Col(new Vector3(0.62f, 0.86f, 0.90f), 0.10f * k, e.Override), 36, rr, rc, 0f, 1f, 0, 0f);
+        MeshDraw.Radial(dl, e.VanishingPoint, e.Uv, Col(new(0.62f, 0.86f, 0.90f), 0.10f * k, e.Override), 36, rr, rc, 0f, 1f, 0, 0f);
     }
 
     // The wall
 
-    private struct Rib { public float H, W; public int Seed; }
-    private static readonly Rib[] Ribs = new Rib[TunnelField.MaxRibs];
+    struct Rib { public float H, W; public int Seed; }
+    static readonly Rib[] Ribs = new Rib[TunnelField.MaxRibs];
 
-    private const int WallKind = 0, BandKind = 1, FrontKind = 2;
-    private const int MaxCols = 100;
-    private static readonly MeshBuilder Mb = new();
-    private static readonly Vector2[] LipPts = new Vector2[MaxCols + 1];
-    private static readonly Vector2[] LipNrm = new Vector2[MaxCols + 1];
-    private static readonly float[] LipHalf = new float[MaxCols + 1];
-    private static readonly uint[] LipCol = new uint[MaxCols + 1];
+    const int WallKind = 0, BandKind = 1, FrontKind = 2, MaxCols = 100;
+    static readonly MeshBuilder Mb = new();
+    static readonly Vector2[] LipPts = new Vector2[MaxCols + 1];
+    static readonly Vector2[] LipNrm = new Vector2[MaxCols + 1];
+    static readonly float[] LipHalf = new float[MaxCols + 1];
+    static readonly uint[] LipCol = new uint[MaxCols + 1];
 
-    private static void DrawWalls(ImDrawListPtr dl, TunnelField f, in Env e)
+    static void DrawWalls(ImDrawListPtr dl, TunnelField f, in Env e)
     {
         var fl = f.Flight;
         int n = 0;
@@ -144,7 +140,7 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
         {
             float hu = fl.HeightOf(f.RibAt[i], out int lap);
             int s = f.Seed + 2000 + i * 7919 + lap * 104729;
-            Ribs[n++] = new Rib { H = hu, W = HashRange(s + 20, 55f, 100f), Seed = s };
+            Ribs[n++] = new() { H = hu, W = HashRange(s + 20, 55f, 100f), Seed = s };
         }
         for (int i = 1; i < n; i++)        // far to near
         {
@@ -162,8 +158,8 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
             float end = i < n ? Ribs[i].H - Ribs[i].W : near;
             if (end > reach + 8f)
             {
-                int steps = Math.Clamp((int)MathF.Ceiling((end - reach) / 150f), 1, 8);
-                for (int k = 0; k <= steps; k++) rows[k] = new Row(TunnelField.WallRadius, reach + (end - reach) * k / steps, 1f);
+                int steps = Math.Clamp((int)Ceiling((end - reach) / 150f), 1, 8);
+                for (int k = 0; k <= steps; k++) rows[k] = new(TunnelField.WallRadius, reach + (end - reach) * k / steps, 1f);
                 Strip(f, in e, rows[..(steps + 1)], WallKind, reach);
                 Seams(f, in e, rows[..(steps + 1)], i);
             }
@@ -171,15 +167,15 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
 
             // The rib: its inner face (a narrow band seen almost edge on), then its front face (an annulus).
             ref Rib rib = ref Ribs[i];
-            float back = MathF.Max(reach, rib.H - rib.W);
+            float back = Max(reach, rib.H - rib.W);
             // The inner face is a sliver seen edge-on: it only shows once the rib is close, and fades up as it comes.
             float bandShow = Near(f.Cam.ScaleAt(rib.H * f.Px), 0.62f, 0.95f);
             if (bandShow > 0.02f)
             {
-                rows[0] = new Row(TunnelField.RibRadius, back, bandShow); rows[1] = new Row(TunnelField.RibRadius, rib.H, bandShow);
+                rows[0] = new(TunnelField.RibRadius, back, bandShow); rows[1] = new(TunnelField.RibRadius, rib.H, bandShow);
                 Strip(f, in e, rows[..2], BandKind);
             }
-            rows[0] = new Row(TunnelField.RibRadius, rib.H, 1f); rows[1] = new Row(TunnelField.WallRadius, rib.H, 1f);
+            rows[0] = new(TunnelField.RibRadius, rib.H, 1f); rows[1] = new(TunnelField.WallRadius, rib.H, 1f);
             Strip(f, in e, rows[..2], FrontKind);
             reach = rib.H;
 
@@ -190,20 +186,20 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
         Mb.Flush(dl, e.Uv);
     }
 
-    private readonly struct Row
+    readonly struct Row
     {
         public readonly float Radius, Hu, AlphaMul;
         public Row(float radius, float hu, float alphaMul) { Radius = radius; Hu = hu; AlphaMul = alphaMul; }
     }
 
-    /// <summary>One strip of wall: rows of vertices, each a full turn round the tunnel, stitched into quads.</summary>
-    private static void Strip(TunnelField f, in Env e, ReadOnlySpan<Row> rows, int kind, float spanStart = 0f)
+    /// One strip of wall: rows of vertices, each a full turn round the tunnel, stitched into quads.
+    static void Strip(TunnelField f, in Env e, ReadOnlySpan<Row> rows, int kind, float spanStart = 0f)
     {
         float px = f.Px, shortSide = f.Short, flightLen = f.Flight.Length, far = f.Flight.FarHeight;
 
         // Nothing to draw once the whole strip is out beyond the corners of the screen.
-        float halfDiag = 0.5f * MathF.Sqrt(f.Size.X * f.Size.X + f.Size.Y * f.Size.Y);
-        float inner = MathF.Min(rows[0].Radius, rows[^1].Radius) * shortSide;
+        float halfDiag = 0.5f * Sqrt(f.Size.X * f.Size.X + f.Size.Y * f.Size.Y);
+        float inner = Min(rows[0].Radius, rows[^1].Radius) * shortSide;
         if (inner * f.Cam.ScaleAt(rows[0].Hu * px) * 0.9f > halfDiag * 1.25f && inner * f.Cam.ScaleAt(rows[^1].Hu * px) * 0.9f > halfDiag * 1.25f) return;
 
         const int segs = WallSegments;
@@ -219,11 +215,11 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
             float t = f.Flight.Near(row.Hu);
             float zl = (row.Hu - far - f.Flight.Travel) / flightLen;
             float twist = f.Swirl * row.Hu + f.Roll;
-            float ct = MathF.Cos(twist), st = MathF.Sin(twist);
+            float ct = Cos(twist), st = Sin(twist);
 
             // Ends of the tunnel fade into the dark in front of and behind us.
             float fade = Smooth(t / 0.24f) * (1f - Smooth((t - 0.90f) / 0.10f));
-            float lightFar = MathF.Exp(-3.0f * t);
+            float lightFar = Exp(-3.0f * t);
             float body = Lerp(0.04f, 0.46f, Smooth(t / 0.80f));
             float kindFar = kind == WallKind ? 1.00f : kind == BandKind ? 1.50f : 0.04f;
             float kindAlpha = kind == WallKind ? 1.00f : kind == BandKind ? 1.10f : 1.75f;
@@ -231,7 +227,7 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
             Vector2 bend = f.Bend(row.Hu);
 
             // The rib before a panel shades it from the far light and fills the corner with dark.
-            float shade = kind == WallKind ? 1f - 0.85f * MathF.Exp(-(row.Hu - spanStart) / 210f) : 1f;
+            float shade = kind == WallKind ? 1f - 0.85f * Exp(-(row.Hu - spanStart) / 210f) : 1f;
 
             for (int j = 0; j < cols; j++)
             {
@@ -259,14 +255,14 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
         Mb.StitchGrid(first, rows.Length, cols);
     }
 
-    private const int SeamCount = 12, MaxSeamRows = 10;
-    private static readonly Vector2[] SeamP = new Vector2[MaxSeamRows], SeamN = new Vector2[MaxSeamRows];
-    private static readonly float[] SeamHalf = new float[MaxSeamRows];
-    private static readonly uint[] SeamCol = new uint[MaxSeamRows];
-    private static readonly Vector2[] SeamBend = new Vector2[MaxSeamRows];
+    const int SeamCount = 12, MaxSeamRows = 10;
+    static readonly Vector2[] SeamP = new Vector2[MaxSeamRows], SeamN = new Vector2[MaxSeamRows];
+    static readonly float[] SeamHalf = new float[MaxSeamRows];
+    static readonly uint[] SeamCol = new uint[MaxSeamRows];
+    static readonly Vector2[] SeamBend = new Vector2[MaxSeamRows];
 
-    /// <summary>The joints between a panel's blocks: dark lines running out toward the far end; alternate panels shift half a block.</summary>
-    private static void Seams(TunnelField f, in Env e, ReadOnlySpan<Row> rows, int panel)
+    /// The joints between a panel's blocks: dark lines running out toward the far end; alternate panels shift half a block.
+    static void Seams(TunnelField f, in Env e, ReadOnlySpan<Row> rows, int panel)
     {
         int n = rows.Length;
         if (n < 2 || n > MaxSeamRows) return;
@@ -276,18 +272,18 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
         if (seen < 0.02f) return;
 
         float radius = rows[0].Radius * f.Short * f.Breath;
-        float halfDiag = 0.5f * MathF.Sqrt(f.Size.X * f.Size.X + f.Size.Y * f.Size.Y);
+        float halfDiag = 0.5f * Sqrt(f.Size.X * f.Size.X + f.Size.Y * f.Size.Y);
         for (int r = 0; r < n; r++) SeamBend[r] = f.Bend(rows[r].Hu);
 
         for (int k = 0; k < SeamCount; k++)
         {
-            float baseAng = MathF.Tau * (k + 0.5f * (panel & 1)) / SeamCount + 0.02f * Hash01(f.Seed + panel * 31 + k);
+            float baseAng = Tau * (k + 0.5f * (panel & 1)) / SeamCount + 0.02f * Hash01(f.Seed + panel * 31 + k);
             bool any = false;
             for (int r = 0; r < n; r++)
             {
                 float hu = rows[r].Hu, h = hu * px;
                 float ang = baseAng + f.Swirl * hu + f.Roll;
-                Vector2 at = f.Cam.Project(radius * MathF.Cos(ang) + SeamBend[r].X, radius * MathF.Sin(ang) + SeamBend[r].Y, h, out float s2);
+                Vector2 at = f.Cam.Project(radius * Cos(ang) + SeamBend[r].X, radius * Sin(ang) + SeamBend[r].Y, h, out float s2);
                 float t = f.Flight.Near(hu);
                 float fade = Smooth(t / 0.24f) * (1f - Smooth((t - 0.90f) / 0.10f));
                 float radial = Smooth((Vector2.Distance(at, f.Center) / f.Short - 0.26f) / 0.45f);
@@ -295,7 +291,7 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
                 float alpha = 0.95f * body * fade * radial * e.A * seen;
                 SeamP[r] = at;
                 SeamHalf[r] = Math.Clamp(1.7f * px * s2, 1.1f * px, 4.5f * px);
-                SeamCol[r] = Col(new Vector3(0.01f, 0.014f, 0.02f), alpha, e.Override);
+                SeamCol[r] = Col(new(0.01f, 0.014f, 0.02f), alpha, e.Override);
                 if (alpha > 0.01f && Vector2.Distance(at, f.Center) < halfDiag * 1.3f) any = true;
             }
             if (!any) continue;
@@ -304,20 +300,20 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
         }
     }
 
-    private const int CrackPts = 10;
-    private static readonly Vector2[] CrackP = new Vector2[CrackPts], CrackN = new Vector2[CrackPts];
-    private static readonly float[] CrackHalf = new float[CrackPts];
-    private static readonly uint[] CrackCol = new uint[CrackPts];
+    const int CrackPts = 10;
+    static readonly Vector2[] CrackP = new Vector2[CrackPts], CrackN = new Vector2[CrackPts];
+    static readonly float[] CrackHalf = new float[CrackPts];
+    static readonly uint[] CrackCol = new uint[CrackPts];
 
-    /// <summary>Cracks in the wall: ragged dark lines that wander along it a little, worst where they start.</summary>
-    private static void Cracks(TunnelField f, in Env e)
+    /// Cracks in the wall: ragged dark lines that wander along it a little, worst where they start.
+    static void Cracks(TunnelField f, in Env e)
     {
         var fl = f.Flight;
         float px = f.Px;
         for (int c = 0; c < TunnelField.CrackCount; c++)
         {
             int s = f.Seed + 3000 + c * 7919;
-            float ang0 = Hash01(s + 1) * MathF.Tau;
+            float ang0 = Hash01(s + 1) * Tau;
             float reachLen = HashRange(s + 2, 500f, 1000f);
             float walk = HashRange(s + 3, 0.04f, 0.10f);
             float radius = TunnelField.WallRadius * f.Short * f.Breath * 0.995f;
@@ -333,7 +329,7 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
                 ang += (Hash01(s + 10 + i) - 0.5f) * walk;
                 float twist = f.Swirl * hu + f.Roll;
                 Vector2 b = f.Bend(hu);
-                Vector2 at = f.Cam.Project(radius * MathF.Cos(ang + twist) + b.X, radius * MathF.Sin(ang + twist) + b.Y, hu * px, out float sc);
+                Vector2 at = f.Cam.Project(radius * Cos(ang + twist) + b.X, radius * Sin(ang + twist) + b.Y, hu * px, out float sc);
                 float t = fl.Near(hu);
                 float fade = Smooth(t / 0.24f) * (1f - Smooth((t - 0.90f) / 0.10f));
                 float radial = Smooth((Vector2.Distance(at, f.Center) / f.Short - 0.26f) / 0.45f);
@@ -341,7 +337,7 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
                 float taper = 1f - 0.75f * u;
                 CrackP[n] = at;
                 CrackHalf[n] = Math.Clamp((2.8f + 2.2f * Hash01(s + 30 + i)) * px * sc * taper, 1.0f * px, 8f * px);
-                CrackCol[n] = Col(new Vector3(0.005f, 0.008f, 0.012f), 1.0f * body * fade * radial * e.A * taper, e.Override);
+                CrackCol[n] = Col(new(0.005f, 0.008f, 0.012f), 1.0f * body * fade * radial * e.A * taper, e.Override);
                 n++;
             }
             if (n < 3) continue;
@@ -350,8 +346,8 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
         }
     }
 
-    /// <summary>Grit on the wall: dark pits and pale mineral flecks, the finest surface scale.</summary>
-    private static void DrawGrit(ImDrawListPtr dl, TunnelField f, in Env e)
+    /// Grit on the wall: dark pits and pale mineral flecks, the finest surface scale.
+    static void DrawGrit(ImDrawListPtr dl, TunnelField f, in Env e)
     {
         var fl = f.Flight;
         float px = f.Px, s = f.Short;
@@ -363,11 +359,11 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
             if (t < 0.12f || t > 0.97f) continue;
             int sd = f.Seed + 20000 + i * 7919 + lap * 104729;
 
-            float radius = Lerp(TunnelField.RibRadius, TunnelField.WallRadius, MathF.Sqrt(Hash01(sd + 1))) * s * f.Breath;
-            float theta = Hash01(sd + 2) * MathF.Tau;
+            float radius = Lerp(TunnelField.RibRadius, TunnelField.WallRadius, Sqrt(Hash01(sd + 1))) * s * f.Breath;
+            float theta = Hash01(sd + 2) * Tau;
             float ang = theta + f.Swirl * hu + f.Roll;
             Vector2 b = f.Bend(hu);
-            Vector2 at = f.Cam.Project(radius * MathF.Cos(ang) + b.X, radius * MathF.Sin(ang) + b.Y, hu * px, out float sc);
+            Vector2 at = f.Cam.Project(radius * Cos(ang) + b.X, radius * Sin(ang) + b.Y, hu * px, out float sc);
 
             float radial = Smooth((Vector2.Distance(at, f.Center) / s - 0.26f) / 0.45f);
             float fade = Smooth(t / 0.30f) * (1f - Smooth((t - 0.90f) / 0.07f));
@@ -380,49 +376,49 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
             if (fleck)
             {
                 // Mineral glints show only where light is in the air.
-                float beam = Shaft(MathF.Atan2(at.Y - e.VanishingPoint.Y, at.X - e.VanishingPoint.X) - f.Roll * 0.35f, f.Time, f.Seed);
-                rgb = new Vector3(0.72f, 0.90f, 0.94f);
+                float beam = Shaft(Atan2(at.Y - e.VanishingPoint.Y, at.X - e.VanishingPoint.X) - f.Roll * 0.35f, f.Time, f.Seed);
+                rgb = new(0.72f, 0.90f, 0.94f);
                 alpha = 0.60f * k * (0.05f + 0.95f * beam) * e.Light;
             }
             else
             {
-                rgb = new Vector3(0.008f, 0.012f, 0.016f);
+                rgb = new(0.008f, 0.012f, 0.016f);
                 alpha = 0.80f * k * HashRange(sd + 5, 0.4f, 1f);
             }
             if (alpha < 0.012f) continue;
 
-            uint col = Col(rgb, MathF.Min(alpha, 0.9f), e.Override);
-            float rot = Hash01(sd + 6) * MathF.Tau;
+            uint col = Col(rgb, Min(alpha, 0.9f), e.Override);
+            float rot = Hash01(sd + 6) * Tau;
             Mb.Reserve(3, 3);
-            int v0 = Mb.VertexReserved(at + new Vector2(MathF.Cos(rot), MathF.Sin(rot)) * size, col);
-            Mb.VertexReserved(at + new Vector2(MathF.Cos(rot + 2.2f), MathF.Sin(rot + 2.2f)) * size * 0.9f, col);
-            Mb.VertexReserved(at + new Vector2(MathF.Cos(rot + 4.2f), MathF.Sin(rot + 4.2f)) * size * 1.1f, col);
+            int v0 = Mb.VertexReserved(at + Dir(rot) * size, col);
+            Mb.VertexReserved(at + Dir(rot + 2.2f) * size * 0.9f, col);
+            Mb.VertexReserved(at + Dir(rot + 4.2f) * size * 1.1f, col);
             Mb.TriReserved(v0, v0 + 1, v0 + 2);
             if (Mb.Full) Mb.Flush(dl, e.Uv);
         }
         Mb.Flush(dl, e.Uv);
     }
 
-    /// <summary>The bright lip along a rib's inside edge, with a lens's red and cyan fringes at the frame edges.</summary>
-    private static void Lip(TunnelField f, in Env e, float hu)
+    /// The bright lip along a rib's inside edge, with a lens's red and cyan fringes at the frame edges.
+    static void Lip(TunnelField f, in Env e, float hu)
     {
         float px = f.Px, shortSide = f.Short;
         float t = f.Flight.Near(hu);
         float fade = Smooth(t / 0.24f) * (1f - Smooth((t - 0.90f) / 0.10f));
-        float k = e.A * fade * (0.20f + 0.80f * MathF.Exp(-2.2f * t)) * e.Light;
+        float k = e.A * fade * (0.20f + 0.80f * Exp(-2.2f * t)) * e.Light;
         if (k < 0.006f) return;
 
         float h = hu * px, sc = f.Cam.ScaleAt(h);
         const int segs = WallSegments;
         var (cosT, sinT) = TurnTable(segs);
         float radius = f.RibPx, twist = f.Swirl * hu + f.Roll;
-        float ct = MathF.Cos(twist), st = MathF.Sin(twist);
+        float ct = Cos(twist), st = Sin(twist);
         Vector2 bend = f.Bend(hu);
         Vector2 centre = f.Cam.Project(bend.X, bend.Y, h, out _);
         float width = Math.Clamp(1.6f * px * sc, 1.2f * px, 6f * px);
 
         // A lens splits colours visibly only toward the frame edges; it fades in with rib nearness or shake.
-        float fringe = MathF.Max(Near(sc, 0.65f, 1.05f), Smooth((f.Fringe - 1.8f) / 1.2f));
+        float fringe = Max(Near(sc, 0.65f, 1.05f), Smooth((f.Fringe - 1.8f) / 1.2f));
         int firstPass = fringe > 0.02f ? 0 : 2;
         for (int pass = firstPass; pass < 3; pass++)
         {
@@ -452,23 +448,23 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
 
     // Light shafts
 
-    /// <summary>Light in the air by angle round the far end: a few broad shafts and a lot of nothing.</summary>
-    private static float Shaft(float angle, float time, int seed)
+    /// Light in the air by angle round the far end: a few broad shafts and a lot of nothing.
+    static float Shaft(float angle, float time, int seed)
     {
-        float c = MathF.Cos(angle), s = MathF.Sin(angle);
+        float c = Cos(angle), s = Sin(angle);
         float o = (seed & 0x3FF) * 0.173f;
         float n = 0.62f * Noise.Value(c * 1.7f + 31f + o, s * 1.7f + time * 0.045f) + 0.38f * Noise.Value(c * 3.9f + 77f + o, s * 3.9f - time * 0.07f);
         float x = Smooth((n + 0.12f) / 0.75f);
 
         // One shaft is always there: a key beam, drifting slowly round, that the noise adds to.
         float key = (seed & 0xFFFF) * 0.0731f + time * 0.035f;
-        float d = MathF.Atan2(MathF.Sin(angle - key), MathF.Cos(angle - key));
-        float lobe = MathF.Exp(-d * d / 0.10f) * (0.85f + 0.15f * MathF.Sin(time * 0.31f));
-        x = MathF.Max(x * x * (0.6f + 0.4f * x), lobe);
+        float d = Atan2(Sin(angle - key), Cos(angle - key));
+        float lobe = Exp(-d * d / 0.10f) * (0.85f + 0.15f * Sin(time * 0.31f));
+        x = Max(x * x * (0.6f + 0.4f * x), lobe);
         return x;
     }
 
-    private static void DrawShafts(ImDrawListPtr dl, TunnelField f, in Env e)
+    static void DrawShafts(ImDrawListPtr dl, TunnelField f, in Env e)
     {
         const int Spokes = 144, Rows = 6;
         float s = f.Short, k = e.A * e.Light;
@@ -484,13 +480,13 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
         {
             for (int j = 0; j <= Spokes; j++)
             {
-                float a = MathF.Tau * (j % Spokes) / Spokes;
+                float a = Tau * (j % Spokes) / Spokes;
                 float beam = Shaft(a, f.Time, f.Seed);
                 // Dust drifts through a shaft in clouds: thick, thin, thick again, slowly moving outward.
                 float cloud = 0.62f + 0.38f * Noise.Value(a * 2.3f + row * 1.9f - f.Time * 0.09f + 12f, row * 0.9f + (f.Seed & 255) * 0.01f);
                 float alpha = profile[row] * 0.30f * k * (0.04f + 0.96f * beam) * cloud;
-                float th = MathF.Tau * j / Spokes + f.Roll * 0.35f;
-                int vi = Mb.VertexReserved(e.VanishingPoint + new Vector2(MathF.Cos(th), MathF.Sin(th)) * radius[row], Col(ShaftTint, alpha, e.Override));
+                float th = Tau * j / Spokes + f.Roll * 0.35f;
+                int vi = Mb.VertexReserved(e.VanishingPoint + Dir(th) * radius[row], Col(ShaftTint, alpha, e.Override));
                 if (first < 0) first = vi;
             }
         }
@@ -500,7 +496,7 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
 
     // Haze
 
-    private static void DrawHaze(ImDrawListPtr dl, TunnelField f, in Env e)
+    static void DrawHaze(ImDrawListPtr dl, TunnelField f, in Env e)
     {
         float s = f.Short;
         Span<float> rr = stackalloc float[2];  // outside the loop: stackalloc in a loop grows the stack
@@ -511,9 +507,9 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
             float t = f.Flight.Near(hu);
             int sd = f.Seed + 12000 + i * 7919 + lap * 104729;
             float lane = HashRange(sd + 1, 0.25f, 0.95f) * s;
-            float ang = Hash01(sd + 2) * MathF.Tau + f.Swirl * hu + f.Roll;
+            float ang = Hash01(sd + 2) * Tau + f.Swirl * hu + f.Roll;
             Vector2 bz = f.Bend(hu);
-            Vector2 at = f.Cam.Project(lane * MathF.Cos(ang) + bz.X, lane * MathF.Sin(ang) + bz.Y, hu * f.Px, out float sc);
+            Vector2 at = f.Cam.Project(lane * Cos(ang) + bz.X, lane * Sin(ang) + bz.Y, hu * f.Px, out float sc);
 
             float fade = Smooth(t / 0.20f) * (1f - Smooth((t - 0.80f) / 0.20f));
             float k = e.A * fade * HashRange(sd + 3, 0.5f, 1f) * (0.4f + 0.6f * f.Stress) * (1f + 2.6f * e.Dusty);
@@ -522,16 +518,16 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
 
             rr[0] = radius * 0.5f; rr[1] = radius;
             rc[0] = Col(DustTint * 0.62f, 0.060f * k, e.Override); rc[1] = Col(DustTint * 0.5f, 0f, e.Override);
-            MeshDraw.Radial(dl, at, e.Uv, Col(DustTint * 0.70f, 0.085f * k, e.Override), 14, rr, rc, Hash01(sd + 5) * MathF.Tau, 0.82f, sd, 0.5f);
+            MeshDraw.Radial(dl, at, e.Uv, Col(DustTint * 0.70f, 0.085f * k, e.Override), 14, rr, rc, Hash01(sd + 5) * Tau, 0.82f, sd, 0.5f);
         }
     }
 
     // Shudder
 
-    private static readonly Vector3 FallingDust = new(0.74f, 0.72f, 0.64f);
+    static readonly Vector3 FallingDust = new(0.74f, 0.72f, 0.64f);
 
-    /// <summary>The shudder: a warm dust curtain from the screen top and streaked grit (a pure function of shudder age).</summary>
-    private static void DrawShudder(ImDrawListPtr dl, TunnelField f, in Env e)
+    /// The shudder: a warm dust curtain from the screen top and streaked grit (a pure function of shudder age).
+    static void DrawShudder(ImDrawListPtr dl, TunnelField f, in Env e)
     {
         if (f.Vision != 5 || f.Env < 0.01f) return;
         float k = e.A * f.Env;
@@ -551,7 +547,7 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
                 float x = size.X * j / Cols;
                 float billow = 0.65f + 0.35f * Noise.Value(j * 0.8f + f.Time * 0.35f, 3f);
                 float depth = size.Y * (0.34f + 0.12f * Noise.Value(j * 0.6f - f.Time * 0.2f, 9f));
-                int vi = Mb.VertexReserved(new Vector2(x, row == 0 ? 0f : depth), Col(FallingDust, row == 0 ? 0.46f * k * billow : 0f, e.Override));
+                int vi = Mb.VertexReserved(new(x, row == 0 ? 0f : depth), Col(FallingDust, row == 0 ? 0.46f * k * billow : 0f, e.Override));
                 if (first < 0) first = vi;
             }
         }
@@ -567,20 +563,20 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
             if (y < -20f || y > size.Y + 40f) continue;
 
             // Mostly fine grit, a few big soft flakes; they sway as they fall.
-            float big = MathF.Pow(Hash01(sd + 4), 2.6f);
+            float big = Pow(Hash01(sd + 4), 2.6f);
             float sz = (1.0f + 6.0f * big) * px;
             float len = v * 0.026f + sz * 1.8f;
-            float x = x0 + MathF.Sin(f.VisionAge * HashRange(sd + 7, 0.8f, 2.2f) + sd) * (10f + 26f * big) * px;
+            float x = x0 + Sin(f.VisionAge * HashRange(sd + 7, 0.8f, 2.2f) + sd) * (10f + 26f * big) * px;
             float inView = Smooth((y + 20f) / (0.12f * size.Y)) * (1f - Smooth((y - size.Y * 0.85f) / (0.2f * size.Y)));
-            float alpha = MathF.Min(0.8f, 0.9f * k * HashRange(sd + 5, 0.3f, 1f) * inView * (1f - 0.55f * big));
+            float alpha = Min(0.8f, 0.9f * k * HashRange(sd + 5, 0.3f, 1f) * inView * (1f - 0.55f * big));
             if (alpha < 0.02f) continue;
 
-            uint core = Col(Vector3.Lerp(FallingDust, new Vector3(1f, 0.97f, 0.88f), Hash01(sd + 6)), alpha, e.Override), edge = Col(FallingDust, 0f, e.Override);
+            uint core = Col(Vector3.Lerp(FallingDust, new(1f, 0.97f, 0.88f), Hash01(sd + 6)), alpha, e.Override), edge = Col(FallingDust, 0f, e.Override);
             Mb.Reserve(9, 24);
-            int v0 = Mb.VertexReserved(new Vector2(x - sz, y - len), edge);
-            Mb.VertexReserved(new Vector2(x, y - len), Col(FallingDust, alpha * 0.1f, e.Override)); Mb.VertexReserved(new Vector2(x + sz, y - len), edge);
-            Mb.VertexReserved(new Vector2(x - sz * 1.2f, y - len * 0.45f), edge); Mb.VertexReserved(new Vector2(x, y - len * 0.45f), core); Mb.VertexReserved(new Vector2(x + sz * 1.2f, y - len * 0.45f), edge);
-            Mb.VertexReserved(new Vector2(x - sz, y), edge); Mb.VertexReserved(new Vector2(x, y + sz * 0.5f), core); Mb.VertexReserved(new Vector2(x + sz, y), edge);
+            int v0 = Mb.VertexReserved(new(x - sz, y - len), edge);
+            Mb.VertexReserved(new(x, y - len), Col(FallingDust, alpha * 0.1f, e.Override)); Mb.VertexReserved(new(x + sz, y - len), edge);
+            Mb.VertexReserved(new(x - sz * 1.2f, y - len * 0.45f), edge); Mb.VertexReserved(new(x, y - len * 0.45f), core); Mb.VertexReserved(new(x + sz * 1.2f, y - len * 0.45f), edge);
+            Mb.VertexReserved(new(x - sz, y), edge); Mb.VertexReserved(new(x, y + sz * 0.5f), core); Mb.VertexReserved(new(x + sz, y), edge);
             Mb.StitchGrid(v0, 3, 3);
             if (Mb.Full) Mb.Flush(dl, e.Uv);
         }
@@ -589,7 +585,7 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
 
     // Dust
 
-    private static void DrawDust(ImDrawListPtr dl, TunnelField f, in Env e)
+    static void DrawDust(ImDrawListPtr dl, TunnelField f, in Env e)
     {
         var fl = f.Flight;
         float px = f.Px, s = f.Short;
@@ -603,22 +599,22 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
             float t = fl.Near(hu);
             int sd = f.Seed + 8000 + i * 7919 + lap * 104729;
 
-            float lane = (0.10f + 0.80f * MathF.Sqrt(Hash01(sd + 1))) * s;
-            float theta = Hash01(sd + 2) * MathF.Tau;
+            float lane = (0.10f + 0.80f * Sqrt(Hash01(sd + 1))) * s;
+            float theta = Hash01(sd + 2) * Tau;
             float ang = theta + f.Swirl * hu + f.Roll;
             Vector2 bh = f.Bend(hu), bt = f.Bend(hu - travel);
-            Vector2 head = f.Cam.Project(lane * MathF.Cos(ang) + bh.X, lane * MathF.Sin(ang) + bh.Y, hu * px, out float sc);
+            Vector2 head = f.Cam.Project(lane * Cos(ang) + bh.X, lane * Sin(ang) + bh.Y, hu * px, out float sc);
             float angT = theta + f.Swirl * (hu - travel) + f.Roll;
-            Vector2 tail = f.Cam.Project(lane * MathF.Cos(angT) + bt.X, lane * MathF.Sin(angT) + bt.Y, (hu - travel) * px, out _);
+            Vector2 tail = f.Cam.Project(lane * Cos(angT) + bt.X, lane * Sin(angT) + bt.Y, (hu - travel) * px, out _);
 
             // Dust only shows where you are looking away from the middle, and there it is bright inside a shaft.
             float fromMid = Vector2.Distance(head, f.Center) / s;
             float mask = Smooth((fromMid - 0.15f) / 0.18f);
-            float beam = Shaft(MathF.Atan2(head.Y - e.VanishingPoint.Y, head.X - e.VanishingPoint.X) - f.Roll * 0.35f, f.Time, f.Seed);
+            float beam = Shaft(Atan2(head.Y - e.VanishingPoint.Y, head.X - e.VanishingPoint.X) - f.Roll * 0.35f, f.Time, f.Seed);
             float fade = Smooth(t / 0.10f) * (1f - Smooth((t - 0.93f) / 0.07f));
 
             // Focus sits at about the middle of the tunnel; nearer or farther is a soft disc, spreading its light.
-            float blur = MathF.Abs(t - 0.58f) / 0.42f;
+            float blur = Abs(t - 0.58f) / 0.42f;
             float soft = 1f + 3.2f * blur * blur * blur;
             float size = HashRange(sd + 5, 1.5f, 4.2f) * px * sc * soft * (1f + 0.35f * e.Dusty);
             float k = e.A * mask * fade * HashRange(sd + 3, 0.30f, 1.00f) * (0.22f + 0.78f * beam) * (1f / (0.6f + 0.4f * soft * soft)) * 2.4f * (1f + 1.2f * e.Dusty);
@@ -628,12 +624,12 @@ internal sealed class RegionTunnel : RegionMaterial<TunnelField>
             float minLen = size * 2.2f;
             if (len < 1e-3f) { dir = Vector2.Normalize(head - e.VanishingPoint); len = 0f; }
             else dir /= len;
-            len = MathF.Max(len, minLen);
+            len = Max(len, minLen);
             Vector2 side = new Vector2(-dir.Y, dir.X) * size;
             Vector2 back = head - dir * len, mid = head - dir * (len * 0.45f);
 
-            Vector3 rgb = Vector3.Lerp(DustTint * 0.85f, new Vector3(1.0f, 0.97f, 0.88f), beam);
-            uint core = Col(rgb, MathF.Min(0.85f, k), e.Override), edge = Col(rgb, 0f, e.Override), tailC = Col(rgb, MathF.Min(0.85f, k) * 0.12f, e.Override);
+            Vector3 rgb = Vector3.Lerp(DustTint * 0.85f, new(1.0f, 0.97f, 0.88f), beam);
+            uint core = Col(rgb, Min(0.85f, k), e.Override), edge = Col(rgb, 0f, e.Override), tailC = Col(rgb, Min(0.85f, k) * 0.12f, e.Override);
             Mb.Reserve(9, 24);
             int v0 = Mb.VertexReserved(back - side, edge);
             Mb.VertexReserved(back, tailC); Mb.VertexReserved(back + side, edge);

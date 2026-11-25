@@ -1,26 +1,24 @@
-using System.Numerics;
-
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>A pool surface held as standing-wave modes: gravity-wave dispersion, damping that grows with k^2, reflecting walls, fixed volume.</summary>
+/// A pool surface held as standing-wave modes: gravity-wave dispersion, damping that grows with k^2, reflecting walls, fixed volume.
 internal sealed class PoolSurface
 {
-    private const float RootTau = 2.5066283f;  // sqrt(2 pi)
+    const float RootTau = 2.5066283f;  // sqrt(2 pi)
 
     public float[] H = [];  // surface height per column, px, up is positive
 
-    private int _n, _stride, _modes;
-    private float _len;
-    private float[] _k = [], _cos = [], _a = [], _v = [], _t = [], _acc = [];
+    int _n, _stride, _modes;
+    float _len;
+    float[] _k = [], _cos = [], _a = [], _v = [], _t = [], _acc = [];
 
     // per-mode step terms, rebuilt only when depth, dt or the liquid change
-    private float[] _blow = [], _w2 = [], _damp = [], _decay = [], _cosw = [], _sinw = [];
-    private float _cDepth = -1f, _cDt, _cG, _cNu, _cDrag;
+    float[] _blow = [], _w2 = [], _damp = [], _decay = [], _cosw = [], _sinw = [];
+    float _cDepth = -1f, _cDt, _cG, _cNu, _cDrag;
 
-    /// <summary>Sizes the surface to n columns across len px, all at rest. Modes run down to a 4-column wavelength.</summary>
+    /// Sizes the surface to n columns across len px, all at rest. Modes run down to a 4-column wavelength.
     public void Begin(int n, float len)
     {
-        if (n != _n || MathF.Abs(len - _len) > 0.5f)
+        if (n != _n || Abs(len - _len) > 0.5f)
         {
             _n = n; _len = len;
             _modes = Math.Max(1, (n - 1) / 2);
@@ -34,26 +32,26 @@ internal sealed class PoolSurface
             float dx = len / (n - 1);
             for (int m = 1; m <= _modes; m++)
             {
-                _k[m] = MathF.PI * m / len;
-                for (int i = 0; i < n; i++) _cos[m * _stride + i] = MathF.Cos(_k[m] * i * dx);
+                _k[m] = PI * m / len;
+                for (int i = 0; i < n; i++) _cos[m * _stride + i] = Cos(_k[m] * i * dx);
             }
         }
         Array.Clear(_a); Array.Clear(_v); Array.Clear(_t); Array.Clear(H);
         _cDepth = -1f;
     }
 
-    /// <summary>Strikes the surface under a Gaussian of width reach at x (push px/s, positive up); a pressure impulse, so long swells barely feel it.</summary>
+    /// Strikes the surface under a Gaussian of width reach at x (push px/s, positive up); a pressure impulse, so long swells barely feel it.
     public void Kick(float x, float reach, float push) => Spread(_v, x, reach, push, reach);
 
-    /// <summary>Presses the surface under a Gaussian of width reach at x for this step only (negative lifts); it settles to depth px.</summary>
+    /// Presses the surface under a Gaussian of width reach at x for this step only (negative lifts); it settles to depth px.
     public void Press(float x, float reach, float depth) => Spread(_t, x, reach, -depth, 0f);
 
     // adds amount * Gaussian to the per-mode cosine coefficients; a nonzero blow weights mode m by blow * k tanh(k depth)
-    private void Spread(float[] into, float x, float reach, float amount, float blow)
+    void Spread(float[] into, float x, float reach, float amount, float blow)
     {
         if (_modes == 0 || reach <= 0f || amount == 0f) return;
-        float c1 = MathF.Cos(MathF.PI * x / _len), q = MathF.PI * reach / _len;
-        float r = MathF.Exp(-0.5f * q * q), r2 = r * r;
+        float c1 = Cos(PI * x / _len), q = PI * reach / _len;
+        float r = Exp(-0.5f * q * q), r2 = r * r;
         float amp = 2f * amount * reach * RootTau / _len;
         float prev = 1f, cur = c1, g = r, t = r;  // cos(m theta) by recurrence; g is the Gaussian's share of mode m
         for (int m = 1; m <= _modes && g > 1e-4f; m++)
@@ -64,10 +62,10 @@ internal sealed class PoolSurface
         }
     }
 
-    /// <summary>Advances every awake mode exactly, then rebuilds H. g in px/s^2, depth in px, nu in px^2/s, drag in 1/s.</summary>
+    /// Advances every awake mode exactly, then rebuilds H. g in px/s^2, depth in px, nu in px^2/s, drag in 1/s.
     public void Step(float dt, float depth, float g, float nu, float drag)
     {
-        if (MathF.Abs(depth - _cDepth) > 0.4f || MathF.Abs(dt - _cDt) > 0.01f * dt || g != _cG || nu != _cNu || drag != _cDrag)
+        if (Abs(depth - _cDepth) > 0.4f || Abs(dt - _cDt) > 0.01f * dt || g != _cG || nu != _cNu || drag != _cDrag)
             Rebuild(dt, depth, g, nu, drag);
 
         Array.Clear(_acc);
@@ -93,25 +91,25 @@ internal sealed class PoolSurface
     }
 
     // each mode is a damped oscillator (w^2 = g k tanh(k depth)), advanced exactly over dt: e * (cos, sin / wd), cosh/sinh if overdamped
-    private void Rebuild(float dt, float depth, float g, float nu, float drag)
+    void Rebuild(float dt, float depth, float g, float nu, float drag)
     {
         (_cDepth, _cDt, _cG, _cNu, _cDrag) = (depth, dt, g, nu, drag);
         for (int m = 1; m <= _modes; m++)
         {
-            float k = _k[m], th = MathF.Tanh(k * depth), w2 = g * k * th, d = drag + nu * k * k, disc = w2 - d * d, c, s;
+            float k = _k[m], th = Tanh(k * depth), w2 = g * k * th, d = drag + nu * k * k, disc = w2 - d * d, c, s;
             if (disc > 1e-6f)
             {
-                float wd = MathF.Sqrt(disc);
-                (s, c) = MathF.SinCos(wd * dt);
+                float wd = Sqrt(disc);
+                (s, c) = SinCos(wd * dt);
                 s /= wd;
             }
             else if (disc < -1e-6f)
             {
-                float wd = MathF.Sqrt(-disc), x = MathF.Min(wd * dt, 60f);
-                c = MathF.Cosh(x); s = MathF.Sinh(x) / wd;
+                float wd = Sqrt(-disc), x = Min(wd * dt, 60f);
+                c = Cosh(x); s = Sinh(x) / wd;
             }
             else { c = 1f; s = dt; }
-            (_blow[m], _w2[m], _damp[m], _decay[m], _cosw[m], _sinw[m]) = (k * th, w2, d, MathF.Exp(-d * dt), c, s);
+            (_blow[m], _w2[m], _damp[m], _decay[m], _cosw[m], _sinw[m]) = (k * th, w2, d, Exp(-d * dt), c, s);
         }
     }
 }

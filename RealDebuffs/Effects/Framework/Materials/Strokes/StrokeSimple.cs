@@ -1,15 +1,12 @@
-using System.Numerics;
-using Dalamud.Bindings.ImGui;
-
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>The fallback stroke: a soft glow under a solid pale core with a small growing-tip flare.</summary>
+/// The fallback stroke: a soft glow under a solid pale core with a small growing-tip flare.
 public sealed class StrokeSimple : IStrokeMaterial
 {
     public string Name => "stroke.simple";
 
-    private static readonly uint Glow = Pack(0.80f, 0.82f, 0.88f);
-    private static readonly uint Core = Pack(0.94f, 0.96f, 1.00f);
+    static readonly uint Glow = Pack(0.80f, 0.82f, 0.88f);
+    static readonly uint Core = Pack(0.94f, 0.96f, 1.00f);
 
     public void Draw(ImDrawListPtr dl, in StrokePrimitive s, in MaterialContext ctx)
     {
@@ -17,16 +14,16 @@ public sealed class StrokeSimple : IStrokeMaterial
         float alpha = s.Brightness * ctx.Alpha;
         if (path.Count < 2 || alpha <= 0.005f) return;
 
-        float width = MathF.Max(1f, s.WidthHint * 0.25f);
-        float reveal = Math.Clamp(s.Reveal, 0f, 1f);
+        float width = Max(1f, s.WidthHint * 0.25f);
+        float reveal = Saturate(s.Reveal);
         if (reveal <= 0.001f) return;
 
         // Walk visible segments and emit each as a short stroke.
         float total = path.Length;
         float visibleLen = total * reveal;
-        float step = MathF.Max(2f, width * 0.8f);
+        float step = Max(2f, width * 0.8f);
         int steps = Math.Max(2, (int)(visibleLen / step));
-        float lastArc = MathF.Min(visibleLen, total);
+        float lastArc = Min(visibleLen, total);
 
         Vector2 prevPos;
         path.SampleAtArc(0f, out prevPos, out _);
@@ -44,7 +41,7 @@ public sealed class StrokeSimple : IStrokeMaterial
         if (s.TipFlare > 0.001f)
         {
             path.SampleAtArc(lastArc, out Vector2 tip, out _);
-            float k = Math.Clamp(s.TipFlare, 0f, 1f);
+            float k = Saturate(s.TipFlare);
             dl.AddCircleFilled(tip, (6f + 10f * k) * ctx.ScreenScale, WithAlpha(Glow, alpha * 0.35f * k));
             dl.AddCircleFilled(tip, (2f + 3f * k) * ctx.ScreenScale, WithAlpha(Core, alpha * 0.95f * k));
         }

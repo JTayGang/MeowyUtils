@@ -1,19 +1,16 @@
-using System.Numerics;
-using Dalamud.Bindings.ImGui;
-
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>A glowing rune: Size is half-height in px; Seed picks its letter (stable for life).</summary>
+/// A glowing rune: Size is half-height in px; Seed picks its letter (stable for life).
 public sealed class ParticleRune : IParticleMaterial
 {
-    private readonly string _name;
-    private readonly Palette _palette;
-    private readonly int _firstGlyph, _glyphCount;
+    readonly string _name;
+    readonly Palette _palette;
+    readonly int _firstGlyph, _glyphCount;
 
-    /// <summary>The curse-violet rune in the general script (particle.rune).</summary>
+    /// The curse-violet rune in the general script (particle.rune).
     public ParticleRune() : this("particle.rune", CurseColor.Glow, 0, RuneGlyphs.LegacyCount, "rune", "runes", "glyph", "glyphs") { }
 
-    /// <summary>The glowing rune in another palette and letter set: one registered per theme (see particle.hellrune).</summary>
+    /// The glowing rune in another palette and letter set: one registered per theme (see particle.hellrune).
     internal ParticleRune(string name, Palette palette, int firstGlyph, int glyphCount, params string[] words)
     {
         _name = name;
@@ -26,11 +23,11 @@ public sealed class ParticleRune : IParticleMaterial
     public string Name => _name;
     public string[] NaturalLanguageWords { get; }
 
-    private const int MaxPts = 24;
-    private static readonly MeshBuilder Mb = new();
-    private static readonly Vector2[] Pts = new Vector2[MaxPts];
-    private static readonly Vector2[] Nrm = new Vector2[MaxPts];
-    private static readonly float[] Reach = new float[MaxPts];
+    const int MaxPts = 24;
+    static readonly MeshBuilder Mb = new();
+    static readonly Vector2[] Pts = new Vector2[MaxPts];
+    static readonly Vector2[] Nrm = new Vector2[MaxPts];
+    static readonly float[] Reach = new float[MaxPts];
 
     public void Draw(ImDrawListPtr dl, in ParticlePrimitive p, in MaterialContext ctx)
     {
@@ -45,9 +42,9 @@ public sealed class ParticleRune : IParticleMaterial
         int glyph = forced > 0 ? forced - 1 : RuneGlyphs.Pick(p.Seed, _firstGlyph, _glyphCount);
 
         // A slow private flicker, so a ring of runes never pulses in unison.
-        float seedPhase = Hash01(p.Seed + 4) * MathF.Tau;
-        float flicker = inscribed ? 0.93f + 0.07f * MathF.Sin(ctx.Time * 1.9f + seedPhase)
-                                  : 0.80f + 0.20f * MathF.Sin(ctx.Time * 2.6f + seedPhase);
+        float seedPhase = Hash01(p.Seed + 4) * Tau;
+        float flicker = inscribed ? 0.93f + 0.07f * Sin(ctx.Time * 1.9f + seedPhase)
+                                  : 0.80f + 0.20f * Sin(ctx.Time * 2.6f + seedPhase);
         k *= flicker;
 
         float px = ctx.ScreenScale;
@@ -65,12 +62,12 @@ public sealed class ParticleRune : IParticleMaterial
         MeshDraw.Radial(dl, pos, uv, WithAlpha(_palette.Sample(0.34f), k * (inscribed ? 0.15f : 0.26f)),
                         12, rr, rc, 0f, 1f, 0, 0f);
 
-        float cos = MathF.Cos(p.Rotation), sin = MathF.Sin(p.Rotation);
+        float cos = Cos(p.Rotation), sin = Sin(p.Rotation);
         var strokes = RuneGlyphs.Strokes(glyph);
 
-        float bloom = MathF.Max(2.2f * px, size * (inscribed ? 0.16f : 0.26f));
-        float bodyHalf = MathF.Max(0.65f * px, size * 0.050f);
-        float coreHalf = MathF.Max(0.40f * px, size * 0.020f);
+        float bloom = Max(2.2f * px, size * (inscribed ? 0.16f : 0.26f));
+        float bodyHalf = Max(0.65f * px, size * 0.050f);
+        float coreHalf = Max(0.40f * px, size * 0.020f);
 
         uint bloomCol = Tint(_palette.Sample(0.30f), k * 0.30f, overridden);
         uint bodyCol  = Tint(_palette.Sample(0.70f), k * 0.95f, overridden);
@@ -110,7 +107,7 @@ public sealed class ParticleRune : IParticleMaterial
     public ReadOnlySpan<StrokeEmission> Emissions => Shed;
 
     // As a stroke emitter: runes peeling off the line and floating away.
-    private static readonly StrokeEmission[] Shed =
+    static readonly StrokeEmission[] Shed =
     {
         new(Role: PrimitiveRole.Rune,
             DensityPer100px: 0.35f,
@@ -123,17 +120,17 @@ public sealed class ParticleRune : IParticleMaterial
     };
 }
 
-/// <summary>A speck of arcane light: a soft halo round a bright pip, with a four-point flare on some.</summary>
+/// A speck of arcane light: a soft halo round a bright pip, with a four-point flare on some.
 public sealed class ParticleMote : IParticleMaterial
 {
-    private readonly string _name;
-    private readonly Palette _palette;
-    private readonly bool _flares;
+    readonly string _name;
+    readonly Palette _palette;
+    readonly bool _flares;
 
-    /// <summary>The curse-violet mote (particle.mote).</summary>
+    /// The curse-violet mote (particle.mote).
     public ParticleMote() : this("particle.mote", CurseColor.Glow, true, "mote", "motes", "wisp", "wisps") { }
 
-    /// <summary>The drifting speck of light in another palette: one registered per theme (see particle.static).</summary>
+    /// The drifting speck of light in another palette: one registered per theme (see particle.static).
     internal ParticleMote(string name, Palette palette, bool flares, params string[] words)
     {
         _name = name;
@@ -146,7 +143,7 @@ public sealed class ParticleMote : IParticleMaterial
     public string[] NaturalLanguageWords { get; }
 
     // Past this radius (at 1080p) a mote is drawn as a soft disc instead of a point of light.
-    private const float BokehFrom = 11f;
+    const float BokehFrom = 11f;
 
     public void Draw(ImDrawListPtr dl, in ParticlePrimitive p, in MaterialContext ctx)
     {
@@ -156,7 +153,7 @@ public sealed class ParticleMote : IParticleMaterial
         float size = p.Size * LifeSize(p.AgeRatio, riseEnd: 0.20f, riseFrom: 0.25f, fallStart: 0.70f, floor: 0.06f);
         if (size <= 0.4f) return;
 
-        float twinkle = 0.72f + 0.28f * MathF.Sin(ctx.Time * (2.2f + 3.1f * Hash01(p.Seed + 6)) + Hash01(p.Seed + 5) * MathF.Tau);
+        float twinkle = 0.72f + 0.28f * Sin(ctx.Time * (2.2f + 3.1f * Hash01(p.Seed + 6)) + Hash01(p.Seed + 5) * Tau);
         k *= twinkle;
 
         Vector2 pos = p.DrawPos;
@@ -185,7 +182,7 @@ public sealed class ParticleMote : IParticleMaterial
             WithAlpha(_palette.Sample(0.25f), 0f),
         };
         MeshDraw.Radial(dl, pos, uv, WithAlpha(_palette.Sample(0.60f), k * 0.55f), 10, hr, hc, 0f, 1f, 0, 0f);
-        dl.AddCircleFilled(pos, MathF.Max(0.7f, size * 0.55f), WithAlpha(_palette.Sample(0.97f), k * 0.95f));
+        dl.AddCircleFilled(pos, Max(0.7f, size * 0.55f), WithAlpha(_palette.Sample(0.97f), k * 0.95f));
 
         // A flare on about one in eight.
         if (_flares && (p.Seed & 7) == 0)
@@ -199,7 +196,7 @@ public sealed class ParticleMote : IParticleMaterial
 
     public ReadOnlySpan<StrokeEmission> Emissions => Shed;
 
-    private static readonly StrokeEmission[] Shed =
+    static readonly StrokeEmission[] Shed =
     {
         new(Role: PrimitiveRole.Mote,
             DensityPer100px: 0.6f,

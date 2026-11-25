@@ -2,7 +2,7 @@ using System.Text;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>A Look as text: a stable one-line description (tests, logs) and the natural phrase the generator exports.</summary>
+/// A Look as text: a stable one-line description (tests, logs) and the natural phrase the generator exports.
 public static class LookText
 {
     public static string Describe(Look l)
@@ -15,7 +15,7 @@ public static class LookText
         return sb.ToString();
     }
 
-    /// <summary>The Look as a sentence the parser reads back identically, or null when only a code can say it.</summary>
+    /// The Look as a sentence the parser reads back identically, or null when only a code can say it.
     public static string? Phrase(Look look, Lexicon lex)
     {
         if (look.Details is { Count: > 0 } || look.Modifier == Look.NoShed) return null;
@@ -32,7 +32,7 @@ public static class LookText
         return sb.ToString();
     }
 
-    private static string Prefix(LookColor? c) => c is { } v ? ColorLexicon.NameOf(v) + " " : "";
-    private static string Mat(string? m) => m is null ? "-" : m == Look.NoShed ? "none" : LookCode.Compact(m);
-    private static string Col(LookColor? c) => c is { } v ? (v.Rainbow ? "rainbow" : ColorLexicon.HexOf(v.Rgb)) : "-";
+    static string Prefix(LookColor? c) => c is { } v ? ColorLexicon.NameOf(v) + " " : "";
+    static string Mat(string? m) => m is null ? "-" : m == Look.NoShed ? "none" : LookCode.Compact(m);
+    static string Col(LookColor? c) => c is { } v ? (v.Rainbow ? "rainbow" : ColorLexicon.HexOf(v.Rgb)) : "-";
 }

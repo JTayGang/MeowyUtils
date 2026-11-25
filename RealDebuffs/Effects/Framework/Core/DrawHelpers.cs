@@ -1,21 +1,21 @@
-using System.Numerics;
-using Dalamud.Bindings.ImGui;
-
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Colour packing, the per-primitive colour override, easing, hashing and the shared vignette.</summary>
+/// Colour packing, the per-primitive colour override, easing, hashing and the shared vignette.
 internal static class DrawHelpers
 {
-    /// <summary>Opaque packed colour. Ignores the colour override; WithAlpha is where that applies.</summary>
+    /// Opaque packed colour. Ignores the colour override; WithAlpha is where that applies.
     public static uint Pack(float r, float g, float b)
         => 0xFF000000u | (Q(b) << 16) | (Q(g) << 8) | Q(r);
 
+    /// Opaque packed colour from an RGB vector.
+    public static uint Pack(Vector3 c) => Pack(c.X, c.Y, c.Z);
+
     // Signed conversion: float -> uint is several times slower on x64. NaN lands on 0.
-    private static uint Q(float v) => (uint)(int)((v > 0f ? (v < 1f ? v : 1f) : 0f) * 255f + 0.5f);
+    static uint Q(float v) => (uint)(int)((v > 0f ? (v < 1f ? v : 1f) : 0f) * 255f + 0.5f);
 
     // colour override
 
-    private readonly struct HueOverride
+    readonly struct HueOverride
     {
         public readonly float Hue, Saturation, ValuePower, ValueScale;
 
@@ -28,19 +28,18 @@ internal static class DrawHelpers
             Hue == o.Hue && Saturation == o.Saturation && ValuePower == o.ValuePower && ValueScale == o.ValueScale;
     }
 
-    private static readonly Stack<HueOverride?> ColorOverrideStack = new();
-    private static HueOverride? _colorOverride;
+    static readonly Stack<HueOverride?> ColorOverrideStack = new();
+    static HueOverride? _colorOverride;
 
     // Memo for ApplyColorOverride (HSV round trip + Pow per vertex): direct-mapped, keyed on the override's id
-    private const int OverrideCacheBits = 11;
-    private static readonly uint[] OverrideIn  = new uint[1 << OverrideCacheBits];
-    private static readonly uint[] OverrideOut = new uint[1 << OverrideCacheBits];
-    private static readonly int[]  OverrideTag = new int[1 << OverrideCacheBits];
-    private static readonly HueOverride[] KnownOverrides = new HueOverride[15];
-    private static int _knownCount;
-    private static int _overrideId;
+    const int OverrideCacheBits = 11;
+    static readonly uint[] OverrideIn  = new uint[1 << OverrideCacheBits];
+    static readonly uint[] OverrideOut = new uint[1 << OverrideCacheBits];
+    static readonly int[]  OverrideTag = new int[1 << OverrideCacheBits];
+    static readonly HueOverride[] KnownOverrides = new HueOverride[15];
+    static int _knownCount, _overrideId;
 
-    private static void SetOverride(HueOverride? next)
+    static void SetOverride(HueOverride? next)
     {
         _colorOverride = next;
         if (next is not { } ov) { _overrideId = 0; return; }
@@ -59,7 +58,7 @@ internal static class DrawHelpers
         _overrideId = ++_knownCount;
     }
 
-    /// <summary>Until Pop, WithAlpha re-hues toward rgb (chromatic: hue replaced, saturation kept; achromatic: hue stripped).</summary>
+    /// Until Pop, WithAlpha re-hues toward rgb (chromatic: hue replaced, saturation kept; achromatic: hue stripped).
     public static void PushColorOverride(Vector4? rgb)
     {
         ColorOverrideStack.Push(_colorOverride);
@@ -85,7 +84,7 @@ internal static class DrawHelpers
     public static void PopColorOverride() =>
         SetOverride(ColorOverrideStack.Count > 0 ? ColorOverrideStack.Pop() : null);
 
-    private static uint ApplyColorOverride(uint color)
+    static uint ApplyColorOverride(uint color)
     {
         if (_colorOverride is not { } ov) return color;
 
@@ -100,7 +99,7 @@ internal static class DrawHelpers
         return result;
     }
 
-    private static uint ComputeColorOverride(uint color, in HueOverride ov)
+    static uint ComputeColorOverride(uint color, in HueOverride ov)
     {
         float r = (color & 0xFF) / 255f;
         float g = ((color >> 8) & 0xFF) / 255f;
@@ -114,20 +113,20 @@ internal static class DrawHelpers
         else if (origS < 0.05f)         { hue = ov.Hue; s = ov.Saturation; }
         else                            { hue = ov.Hue; s = origS; }
 
-        float v = MathF.Pow(origV, ov.ValuePower) * ov.ValueScale;
+        float v = Pow(origV, ov.ValuePower) * ov.ValueScale;
 
         var (nr, ng, nb) = HsvToRgb(hue, s, v);
 
-        uint R = (uint)Math.Clamp((int)MathF.Round(nr * 255f), 0, 255);
-        uint G = (uint)Math.Clamp((int)MathF.Round(ng * 255f), 0, 255);
-        uint B = (uint)Math.Clamp((int)MathF.Round(nb * 255f), 0, 255);
+        uint R = (uint)Math.Clamp((int)Round(nr * 255f), 0, 255);
+        uint G = (uint)Math.Clamp((int)Round(ng * 255f), 0, 255);
+        uint B = (uint)Math.Clamp((int)Round(nb * 255f), 0, 255);
         return R | (G << 8) | (B << 16) | (a << 24);
     }
 
-    private static (float H, float S, float V) RgbToHsv(float r, float g, float b)
+    static (float H, float S, float V) RgbToHsv(float r, float g, float b)
     {
-        float max = MathF.Max(r, MathF.Max(g, b));
-        float min = MathF.Min(r, MathF.Min(g, b));
+        float max = Max(r, Max(g, b));
+        float min = Min(r, Min(g, b));
         float delta = max - min;
 
         float h = 0f;
@@ -144,11 +143,11 @@ internal static class DrawHelpers
         return (h, s, max);
     }
 
-    private static (float R, float G, float B) HsvToRgb(float h, float s, float v)
+    static (float R, float G, float B) HsvToRgb(float h, float s, float v)
     {
         h = ((h % 360f) + 360f) % 360f;
         float c = v * s;
-        float x = c * (1f - MathF.Abs((h / 60f) % 2f - 1f));
+        float x = c * (1f - Abs((h / 60f) % 2f - 1f));
         float m = v - c;
 
         (float r1, float g1, float b1) = h switch
@@ -163,39 +162,39 @@ internal static class DrawHelpers
         return (r1 + m, g1 + m, b1 + m);
     }
 
-    /// <summary>True while an override is pushed; lets a mesh material skip WithAlpha's per-vertex remap.</summary>
+    /// True while an override is pushed; lets a mesh material skip WithAlpha's per-vertex remap.
     public static bool ColorOverrideActive => _colorOverride.HasValue;
 
-    /// <summary>Saturation of the active override if chromatic, else 0; muted palettes use it so "red" comes out as red.</summary>
+    /// Saturation of the active override if chromatic, else 0; muted palettes use it so "red" comes out as red.
     public static float ColorOverrideChroma =>
         _colorOverride is { } ov && ov.Saturation >= 0.05f ? ov.Saturation : 0f;
 
-    /// <summary>The colour with HSV saturation set to s; hue and value unchanged.</summary>
+    /// The colour with HSV saturation set to s; hue and value unchanged.
     public static Vector3 WithSaturation(Vector3 c, float s)
     {
-        float mx = MathF.Max(c.X, MathF.Max(c.Y, c.Z));
-        float mn = MathF.Min(c.X, MathF.Min(c.Y, c.Z));
+        float mx = Max(c.X, Max(c.Y, c.Z));
+        float mn = Min(c.X, Min(c.Y, c.Z));
         float have = mx > 1e-4f ? (mx - mn) / mx : 0f;
         if (have < 1e-3f) return c;  // grey has no hue to saturate
 
-        float k = Math.Clamp(s, 0f, 1f) / have;
-        return new Vector3(mx - (mx - c.X) * k, mx - (mx - c.Y) * k, mx - (mx - c.Z) * k);
+        float k = Saturate(s) / have;
+        return new(mx - (mx - c.X) * k, mx - (mx - c.Y) * k, mx - (mx - c.Z) * k);
     }
 
-    /// <summary>How far a recolour pulls a material's own saturation toward the picked colour's</summary>
+    /// How far a recolour pulls a material's own saturation toward the picked colour's
     public const float SoftDye = 0.4f;
 
-    /// <summary>Moves c's saturation amount of the way toward target.</summary>
+    /// Moves c's saturation amount of the way toward target.
     public static Vector3 BoostSaturation(Vector3 c, float target, float amount)
     {
-        float mx = MathF.Max(c.X, MathF.Max(c.Y, c.Z));
-        float mn = MathF.Min(c.X, MathF.Min(c.Y, c.Z));
+        float mx = Max(c.X, Max(c.Y, c.Z));
+        float mn = Min(c.X, Min(c.Y, c.Z));
         float have = mx > 1e-4f ? (mx - mn) / mx : 0f;
         if (have < 1e-3f || target <= have) return c;
-        return WithSaturation(c, have + (target - have) * amount);
+        return WithSaturation(c, Lerp(have, target, amount));
     }
 
-    /// <summary>Applies the colour override, then scales alpha by mul (0..1).</summary>
+    /// Applies the colour override, then scales alpha by mul (0..1).
     public static uint WithAlpha(uint color, float mul)
     {
         color = ApplyColorOverride(color);
@@ -205,18 +204,18 @@ internal static class DrawHelpers
         return (color & 0x00FFFFFF) | (a << 24);
     }
 
-    /// <summary>Opaque-RGB vertex colour from a lit colour: override-aware WithAlpha, or a plain pack with no override.</summary>
+    /// Opaque-RGB vertex colour from a lit colour: override-aware WithAlpha, or a plain pack with no override.
     public static uint VertexColor(Vector3 c, float alpha, uint alphaBits, bool overridden)
     {
-        uint rgb = Pack(c.X, c.Y, c.Z);
+        uint rgb = Pack(c);
         return overridden ? WithAlpha(rgb, alpha) : (rgb & 0x00FFFFFFu) | alphaBits;
     }
 
-    /// <summary>Packed RGB with alpha: override-aware when overridden, else a plain alpha byte.</summary>
+    /// Packed RGB with alpha: override-aware when overridden, else a plain alpha byte.
     public static uint Tint(uint rgb, float alpha, bool overridden) =>
         overridden ? WithAlpha(rgb, alpha) : (rgb & 0x00FFFFFFu) | AlphaBits(alpha);
 
-    /// <summary>The alpha byte of alpha (0..1), shifted into place for VertexColor.</summary>
+    /// The alpha byte of alpha (0..1), shifted into place for VertexColor.
     public static uint AlphaBits(float alpha) =>
         (uint)(int)(255f * (alpha > 0f ? (alpha < 1f ? alpha : 1f) : 0f)) << 24;
 
@@ -224,7 +223,7 @@ internal static class DrawHelpers
 
     public static uint LerpColor(uint a, uint b, float t)
     {
-        t = Math.Clamp(t, 0f, 1f);
+        t = Saturate(t);
         byte Channel(int shift) => (byte)(((a >> shift) & 0xFF) + (((b >> shift) & 0xFF) - (int)((a >> shift) & 0xFF)) * t);
         return Channel(0) | ((uint)Channel(8) << 8) | ((uint)Channel(16) << 16) | ((uint)Channel(24) << 24);
     }
@@ -233,27 +232,27 @@ internal static class DrawHelpers
 
     public static float Lerp(float a, float b, float t) => a + (b - a) * t;
 
-    /// <summary>Clamped smoothstep of t.</summary>
+    /// Clamped smoothstep of t.
     public static float Smooth(float t)
     {
-        t = t < 0f ? 0f : (t > 1f ? 1f : t);
+        t = Saturate(t);
         return t * t * (3f - 2f * t);
     }
 
-    /// <summary>Smoothstep of x between two edges (edges may be reversed).</summary>
+    /// Smoothstep of x between two edges (edges may be reversed).
     public static float Smooth(float edge0, float edge1, float x) => Smooth((x - edge0) / (edge1 - edge0));
 
     public static float EaseOutCubic(float t)
     {
-        float inv = 1f - Math.Clamp(t, 0f, 1f);
+        float inv = 1f - Saturate(t);
         return 1f - inv * inv * inv;
     }
 
-    /// <summary>Particle size over its life: riseFrom to 1 by riseEnd, hold until fallStart, then shrink to at least floor.</summary>
+    /// Particle size over its life: riseFrom to 1 by riseEnd, hold until fallStart, then shrink to at least floor.
     public static float LifeSize(float age, float riseEnd, float riseFrom, float fallStart, float floor) =>
-        age < riseEnd ? riseFrom + (1f - riseFrom) * (age / riseEnd)
+        age < riseEnd ? Lerp(riseFrom, 1f, (age / riseEnd))
         : age < fallStart ? 1f
-        : MathF.Max(floor, 1f - (age - fallStart) / (1f - fallStart));
+        : Max(floor, 1f - (age - fallStart) / (1f - fallStart));
 
     public static float Hash01(int seed)
     {
@@ -267,37 +266,40 @@ internal static class DrawHelpers
         }
     }
 
-    public static float HashRange(int seed, float min, float max) => min + Hash01(seed) * (max - min);
+    public static float HashRange(int seed, float min, float max) => Lerp(min, max, Hash01(seed));
 
-    /// <summary>-1 or 1, stable per seed.</summary>
+    /// -1 or 1, stable per seed.
     public static float Sign(int seed) => Hash01(seed) < 0.5f ? -1f : 1f;
 
-    /// <summary>v wrapped into [0, len).</summary>
+    /// v wrapped into [0, len).
     public static float Wrap(float v, float len)
     {
         v %= len;
         return v < 0f ? v + len : v;
     }
 
-    /// <summary>v turned by angle radians.</summary>
+    /// v turned by angle radians.
     public static Vector2 Rotate(Vector2 v, float angle)
     {
-        float c = MathF.Cos(angle), s = MathF.Sin(angle);
-        return new Vector2(v.X * c - v.Y * s, v.X * s + v.Y * c);
+        float c = Cos(angle), s = Sin(angle);
+        return new(v.X * c - v.Y * s, v.X * s + v.Y * c);
     }
 
     public static float Pulse(float time, float periodSeconds, float phase = 0f) =>
-        (MathF.Sin((time / periodSeconds + phase) * MathF.PI * 2f) + 1f) * 0.5f;
+        (Sin((time / periodSeconds + phase) * PI * 2f) + 1f) * 0.5f;
 
-    /// <summary>The one pixel scale: 1 at a 1080px short side. Effects and materials both use it.</summary>
+    /// Unit vector at angle radians.
+    public static Vector2 Dir(float angle) => new(Cos(angle), Sin(angle));
+
+    /// The one pixel scale: 1 at a 1080px short side. Effects and materials both use it.
     public static float PixelScale(Vector2 size) =>
-        size.X > 0f ? MathF.Min(size.X, size.Y) / 1080f : 1f;
+        size.X > 0f ? Min(size.X, size.Y) / 1080f : 1f;
 
-    /// <summary>Soft edge vignette.</summary>
+    /// Soft edge vignette.
     public static void DrawVignette(ImDrawListPtr dl, Vector2 size, uint color, float thicknessFrac, float alpha)
     {
         if (alpha <= 0f) return;
-        float t = MathF.Min(size.X, size.Y) * thicknessFrac;
+        float t = Min(size.X, size.Y) * thicknessFrac;
         if (t <= 0f) return;
         uint edge = WithAlpha(color, alpha);
         const uint clear = 0u;

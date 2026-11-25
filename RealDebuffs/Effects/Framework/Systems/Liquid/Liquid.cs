@@ -1,21 +1,18 @@
-using System.Numerics;
-using RealDebuffs.Effects.Framework.Materials;
-
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>How a liquid moves, from one thickness axis (0 water, BloodAt blood, 1 slime); each value is calibrated at the three liquids and blended.</summary>
+/// How a liquid moves, from one thickness axis (0 water, BloodAt blood, 1 slime); each value is calibrated at the three liquids and blended.
 public readonly struct LiquidPhysics
 {
     public const float BloodAt = 0.45f;
 
     // Piecewise-linear through the three calibrated liquids; exact at each one.
-    private static float At(float v, float water, float blood, float slime)
+    static float At(float v, float water, float blood, float slime)
     {
         if (v <= 0f) return water;
-        if (v < BloodAt) return water + (blood - water) * (v / BloodAt);
+        if (v < BloodAt) return Lerp(water, blood, (v / BloodAt));
         if (v == BloodAt) return blood;
         float t = (v - BloodAt) / (1f - BloodAt);
-        return t >= 1f ? slime : blood + (slime - blood) * t;
+        return t >= 1f ? slime : Lerp(blood, slime, t);
     }
 
     public readonly float Viscosity;
@@ -50,7 +47,7 @@ public readonly struct LiquidPhysics
 
     public LiquidPhysics(float v)
     {
-        v = Math.Clamp(v, 0f, 1f);
+        v = Saturate(v);
         Viscosity = v;
         Gravity = At(v, 3000f, 1800f, 1500f);
         Drag = At(v, 1.1f, 1.6f, 1.6f);
@@ -93,7 +90,7 @@ public readonly struct LiquidPhysics
 
 }
 
-/// <summary>A liquid: look, physics, and the shading table baked from the look.</summary>
+/// A liquid: look, physics, and the shading table baked from the look.
 public sealed class Liquid
 {
     public static readonly Liquid Water = new(LiquidPresets.Water);
@@ -105,16 +102,16 @@ public sealed class Liquid
     public Liquid(in LiquidSpec look)
     {
         Look = look;
-        Phys = new LiquidPhysics(look.Viscosity);
-        Matcap = new LiquidMatcap(in look);
+        Phys = new(look.Viscosity);
+        Matcap = new(in look);
     }
 
-    /// <summary>The liquid a particle slot resolves to after overrides; water if it isn't one.</summary>
+    /// The liquid a particle slot resolves to after overrides; water if it isn't one.
     public static Liquid Resolve(EffectScene scene, DebuffKind owner, PrimitiveRole role) =>
         scene.Materials.Particle(owner, role) is ParticleGoop g ? g.Liquid : Water;
 }
 
-/// <summary>Falling drops, each optionally trailing the thread it let go of; shared by Coat and LiquidField.</summary>
+/// Falling drops, each optionally trailing the thread it let go of; shared by Coat and LiquidField.
 internal sealed class DropPool
 {
     public struct Drop
@@ -122,8 +119,7 @@ internal sealed class DropPool
         public DebuffKind Owner;
         public Vector2 Pos, Vel, Gravity;
         public Vector2 Anchor, Pinch;  // where the string was fixed, and where it broke
-        public float Born, Life;
-        public float Size, Brightness;
+        public float Born, Life, Size, Brightness;
         public float Amount;  // the liquid it carries (px²); 0 for drops that don't track it
         public float Tether;  // thickness of the string at the moment of release, fraction of Size
         public float RecoilTime;  // how long the string takes to snap back; 0 = no string
@@ -136,7 +132,7 @@ internal sealed class DropPool
         public Vector4? ColorOverride;
     }
 
-    /// <summary>Asked of each drop after it moves; true removes it.</summary>
+    /// Asked of each drop after it moves; true removes it.
     public interface IHook { bool Hit(ref Drop d); }
     public struct NoHook : IHook { public bool Hit(ref Drop d) => false; }
 
@@ -147,10 +143,10 @@ internal sealed class DropPool
 
     public bool Full => Count >= Items.Length;
 
-    /// <summary>What expired or fell past the floor, by amount: a sink the owner can book.</summary>
+    /// What expired or fell past the floor, by amount: a sink the owner can book.
     public double Left;
 
-    /// <summary>False when the pool is full; the caller keeps the liquid.</summary>
+    /// False when the pool is full; the caller keeps the liquid.
     public bool Add(in Drop d)
     {
         if (Count >= Items.Length) return false;
@@ -158,7 +154,7 @@ internal sealed class DropPool
         return true;
     }
 
-    /// <summary>Retires expired drops, then moves the rest.</summary>
+    /// Retires expired drops, then moves the rest.
     public void Advance<T>(float time, float dt, float floor, ref T hook) where T : struct, IHook
     {
         int w = 0;
@@ -167,7 +163,7 @@ internal sealed class DropPool
             ref Drop d = ref Items[i];
             if (time - d.Born >= d.Life) { Left += d.Amount; continue; }
             d.Vel += d.Gravity * dt;
-            d.Vel *= MathF.Exp(-d.Drag * dt);
+            d.Vel *= Exp(-d.Drag * dt);
             d.Pos += d.Vel * dt;
             if (d.Pos.Y > floor) { Left += d.Amount; continue; }
             if (hook.Hit(ref d)) continue;
@@ -176,14 +172,14 @@ internal sealed class DropPool
         Count = w;
     }
 
-    /// <summary>Hands every drop to the scene as a Goop particle; a broken string snaps back to its anchor.</summary>
+    /// Hands every drop to the scene as a Goop particle; a broken string snaps back to its anchor.
     public void Emit(EffectScene scene, float time, bool hosted, float brightness = 1f)
     {
         for (int i = 0; i < Count; i++)
         {
             ref readonly Drop d = ref Items[i];
             float age = time - d.Born;
-            float t01 = Math.Clamp(age / d.Life, 0f, 1f);
+            float t01 = Saturate(age / d.Life);
 
             var p = new ParticlePrimitive
             {

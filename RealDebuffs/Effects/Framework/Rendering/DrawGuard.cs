@@ -1,15 +1,15 @@
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>A material whose Draw throws loses that primitive, not the frame; after Strikes in a row it is quarantined per owner, logged once.</summary>
+/// A material whose Draw throws loses that primitive, not the frame; after Strikes in a row it is quarantined per owner, logged once.
 internal static class DrawGuard
 {
     public const int Strikes = 3;
-    private static readonly Dictionary<(object, DebuffKind), int> Fails = new();
-    private static readonly HashSet<(object, DebuffKind)> Out = new();
+    static readonly Dictionary<(object, DebuffKind), int> Fails = new();
+    static readonly HashSet<(object, DebuffKind)> Out = new();
 
-    /// <summary>Where a quarantine is reported; the host points it at its log.</summary>
+    /// Where a quarantine is reported; the host points it at its log.
     public static Action<string>? Log;
-    /// <summary>Test hook: the harness throws from here to prove a failing material is contained.</summary>
+    /// Test hook: the harness throws from here to prove a failing material is contained.
     internal static Action<object>? Probe;
     public static int Faults, Quarantined;
 

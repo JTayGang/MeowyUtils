@@ -1,8 +1,6 @@
-using System.Numerics;
-
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>One layer of flame tongues: ember variant, cycle seconds, tongues per site, size range (px at 1080p), start delay.</summary>
+/// One layer of flame tongues: ember variant, cycle seconds, tongues per site, size range (px at 1080p), start delay.
 internal readonly record struct FlameLayer(int Variant, float Period, int PerSite, float SizeLo, float SizeHi, float Delay = 0f)
 {
     // Variants understood by particle.ember.
@@ -11,7 +9,7 @@ internal readonly record struct FlameLayer(int Variant, float Period, int PerSit
 
 internal static class Flames
 {
-    /// <summary>Stateless tongues at a site; each cycles birth to fade on its own phase, so nothing is stored.</summary>
+    /// Stateless tongues at a site; each cycles birth to fade on its own phase, so nothing is stored.
     public static void Tongues(EffectScene scene, in FlameLayer layer, Vector2 at, int siteSeed, float time, float sizeMul,
                                Vector2 spread, float lean, float rise, float brightness, Vector4? color, string? material = null)
     {
@@ -19,14 +17,14 @@ internal static class Flames
         {
             float cyc = time / (layer.Period * HashRange(siteSeed + 3, 0.85f, 1.15f))
                       + Hash01(siteSeed + 4 + t * 7) + t / (float)layer.PerSite;
-            float life = cyc - MathF.Floor(cyc);
-            int seed = siteSeed * 31 + (int)MathF.Floor(cyc) * 7 + t * 13;
+            float life = cyc - Floor(cyc);
+            int seed = siteSeed * 31 + (int)Floor(cyc) * 7 + t * 13;
 
             float size = HashRange(seed + 1, layer.SizeLo, layer.SizeHi) * sizeMul;
             scene.AddParticle(new ParticlePrimitive
             {
                 Position = at + new Vector2(HashRange(seed + 2, -1f, 1f) * spread.X, HashRange(seed + 5, -1f, 1f) * spread.Y - size * rise),
-                Velocity = new Vector2(HashRange(seed + 3, -12f, 12f) + lean, -30f),
+                Velocity = new(HashRange(seed + 3, -12f, 12f) + lean, -30f),
                 AgeRatio = life, Size = size, Brightness = ParticleSystem.FadeFor(life) * brightness,
                 Seed = seed, Role = PrimitiveRole.Ember, Variant = layer.Variant, ColorOverride = color, MaterialName = material,
             });
@@ -34,23 +32,23 @@ internal static class Flames
     }
 }
 
-/// <summary>Cinders and smoke carried off a fire. The effect says where they leave from.</summary>
+/// Cinders and smoke carried off a fire. The effect says where they leave from.
 internal sealed class FireDrift
 {
-    private readonly ParticleSystem _cinders, _smoke;
-    private readonly Func<int, Vector2> _cinderPos, _smokePos, _cinderVel, _smokeVel;
+    readonly ParticleSystem _cinders, _smoke;
+    readonly Func<int, Vector2> _cinderPos, _smokePos, _cinderVel, _smokeVel;
 
-    /// <summary>px scale, set each frame.</summary>
+    /// px scale, set each frame.
     public float Px = 1f;
 
-    /// <summary>Upward cinder speed range (px/s at 1080p) and spawn-rate multipliers.</summary>
+    /// Upward cinder speed range (px/s at 1080p) and spawn-rate multipliers.
     public Vector2 CinderSpeed = new(90f, 300f);
     public float CinderRate = 1f, SmokeRate = 1f;
 
     public FireDrift(int salt, int cinderMax, int smokeMax, Func<int, Vector2> cinderPos, Func<int, Vector2> smokePos)
     {
-        _cinders = new ParticleSystem(cinderMax, salt, new ParticlePhysics(new Vector2(0f, -26f), Drag: 0.30f, Wander: 240f, WanderHz: 0.85f));
-        _smoke = new ParticleSystem(smokeMax, salt + 0x10, new ParticlePhysics(Drag: 0.06f, Wander: 26f, WanderHz: 0.35f));
+        _cinders = new(cinderMax, salt, new(new(0f, -26f), Drag: 0.30f, Wander: 240f, WanderHz: 0.85f));
+        _smoke = new(smokeMax, salt + 0x10, new(Drag: 0.06f, Wander: 26f, WanderHz: 0.35f));
         _cinderPos = cinderPos;
         _smokePos = smokePos;
         _cinderVel = seed => new Vector2(HashRange(seed + 10, -55f, 55f), -HashRange(seed + 11, CinderSpeed.X, CinderSpeed.Y)) * Px;
@@ -64,17 +62,17 @@ internal sealed class FireDrift
 
     public void EmitSmoke(EffectScene scene, float time, float dt, float shortSide, float alpha, float fire, Vector4? color)
     {
-        float k = SmokeRate * MathF.Max(0.2f, fire);
+        float k = SmokeRate * Max(0.2f, fire);
         _smoke.Stream(time, dt, (0.18f / k, 0.38f / k), new ParticleSpawn(_smokePos, _smokeVel, (3.0f, 5.0f), (0.055f * shortSide, 0.105f * shortSide)));
         if (fire <= 0.01f) { _smoke.Clear(); return; }
-        _smoke.Emit(scene, time, new ParticleStyle(PrimitiveRole.Smoke, MathF.Min(1f, alpha * fire), color, Sway: 6f * Px));
+        _smoke.Emit(scene, time, new ParticleStyle(PrimitiveRole.Smoke, Min(1f, alpha * fire), color, Sway: 6f * Px));
     }
 
     public void EmitCinders(EffectScene scene, float time, float dt, float alpha, float fire, Vector4? color)
     {
-        float k = CinderRate * MathF.Max(0.15f, fire);
+        float k = CinderRate * Max(0.15f, fire);
         _cinders.Stream(time, dt, (0.06f / k, 0.16f / k), new ParticleSpawn(_cinderPos, _cinderVel, (1.3f, 2.8f), (1.7f * Px, 3.6f * Px)));
         if (fire <= 0.01f) { _cinders.Clear(); return; }
-        _cinders.Emit(scene, time, new ParticleStyle(PrimitiveRole.Cinder, MathF.Min(1f, alpha * fire), color));
+        _cinders.Emit(scene, time, new ParticleStyle(PrimitiveRole.Cinder, Min(1f, alpha * fire), color));
     }
 }

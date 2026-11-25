@@ -1,14 +1,12 @@
-using System.Numerics;
-
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>A colour as written: fixed RGB, or the cycling rainbow resolved when used.</summary>
+/// A colour as written: fixed RGB, or the cycling rainbow resolved when used.
 public readonly record struct LookColor(Vector4 Rgb, bool Rainbow = false)
 {
     public Vector4 Resolve(long nowMs) => Rainbow ? ColorLexicon.RainbowAt(nowMs) : Rgb;
 }
 
-/// <summary>Colour words, shades, hex and rainbow; the one table the parser, the settings dropdown and codes share.</summary>
+/// Colour words, shades, hex and rainbow; the one table the parser, the settings dropdown and codes share.
 public static class ColorLexicon
 {
     public static readonly IReadOnlyDictionary<string, Vector4> Named = new Dictionary<string, Vector4>(StringComparer.OrdinalIgnoreCase)
@@ -33,54 +31,54 @@ public static class ColorLexicon
         ["tan"] = Rgb(0.82f, 0.70f, 0.55f), ["turquoise"] = Rgb(0.20f, 0.85f, 0.78f), ["violet"] = Rgb(0.60f, 0.30f, 0.90f),
     };
 
-    private static readonly HashSet<string> RainbowWords = new(StringComparer.OrdinalIgnoreCase) { "rgb", "rainbow" };
+    static readonly HashSet<string> RainbowWords = new(StringComparer.OrdinalIgnoreCase) { "rgb", "rainbow" };
 
-    private static readonly Dictionary<string, string> Alias = new(StringComparer.OrdinalIgnoreCase)
+    static readonly Dictionary<string, string> Alias = new(StringComparer.OrdinalIgnoreCase)
     {
         ["golden"] = "gold", ["silvery"] = "silver", ["rosy"] = "rose", ["greyish"] = "grey", ["grayish"] = "gray",
     };
 
-    /// <summary>Shade words in front of a colour: "dark red", "pale blue".</summary>
-    private static readonly Dictionary<string, Func<Vector4, Vector4>> Shades = new(StringComparer.OrdinalIgnoreCase)
+    /// Shade words in front of a colour: "dark red", "pale blue".
+    static readonly Dictionary<string, Func<Vector4, Vector4>> Shades = new(StringComparer.OrdinalIgnoreCase)
     {
         ["dark"] = c => Scale(c, 0.55f), ["deep"] = c => Scale(c, 0.65f), ["dim"] = c => Scale(c, 0.70f),
         ["light"] = c => ToWhite(c, 0.45f), ["pale"] = c => ToWhite(c, 0.55f), ["pastel"] = c => ToWhite(c, 0.60f),
         ["bright"] = c => Boost(c, 0.6f), ["vivid"] = c => Boost(c, 0.8f), ["neon"] = c => Boost(c, 1f),
     };
 
-    /// <summary>"blood red", "ice blue": a noun in front of a colour that only names its shade.</summary>
-    private static readonly HashSet<string> Prefixes = new(StringComparer.OrdinalIgnoreCase)
+    /// "blood red", "ice blue": a noun in front of a colour that only names its shade.
+    static readonly HashSet<string> Prefixes = new(StringComparer.OrdinalIgnoreCase)
         { "blood", "fire", "ice", "snow", "sky", "sea", "midnight", "steel", "jet", "pitch" };
 
-    private static Vector4 Rgb(float r, float g, float b) => new(r, g, b, 1f);
-    private static Vector4 Scale(Vector4 c, float k) => new(c.X * k, c.Y * k, c.Z * k, 1f);
-    private static Vector4 ToWhite(Vector4 c, float t) => new(c.X + (1f - c.X) * t, c.Y + (1f - c.Y) * t, c.Z + (1f - c.Z) * t, 1f);
-    private static Vector4 Boost(Vector4 c, float t)
+    static Vector4 Rgb(float r, float g, float b) => new(r, g, b, 1f);
+    static Vector4 Scale(Vector4 c, float k) => new(c.X * k, c.Y * k, c.Z * k, 1f);
+    static Vector4 ToWhite(Vector4 c, float t) => new(Lerp(c.X, 1f, t), Lerp(c.Y, 1f, t), Lerp(c.Z, 1f, t), 1f);
+    static Vector4 Boost(Vector4 c, float t)
     {
-        float m = MathF.Max(c.X, MathF.Max(c.Y, c.Z));
+        float m = Max(c.X, Max(c.Y, c.Z));
         if (m < 0.01f) return c;
-        return new Vector4(c.X + (c.X / m - c.X) * t, c.Y + (c.Y / m - c.Y) * t, c.Z + (c.Z / m - c.Z) * t, 1f);
+        return new(Lerp(c.X, c.X / m, t), Lerp(c.Y, c.Y / m, t), Lerp(c.Z, c.Z / m, t), 1f);
     }
 
     public static bool IsShade(string w) => Shades.ContainsKey(w);
     public static bool IsPrefix(string w) => Prefixes.Contains(w);
 
-    /// <summary>A single colour word: named, an alias or "-ish" form of one, or rainbow.</summary>
+    /// A single colour word: named, an alias or "-ish" form of one, or rainbow.
     public static bool TryWord(string word, out LookColor color)
     {
         color = default;
         if (string.IsNullOrEmpty(word)) return false;
-        if (RainbowWords.Contains(word)) { color = new LookColor(RainbowAt(0), true); return true; }
-        if (Named.TryGetValue(word, out var rgb)) { color = new LookColor(rgb); return true; }
-        if (Alias.TryGetValue(word, out var target) && Named.TryGetValue(target, out rgb)) { color = new LookColor(rgb); return true; }
-        if (word.Length > 5 && word.EndsWith("ish", StringComparison.OrdinalIgnoreCase) && Named.TryGetValue(word[..^3], out rgb)) { color = new LookColor(rgb); return true; }
+        if (RainbowWords.Contains(word)) { color = new(RainbowAt(0), true); return true; }
+        if (Named.TryGetValue(word, out var rgb)) { color = new(rgb); return true; }
+        if (Alias.TryGetValue(word, out var target) && Named.TryGetValue(target, out rgb)) { color = new(rgb); return true; }
+        if (word.Length > 5 && word.EndsWith("ish", StringComparison.OrdinalIgnoreCase) && Named.TryGetValue(word[..^3], out rgb)) { color = new(rgb); return true; }
         return false;
     }
 
     public static LookColor ApplyShade(string shade, LookColor c) =>
         c.Rainbow || !Shades.TryGetValue(shade, out var f) ? c : new LookColor(f(c.Rgb));
 
-    /// <summary>Hex (# / 0x / bare 3-8 digits), a colour word, or rainbow: what [color=] tags and the settings store.</summary>
+    /// Hex (# / 0x / bare 3-8 digits), a colour word, or rainbow: what [color=] tags and the settings store.
     public static bool TryToken(string? token, out Vector4 rgb)
     {
         rgb = default;
@@ -95,9 +93,9 @@ public static class ColorLexicon
             {
                 var e = new char[t.Length * 2];
                 for (int i = 0; i < t.Length; i++) { e[i * 2] = t[i]; e[i * 2 + 1] = t[i]; }
-                t = new string(e);
+                t = new(e);
             }
-            rgb = new Vector4(Convert.ToInt32(t[..2], 16) / 255f, Convert.ToInt32(t[2..4], 16) / 255f, Convert.ToInt32(t[4..6], 16) / 255f, 1f);
+            rgb = new(Convert.ToInt32(t[..2], 16) / 255f, Convert.ToInt32(t[2..4], 16) / 255f, Convert.ToInt32(t[4..6], 16) / 255f, 1f);
             return true;
         }
         if (TryWord(t, out var c)) { rgb = c.Rainbow ? RainbowAt(Environment.TickCount64) : c.Rgb; return true; }
@@ -109,21 +107,21 @@ public static class ColorLexicon
         color = default;
         if (token is not null && TryWord(token.Trim(), out color)) return true;
         if (!TryToken(token, out Vector4 rgb)) return false;
-        color = new LookColor(rgb);
+        color = new(rgb);
         return true;
     }
 
-    /// <summary>Hex digits only, as written in a plain description: #rgb or #rrggbb.</summary>
+    /// Hex digits only, as written in a plain description: #rgb or #rrggbb.
     public static bool TryHex(string token, out LookColor color)
     {
         color = default;
         if (token.Length is not (4 or 7) || token[0] != '#' || !IsAllHex(token[1..])) return false;
         if (!TryToken(token, out Vector4 rgb)) return false;
-        color = new LookColor(rgb);
+        color = new(rgb);
         return true;
     }
 
-    /// <summary>The name for an exact named colour, else #RRGGBB.</summary>
+    /// The name for an exact named colour, else #RRGGBB.
     public static string NameOf(LookColor c)
     {
         if (c.Rainbow) return "rainbow";
@@ -133,9 +131,9 @@ public static class ColorLexicon
     }
 
     public static string HexOf(Vector4 c) =>
-        $"{(int)MathF.Round(c.X * 255f):X2}{(int)MathF.Round(c.Y * 255f):X2}{(int)MathF.Round(c.Z * 255f):X2}";
+        $"{(int)Round(c.X * 255f):X2}{(int)Round(c.Y * 255f):X2}{(int)Round(c.Z * 255f):X2}";
 
-    /// <summary>Hue advances one step per second across a 256-step wheel.</summary>
+    /// Hue advances one step per second across a 256-step wheel.
     public static Vector4 RainbowAt(long nowMs)
     {
         int hue = (int)((nowMs / 1000) % 256);
@@ -150,7 +148,7 @@ public static class ColorLexicon
         };
     }
 
-    private static bool IsAllHex(string s)
+    static bool IsAllHex(string s)
     {
         if (s.Length == 0) return false;
         foreach (char c in s) if (!Uri.IsHexDigit(c)) return false;

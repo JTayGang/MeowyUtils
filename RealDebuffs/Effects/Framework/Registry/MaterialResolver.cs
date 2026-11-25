@@ -1,17 +1,17 @@
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>How a stroke role is drawn and shed: its material, and the particle emitter that replaces what it sheds, if the user chose one.</summary>
+/// How a stroke role is drawn and shed: its material, and the particle emitter that replaces what it sheds, if the user chose one.
 public readonly record struct StrokeRoute(IStrokeMaterial? Material, IParticleMaterial? Emitter, string? EmitName, bool Swapped);
 
-/// <summary>Resolves (owner, role) to a material: user override, effect slot default, role fallback; cached until the override set changes.</summary>
+/// Resolves (owner, role) to a material: user override, effect slot default, role fallback; cached until the override set changes.
 public sealed class MaterialResolver
 {
-    private IReadOnlyDictionary<string, string>? _overrides;
-    private readonly Dictionary<(DebuffKind, PrimitiveRole), StrokeRoute> _strokes = new();
-    private readonly Dictionary<(DebuffKind, PrimitiveRole), IParticleMaterial?> _particles = new();
-    private readonly Dictionary<(DebuffKind, RegionKind), IRegionMaterial?> _regions = new();
+    IReadOnlyDictionary<string, string>? _overrides;
+    readonly Dictionary<(DebuffKind, PrimitiveRole), StrokeRoute> _strokes = new();
+    readonly Dictionary<(DebuffKind, PrimitiveRole), IParticleMaterial?> _particles = new();
+    readonly Dictionary<(DebuffKind, RegionKind), IRegionMaterial?> _regions = new();
 
-    /// <summary>Replace the dictionary instance to change overrides; the same instance keeps its cache.</summary>
+    /// Replace the dictionary instance to change overrides; the same instance keeps its cache.
     public IReadOnlyDictionary<string, string>? Overrides
     {
         get => _overrides;
@@ -34,7 +34,7 @@ public sealed class MaterialResolver
         string name = _overrides?.GetValueOrDefault(MaterialOverrideKey.For(owner, SlotType.Stroke, role))
                       ?? declared ?? MaterialRegistry.FallbackStroke;
 
-        route = new StrokeRoute(
+        route = new(
             MaterialRegistry.TryGetStroke(name) ?? MaterialRegistry.TryGetStroke(MaterialRegistry.FallbackStroke),
             emitName is null ? null : MaterialRegistry.TryGetParticle(emitName),
             emitName,
@@ -55,7 +55,7 @@ public sealed class MaterialResolver
         return material;
     }
 
-    /// <summary>A particle's material: the one it names (set by emit-axis overrides), else its slot's.</summary>
+    /// A particle's material: the one it names (set by emit-axis overrides), else its slot's.
     public IParticleMaterial? Particle(in ParticlePrimitive p) =>
         p.MaterialName is { } forced ? Named(forced, p.Role) : Particle(p.Owner, p.Role);
 
@@ -71,6 +71,6 @@ public sealed class MaterialResolver
         return material;
     }
 
-    private static IParticleMaterial? Named(string name, PrimitiveRole role) =>
+    static IParticleMaterial? Named(string name, PrimitiveRole role) =>
         MaterialRegistry.TryGetParticle(name) ?? MaterialRegistry.TryGetParticle(MaterialRegistry.FallbackParticle(role));
 }

@@ -1,11 +1,9 @@
-using System.Numerics;
-
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Stroke helpers shared by the effects: ring strokes and the hero binding ring.</summary>
+/// Stroke helpers shared by the effects: ring strokes and the hero binding ring.
 internal static class SceneStrokes
 {
-    /// <summary>A closed ring-style stroke that draws on as reveal rises; salt varies seed and phase per ring.</summary>
+    /// A closed ring-style stroke that draws on as reveal rises; salt varies seed and phase per ring.
     public static void Ring(this EffectScene scene, StrandPath path, PrimitiveRole role, int seed, int salt, float width, float brightness,
                             float depth, float excite, float reveal, float dash, Vector4? color, float agitGain = 0.7f)
     {
@@ -18,10 +16,10 @@ internal static class SceneStrokes
         });
     }
 
-    /// <summary>Half the link count a chain gets round a hero ring, so width follows length and links never re-space.</summary>
-    private const int HeroHalfLinks = 90;
+    /// Half the link count a chain gets round a hero ring, so width follows length and links never re-space.
+    const int HeroHalfLinks = 90;
 
-    /// <summary>The hero binding ring: a glow halo under the main stroke, so any swapped material keeps the light.</summary>
+    /// The hero binding ring: a glow halo under the main stroke, so any swapped material keeps the light.
     public static void HeroRing(this EffectScene scene, StrandPath path, int seed, float reveal, float brightness, float haloGain,
                                 float depth, float mainDepth, float agitation, float tipFlare, Vector4? color, float haloScale = 2.4f)
     {

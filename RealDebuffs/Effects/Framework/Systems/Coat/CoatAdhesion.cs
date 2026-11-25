@@ -1,15 +1,15 @@
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>How well each patch of a host's surface holds liquid (rule 9): smooth lattice noise on the surface's own coordinates, so a patch stays with the surface as it moves.</summary>
+/// How well each patch of a host's surface holds liquid (rule 9): smooth lattice noise on the surface's own coordinates, so a patch stays with the surface as it moves.
 internal static class CoatAdhesion
 {
-    /// <summary>How far a patch's adhesion tips the film's levelling, in the host's groove units (a rope groove is 1): liquid drains from poor patches into good ones.</summary>
+    /// How far a patch's adhesion tips the film's levelling, in the host's groove units (a rope groove is 1): liquid drains from poor patches into good ones.
     const float PoolSwing = 1.6f;
 
-    /// <summary>The levelling potential for adhesion a (0..1): the worst and best patches swing it by +-PoolSwing.</summary>
+    /// The levelling potential for adhesion a (0..1): the worst and best patches swing it by +-PoolSwing.
     internal static float Potential(float a) => PoolSwing * Math.Clamp((a - 0.5f) * 2.4f, -1f, 1f);
 
-    /// <summary>How much of the liquid arriving here the surface refuses, for adhesion a: the worst third takes little.</summary>
+    /// How much of the liquid arriving here the surface refuses, for adhesion a: the worst third takes little.
     internal static float Slick(float a) => Smooth((0.42f - a) / 0.22f);
 
     /// <summary>The adhesion, 0..1, of every cell (row-major, rows x v.Length). u: each row's distance along the surface, ascending; patchU: pixels per lattice cell along it.
@@ -18,7 +18,7 @@ internal static class CoatAdhesion
     {
         int cols = v.Length;
         float vmax = 0f;
-        for (int k = 0; k < cols; k++) vmax = MathF.Max(vmax, v[k]);
+        for (int k = 0; k < cols; k++) vmax = Max(vmax, v[k]);
         int nj = wrap > 0 ? wrap : (int)vmax + 2;
         Span<float> lat = stackalloc float[2 * nj], fv = stackalloc float[cols];  // lattice values at column i (0..nj-1) and i + 1 (nj..2nj-1)
         for (int k = 0; k < cols; k++) fv[k] = Smooth(v[k] - (int)v[k]);
@@ -26,7 +26,7 @@ internal static class CoatAdhesion
         for (int r = 0; r < u.Length; r++)
         {
             float x = u[r] / patchU;
-            int i = (int)MathF.Floor(x);
+            int i = (int)Floor(x);
             if (i != cached)
             {
                 if (i == cached + 1) for (int j = 0; j < nj; j++) lat[j] = lat[nj + j];

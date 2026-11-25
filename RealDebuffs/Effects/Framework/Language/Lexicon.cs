@@ -6,16 +6,16 @@ public readonly record struct MaterialHit(string Name, SlotType Type, bool Adj);
 internal enum PhraseKind { Effect, Link }
 internal sealed record Phrase(string[] Words, PhraseKind Kind, bool Made, EffectHit[] Effects);
 
-/// <summary>Every word the parser knows: effect triggers, material words (with generated inflections), links, fillers.</summary>
+/// Every word the parser knows: effect triggers, material words (with generated inflections), links, fillers.
 public sealed class Lexicon
 {
-    private static readonly HashSet<string> Det = new(StringComparer.OrdinalIgnoreCase)
+    static readonly HashSet<string> Det = new(StringComparer.OrdinalIgnoreCase)
     {
         "the", "a", "an", "this", "these", "those", "your", "his", "her", "their", "its", "my", "our",
         "some", "many", "several", "countless", "every", "each", "all", "any", "another", "one", "two", "three",
     };
 
-    private static readonly HashSet<string> Breaker = new(StringComparer.OrdinalIgnoreCase)
+    static readonly HashSet<string> Breaker = new(StringComparer.OrdinalIgnoreCase)
     {
         "by", "around", "over", "under", "into", "onto", "upon", "through", "across", "between", "against", "toward", "towards",
         "near", "beside", "behind", "above", "below", "along", "within", "without", "which", "who", "that", "when", "while", "until",
@@ -23,7 +23,7 @@ public sealed class Lexicon
         "not", "no", "it", "they", "them", "he", "she", "i", "we", "if", "then", "than", "so", "or",
     };
 
-    private static readonly (string[] Words, bool Made)[] LinkPhrases =
+    static readonly (string[] Words, bool Made)[] LinkPhrases =
     {
         (new[] { "made", "of" }, true), (new[] { "made", "from" }, true), (new[] { "made", "out", "of" }, true), (new[] { "made", "with" }, true),
         (new[] { "covered", "in" }, false), (new[] { "covered", "with" }, false), (new[] { "covered", "by" }, false),
@@ -35,23 +35,23 @@ public sealed class Lexicon
         (new[] { "adorned", "with" }, false), (new[] { "out", "of" }, true),
     };
 
-    private static readonly (string Word, bool Made)[] LinkWords =
+    static readonly (string Word, bool Made)[] LinkWords =
     {
         ("of", true), ("from", true), ("as", true), ("with", false), ("in", false), ("on", false),
         ("dripping", false), ("shedding", false), ("spewing", false), ("spitting", false), ("leaking", false), ("trailing", false),
     };
 
-    /// <summary>Generated forms that mean something else in plain speech, so they never trigger an effect.</summary>
-    private static readonly HashSet<string> NeverTrigger = new(StringComparer.OrdinalIgnoreCase) { "icing", "frosting", "charming", "charms" };
+    /// Generated forms that mean something else in plain speech, so they never trigger an effect.
+    static readonly HashSet<string> NeverTrigger = new(StringComparer.OrdinalIgnoreCase) { "icing", "frosting", "charming", "charms" };
 
-    private readonly Dictionary<string, List<EffectHit>> _effects = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, MaterialHit> _materials = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, List<Phrase>> _phrases = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, bool> _links = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<DebuffKind, string> _trigger = new();
-    private readonly Dictionary<string, string> _canonical = new(StringComparer.OrdinalIgnoreCase);
-    private readonly List<string> _problems = new();
-    private string[] _suggest = Array.Empty<string>();
+    readonly Dictionary<string, List<EffectHit>> _effects = new(StringComparer.OrdinalIgnoreCase);
+    readonly Dictionary<string, MaterialHit> _materials = new(StringComparer.OrdinalIgnoreCase);
+    readonly Dictionary<string, List<Phrase>> _phrases = new(StringComparer.OrdinalIgnoreCase);
+    readonly Dictionary<string, bool> _links = new(StringComparer.OrdinalIgnoreCase);
+    readonly Dictionary<DebuffKind, string> _trigger = new();
+    readonly Dictionary<string, string> _canonical = new(StringComparer.OrdinalIgnoreCase);
+    readonly List<string> _problems = new();
+    string[] _suggest = [];
 
     public IReadOnlyList<string> Problems => _problems;
 
@@ -101,13 +101,13 @@ public sealed class Lexicon
     internal IReadOnlyList<Phrase> PhrasesStarting(string word) =>
         _phrases.TryGetValue(word, out var l) ? l : Array.Empty<Phrase>();
 
-    /// <summary>A noun the status text can use to trigger this effect (the first non-participle keyword), or null if it has none.</summary>
+    /// A noun the status text can use to trigger this effect (the first non-participle keyword), or null if it has none.
     public string? TriggerWord(DebuffKind kind) => _trigger.GetValueOrDefault(kind);
 
-    /// <summary>The shortest plural noun for a material (else shortest noun), for phrases the generator writes.</summary>
+    /// The shortest plural noun for a material (else shortest noun), for phrases the generator writes.
     public string? CanonicalWord(string materialName) => _canonical.GetValueOrDefault(materialName);
 
-    /// <summary>The nearest known word to a typo, or null; suggestions are only ever shown, never applied.</summary>
+    /// The nearest known word to a typo, or null; suggestions are only ever shown, never applied.
     public string? Suggest(string word)
     {
         if (word.Length < 4) return null;
@@ -123,11 +123,11 @@ public sealed class Lexicon
         return bestD <= limit ? best : null;
     }
 
-    private void AddKeyword(DebuffKind kind, string kw, bool inflect)
+    void AddKeyword(DebuffKind kind, string kw, bool inflect)
     {
         if (kw.Contains(' '))
         {
-            AddPhrase(new Phrase(kw.Split(' ', StringSplitOptions.RemoveEmptyEntries), PhraseKind.Effect, false, new[] { new EffectHit(kind, true) }));
+            AddPhrase(new(kw.Split(' ', StringSplitOptions.RemoveEmptyEntries), PhraseKind.Effect, false, new[] { new EffectHit(kind, true) }));
             return;
         }
 
@@ -143,28 +143,28 @@ public sealed class Lexicon
         AddEffect(kind, Inflect.Ing(b), false);
     }
 
-    private void AddEffect(DebuffKind kind, string word, bool noun)
+    void AddEffect(DebuffKind kind, string word, bool noun)
     {
         if (NeverTrigger.Contains(word)) return;
-        if (!_effects.TryGetValue(word, out var list)) _effects[word] = list = new List<EffectHit>();
+        if (!_effects.TryGetValue(word, out var list)) _effects[word] = list = new();
         foreach (var h in list) if (h.Kind == kind) return;
-        list.Add(new EffectHit(kind, noun));
+        list.Add(new(kind, noun));
     }
 
-    private void AddPhrase(Phrase p)
+    void AddPhrase(Phrase p)
     {
-        if (!_phrases.TryGetValue(p.Words[0], out var list)) _phrases[p.Words[0]] = list = new List<Phrase>();
+        if (!_phrases.TryGetValue(p.Words[0], out var list)) _phrases[p.Words[0]] = list = new();
         list.Add(p);
         list.Sort((a, b) => b.Words.Length.CompareTo(a.Words.Length));
     }
 
-    private void BuildLinks()
+    void BuildLinks()
     {
         foreach (var (w, made) in LinkWords) _links[w] = made;
-        foreach (var (words, made) in LinkPhrases) AddPhrase(new Phrase(words, PhraseKind.Link, made, Array.Empty<EffectHit>()));
+        foreach (var (words, made) in LinkPhrases) AddPhrase(new(words, PhraseKind.Link, made, []));
     }
 
-    private void BuildMaterials()
+    void BuildMaterials()
     {
         var words = new List<(string Word, IMaterial M, SlotType Type)>();
         foreach (var m in MaterialRegistry.AllMaterials)
@@ -180,7 +180,7 @@ public sealed class Lexicon
 
         // Authored words first so a generated form can never take one over.
         foreach (var (w, m, type) in words)
-            _materials.TryAdd(w, new MaterialHit(m.Name, type, Inflect.LooksAdjectival(w)));
+            _materials.TryAdd(w, new(m.Name, type, Inflect.LooksAdjectival(w)));
 
         foreach (var (w, m, type) in words)
         {
@@ -203,10 +203,10 @@ public sealed class Lexicon
             if (best is not null) _canonical[g.Key] = best;
         }
 
-        void Gen(string w, IMaterial m, SlotType type, bool adj) => _materials.TryAdd(w, new MaterialHit(m.Name, type, adj));
+        void Gen(string w, IMaterial m, SlotType type, bool adj) => _materials.TryAdd(w, new(m.Name, type, adj));
     }
 
-    private void CheckVocabulary()
+    void CheckVocabulary()
     {
         foreach (var w in ColorLexicon.Named.Keys)
         {
@@ -224,7 +224,7 @@ public sealed class Lexicon
         _problems.AddRange(LookCode.VocabularyProblems());
     }
 
-    private void BuildSuggestions()
+    void BuildSuggestions()
     {
         var all = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var w in _effects.Keys) all.Add(w);
@@ -233,7 +233,7 @@ public sealed class Lexicon
         _suggest = all.Where(w => w.Length >= 4).OrderBy(w => w, StringComparer.Ordinal).ToArray();
     }
 
-    private static int Distance(string a, string b, int cap)
+    static int Distance(string a, string b, int cap)
     {
         var prev = new int[b.Length + 1];
         var cur = new int[b.Length + 1];
@@ -255,15 +255,15 @@ public sealed class Lexicon
     }
 }
 
-/// <summary>Deterministic word forms: no stemmer, just generated variants of listed words.</summary>
+/// Deterministic word forms: no stemmer, just generated variants of listed words.
 internal static class Inflect
 {
-    private static readonly HashSet<string> Irregular = new(StringComparer.OrdinalIgnoreCase)
+    static readonly HashSet<string> Irregular = new(StringComparer.OrdinalIgnoreCase)
     {
         "bound", "forgot", "insane", "hysterical", "forgetful", "voiceless", "demonic", "icy", "aflame", "ablaze", "damned",
     };
 
-    private static readonly HashSet<string> NounY = new(StringComparer.OrdinalIgnoreCase) { "memory", "glory", "fury", "envy" };
+    static readonly HashSet<string> NounY = new(StringComparer.OrdinalIgnoreCase) { "memory", "glory", "fury", "envy" };
 
     public static bool LooksParticiple(string w) =>
         w.EndsWith("ed") || w.EndsWith("ing") || (w.EndsWith("en") && w.Length > 4) || Irregular.Contains(w);

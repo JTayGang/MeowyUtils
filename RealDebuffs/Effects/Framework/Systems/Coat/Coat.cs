@@ -1,12 +1,9 @@
-using System.Numerics;
-using Dalamud.Bindings.ImGui;
-
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>A particle material that can be swapped onto a strand as what it is made of.</summary>
+/// A particle material that can be swapped onto a strand as what it is made of.
 public interface ICoatMatter { CoatMatter Matter { get; } }
 
-/// <summary>Matter on one host chart: an amount per cell (U rows x V sectors; V = 1 for a strand), run by gravity and supply, then the matter's rules.</summary>
+/// Matter on one host chart: an amount per cell (U rows x V sectors; V = 1 for a strand), run by gravity and supply, then the matter's rules.
 public sealed class Coat
 {
     public const int MaxCells = 576, MaxPendants = 14;  // 48 rows x 12 sectors; a strand may have up to TubeChart.MaxU rows of one sector
@@ -24,22 +21,22 @@ public sealed class Coat
     internal readonly CoatChart Own = new();  // the chart a tube is cut into
 
     // state per cell, row-major (cell = row * V + sector): matter (px²), and the burning matter's heat and char (0..1)
-    internal float[] M = Array.Empty<float>(), Heat = Array.Empty<float>(), Char = Array.Empty<float>();
-    internal float[] Patch = Array.Empty<float>();  // each cell's share of what arrives
+    internal float[] M = [], Heat = [], Char = [];
+    internal float[] Patch = [];  // each cell's share of what arrives
 
     // geometry per cell, from this frame's chart
-    internal Vector2[] P = Array.Empty<Vector2>(), T = Array.Empty<Vector2>(), Nm = Array.Empty<Vector2>(), Sd = Array.Empty<Vector2>(), Anch = Array.Empty<Vector2>();  // centre, direction of rising U, underside normal, direction of rising V, where a drop hangs
-    internal float[] R = Array.Empty<float>(), Face = Array.Empty<float>();  // surface radius; how squarely the exposed edge faces down
-    internal float[] A = Array.Empty<float>(), Dc = Array.Empty<float>();  // a cell's metric: row length x sector share (thickness = M / A); its row length
-    internal Vector3[] Ctr = Array.Empty<Vector3>();  // where the host's own axis runs under each cell (charts that declare contacts): surface point less normal x radius
+    internal Vector2[] P = [], T = [], Nm = [], Sd = [], Anch = [];  // centre, direction of rising U, underside normal, direction of rising V, where a drop hangs
+    internal float[] R = [], Face = [];  // surface radius; how squarely the exposed edge faces down
+    internal float[] A = [], Dc = [];  // a cell's metric: row length x sector share (thickness = M / A); its row length
+    internal Vector3[] Ctr = [];  // where the host's own axis runs under each cell (charts that declare contacts): surface point less normal x radius
     internal readonly CoatContact[] Contacts = new CoatContact[CoatChart.MaxContacts];
     internal int ContactCount;
-    internal float[] CW = Array.Empty<float>();  // scratch: the weights of one touch, cell pairs of its two sides
-    internal bool[] Vis = Array.Empty<bool>();  // on screen: matter that runs off the edge is gone
-    internal bool[] Holds = Array.Empty<bool>();  // the host can hold matter here (a tapered end, say, can't): no supply, no drops
-    internal float[] Pool = Array.Empty<float>();  // per cell, the host's pooling potential (see CoatSurfaceSample)
+    internal float[] CW = [];  // scratch: the weights of one touch, cell pairs of its two sides
+    internal bool[] Vis = [];  // on screen: matter that runs off the edge is gone
+    internal bool[] Holds = [];  // the host can hold matter here (a tapered end, say, can't): no supply, no drops
+    internal float[] Pool = [];  // per cell, the host's pooling potential (see CoatSurfaceSample)
     internal bool HasPool;  // some cell of this frame's chart has one; if none does, levelling is exactly what it always was
-    internal float[] Slick = Array.Empty<float>();  // per cell, how badly the host holds arriving liquid (see CoatSurfaceSample)
+    internal float[] Slick = [];  // per cell, how badly the host holds arriving liquid (see CoatSurfaceSample)
     internal bool HasSlick;  // some cell has some; if none does, supply is exactly what it always was
     internal readonly float[] VStep = new float[12];  // width of each sector, px
     internal Vector2 TipP, TipT, HeadP, HeadT;  // both ends of a strand: either can be the low one
@@ -51,13 +48,13 @@ public sealed class Coat
     internal bool Closed, Dissolved, SeamV;  // a ring along the strand; sectors that wrap around the host
 
     internal readonly Pendant[] Pend = new Pendant[MaxPendants];
-    internal sbyte[] PendAt = Array.Empty<sbyte>();
+    internal sbyte[] PendAt = [];
 
-    private float[] _v = Array.Empty<float>(), _w = Array.Empty<float>();
-    private double[] _dm = Array.Empty<double>();  // this step's net flux per cell, exact in pairs
-    internal float[] Rem = Array.Empty<float>();  // what rounding a cell to a float left over, carried to the next step so a thick cell never swallows small fluxes
+    float[] _v = [], _w = [];
+    double[] _dm = [];  // this step's net flux per cell, exact in pairs
+    internal float[] Rem = [];  // what rounding a cell to a float left over, carried to the next step so a thick cell never swallows small fluxes
 
-    /// <summary>Matter that has arrived and matter that has left (dried, dropped, shed); In - Out is what the coat holds.</summary>
+    /// Matter that has arrived and matter that has left (dried, dropped, shed); In - Out is what the coat holds.
     public double In, Out, Seeded, Shed, Bridged;  // Shed: the part of Out that left as drops
     public int Released;  // drops let go so far
 
@@ -86,7 +83,7 @@ public sealed class Coat
         Set.Entered += Seeded;
     }
 
-    private void Reserve(int cells)
+    void Reserve(int cells)
     {
         if (M.Length >= cells) return;
         int n = Math.Max(cells, 32);
@@ -97,7 +94,7 @@ public sealed class Coat
         _v = new float[n]; _w = new float[n]; _dm = new double[n]; Rem = new float[n];
     }
 
-    /// <summary>Takes this frame's chart: re-cuts the matter if its rows or sectors changed (nothing lost), then copies the cells' geometry.</summary>
+    /// Takes this frame's chart: re-cuts the matter if its rows or sectors changed (nothing lost), then copies the cells' geometry.
     internal void Bind(CoatChart ch, float px)
     {
         Px = px; Closed = ch.SeamU; SeamV = ch.SeamV; ChartId = ch.ChartId;
@@ -119,13 +116,13 @@ public sealed class Coat
                 ref readonly var q = ref ch.S[c];
                 Pool[c] = q.Pool; pooled |= q.Pool != 0f;
                 Slick[c] = q.Slick; slick |= q.Slick > 0f;
-                P[c] = q.Pos; T[c] = q.Du; Sd[c] = q.Dv; Nm[c] = new Vector2(q.Normal.X, q.Normal.Y);
+                P[c] = q.Pos; T[c] = q.Du; Sd[c] = q.Dv; Nm[c] = new(q.Normal.X, q.Normal.Y);
                 R[c] = q.Radius; Face[c] = q.GravityDown; Vis[c] = q.Visible; Holds[c] = q.Holds; Anch[c] = q.Anchor;
             }
         HasPool = pooled;
         HasSlick = slick;
         Vector2 lo = new(float.MaxValue), hi = new(float.MinValue); float rr = 0f;
-        for (int c = 0, cells = Live * v; c < cells; c++) { lo = Vector2.Min(lo, P[c]); hi = Vector2.Max(hi, P[c]); rr = MathF.Max(rr, R[c]); }
+        for (int c = 0, cells = Live * v; c < cells; c++) { lo = Vector2.Min(lo, P[c]); hi = Vector2.Max(hi, P[c]); rr = Max(rr, R[c]); }
         BoundsMin = lo; BoundsMax = hi; BoundsR = rr;
         ContactCount = ch.ContactCount;
         for (int k = 0; k < ContactCount; k++) Contacts[k] = ch.Contacts[k];
@@ -139,14 +136,14 @@ public sealed class Coat
         TipP = ch.TipP; TipT = ch.TipT; HeadP = ch.HeadP; HeadT = ch.HeadT;
     }
 
-    /// <summary>How many cells run along a side, and which cell is the k-th of them.</summary>
+    /// How many cells run along a side, and which cell is the k-th of them.
     internal int EdgeLen(CoatEdge e) => e is CoatEdge.UStart or CoatEdge.UEnd ? V : N;
     internal int EdgeCell(CoatEdge e, int k) => e switch { CoatEdge.UStart => k, CoatEdge.UEnd => (N - 1) * V + k, CoatEdge.VStart => k * V, _ => k * V + V - 1 };
 
-    /// <summary>The unit screen direction that leads out of the chart across a side.</summary>
+    /// The unit screen direction that leads out of the chart across a side.
     internal Vector2 Outward(CoatEdge e, int cell) => e switch { CoatEdge.UStart => -T[cell], CoatEdge.UEnd => T[cell], CoatEdge.VStart => -Sd[cell], _ => Sd[cell] };
 
-    /// <summary>The cell a chart-space anchor (u, v in 0..1 across the chart) falls in now; false if the rows there are not laid yet.</summary>
+    /// The cell a chart-space anchor (u, v in 0..1 across the chart) falls in now; false if the rows there are not laid yet.
     internal int CellAt(float u, float v, out bool laid)
     {
         int row = Math.Clamp((int)(u * N), 0, N - 1), sec = Math.Clamp((int)(v * V), 0, V - 1);
@@ -154,10 +151,10 @@ public sealed class Coat
         return row * V + sec;
     }
 
-    /// <summary>The chart-space anchor of a cell: its row and sector as fractions of the chart, stable under regridding.</summary>
+    /// The chart-space anchor of a cell: its row and sector as fractions of the chart, stable under regridding.
     internal void AnchorFor(int cell, out float u, out float v) { u = (cell / V + 0.5f) / N; v = (cell % V + 0.5f) / V; }
 
-    /// <summary>The edge point a drop hangs from and how squarely it faces down: a strand's underside or downward end, a chart's host-given downhill edge.</summary>
+    /// The edge point a drop hangs from and how squarely it faces down: a strand's underside or downward end, a chart's host-given downhill edge.
     internal float AnchorOf(int i, out Vector2 anchor)
     {
         if (V > 1) { anchor = Anch[i]; return Face[i]; }
@@ -176,7 +173,7 @@ public sealed class Coat
         Set.DrawBridges(this, dl, alpha, in ctx);
     }
 
-    /// <summary>Draws the coat as a layer of its host (the host's own colour override is not the coat's).</summary>
+    /// Draws the coat as a layer of its host (the host's own colour override is not the coat's).
     public void DrawLayer(ImDrawListPtr dl, float alpha, in MaterialContext ctx)
     {
         PushColorOverride(Color);
@@ -184,7 +181,7 @@ public sealed class Coat
         finally { PopColorOverride(); }
     }
 
-    /// <summary>Mean film thickness (px) over the stretch of a strand from arcFrom to arcTo (a one-sector coat).</summary>
+    /// Mean film thickness (px) over the stretch of a strand from arcFrom to arcTo (a one-sector coat).
     public float MeanThickness(float arcFrom, float arcTo)
     {
         if (N == 0 || Live == 0 || Ds <= 0f) return 0f;
@@ -196,7 +193,7 @@ public sealed class Coat
 
     internal int Serial;  // salts every pendant this coat grows
 
-    private void NewPatch()
+    void NewPatch()
     {
         for (int i = 0, n = N * V; i < n; i++)
         {
@@ -205,8 +202,8 @@ public sealed class Coat
         }
     }
 
-    /// <summary>Re-cuts the chart to n rows x v sectors, sharing matter by overlap so totals hold (heat and char average, drops keep their place).</summary>
-    private void Regrid(int n, int v, float[] step)
+    /// Re-cuts the chart to n rows x v sectors, sharing matter by overlap so totals hold (heat and char average, drops keep their place).
+    void Regrid(int n, int v, float[] step)
     {
         int old = N, oldV = V;
         Span<float> m = stackalloc float[MaxCells], h = stackalloc float[MaxCells], c = stackalloc float[MaxCells];
@@ -220,7 +217,7 @@ public sealed class Coat
                 float a = (float)j / n, b = (float)(j + 1) / n;
                 for (int i = (int)(a * old); i < old && (float)i / old < b; i++)
                 {
-                    float lo = MathF.Max(a, (float)i / old), hi = MathF.Min(b, (float)(i + 1) / old), ov = hi - lo;
+                    float lo = Max(a, (float)i / old), hi = Min(b, (float)(i + 1) / old), ov = hi - lo;
                     if (ov <= 0f) continue;
                     m[j * oldV + s] += M[i * oldV + s] * ov * old;  // matter is per cell: a cell's share is the overlap over its width
                     h[j * oldV + s] += Heat[i * oldV + s] * ov * n; c[j * oldV + s] += Char[i * oldV + s] * ov * n;
@@ -239,7 +236,7 @@ public sealed class Coat
                 for (int t = 0; t < v; t++)
                     for (int s = 0; s < oldV; s++)
                     {
-                        float ov = MathF.Min(newEdge[t + 1], oldEdge[s + 1]) - MathF.Max(newEdge[t], oldEdge[s]);
+                        float ov = Min(newEdge[t + 1], oldEdge[s + 1]) - Max(newEdge[t], oldEdge[s]);
                         if (ov <= 0f) continue;
                         float w = oldEdge[s + 1] - oldEdge[s];
                         m2[j * v + t] += m[j * oldV + s] * (w > 0f ? ov / w : 1f / oldV);
@@ -259,7 +256,7 @@ public sealed class Coat
         N = n; V = v;
         Reserve(n * v);
         Array.Clear(M); Array.Clear(Rem); Array.Clear(Heat); Array.Clear(Char);
-        for (int j = 0; j < n * v; j++) { M[j] = m[j] * fix; if (v == 1) { Heat[j] = MathF.Min(1f, h[j]); Char[j] = MathF.Min(1f, c[j]); } }
+        for (int j = 0; j < n * v; j++) { M[j] = m[j] * fix; if (v == 1) { Heat[j] = Min(1f, h[j]); Char[j] = Min(1f, c[j]); } }
 
         Array.Fill(PendAt, (sbyte)-1);
         for (int k = 0; k < MaxPendants; k++)
@@ -284,14 +281,14 @@ public sealed class Coat
     internal void Advance(float time, float dt, float alpha)
     {
         Time = time; Bright = alpha;
-        dt = MathF.Min(dt, 0.05f);
+        dt = Min(dt, 0.05f);
         if (dt <= 0f) return;
-        int steps = Math.Clamp((int)MathF.Ceiling(dt * 60f), 1, 3);
+        int steps = Math.Clamp((int)Ceiling(dt * 60f), 1, 3);
         float h = dt / steps;
         for (int k = 0; k < steps; k++) Step(h);
     }
 
-    /// <summary>Exact mass in or out of a cell: the float keeps its rounding remainder, so nothing is absorbed or invented.</summary>
+    /// Exact mass in or out of a cell: the float keeps its rounding remainder, so nothing is absorbed or invented.
     internal void Credit(int cell, double amount)
     {
         double want = (double)M[cell] + Rem[cell] + amount;
@@ -301,8 +298,8 @@ public sealed class Coat
 
     internal void Debit(int cell, double amount) => Credit(cell, -amount);
 
-    /// <summary>Folds the step's net flux into the cells, carrying each cell's float rounding remainder forward so moved mass is neither lost nor made.</summary>
-    private void Apply(int cells)
+    /// Folds the step's net flux into the cells, carrying each cell's float rounding remainder forward so moved mass is neither lost nor made.
+    void Apply(int cells)
     {
         for (int i = 0; i < cells; i++)
         {
@@ -316,7 +313,7 @@ public sealed class Coat
     // a cell less its neighbour, scaled to thickness: mass difference for equal cells (old strand law, bit for bit), else what moving would level
     internal static float Diff(float mi, float mj, float ai, float aj) => ai == aj ? mi - mj : (mi - mj * (ai / aj)) * (2f * aj / (ai + aj));
 
-    private void Step(float h)
+    void Step(float h)
     {
         var mt = Matter;
         float px = Px, hold = mt.Hold * px, capTh = mt.MaxThick * px;
@@ -346,12 +343,12 @@ public sealed class Coat
                 float run = Smooth((th - hold) / (hold * 1.2f + 0.3f * px));
                 float rf = mt.Run * px * run * Math.Clamp(th / (2f * hold), 0.4f, 2.2f);
                 // power-law film runs as slope^(1/n): n = 1 is linear; a thinning liquid creeps on gentle slopes and runs on steep ones (same speed at 0.7)
-                float sl = T[i].Y, law = sl * MathF.Pow(MathF.Max(MathF.Abs(sl), 1e-4f) / 0.7f, 1f / mt.Index - 1f);
+                float sl = T[i].Y, law = sl * Pow(Max(Abs(sl), 1e-4f) / 0.7f, 1f / mt.Index - 1f);
                 float lim = 0.45f * Dc[i] / h, v = rf * law;
                 _v[i] = Math.Clamp(v, -lim, lim);
                 if (V > 1)
                 {
-                    float sw = Sd[i].Y, lw = sw * MathF.Pow(MathF.Max(MathF.Abs(sw), 1e-4f) / 0.7f, 1f / mt.Index - 1f), limW = 0.45f * VStep[i % V] / h;
+                    float sw = Sd[i].Y, lw = sw * Pow(Max(Abs(sw), 1e-4f) / 0.7f, 1f / mt.Index - 1f), limW = 0.45f * VStep[i % V] / h;
                     _w[i] = Math.Clamp(rf * lw, -limW, limW);
                 }
             }
@@ -362,7 +359,7 @@ public sealed class Coat
                     int j = i + 1 == rows ? 0 : i + 1, ca = i * V + s, cb = j * V + s;
                     float vf = 0.5f * (_v[ca] + _v[cb]);
                     float amt = (vf > 0f ? M[ca] : M[cb]) * vf / (0.5f * (Dc[ca] + Dc[cb])) * h;
-                    amt = amt > 0f ? MathF.Min(amt, M[ca] * 0.5f) : MathF.Max(amt, -M[cb] * 0.5f);
+                    amt = amt > 0f ? Min(amt, M[ca] * 0.5f) : Max(amt, -M[cb] * 0.5f);
                     _dm[ca] -= amt; _dm[cb] += amt;
                 }
             if (V > 1)
@@ -372,7 +369,7 @@ public sealed class Coat
                         int s2 = s + 1 == V ? 0 : s + 1, ca = i * V + s, cb = i * V + s2;
                         float vf = 0.5f * (_w[ca] + _w[cb]);
                         float amt = (vf > 0f ? M[ca] : M[cb]) * vf / (0.5f * (VStep[s] + VStep[s2])) * h;
-                        amt = amt > 0f ? MathF.Min(amt, M[ca] * 0.5f) : MathF.Max(amt, -M[cb] * 0.5f);
+                        amt = amt > 0f ? Min(amt, M[ca] * 0.5f) : Max(amt, -M[cb] * 0.5f);
                         _dm[ca] -= amt; _dm[cb] += amt;
                     }
             Apply(cells);
@@ -389,11 +386,11 @@ public sealed class Coat
                 for (int i = 0; i < lastRow; i++)
                 {
                     int j = i + 1 == rows ? 0 : i + 1, ca = i * V + s, cb = j * V + s;
-                    float w = Math.Clamp(0.5f * (M[ca] + M[cb]) / (0.5f * (A[ca] + A[cb])) / MathF.Max(hold, 1e-3f), 0.3f, 3f);
+                    float w = Math.Clamp(0.5f * (M[ca] + M[cb]) / (0.5f * (A[ca] + A[cb])) / Max(hold, 1e-3f), 0.3f, 3f);
                     float diff = Diff(M[ca], M[cb], A[ca], A[cb]);
                     if (pk > 0f) diff -= pk * 0.5f * (A[ca] + A[cb]) * (Pool[ca] - Pool[cb]);
-                    float amt = MathF.Min(0.25f, mt.Level * w * w * h) * diff;
-                    if (pk > 0f) amt = amt > 0f ? MathF.Min(amt, 0.25f * M[ca]) : MathF.Max(amt, -0.25f * M[cb]);
+                    float amt = Min(0.25f, mt.Level * w * w * h) * diff;
+                    if (pk > 0f) amt = amt > 0f ? Min(amt, 0.25f * M[ca]) : Max(amt, -0.25f * M[cb]);
                     _dm[ca] -= amt; _dm[cb] += amt;
                 }
             if (V > 1)
@@ -401,11 +398,11 @@ public sealed class Coat
                     for (int s = 0, ls = SeamV ? V : V - 1; s < ls; s++)
                     {
                         int ca = i * V + s, cb = i * V + (s + 1 == V ? 0 : s + 1);
-                        float w = Math.Clamp(0.5f * (M[ca] + M[cb]) / (0.5f * (A[ca] + A[cb])) / MathF.Max(hold, 1e-3f), 0.3f, 3f);
+                        float w = Math.Clamp(0.5f * (M[ca] + M[cb]) / (0.5f * (A[ca] + A[cb])) / Max(hold, 1e-3f), 0.3f, 3f);
                         float diff = Diff(M[ca], M[cb], A[ca], A[cb]);
                         if (pk > 0f) diff -= pk * 0.5f * (A[ca] + A[cb]) * (Pool[ca] - Pool[cb]);
-                        float amt = MathF.Min(0.25f, mt.Level * w * w * h) * diff;
-                        if (pk > 0f) amt = amt > 0f ? MathF.Min(amt, 0.25f * M[ca]) : MathF.Max(amt, -0.25f * M[cb]);
+                        float amt = Min(0.25f, mt.Level * w * w * h) * diff;
+                        if (pk > 0f) amt = amt > 0f ? Min(amt, 0.25f * M[ca]) : Max(amt, -0.25f * M[cb]);
                         _dm[ca] -= amt; _dm[cb] += amt;
                     }
             Apply(cells);
@@ -424,31 +421,31 @@ public sealed class Coat
     }
 }
 
-/// <summary>Every coat in the scene, keyed by owner, strand and role, plus the things coats let go of; one per StrokeShed.</summary>
+/// Every coat in the scene, keyed by owner, strand and role, plus the things coats let go of; one per StrokeShed.
 internal sealed class CoatSet
 {
-    private readonly record struct Key(DebuffKind Owner, int Seed, PrimitiveRole Role, int Chart = 0);  // Chart 0 is a strand coated as a tube
+    readonly record struct Key(DebuffKind Owner, int Seed, PrimitiveRole Role, int Chart = 0);  // Chart 0 is a strand coated as a tube
 
-    /// <summary>Where matter deliberately leaves the system; everything else is held or in flight.</summary>
+    /// Where matter deliberately leaves the system; everything else is held or in flight.
     internal enum Sink { Dried, RanOff, Burned, Lumped, HostGone }
 
     internal readonly double[] Sunk = new double[5];
     internal double Entered;  // everything that ever arrived: seeded cells and supply
     internal int BeadsDrawn;  // beads emitted since the last Emit began (diagnostic)
 
-    private readonly Dictionary<Key, Coat> _coats = new();
-    private readonly List<Key> _stale = new();
-    private readonly Stack<Coat> _spare = new();
-    private float _lastPrune;
+    readonly Dictionary<Key, Coat> _coats = new();
+    readonly List<Key> _stale = new();
+    readonly Stack<Coat> _spare = new();
+    float _lastPrune;
 
     internal readonly DropPool Drops = new(192);
     internal readonly ParticleSystem Lumps = new(160);
-    internal readonly ParticleSystem Cinders = new(300, 0x0C1, new ParticlePhysics(new Vector2(0f, -26f), Drag: 0.30f, Wander: 240f, WanderHz: 0.85f));
+    internal readonly ParticleSystem Cinders = new(300, 0x0C1, new ParticlePhysics(new(0f, -26f), Drag: 0.30f, Wander: 240f, WanderHz: 0.85f));
     internal readonly ParticleSystem Smoke = new(200, 0x0C2, new ParticlePhysics(Drag: 0.06f, Wander: 26f, WanderHz: 0.35f));
 
     public int Count => _coats.Count;
 
-    /// <summary>The whole system's books: what came in, what the coats hold, what is falling, what left. entered = held + flying + sunk.</summary>
+    /// The whole system's books: what came in, what the coats hold, what is falling, what left. entered = held + flying + sunk.
     public (double entered, double held, double flying, double sunk) Audit()
     {
         double held = 0, flying = 0, sunk = Drops.Left;
@@ -459,11 +456,11 @@ internal sealed class CoatSet
     }
     public IEnumerable<Coat> All => _coats.Values;
 
-    /// <summary>Once a frame, first: moves what the coats let go of and forgets coats whose strand is gone.</summary>
+    /// Once a frame, first: moves what the coats let go of and forgets coats whose strand is gone.
     public void Advance(float time, float dt, Vector2 screen)
     {
-        dt = MathF.Min(dt, 0.05f);
-        _dt = MathF.Max(dt, 1e-4f); _now = time;
+        dt = Min(dt, 0.05f);
+        _dt = Max(dt, 1e-4f); _now = time;
         _groupsLast = _groupsNow; _groupsNow = 0;
         _charts.CellsLeft = CellBudget; _charts.Share = CellBudget / Math.Max(1, _groupsLast); ChartsSkipped = 0;
         float floor = screen.Y > 0f ? screen.Y + 80f : float.MaxValue;
@@ -489,7 +486,7 @@ internal sealed class CoatSet
         }
     }
 
-    private void Dissolve(Coat c, float time)
+    void Dissolve(Coat c, float time)
     {
         c.Dissolved = true; c.Time = time;
         DetachBridges(c);
@@ -500,13 +497,13 @@ internal sealed class CoatSet
 
     internal const float ChartGrace = 8f;  // a hidden or off-frame chart keeps its film frozen this long (a link rolls back in with it); whole strands have no such part
     internal const int CellBudget = 4096;  // cells a frame may spend on charts, all hosts together
-    private readonly CoatCharts _charts = new();
-    private sealed class Group { public readonly List<Coat> Parts = new(); public readonly Dictionary<int, Coat> ById = new(); public float Time = -1f; }
-    private readonly Dictionary<Key, Group> _groups = new();
+    readonly CoatCharts _charts = new();
+    sealed class Group { public readonly List<Coat> Parts = new(); public readonly Dictionary<int, Coat> ById = new(); public float Time = -1f; }
+    readonly Dictionary<Key, Group> _groups = new();
     internal int ChartsSkipped;  // chart requests the budget refused this frame (diagnostic)
-    private int _groupsNow, _groupsLast;  // strokes that used charts this frame and last: the budget is shared among them
+    int _groupsNow, _groupsLast;  // strokes that used charts this frame and last: the budget is shared among them
 
-    /// <summary>Grows one emission's coat on a stroke (no-op if its material can't coat): per chart for chart hosts, else as a tube along the path.</summary>
+    /// Grows one emission's coat on a stroke (no-op if its material can't coat): per chart for chart hosts, else as a tube along the path.
     public void Tend(EffectScene scene, in StrokePrimitive s, in StrokeEmission e, string? forcedMaterial,
                      IStrokeMaterial? strokeMaterial, float time, float dt)
     {
@@ -515,7 +512,7 @@ internal sealed class CoatSet
         if (pm is not ICoatMatter cm) return;
 
         float px = PixelScale(scene.ScreenSize);
-        float shortSide = scene.ScreenSize.X > 0f ? MathF.Min(scene.ScreenSize.X, scene.ScreenSize.Y) : 1080f;
+        float shortSide = scene.ScreenSize.X > 0f ? Min(scene.ScreenSize.X, scene.ScreenSize.Y) : 1080f;
         if (s.Path.Length < 24f * px) return;
         var ctx = new CoatBuildContext(scene.ScreenSize, shortSide, px, time);
 
@@ -523,7 +520,7 @@ internal sealed class CoatSet
         else TendTube(in s, in ctx, opt, cm.Matter, e.Role, strokeMaterial, time, dt);
     }
 
-    private void TendTube(in StrokePrimitive s, in CoatBuildContext ctx, CoatOptions opt, CoatMatter matter, PrimitiveRole role, IStrokeMaterial? strokeMaterial, float time, float dt)
+    void TendTube(in StrokePrimitive s, in CoatBuildContext ctx, CoatOptions opt, CoatMatter matter, PrimitiveRole role, IStrokeMaterial? strokeMaterial, float time, float dt)
     {
         var key = new Key(s.Owner, s.Seed, role);
         bool fresh = !_coats.TryGetValue(key, out var c);
@@ -543,10 +540,10 @@ internal sealed class CoatSet
         Feed(c, fresh, matter, time, dt, s.Brightness);
     }
 
-    private void TendCharts(ICoatSurfaceProvider prov, in StrokePrimitive s, in CoatBuildContext ctx, CoatOptions opt, CoatMatter matter, PrimitiveRole role, float time, float dt)
+    void TendCharts(ICoatSurfaceProvider prov, in StrokePrimitive s, in CoatBuildContext ctx, CoatOptions opt, CoatMatter matter, PrimitiveRole role, float time, float dt)
     {
         var gk = new Key(s.Owner, s.Seed, role);
-        if (!_groups.TryGetValue(gk, out var g)) _groups[gk] = g = new Group();
+        if (!_groups.TryGetValue(gk, out var g)) _groups[gk] = g = new();
         else if (g.Time == time) return;  // a stroke seen twice in one frame is tended once
         g.Time = time;
         _groupsNow++;
@@ -582,15 +579,15 @@ internal sealed class CoatSet
     internal long XCand, XAct, XTicks;  // contact search: cell pairs looked at, pairs in contact, stopwatch ticks (harness builds only)
     internal double XMass;  // matter that has crossed from one chart to another, ever (diagnostic: the books see only each coat's In and Out)
 
-    /// <summary>Cross-chart transfer: the host proposes sides, a cell pair passes only if the host's axes are within their radii in 3D; exact in both books.</summary>
-    private const int MaxEdge = 64;
+    /// Cross-chart transfer: the host proposes sides, a cell pair passes only if the host's axes are within their radii in 3D; exact in both books.
+    const int MaxEdge = 64;
 
-    private void Transfer(Group g, float dt)
+    void Transfer(Group g, float dt)
     {
 #if REALDEBUFFS_PROFILE
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
 #endif
-        float h = MathF.Min(dt, 0.05f);
+        float h = Min(dt, 0.05f);
         Span<float> sa = stackalloc float[MaxEdge], sb = stackalloc float[MaxEdge];  // how much each cell of the two sides touches in all
         if (h > 0f)
             foreach (var a in g.Parts)
@@ -623,7 +620,7 @@ internal sealed class CoatSet
                         if (sa[i] <= 0f) continue;
                         for (int j = 0; j < nb; j++)
                             if (wt[i * nb + j] > 0f)
-                                Exchange(a, a.EdgeCell(ct.Edge, i), b, b.EdgeCell(ct.OtherEdge, j), ct.Edge, false, h, wt[i * nb + j] / MathF.Max(1f, MathF.Max(sa[i], sb[j])));
+                                Exchange(a, a.EdgeCell(ct.Edge, i), b, b.EdgeCell(ct.OtherEdge, j), ct.Edge, false, h, wt[i * nb + j] / Max(1f, Max(sa[i], sb[j])));
                     }
                 }
 #if REALDEBUFFS_PROFILE
@@ -631,8 +628,8 @@ internal sealed class CoatSet
 #endif
     }
 
-    /// <summary>0..1 contact between two cells: the host's axes within their radii (plus a little for cell spacing), fading out over half a radius.</summary>
-    private float Weight(Coat a, int ca, Coat b, int cb)
+    /// 0..1 contact between two cells: the host's axes within their radii (plus a little for cell spacing), fading out over half a radius.
+    float Weight(Coat a, int ca, Coat b, int cb)
     {
         XCand++;
         float ra = a.R[ca], rb = b.R[cb];
@@ -640,10 +637,10 @@ internal sealed class CoatSet
         Vector3 dd = a.Ctr[ca] - b.Ctr[cb];
         float d2 = dd.LengthSquared();
         if (d2 >= limit * limit) return 0f;
-        return Smooth((limit - MathF.Sqrt(d2)) / MathF.Max(band, 1e-3f));
+        return Smooth((limit - Sqrt(d2)) / Max(band, 1e-3f));
     }
 
-    private void Exchange(Coat a, int ca, Coat b, int cb, CoatEdge edge, bool seam, float h, float w)
+    void Exchange(Coat a, int ca, Coat b, int cb, CoatEdge edge, bool seam, float h, float w)
     {
         if (w <= 0f) return;
         XAct++;
@@ -663,24 +660,24 @@ internal sealed class CoatSet
         if (run > 0f)  // below its yield thickness a film does not run (and the power law is the costly part)
         {
             float rf = mt.Run * px * run * Math.Clamp(th / (2f * hold), 0.4f, 2.2f);
-            float s = MathF.Abs(sl), law = s * MathF.Pow(MathF.Max(s, 1e-4f) / 0.7f, 1f / mt.Index - 1f);
+            float s = Abs(sl), law = s * Pow(Max(s, 1e-4f) / 0.7f, 1f / mt.Index - 1f);
             float v = Math.Clamp(rf * law, 0f, 0.45f * len / h);
             flux = src.M[cs] * v / len * h * w;  // src to dst
         }
 
         // levelling: thick spreads into thin across the touch as it does inside a chart
-        float wk = Math.Clamp(0.5f * (src.M[cs] + dst.M[cd]) / (0.5f * (src.A[cs] + dst.A[cd])) / MathF.Max(hold, 1e-3f), 0.3f, 3f);
-        flux += MathF.Min(0.25f, mt.Level * wk * wk * h) * Coat.Diff(src.M[cs], dst.M[cd], src.A[cs], dst.A[cd]) * 0.5f * w;
-        if (MathF.Abs(flux) < 1e-4f) return;  // films at rest and level: nothing worth moving
+        float wk = Math.Clamp(0.5f * (src.M[cs] + dst.M[cd]) / (0.5f * (src.A[cs] + dst.A[cd])) / Max(hold, 1e-3f), 0.3f, 3f);
+        flux += Min(0.25f, mt.Level * wk * wk * h) * Coat.Diff(src.M[cs], dst.M[cd], src.A[cs], dst.A[cd]) * 0.5f * w;
+        if (Abs(flux) < 1e-4f) return;  // films at rest and level: nothing worth moving
 
         if (flux < 0f) { (src, dst) = (dst, src); (cs, cd) = (cd, cs); flux = -flux; }
-        flux = MathF.Min(flux, 0.2f * src.M[cs]);  // a cell can touch several; each takes at most a fifth of what is left, so none can be emptied past zero
+        flux = Min(flux, 0.2f * src.M[cs]);  // a cell can touch several; each takes at most a fifth of what is left, so none can be emptied past zero
         if (flux <= 0f) return;
         src.Debit(cs, flux); dst.Credit(cd, flux);
         src.Out += flux; dst.In += flux; XMass += flux;
     }
 
-    private void Feed(Coat c, bool fresh, CoatMatter matter, float time, float dt, float brightness)
+    void Feed(Coat c, bool fresh, CoatMatter matter, float time, float dt, float brightness)
     {
         c.Dissolved = false;
         if (!fresh && c.Matter != matter) DetachBridges(c);  // its strings were made of the old matter
@@ -704,9 +701,9 @@ internal sealed class CoatSet
     }
 
     internal readonly Bridge[] Br = new Bridge[MaxBridges];
-    private float _dt = 1f / 60f, _now;
+    float _dt = 1f / 60f, _now;
 
-    private static Vector2 Contact(Coat b, int j, Vector2 toward)
+    static Vector2 Contact(Coat b, int j, Vector2 toward)
     {
         Vector2 d = toward - b.P[j];
         return b.P[j] + (d.LengthSquared() > 1e-4f ? Vector2.Normalize(d) : b.Nm[j]) * (b.R[j] * 0.7f);
@@ -714,7 +711,7 @@ internal sealed class CoatSet
 
     internal long BridgeCalls, BridgeCells, BridgeTicks;  // broadphase cost: searches made, cells looked at, stopwatch ticks (harness builds only)
 
-    /// <summary>A stretching drop sticks to another wet host of the same (sticky) liquid if its bead touches it; true if it did.</summary>
+    /// A stretching drop sticks to another wet host of the same (sticky) liquid if its bead touches it; true if it did.
     internal bool TryBridge(Coat a, int k, Vector2 anchor, Vector2 bead, float rb, float chance, float wet)
     {
         ref var p = ref a.Pend[k];
@@ -744,7 +741,7 @@ internal sealed class CoatSet
                 Vector2 pb = Contact(b, j, anchor);
                 // its rest length is the neck it grew from, longer than the gap: slack to droop
                 a.AnchorFor(p.Cell, out float ua, out float va); b.AnchorFor(j, out float ub, out float vb);
-                Br[slot] = new Bridge { Live = true, A = a, B = b, UA = ua, VA = va, UB = ub, VB = vb, M = p.M, L0 = MathF.Max(MathF.Max(Vector2.Distance(anchor, pb) * 1.25f, p.L), 6f * a.Px), Salt = p.Salt, Pa = anchor, Pb = pb };
+                Br[slot] = new() { Live = true, A = a, B = b, UA = ua, VA = va, UB = ub, VB = vb, M = p.M, L0 = Max(Max(Vector2.Distance(anchor, pb) * 1.25f, p.L), 6f * a.Px), Salt = p.Salt, Pa = anchor, Pb = pb };
                 a.Bridged += p.M;
                 a.PendAt[p.Cell] = -1; p.Live = false;
                 return true;
@@ -756,8 +753,8 @@ internal sealed class CoatSet
 #endif
     }
 
-    /// <summary>Stretches, drains and breaks every bridge against this frame's hosts.</summary>
-    private void StepBridges(float time)
+    /// Stretches, drains and breaks every bridge against this frame's hosts.
+    void StepBridges(float time)
     {
         for (int s = 0; s < MaxBridges; s++)
         {
@@ -774,18 +771,18 @@ internal sealed class CoatSet
             var ph = lm.Physics;
 
             // it drains into both ends and thins; a string stretched too far, or too thin, lets go
-            float drain = br.M * (1f - MathF.Exp(-_dt / MathF.Max(0.6f, 4f * ph.Thread)));
+            float drain = br.M * (1f - Exp(-_dt / Max(0.6f, 4f * ph.Thread)));
             br.M -= drain; a.Bridged -= drain;
             a.Credit(ia, drain * 0.5f);
             a.Out += drain * 0.5f; b.In += drain * 0.5f; b.Credit(ib, drain * 0.5f);
-            br.Thick = br.M / MathF.Max(len, 1f);
-            br.Sag = MathF.Sqrt(0.375f * len * MathF.Max(0f, br.L0 - len)) + 2f * px;  // slack hangs under its own weight
+            br.Thick = br.M / Max(len, 1f);
+            br.Sag = Sqrt(0.375f * len * Max(0f, br.L0 - len)) + 2f * px;  // slack hangs under its own weight
             if (len > br.L0 * (1.6f + 3f * ph.Stringiness) || br.Thick < 0.35f * px) Snap(ref br, lm);
         }
     }
 
-    /// <summary>The string lets go: most of it recoils into the two films, a little falls (or stays in the film if the pool has no room).</summary>
-    private void Snap(ref Bridge br, LiquidMatter lm)
+    /// The string lets go: most of it recoils into the two films, a little falls (or stays in the film if the pool has no room).
+    void Snap(ref Bridge br, LiquidMatter lm)
     {
         var a = br.A; var b = br.B;
         float m = br.M; a.Bridged -= m; br.Live = false;
@@ -797,10 +794,10 @@ internal sealed class CoatSet
         if (lm.TryDrop(a, mid + new Vector2(4f * a.Px, 0f), br.Pb, br.Salt + 22, fall, 0.2f)) { a.Out += fall; a.Shed += fall; } else b.Credit(ib, fall);
     }
 
-    private bool Alive(Coat c, Coat gone) => c != gone && !c.Dissolved && _now - c.LastSeen < 0.1f;
+    bool Alive(Coat c, Coat gone) => c != gone && !c.Dissolved && _now - c.LastSeen < 0.1f;
 
-    /// <summary>A host has gone: the string retracts into the surviving one (or is booked as lost if neither is left).</summary>
-    private void Retract(ref Bridge br, Coat gone)
+    /// A host has gone: the string retracts into the surviving one (or is booked as lost if neither is left).
+    void Retract(ref Bridge br, Coat gone)
     {
         var a = br.A; var b = br.B;
         float m = br.M; a.Bridged -= m; br.Live = false;
@@ -810,25 +807,25 @@ internal sealed class CoatSet
         Sunk[(int)Sink.HostGone] += m; a.Out += m;
     }
 
-    /// <summary>Every string on this coat lets go to the other end (used when the coat is reset or dissolved).</summary>
-    private void DetachBridges(Coat c)
+    /// Every string on this coat lets go to the other end (used when the coat is reset or dissolved).
+    void DetachBridges(Coat c)
     {
         for (int s = 0; s < MaxBridges; s++)
             if (Br[s].Live && (Br[s].A == c || Br[s].B == c)) Retract(ref Br[s], c);
     }
 
-    private static readonly Vector2[] Pts = new Vector2[16];
+    static readonly Vector2[] Pts = new Vector2[16];
 
     internal void DrawBridges(Coat a, ImDrawListPtr dl, float alpha, in MaterialContext ctx)
     {
         for (int s = 0; s < MaxBridges; s++)
         {
             ref readonly var br = ref Br[s];
-            if (br.Live && br.A == a) ((LiquidMatter)a.Matter).DrawFilament(dl, in br, Pts, MathF.Min(1f, alpha * ctx.Alpha), in ctx);
+            if (br.Live && br.A == a) ((LiquidMatter)a.Matter).DrawFilament(dl, in br, Pts, Min(1f, alpha * ctx.Alpha), in ctx);
         }
     }
 
-    /// <summary>Hands the scene this frame's films and everything hanging, burning or falling.</summary>
+    /// Hands the scene this frame's films and everything hanging, burning or falling.
     public void Emit(EffectScene scene, float time)
     {
         var owner = scene.CurrentOwner;

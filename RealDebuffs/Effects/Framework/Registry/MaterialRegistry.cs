@@ -2,16 +2,16 @@ using System.Reflection;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Materials by name, found by reflection (IMaterialPacks plus public parameterless materials); Vocabulary maps a NaturalLanguageWord to a name.</summary>
+/// Materials by name, found by reflection (IMaterialPacks plus public parameterless materials); Vocabulary maps a NaturalLanguageWord to a name.
 public static class MaterialRegistry
 {
     public const string FallbackStroke = "stroke.simple";
-    private const string FallbackParticleName = "particle.spark";
+    const string FallbackParticleName = "particle.spark";
 
-    private static readonly Dictionary<string, IStrokeMaterial>   Strokes   = new(StringComparer.OrdinalIgnoreCase);
-    private static readonly Dictionary<string, IParticleMaterial> Particles = new(StringComparer.OrdinalIgnoreCase);
-    private static readonly Dictionary<string, IRegionMaterial>   Regions   = new(StringComparer.OrdinalIgnoreCase);
-    private static readonly string[] RoleFallbacks = BuildRoleFallbacks();
+    static readonly Dictionary<string, IStrokeMaterial>   Strokes   = new(StringComparer.OrdinalIgnoreCase);
+    static readonly Dictionary<string, IParticleMaterial> Particles = new(StringComparer.OrdinalIgnoreCase);
+    static readonly Dictionary<string, IRegionMaterial>   Regions   = new(StringComparer.OrdinalIgnoreCase);
+    static readonly string[] RoleFallbacks = BuildRoleFallbacks();
 
     public static IReadOnlyList<IMaterial> AllMaterials { get; }
     public static IReadOnlyDictionary<string, string> Vocabulary { get; }
@@ -19,7 +19,7 @@ public static class MaterialRegistry
     public static IReadOnlyList<string> ParticleNames { get; }
     public static IReadOnlyList<string> RegionNames { get; }
 
-    /// <summary>Duplicate names and words found while registering.</summary>
+    /// Duplicate names and words found while registering.
     public static IReadOnlyList<string> Problems { get; }
 
     static MaterialRegistry()
@@ -71,14 +71,14 @@ public static class MaterialRegistry
     public static IParticleMaterial? TryGetParticle(string name) => Particles.GetValueOrDefault(name);
     public static IRegionMaterial? TryGetRegion(string name) => Regions.GetValueOrDefault(name);
 
-    /// <summary>The particle drawn for a role when no slot names one.</summary>
+    /// The particle drawn for a role when no slot names one.
     public static string FallbackParticle(PrimitiveRole role) =>
         (uint)role < (uint)RoleFallbacks.Length && RoleFallbacks[(int)role] is { } name ? name : FallbackParticleName;
 
     public static string FallbackRegion(RegionKind kind) =>
         kind == RegionKind.EdgeGlow ? "region.edge-glow" : "region.flat-fill";
 
-    private static string[] BuildRoleFallbacks()
+    static string[] BuildRoleFallbacks()
     {
         var table = new string[(int)Enum.GetValues<PrimitiveRole>().Max() + 1];
         foreach (var field in typeof(PrimitiveRole).GetFields(BindingFlags.Public | BindingFlags.Static))

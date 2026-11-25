@@ -1,9 +1,9 @@
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Finds every ISceneEffect with a public parameterless constructor, sorted by DrawOrder, then Kind; call once from Plugin.</summary>
+/// Finds every ISceneEffect with a public parameterless constructor, sorted by DrawOrder, then Kind; call once from Plugin.
 public static class EffectDiscovery
 {
-    private static IReadOnlyList<ISceneEffect>? _cached;
+    static IReadOnlyList<ISceneEffect>? _cached;
 
     public static IReadOnlyList<ISceneEffect> Discover()
     {

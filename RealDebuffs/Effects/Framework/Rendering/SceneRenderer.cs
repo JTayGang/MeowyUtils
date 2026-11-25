@@ -1,16 +1,14 @@
-using System.Numerics;
 using System.Runtime.InteropServices;
-using Dalamud.Bindings.ImGui;
 
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Back to front: vignette, regions, strokes + their particles, free particles; Over vignettes follow regions, BelowVeil sits between plain and Veil.</summary>
+/// Back to front: vignette, regions, strokes + their particles, free particles; Over vignettes follow regions, BelowVeil sits between plain and Veil.
 public sealed class SceneRenderer
 {
     // Per particle: the stroke it is drawn after (-1 = free, -2 = already drawn below the veil) and its resolved material.
-    private int[] _host = new int[2048];
-    private int[] _coatHost = new int[16];
-    private IParticleMaterial?[] _material = new IParticleMaterial?[2048];
+    int[] _host = new int[2048];
+    int[] _coatHost = new int[16];
+    IParticleMaterial?[] _material = new IParticleMaterial?[2048];
 
     public void Render(ImDrawListPtr dl, EffectScene scene, Vector2 screenSize, float time, float globalAlpha)
     {
@@ -26,7 +24,7 @@ public sealed class SceneRenderer
         FrameProbe.EndFrame(scene);
     }
 
-    private static void DrawVignette(ImDrawListPtr dl, EffectScene scene, Vector2 screenSize, float globalAlpha)
+    static void DrawVignette(ImDrawListPtr dl, EffectScene scene, Vector2 screenSize, float globalAlpha)
     {
         ref readonly var v = ref scene.Vignette;
         if (!v.Active || v.Alpha <= 0.001f) return;
@@ -37,7 +35,7 @@ public sealed class SceneRenderer
         finally { PopColorOverride(); }
     }
 
-    private static void DrawRegions(ImDrawListPtr dl, EffectScene scene, in MaterialContext ctx, bool veil)
+    static void DrawRegions(ImDrawListPtr dl, EffectScene scene, in MaterialContext ctx, bool veil)
     {
         FrameProbe.Mark(FrameProbe.Phase.Regions);
         foreach (var r in scene.Regions)
@@ -56,7 +54,7 @@ public sealed class SceneRenderer
         }
     }
 
-    private static void DrawBelowVeil(ImDrawListPtr dl, EffectScene scene, in MaterialContext ctx)
+    static void DrawBelowVeil(ImDrawListPtr dl, EffectScene scene, in MaterialContext ctx)
     {
         FrameProbe.Mark(FrameProbe.Phase.BelowVeil);
         foreach (ref readonly var p in CollectionsMarshal.AsSpan(scene.Particles))
@@ -64,7 +62,7 @@ public sealed class SceneRenderer
         MeshDraw.EndBatch(dl);
     }
 
-    private void DrawStrokesAndParticles(ImDrawListPtr dl, EffectScene scene, in MaterialContext ctx)
+    void DrawStrokesAndParticles(ImDrawListPtr dl, EffectScene scene, in MaterialContext ctx)
     {
         FrameProbe.Mark(FrameProbe.Phase.Resolve);
         int pc = scene.Particles.Count;
@@ -154,7 +152,7 @@ public sealed class SceneRenderer
         MeshDraw.EndBatch(dl);
     }
 
-    private static void DrawCoat(ImDrawListPtr dl, in CoatPrimitive c, in MaterialContext ctx)
+    static void DrawCoat(ImDrawListPtr dl, in CoatPrimitive c, in MaterialContext ctx)
     {
         var key = c.Coat.Matter;
         PushColorOverride(c.ColorOverride);
@@ -167,7 +165,7 @@ public sealed class SceneRenderer
         finally { PopColorOverride(); }
     }
 
-    private static void DrawParticle(ImDrawListPtr dl, in ParticlePrimitive p, IParticleMaterial? mat, in MaterialContext ctx)
+    static void DrawParticle(ImDrawListPtr dl, in ParticlePrimitive p, IParticleMaterial? mat, in MaterialContext ctx)
     {
         if (mat is IBatchedParticleMaterial) MeshDraw.BeginBatch(); else MeshDraw.EndBatch(dl);  // a run of mesh-only drops is staged; anything else draws in its place
         PushColorOverride(p.ColorOverride);

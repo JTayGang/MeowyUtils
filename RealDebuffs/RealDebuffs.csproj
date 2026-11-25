@@ -15,8 +15,14 @@
     <None Include="RealDebuffs.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
-  <!-- DrawHelpers members are called unprefixed -->
+  <!-- Project-wide usings; MathF and DrawHelpers members are called unprefixed -->
   <ItemGroup>
+    <Using Include="System.Numerics" />
+    <Using Include="Dalamud.Bindings.ImGui" />
+    <Using Include="RealDebuffs.Effects" />
+    <Using Include="RealDebuffs.Effects.Framework" />
+    <Using Include="RealDebuffs.Effects.Framework.Materials" />
+    <Using Include="System.MathF" Static="true" />
     <Using Include="RealDebuffs.Effects.Framework.DrawHelpers" Static="true" />
   </ItemGroup>
 </Project>

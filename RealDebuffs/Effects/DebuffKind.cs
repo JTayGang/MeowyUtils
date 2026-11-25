@@ -1,6 +1,6 @@
 namespace RealDebuffs;
 
-/// <summary>Visual debuff families; several vanilla statuses can share a kind. Numeric values are serialized: add new kinds at the END.</summary>
+/// Visual debuff families; several vanilla statuses can share a kind. Numeric values are serialized: add new kinds at the END.
 public enum DebuffKind
 {
     Blind,

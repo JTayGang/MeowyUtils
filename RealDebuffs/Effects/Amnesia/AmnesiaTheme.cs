@@ -1,12 +1,9 @@
-using System.Numerics;
-using RealDebuffs.Effects.Framework.Materials;
-
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Amnesia: milky lilac fog and pearl light over deep indigo ink.</summary>
+/// Amnesia: milky lilac fog and pearl light over deep indigo ink.
 internal static class MemoryColor
 {
-    /// <summary>Light, dim to hot: 0 = indigo ink, 0.3 = periwinkle, 0.55 = lavender, 0.78 = pearl lilac, 1 = warm pearl.</summary>
+    /// Light, dim to hot: 0 = indigo ink, 0.3 = periwinkle, 0.55 = lavender, 0.78 = pearl lilac, 1 = warm pearl.
     public static readonly Palette Glow = new(
         (0.00f, 0.100f, 0.100f, 0.270f),
         (0.30f, 0.300f, 0.330f, 0.620f),
@@ -14,14 +11,14 @@ internal static class MemoryColor
         (0.78f, 0.820f, 0.860f, 0.980f),
         (1.00f, 1.000f, 0.980f, 0.960f));
 
-    /// <summary>Fog lit from within: 0 = slate indigo shadow, 0.4 = periwinkle, 0.75 = milky lilac, 1 = pearl.</summary>
+    /// Fog lit from within: 0 = slate indigo shadow, 0.4 = periwinkle, 0.75 = milky lilac, 1 = pearl.
     public static readonly Palette Fog = new(
         (0.00f, 0.420f, 0.430f, 0.620f),
         (0.40f, 0.660f, 0.680f, 0.860f),
         (0.75f, 0.880f, 0.890f, 0.980f),
         (1.00f, 0.990f, 0.980f, 0.990f));
 
-    /// <summary>Script: soft cool grey, dim to light, so the words sit in the fog instead of glowing on it.</summary>
+    /// Script: soft cool grey, dim to light, so the words sit in the fog instead of glowing on it.
     public static readonly Palette Murmur = new(
         (0.00f, 0.300f, 0.310f, 0.350f),
         (0.30f, 0.480f, 0.490f, 0.550f),
@@ -29,13 +26,13 @@ internal static class MemoryColor
         (0.78f, 0.780f, 0.790f, 0.840f),
         (1.00f, 0.900f, 0.900f, 0.930f));
 
-    /// <summary>The shade behind script: slate grey.</summary>
+    /// The shade behind script: slate grey.
     public static readonly uint MurmurInk = Pack(0.300f, 0.310f, 0.360f);
 
-    /// <summary>The deep tone of the spiral's ink arms.</summary>
+    /// The deep tone of the spiral's ink arms.
     public static readonly uint Ink = Pack(0.070f, 0.070f, 0.200f);
 
-    /// <summary>Edge tint for the screen's vignette: pale lilac, so the edges bleach rather than darken.</summary>
+    /// Edge tint for the screen's vignette: pale lilac, so the edges bleach rather than darken.
     public static readonly uint Vignette = Pack(0.800f, 0.820f, 0.940f);
 }
 

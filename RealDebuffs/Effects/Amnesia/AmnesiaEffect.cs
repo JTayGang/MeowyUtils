@@ -1,10 +1,6 @@
-using System.Numerics;
-using RealDebuffs.Effects.Framework;
-using RealDebuffs.Effects.Framework.Materials;
-
 namespace RealDebuffs.Effects;
 
-/// <summary>What the fog murmurs as it forgets. Edit freely: lowercase letters, spaces and ' , . ! ? - only (anything else is left blank).</summary>
+/// What the fog murmurs as it forgets. Edit freely: lowercase letters, spaces and ' , . ! ? - only (anything else is left blank).
 public static class AmnesiaWhispers
 {
     public static readonly string[] Phrases =
@@ -18,7 +14,7 @@ public static class AmnesiaWhispers
     };
 }
 
-/// <summary>Amnesia: a pale spiral turning behind milky fog.</summary>
+/// Amnesia: a pale spiral turning behind milky fog.
 public sealed class AmnesiaEffect : SceneEffect, IHasSwappableSlots
 {
     // The fog is what a "made of X" phrase replaces.
@@ -31,41 +27,41 @@ public sealed class AmnesiaEffect : SceneEffect, IHasSwappableSlots
         Slot.Region(RegionKind.FlatFill, "Spiral and fog", "region.vortex"),
     };
 
-    private const float CameraDistance = 1500f;
-    private readonly SigilView _view = new(new SigilSway(BaseTilt: 0.07f, TiltSway: 0.045f, Precession: 0.09f, LurchTilt: 0.18f, LurchSeconds: 0.9f, BreathBase: 0.94f, BreathAmp: 0.06f), CameraDistance);
+    const float CameraDistance = 1500f;
+    readonly SigilView _view = new(new SigilSway(BaseTilt: 0.07f, TiltSway: 0.045f, Precession: 0.09f, LurchTilt: 0.18f, LurchSeconds: 0.9f, BreathBase: 0.94f, BreathAmp: 0.06f), CameraDistance);
 
     // Pacing: how fast it all feels.
-    private const float CruiseSpeed = 440f;                      // px/s down the tunnel at 1080p; a lap takes about 15 s
-    private const float IntroSecs = 2.4f, IntroSpin = 2.4f;     // the cast rushes in and slows; the view whips round this many radians
-    private const float FirstWhisper = 1.4f;
+    const float CruiseSpeed = 440f;                      // px/s down the tunnel at 1080p; a lap takes about 15 s
+    const float IntroSecs = 2.4f, IntroSpin = 2.4f;     // the cast rushes in and slows; the view whips round this many radians
+    const float FirstWhisper = 1.4f;
 
     // Spiral outflow speed (short side/s, matches the fall) and the cast's initial rush.
-    private const float SpiralFlow = 0.045f, SpiralRush = 4f;
+    const float SpiralFlow = 0.045f, SpiralRush = 4f;
 
     // What drifts down the tunnel, and how strongly the words show through the fog over them.
-    private const int Billows = 14, Specks = 70;
-    private const float WhisperOpacity = 0.65f;
+    const int Billows = 14, Specks = 70;
+    const float WhisperOpacity = 0.65f;
 
-    /// <summary>Something drawn this frame at some height down the tunnel: collected, sorted far to near, then drawn.</summary>
-    private struct Thing { public float Height; public ParticlePrimitive Particle; }
+    /// Something drawn this frame at some height down the tunnel: collected, sorted far to near, then drawn.
+    struct Thing { public float Height; public ParticlePrimitive Particle; }
 
-    private static readonly Comparison<Thing> FarToNear = (a, b) => a.Height.CompareTo(b.Height);
+    static readonly Comparison<Thing> FarToNear = (a, b) => a.Height.CompareTo(b.Height);
 
-    /// <summary>The spiral for this cast: the fog's arm count and twist, and the spiral's own arm count and band gap.</summary>
-    private struct Spiral { public int Arms, BandArms; public float Pitch, Gap; }
-    private Spiral _spiral;
+    /// The spiral for this cast: the fog's arm count and twist, and the spiral's own arm count and band gap.
+    struct Spiral { public int Arms, BandArms; public float Pitch, Gap; }
+    Spiral _spiral;
 
-    private readonly TunnelFlight _tunnel = new(VortexField.FarHeight, VortexField.NearHeight);
+    readonly TunnelFlight _tunnel = new(VortexField.FarHeight, VortexField.NearHeight);
 
-    private CastFrame _f;
-    private readonly VortexField _field = new();
-    private readonly WhisperField _whispers = new(AmnesiaWhispers.Phrases, WhisperOpacity, belowVeil: true);
-    private readonly float[] _fogAt = new float[Billows], _speckAt = new float[Specks];
-    private readonly List<Thing> _things = new(128);
+    CastFrame _f;
+    readonly VortexField _field = new();
+    readonly WhisperField _whispers = new(AmnesiaWhispers.Phrases, WhisperOpacity, belowVeil: true);
+    readonly float[] _fogAt = new float[Billows], _speckAt = new float[Specks];
+    readonly List<Thing> _things = new(128);
 
     // per cast
-    private int _seed;
-    private float _hand, _spinDir, _spinRate, _spinPhase, _baseAngle, _cruise, _pullEvery, _pullPhase, _turn, _appear;
+    int _seed;
+    float _hand, _spinDir, _spinRate, _spinPhase, _baseAngle, _cruise, _pullEvery, _pullPhase, _turn, _appear;
 
     public AmnesiaEffect() : base(DebuffKind.Amnesia, "Amnesia",
         "A pale spiral turns behind milky fog that murmurs what it forgets, and the fog thins toward the middle so you can still see.",
@@ -80,14 +76,14 @@ public sealed class AmnesiaEffect : SceneEffect, IHasSwappableSlots
         if (f.Fresh) BeginCast(f.Seed);
         else if (f.Resized) _whispers.Clear();
 
-        float pull = 0.5f + 0.5f * MathF.Sin(MathF.Tau * f.Age / _pullEvery + _pullPhase);
+        float pull = 0.5f + 0.5f * Sin(Tau * f.Age / _pullEvery + _pullPhase);
         _appear = Prog(f.Age, 0.10f, 1.0f);
 
         _tunnel.Advance(f.Dt, CruiseSpeed * _cruise * Intro(f.Age, 11f));
 
         // The spiral turns so its bands flow outward, the way the fog does.
-        float omega = SpiralFlow * MathF.Tau / (_spiral.BandArms * _spiral.Gap);
-        _turn = (_turn - _hand * omega * Intro(f.Age, SpiralRush) * f.Dt) % MathF.Tau;
+        float omega = SpiralFlow * Tau / (_spiral.BandArms * _spiral.Gap);
+        _turn = (_turn - _hand * omega * Intro(f.Age, SpiralRush) * f.Dt) % Tau;
 
         // The fall breathes in.
         _view.Update(in f, extraTilt: 0.03f * pull, distanceScale: 1f - 0.04f * pull);
@@ -107,7 +103,7 @@ public sealed class AmnesiaEffect : SceneEffect, IHasSwappableSlots
 
     // the cast
 
-    private void BeginCast(int seed)
+    void BeginCast(int seed)
     {
         _seed = seed;
         _view.Begin(seed);
@@ -117,53 +113,53 @@ public sealed class AmnesiaEffect : SceneEffect, IHasSwappableSlots
         _hand = Sign(seed + 1);
         _spinDir = Sign(seed + 2);
         _spinRate = HashRange(seed + 3, 0.10f, 0.20f);
-        _spinPhase = Hash01(seed + 4) * MathF.Tau;
-        _baseAngle = Hash01(seed + 5) * MathF.Tau;
+        _spinPhase = Hash01(seed + 4) * Tau;
+        _baseAngle = Hash01(seed + 5) * Tau;
         _cruise = HashRange(seed + 7, 0.85f, 1.15f);
         _pullEvery = HashRange(seed + 8, 5.5f, 8.0f);
-        _pullPhase = Hash01(seed + 9) * MathF.Tau;
+        _pullPhase = Hash01(seed + 9) * Tau;
 
         _spiral = Roll();
 
         // Where each thing starts along the tunnel.
-        _turn = Hash01(seed + 16) * MathF.Tau;
+        _turn = Hash01(seed + 16) * Tau;
         _tunnel.Travel = Hash01(seed + 12) * _tunnel.Length;
         Spread(_fogAt, seed + 700, _tunnel.Length);
         Spread(_speckAt, seed + 800, _tunnel.Length);
     }
 
-    private static void Spread(float[] offsets, int seed, float length)
+    static void Spread(float[] offsets, int seed, float length)
     {
         for (int i = 0; i < offsets.Length; i++) offsets[i] = length * (i + Hash01(seed + i * 17)) / offsets.Length;
     }
 
-    /// <summary>The cast's spiral: the fog's arm count and twist, and the spiral's own arm count (2 or 4) and gap between bands.</summary>
-    private Spiral Roll()
+    /// The cast's spiral: the fog's arm count and twist, and the spiral's own arm count (2 or 4) and gap between bands.
+    Spiral Roll()
     {
         int s = _seed + 100;
-        return new Spiral
+        return new()
         {
             Arms = 3 + (int)(Hash01(s + 1) * 3f), Pitch = HashRange(s + 2, 0.00065f, 0.00105f),
             BandArms = Hash01(s + 3) < 0.65f ? 2 : 4, Gap = HashRange(s + 4, 0.075f, 0.105f),
         };
     }
 
-    /// <summary>The cast rushes in: 1 at rest, 1 + rush at the start, easing back.</summary>
-    private static float Intro(float age, float rush) => 1f + rush * MathF.Exp(-age / 0.70f);
+    /// The cast rushes in: 1 at rest, 1 + rush at the start, easing back.
+    static float Intro(float age, float rush) => 1f + rush * Exp(-age / 0.70f);
 
-    /// <summary>How far the view has rolled: a steady turn, a slow surge and the whip of the cast.</summary>
-    private float SpinAt(float age)
-        => _baseAngle + _spinDir * (_spinRate * age + 0.25f * MathF.Sin(0.29f * age + _spinPhase) + IntroSpin * (1f - MathF.Exp(-age / 1.2f)));
+    /// How far the view has rolled: a steady turn, a slow surge and the whip of the cast.
+    float SpinAt(float age)
+        => _baseAngle + _spinDir * (_spinRate * age + 0.25f * Sin(0.29f * age + _spinPhase) + IntroSpin * (1f - Exp(-age / 1.2f)));
 
-    private static float Prog(float age, float start, float secs) => Smooth(Saturate((age - start) / secs));
+    static float Prog(float age, float start, float secs) => Smooth(Saturate((age - start) / secs));
 
-    /// <summary>Fades a thing in out of the far end and out again once it has passed the lens.</summary>
-    private static float DepthFade(float near, float inEnd, float outStart)
+    /// Fades a thing in out of the far end and out again once it has passed the lens.
+    static float DepthFade(float near, float inEnd, float outStart)
         => Smooth(near / inEnd) * (1f - Smooth((near - outStart) / (1f - outStart)));
 
     // the tunnel and its atmosphere
 
-    private void EmitTunnel(EffectScene scene, float spin, float pull)
+    void EmitTunnel(EffectScene scene, float spin, float pull)
     {
         ref readonly CastFrame f = ref _f;
         var v = _field;
@@ -176,28 +172,28 @@ public sealed class AmnesiaEffect : SceneEffect, IHasSwappableSlots
         // The cast lands as a ring of light racing down the tunnel from its far end.
         float ring = f.Age < 1.6f ? f.Age : -1f;
         v.Front = VortexField.FarHeight + _tunnel.Length * EaseOutCubic(Saturate(ring / 1.1f));
-        v.FrontGain = ring >= 0f && ring < 1.6f ? 0.9f * MathF.Exp(-ring / 0.8f) : 0f;
+        v.FrontGain = ring >= 0f && ring < 1.6f ? 0.9f * Exp(-ring / 0.8f) : 0f;
 
         // The spiral, then the fog over it (the whispers are drawn between the two).
         scene.AddRegion(new RegionPrimitive { Min = Vector2.Zero, Max = f.Size, Alpha = 1f, State = v, ColorOverride = f.Color });
         scene.AddRegion(new RegionPrimitive { Min = Vector2.Zero, Max = f.Size, Alpha = 1f, State = v, ColorOverride = f.Color, Veil = true });
     }
 
-    private void EmitAtmosphere(EffectScene scene, float pull)
+    void EmitAtmosphere(EffectScene scene, float pull)
     {
         ref readonly CastFrame f = ref _f;
         float intro = Smooth(f.Age / IntroSecs);
 
         // The edges bleach rather than darken, the vignette breathes with the fall, and it sits over the spiral and fog.
-        scene.RequestVignette(MemoryColor.Vignette, 0.18f + 0.08f * intro, MathF.Min(1f, f.Alpha * 0.60f * intro * (0.90f + 0.15f * pull)), priority: 22, f.Color, over: true);
+        scene.RequestVignette(MemoryColor.Vignette, 0.18f + 0.08f * intro, Min(1f, f.Alpha * 0.60f * intro * (0.90f + 0.15f * pull)), priority: 22, f.Color, over: true);
     }
 
     // things that drift down the tunnel
 
-    private void AddThing(float height, in ParticlePrimitive particle) => _things.Add(new Thing { Height = height, Particle = particle });
+    void AddThing(float height, in ParticlePrimitive particle) => _things.Add(new() { Height = height, Particle = particle });
 
-    /// <summary>Billows of milky fog along the walls, swelling as they pass the lens.</summary>
-    private void CollectFog()
+    /// Billows of milky fog along the walls, swelling as they pass the lens.
+    void CollectFog()
     {
         ref readonly CastFrame f = ref _f;
         for (int i = 0; i < Billows; i++)
@@ -205,7 +201,7 @@ public sealed class AmnesiaEffect : SceneEffect, IHasSwappableSlots
             float hu = _tunnel.HeightOf(_fogAt[i], out int lap);
             float near = _tunnel.Near(hu);
             int s = _seed + 7000 + i * 7919 + lap * 104729;
-            Vector2 at = _field.At(Hash01(s + 2) * MathF.Tau, hu, HashRange(s + 1, 0.25f, 1.0f), out float scale);
+            Vector2 at = _field.At(Hash01(s + 2) * Tau, hu, HashRange(s + 1, 0.25f, 1.0f), out float scale);
 
             float k = f.Alpha * _appear * DepthFade(near, 0.20f, 0.85f) * 0.55f * (1f - 0.6f * f.Leave) * Smooth(0.22f, 0.57f, (at - f.Center).Length() / f.Short);
             if (k < 0.02f) continue;
@@ -213,13 +209,13 @@ public sealed class AmnesiaEffect : SceneEffect, IHasSwappableSlots
             AddThing(hu, new ParticlePrimitive
             {
                 Position = at, Size = HashRange(s + 3, 240f, 440f) * f.Px * scale * 0.75f, AgeRatio = 0.45f, Brightness = k,
-                Seed = s, Role = PrimitiveRole.Mist, Rotation = Hash01(s + 4) * MathF.Tau, Variant = 60, ColorOverride = f.Color,
+                Seed = s, Role = PrimitiveRole.Mist, Rotation = Hash01(s + 4) * Tau, Variant = 60, ColorOverride = f.Color,
             });
         }
     }
 
-    /// <summary>Specks of light streaming out of the far end: nothing says speed like dust going by.</summary>
-    private void CollectSpecks()
+    /// Specks of light streaming out of the far end: nothing says speed like dust going by.
+    void CollectSpecks()
     {
         ref readonly CastFrame f = ref _f;
         for (int i = 0; i < Specks; i++)
@@ -227,7 +223,7 @@ public sealed class AmnesiaEffect : SceneEffect, IHasSwappableSlots
             float hu = _tunnel.HeightOf(_speckAt[i], out int lap);
             float near = _tunnel.Near(hu);
             int s = _seed + 8000 + i * 7919 + lap * 104729;
-            Vector2 at = _field.At(Hash01(s + 2) * MathF.Tau, hu, HashRange(s + 1, 0.10f, 1.0f), out float scale);
+            Vector2 at = _field.At(Hash01(s + 2) * Tau, hu, HashRange(s + 1, 0.10f, 1.0f), out float scale);
 
             float k = f.Alpha * _appear * DepthFade(near, 0.10f, 0.92f) * HashRange(s + 3, 0.35f, 0.90f) * (1f - f.Leave) * Smooth(0.22f, 0.52f, (at - f.Center).Length() / f.Short);
             if (k < 0.02f) continue;

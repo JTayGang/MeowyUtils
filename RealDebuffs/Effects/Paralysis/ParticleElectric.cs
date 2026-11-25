@@ -1,20 +1,17 @@
-using System.Numerics;
-using Dalamud.Bindings.ImGui;
-
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>A small electric discharge: a kinked line of light that re-rolls ~16 times a second.</summary>
+/// A small electric discharge: a kinked line of light that re-rolls ~16 times a second.
 public sealed class ParticleArc : IParticleMaterial
 {
     public string Name => "particle.arc";
     public string[] NaturalLanguageWords { get; } = { "crackle", "crackles", "zaps" };
 
-    private static readonly MeshBuilder Mb = new();
+    static readonly MeshBuilder Mb = new();
 
     // Below this half-length (px at 1080p) an arc is drawn as three plain lines: it can't show more.
-    private const float LodSmall = 5f;
+    const float LodSmall = 5f;
     // At or above this one grows side branches.
-    private const float BranchFrom = 16f;
+    const float BranchFrom = 16f;
 
     public void Draw(ImDrawListPtr dl, in ParticlePrimitive p, in MaterialContext ctx)
     {
@@ -29,8 +26,8 @@ public sealed class ParticleArc : IParticleMaterial
         float px = ctx.ScreenScale;
         float half = p.Size * (0.75f + 0.25f * life);
         Vector2 pos = p.DrawPos;
-        Vector2 dir = new(MathF.Sin(p.Rotation), -MathF.Cos(p.Rotation));
-        int tick = (int)MathF.Floor(ctx.Time * 16f + Hash01(p.Seed + 3) * 8f);
+        Vector2 dir = new(Sin(p.Rotation), -Cos(p.Rotation));
+        int tick = (int)Floor(ctx.Time * 16f + Hash01(p.Seed + 3) * 8f);
         bool overridden = ColorOverrideActive;
 
         if (half < LodSmall * px)
@@ -56,18 +53,18 @@ public sealed class ParticleArc : IParticleMaterial
         {
             float t = j / (float)(m - 1);  // 0..1 along the arc
             float along = (t * 2f - 1f) * half;
-            float pin = Smooth(MathF.Min(t, 1f - t) / 0.22f);
+            float pin = Smooth(Min(t, 1f - t) / 0.22f);
             pts[j] = pos + dir * along + side * (Bolt.Lattice(p.Seed, j, tick) * amp * pin);
         }
         MeshBuilder.MiterNormals(pts[..m], nrm[..m]);
 
-        float bodyHalf = MathF.Max(0.7f * px, half * 0.055f);
-        float coreHalf = MathF.Max(0.45f * px, half * 0.022f);
-        float bloomReach = MathF.Max(3.5f * px, half * 0.42f);
+        float bodyHalf = Max(0.7f * px, half * 0.055f);
+        float coreHalf = Max(0.45f * px, half * 0.022f);
+        float bloomReach = Max(3.5f * px, half * 0.42f);
         for (int j = 0; j < m; j++)
         {
             float t = j / (float)(m - 1);
-            float ends = 0.55f + 0.45f * Smooth(MathF.Min(t, 1f - t) / 0.30f);
+            float ends = 0.55f + 0.45f * Smooth(Min(t, 1f - t) / 0.30f);
             hw[j] = bodyHalf;
             reach[j] = bloomReach;
             bloom[j] = Tint(StormColor.Glow.Sample(0.50f), k * 0.28f * ends, overridden);
@@ -96,7 +93,7 @@ public sealed class ParticleArc : IParticleMaterial
                 Vector2 d = pts[at + 1] - pts[at - 1];
                 float dl2 = d.LengthSquared();
                 if (dl2 < 1e-4f) continue;
-                Vector2 tan = d / MathF.Sqrt(dl2);
+                Vector2 tan = d / Sqrt(dl2);
                 float sgn = (i & 1) == 0 ? 1f : -1f;
                 float ang = 0.55f + 0.5f * Hash01(fs + tick * 9 + 2);
                 Bolt.Twig(tw, pts[at], Rotate(tan, sgn * ang), half * (0.55f + 0.35f * Hash01(fs + 4)), fs + 29, tick, 0.5f);
@@ -104,7 +101,7 @@ public sealed class ParticleArc : IParticleMaterial
                 for (int j = 0; j < 4; j++)
                 {
                     float taper = 1f - j / 4f;
-                    th[j] = MathF.Max(0.45f * px, bodyHalf * 0.6f * taper);
+                    th[j] = Max(0.45f * px, bodyHalf * 0.6f * taper);
                     tr[j] = bloomReach * 0.55f * taper;
                     tb[j] = Tint(StormColor.Glow.Sample(0.66f), k * 0.70f * taper, overridden);
                     tbl[j] = Tint(StormColor.Glow.Sample(0.34f), k * 0.22f * taper, overridden);
@@ -122,13 +119,13 @@ public sealed class ParticleArc : IParticleMaterial
 
         // A hot pip where the arc touches down at either end.
         uint pip = WithAlpha(StormColor.Glow.Sample(1f), k * 0.80f);
-        float pr = MathF.Max(0.9f * px, half * 0.07f);
+        float pr = Max(0.9f * px, half * 0.07f);
         dl.AddCircleFilled(pts[0], pr, pip);
         dl.AddCircleFilled(pts[m - 1], pr, pip);
     }
 
     // The cheap tier: three kinked segments and a glow dot. This is what a swarm of them costs.
-    private static void DrawSmall(ImDrawListPtr dl, Vector2 pos, Vector2 dir, float half, float k, int seed, int tick)
+    static void DrawSmall(ImDrawListPtr dl, Vector2 pos, Vector2 dir, float half, float k, int seed, int tick)
     {
         Vector2 side = new(-dir.Y, dir.X);
         Vector2 a = pos - dir * half;
@@ -144,19 +141,19 @@ public sealed class ParticleArc : IParticleMaterial
     public ReadOnlySpan<StrokeEmission> Emissions => Shed;
 
     // Crackles that hop off a strand and die: short-lived, nearly still.
-    private static readonly StrokeEmission[] Shed =
+    static readonly StrokeEmission[] Shed =
     {
         new(Role: PrimitiveRole.Arc,
             DensityPer100px: 0.5f,
             SpeedMin: 0f, SpeedMax: 12f,
             LifespanMin: 0.10f, LifespanMax: 0.28f,
             SizeMin: 7f, SizeMax: 16f,
-            SpreadRadians: MathF.PI,
+            SpreadRadians: PI,
             BiasVelocity: Vector2.Zero),
     };
 }
 
-/// <summary>A soft burst of light with a white-hot heart and an exponential-looking falloff</summary>
+/// A soft burst of light with a white-hot heart and an exponential-looking falloff
 public sealed class ParticleFlare : IParticleMaterial
 {
     public string Name => "particle.flare";
@@ -186,14 +183,14 @@ public sealed class ParticleFlare : IParticleMaterial
     public ReadOnlySpan<StrokeEmission> Emissions => Shed;
 
     // Used as an emitter it just glows where it was dropped.
-    private static readonly StrokeEmission[] Shed =
+    static readonly StrokeEmission[] Shed =
     {
         new(Role: PrimitiveRole.Flash,
             DensityPer100px: 0.12f,
             SpeedMin: 0f, SpeedMax: 6f,
             LifespanMin: 0.25f, LifespanMax: 0.5f,
             SizeMin: 18f, SizeMax: 36f,
-            SpreadRadians: MathF.PI,
+            SpreadRadians: PI,
             BiasVelocity: Vector2.Zero),
     };
 }

@@ -1,18 +1,15 @@
-using System.Numerics;
-using Dalamud.Bindings.ImGui;
-
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>Snow speck: dot with pale halo, a glint cross on ~1/4, and a comet streak when wind-blown.</summary>
+/// Snow speck: dot with pale halo, a glint cross on ~1/4, and a comet streak when wind-blown.
 public sealed class ParticleSnow : IParticleMaterial, ICoatMatter
 {
-    private GranularMatter? _matter;
+    GranularMatter? _matter;
     public string Name => "particle.snow";
     public string[] NaturalLanguageWords { get; } = { "snow", "frost", "hoarfrost", "rime", "ice", "icy", "frozen", "frosty", "snowy", "wintry", "icicle", "icicles" };
 
-    private const float StreakFromSpeed = 100f;  // px/s at 1080p; chain-shed snow tops out near 57, so it never streaks
-    private const float StreakSeconds = 0.07f;  // seconds of travel drawn behind a speck
-    private const float StreakMinSizes = 0.6f;  // streak must be this many specks long before the comet replaces the dot
+    const float StreakFromSpeed = 100f;  // px/s at 1080p; chain-shed snow tops out near 57, so it never streaks
+    const float StreakSeconds = 0.07f;  // seconds of travel drawn behind a speck
+    const float StreakMinSizes = 0.6f;  // streak must be this many specks long before the comet replaces the dot
 
     public void Draw(ImDrawListPtr dl, in ParticlePrimitive p, in MaterialContext ctx)
     {
@@ -27,7 +24,7 @@ public sealed class ParticleSnow : IParticleMaterial, ICoatMatter
         Vector2 pos = p.DrawPos;
 
         float speed = p.Velocity.Length();
-        float streak = MathF.Min(MathF.Max(0f, speed - StreakFromSpeed * ctx.ScreenScale) * StreakSeconds, size * 14f);
+        float streak = Min(Max(0f, speed - StreakFromSpeed * ctx.ScreenScale) * StreakSeconds, size * 14f);
         if (streak > size * StreakMinSizes)
         {
             DrawComet(dl, pos, p.Velocity / speed, size, streak, alpha, ctx);
@@ -48,7 +45,7 @@ public sealed class ParticleSnow : IParticleMaterial, ICoatMatter
     }
 
     // A teardrop (bright head, tail fading to nothing) as one fan.
-    private static void DrawComet(ImDrawListPtr dl, Vector2 pos, Vector2 dir, float size, float streak, float alpha, in MaterialContext ctx)
+    static void DrawComet(ImDrawListPtr dl, Vector2 pos, Vector2 dir, float size, float streak, float alpha, in MaterialContext ctx)
     {
         Vector2 nrm = new(-dir.Y, dir.X);
         Vector2 mid = pos - dir * (streak * 0.5f);
@@ -75,7 +72,7 @@ public sealed class ParticleSnow : IParticleMaterial, ICoatMatter
 
     public CoatMatter Matter => _matter ??= new GranularMatter(Name);
 
-    private static readonly StrokeEmission[] Shed =
+    static readonly StrokeEmission[] Shed =
     {
         StrokeEmission.Coated(PrimitiveRole.Snow),
 
@@ -101,14 +98,14 @@ public sealed class ParticleSnow : IParticleMaterial, ICoatMatter
     };
 }
 
-/// <summary>Six-armed crystal: three branch pairs and a forked tip per arm over a faint hexagon; turns slowly with age.</summary>
+/// Six-armed crystal: three branch pairs and a forked tip per arm over a faint hexagon; turns slowly with age.
 public sealed class ParticleSnowflake : IParticleMaterial
 {
     public string Name => "particle.snowflake";
     public string[] NaturalLanguageWords { get; } = { "snowflake", "snowflakes" };
 
     // Saturation just above 0.05, so a colour override tints it pale instead of treating it as grey.
-    private static readonly uint Frosted = Pack(0.94f, 0.98f, 1.00f);
+    static readonly uint Frosted = Pack(0.94f, 0.98f, 1.00f);
 
     public void Draw(ImDrawListPtr dl, in ParticlePrimitive p, in MaterialContext ctx)
     {
@@ -130,17 +127,17 @@ public sealed class ParticleSnowflake : IParticleMaterial
         float hexR = size * 0.55f;
         for (int i = 0; i < 6; i++)
         {
-            float a1 = rot + i * (MathF.PI / 3f);
-            float a2 = rot + (i + 1) * (MathF.PI / 3f);
-            Vector2 v1 = pos + new Vector2(MathF.Cos(a1), MathF.Sin(a1)) * hexR;
-            Vector2 v2 = pos + new Vector2(MathF.Cos(a2), MathF.Sin(a2)) * hexR;
+            float a1 = rot + i * (PI / 3f);
+            float a2 = rot + (i + 1) * (PI / 3f);
+            Vector2 v1 = pos + Dir(a1) * hexR;
+            Vector2 v2 = pos + Dir(a2) * hexR;
             dl.AddLine(v1, v2, WithAlpha(IceColor.Cold, alpha * 0.18f), 0.7f);
         }
 
         for (int arm = 0; arm < 6; arm++)
         {
-            float ang = rot + arm * (MathF.PI / 3f);
-            Vector2 dir = new(MathF.Cos(ang), MathF.Sin(ang));
+            float ang = rot + arm * (PI / 3f);
+            Vector2 dir = Dir(ang);
             Vector2 tip = pos + dir * size;
 
             dl.AddLine(pos, tip, WithAlpha(IceColor.Cold, alpha * 0.42f), 1.9f);
@@ -154,7 +151,7 @@ public sealed class ParticleSnowflake : IParticleMaterial
                 for (int side = -1; side <= 1; side += 2)
                 {
                     float bang = ang + side * 1.0f;
-                    Vector2 btip = at + new Vector2(MathF.Cos(bang), MathF.Sin(bang)) * branchLen;
+                    Vector2 btip = at + Dir(bang) * branchLen;
                     dl.AddLine(at, btip, WithAlpha(IceColor.Cold, alpha * 0.28f), 1.2f);
                     dl.AddLine(at, btip, WithAlpha(Frosted, alpha * 0.72f), 0.55f);
                 }
@@ -165,17 +162,17 @@ public sealed class ParticleSnowflake : IParticleMaterial
             for (int side = -1; side <= 1; side += 2)
             {
                 float fang = ang + side * 0.5f;
-                Vector2 ftip = forkBase + new Vector2(MathF.Cos(fang), MathF.Sin(fang)) * (size * 0.14f);
+                Vector2 ftip = forkBase + Dir(fang) * (size * 0.14f);
                 dl.AddLine(forkBase, ftip, WithAlpha(Frosted, alpha * 0.65f), 0.5f);
             }
         }
 
-        dl.AddCircleFilled(pos, MathF.Max(0.8f, size * 0.10f), WithAlpha(IceColor.White, alpha * 0.95f));
+        dl.AddCircleFilled(pos, Max(0.8f, size * 0.10f), WithAlpha(IceColor.White, alpha * 0.95f));
     }
 
     public ReadOnlySpan<StrokeEmission> Emissions => Shed;
 
-    private static readonly StrokeEmission[] Shed =
+    static readonly StrokeEmission[] Shed =
     {
         new(Role: PrimitiveRole.Snowflake,
             DensityPer100px: 1.2f,
@@ -188,16 +185,16 @@ public sealed class ParticleSnowflake : IParticleMaterial
     };
 }
 
-/// <summary>Four-point sparkle. Brightness is the twinkle and scales size. Size is the long ray; Seed rotates it.</summary>
+/// Four-point sparkle. Brightness is the twinkle and scales size. Size is the long ray; Seed rotates it.
 public sealed class ParticleGlint : IParticleMaterial
 {
-    private readonly string _name;
-    private readonly uint _white, _cold;
+    readonly string _name;
+    readonly uint _white, _cold;
 
-    /// <summary>The icy glint (particle.glint).</summary>
+    /// The icy glint (particle.glint).
     public ParticleGlint() : this("particle.glint", IceColor.White, IceColor.Cold, "glint", "glints", "sparkle", "sparkles", "glitter") { }
 
-    /// <summary>The same star in another light: a bright heart and the tint of its rays.</summary>
+    /// The same star in another light: a bright heart and the tint of its rays.
     internal ParticleGlint(string name, uint white, uint cold, params string[] words)
     {
         _name = name; _white = white; _cold = cold;
@@ -207,16 +204,16 @@ public sealed class ParticleGlint : IParticleMaterial
     public string Name => _name;
     public string[] NaturalLanguageWords { get; }
 
-    private const int Rays = 8;  // alternating long / short: tip, notch, tip, notch ...
+    const int Rays = 8;  // alternating long / short: tip, notch, tip, notch ...
 
     public void Draw(ImDrawListPtr dl, in ParticlePrimitive p, in MaterialContext ctx)
     {
         float k = p.Brightness * ctx.Alpha;
         if (k <= 0.01f || p.Size <= 1f) return;
 
-        float inten = Math.Min(1f, k);
-        float R = p.Size * (0.30f + 0.70f * MathF.Sqrt(inten));
-        float rot = Hash01(p.Seed + 1) * MathF.PI * 0.5f;
+        float inten = Min(1f, k);
+        float R = p.Size * (0.30f + 0.70f * Sqrt(inten));
+        float rot = Hash01(p.Seed + 1) * PI * 0.5f;
         float squash = 0.55f + 0.30f * Hash01(p.Seed + 2);
         Vector2 c = p.Position;
 
@@ -235,16 +232,16 @@ public sealed class ParticleGlint : IParticleMaterial
         Span<uint> rimCol = stackalloc uint[Rays * 2];
         for (int j = 0; j < Rays; j++)
         {
-            float ang = rot + j * (MathF.Tau / Rays);
+            float ang = rot + j * (Tau / Rays);
             float tipR = (j & 1) == 0 ? R : R * 0.34f * squash;
-            float nAng = ang + MathF.Tau / Rays * 0.5f;
-            rim[j * 2]     = c + new Vector2(MathF.Cos(ang), MathF.Sin(ang)) * tipR;
-            rim[j * 2 + 1] = c + new Vector2(MathF.Cos(nAng), MathF.Sin(nAng)) * (R * 0.15f);
+            float nAng = ang + Tau / Rays * 0.5f;
+            rim[j * 2]     = c + Dir(ang) * tipR;
+            rim[j * 2 + 1] = c + Dir(nAng) * (R * 0.15f);
             rimCol[j * 2]     = tipCol;
             rimCol[j * 2 + 1] = notchCol;
         }
         MeshDraw.Fan(dl, uv, c, centerCol, rim, rimCol);
 
-        dl.AddCircleFilled(c, MathF.Max(0.8f, R * 0.09f), WithAlpha(_white, inten));
+        dl.AddCircleFilled(c, Max(0.8f, R * 0.09f), WithAlpha(_white, inten));
     }
 }

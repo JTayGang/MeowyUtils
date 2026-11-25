@@ -1,9 +1,6 @@
-using System.Numerics;
-using RealDebuffs.Effects.Framework;
-
 namespace RealDebuffs.Effects;
 
-/// <summary>Silence: a curse seal of rings, runes and triangles slams down and burns on; blocked chat makes it reject.</summary>
+/// Silence: a curse seal of rings, runes and triangles slams down and burns on; blocked chat makes it reject.
 public sealed class SilenceEffect : SceneEffect, IHasSwappableSlots, IReactsToBlockedChat
 {
     public IReadOnlyList<SwappableSlot> Slots { get; } = new SwappableSlot[]
@@ -19,95 +16,84 @@ public sealed class SilenceEffect : SceneEffect, IHasSwappableSlots, IReactsToBl
     };
 
     // camera
-    private const float CameraDistance = 1500f;
-    private readonly SigilView _view = new(new SigilSway(BaseTilt: 0.15f, TiltSway: 0.035f, Precession: 0.21f, LurchTilt: 0.20f, LurchSeconds: 0.9f, BreathBase: 0.90f, BreathAmp: 0.10f), CameraDistance);
+    const float CameraDistance = 1500f;
+    readonly SigilView _view = new(new SigilSway(BaseTilt: 0.15f, TiltSway: 0.035f, Precession: 0.21f, LurchTilt: 0.20f, LurchSeconds: 0.9f, BreathBase: 0.90f, BreathAmp: 0.10f), CameraDistance);
 
     // layout: radii are short-side fractions, heights px toward the viewer
-    private const float FarHeight = -330f,  HeroHeight = -150f, SealHeight = 0f, NodeHeight = 240f;
-    private const float TriHeightA = 95f,   TriHeightB = 180f;
-    private const float FarOuter = 0.800f,  FarInner = 0.735f,  FarRunes = 0.7675f;
-    private const float HeroRadius = 0.625f;
-    private const float SealOuter = 0.515f, SealInner = 0.485f;
-    private const float TriRadius = 0.455f;
-    private const float NodeRing = 0.385f,  NodeRadius = 0.017f;
-    private const int   NodeCount = 12, FarRuneCount = 44;
+    const float FarHeight = -330f,  HeroHeight = -150f, SealHeight = 0f, NodeHeight = 240f, TriHeightA = 95f,   TriHeightB = 180f;
+    const float FarOuter = 0.800f,  FarInner = 0.735f,  FarRunes = 0.7675f, HeroRadius = 0.625f;
+    const float SealOuter = 0.515f, SealInner = 0.485f, TriRadius = 0.455f, NodeRing = 0.385f,  NodeRadius = 0.017f;
+    const int   NodeCount = 12, FarRuneCount = 44;
 
     // spin rad/s per layer
-    private const float FarSpin = 0.040f, HeroSpin = -0.030f, SealSpin = 0.055f, TriSpinA = -0.085f, TriSpinB = 0.070f, NodeSpin = 0.110f;
+    const float FarSpin = 0.040f, HeroSpin = -0.030f, SealSpin = 0.055f, TriSpinA = -0.085f, TriSpinB = 0.070f, NodeSpin = 0.110f;
 
-    private const float HeroWobble = 0.010f;
+    const float HeroWobble = 0.010f;
 
     // line widths, px at 1080p
-    private const float FarWidth = 10f, SealWidth = 12f, SealDashWidth = 9f, TriWidth = 11f, NodeWidth = 8f, NodeCircleWidth = 7f, ShockWidth = 15f;
-    private const float SealDash = 30f;
+    const float FarWidth = 10f, SealWidth = 12f, SealDashWidth = 9f, TriWidth = 11f, NodeWidth = 8f, NodeCircleWidth = 7f, ShockWidth = 15f;
+    const float SealDash = 30f;
 
     // cast
-    private const float ArriveLift = 520f;
-    private const float ArriveSeconds = 0.62f;
-    private const float LockSeconds = 0.70f;
-    private static readonly float[] ArriveAt = { 0.08f, 0.20f, 0.32f, 0.44f, 0.56f };  // far, hero, seal, triangles, nodes
-    private const float SpinIn = 1.5f;
-    private const float LeaveLift = 300f;
+    const float ArriveLift = 520f, ArriveSeconds = 0.62f, LockSeconds = 0.70f;
+    static readonly float[] ArriveAt = { 0.08f, 0.20f, 0.32f, 0.44f, 0.56f };  // far, hero, seal, triangles, nodes
+    const float SpinIn = 1.5f, LeaveLift = 300f;
 
     // hush
-    private const float FirstHush = 2.8f;
-    private const float HushSecondsLong = 2.4f;
-    private const float HushGain = 0.55f;
+    const float FirstHush = 2.8f, HushSecondsLong = 2.4f, HushGain = 0.55f;
 
     // denied message
-    private const float DenySeconds = 1.0f;
-    private const float DenyShake = 14f, DenyShakeRate = 42f, DenyShakeDecay = 0.13f, DenyTilt = 0.08f;
-    private const float DenyFlareDecay = 0.30f;
-    private const float DenyGain = 0.9f;
+    const float DenySeconds = 1.0f, DenyShake = 14f, DenyShakeRate = 42f, DenyShakeDecay = 0.13f, DenyTilt = 0.08f;
+    const float DenyFlareDecay = 0.30f, DenyGain = 0.9f;
 
-    private const float RuneSize = 27f;
-    private const int   MaxFloating = 14;
+    const float RuneSize = 27f;
+    const int   MaxFloating = 14;
 
-    private static readonly uint Flash = CurseColor.Flash;
-    private static readonly uint Hush = Pack(0.060f, 0.012f, 0.100f);
-    private static readonly uint Veil = Pack(0.58f, 0.13f, 0.82f);
+    static readonly uint Flash = CurseColor.Flash;
+    static readonly uint Hush = Pack(0.060f, 0.012f, 0.100f);
+    static readonly uint Veil = Pack(0.58f, 0.13f, 0.82f);
 
-    private const float NeverDenied = -1000f;
+    const float NeverDenied = -1000f;
 
-    private enum Layer { Far, Hero, Seal, Triangles, Nodes }
+    enum Layer { Far, Hero, Seal, Triangles, Nodes }
 
-    private const int RingSegments = 128, HeroSegments = 144, NodeSegments = 20, ShockSegments = 96;
+    const int RingSegments = 128, HeroSegments = 144, NodeSegments = 20, ShockSegments = 96;
 
-    private readonly StrandPath _farOuter = new(RingSegments + 1), _farInner = new(RingSegments + 1);
-    private readonly StrandPath _hero = new(HeroSegments + 1);
-    private readonly StrandPath _sealOuter = new(RingSegments + 1), _sealInner = new(RingSegments + 1);
-    private readonly StrandPath _triA = new(4), _triB = new(4);
-    private readonly StrandPath _nodeRing = new(RingSegments + 1);
-    private readonly StrandPath[] _nodes = new StrandPath[NodeCount];
-    private readonly StrandPath _shock = new(ShockSegments + 1);
+    readonly StrandPath _farOuter = new(RingSegments + 1), _farInner = new(RingSegments + 1);
+    readonly StrandPath _hero = new(HeroSegments + 1);
+    readonly StrandPath _sealOuter = new(RingSegments + 1), _sealInner = new(RingSegments + 1);
+    readonly StrandPath _triA = new(4), _triB = new(4);
+    readonly StrandPath _nodeRing = new(RingSegments + 1);
+    readonly StrandPath[] _nodes = new StrandPath[NodeCount];
+    readonly StrandPath _shock = new(ShockSegments + 1);
 
-    private struct Floating
+    struct Floating
     {
         public float Angle, Radius, Height, Lift, Spin, Born, Life, Size, Tilt;
         public int Seed;
     }
 
-    private readonly Floating[] _floating = new Floating[MaxFloating];
-    private int _floatingCount;
-    private readonly MoteField _motes = new(64, 700f, -450f, (10f, 34f), (12f, 46f), (1.8f, 4.4f));
-    private readonly ShockFront[] _fronts = new ShockFront[4];
-    private int _frontCount;
+    readonly Floating[] _floating = new Floating[MaxFloating];
+    int _floatingCount;
+    readonly MoteField _motes = new(64, 700f, -450f, (10f, 34f), (12f, 46f), (1.8f, 4.4f));
+    readonly ShockFront[] _fronts = new ShockFront[4];
+    int _frontCount;
 
-    private CastFrame _f;
-    private int _seed, _runeSpawns;
-    private float _hushEvery, _nextRune;
-    private float _deniedAt = NeverDenied;
-    private bool _stamped;
+    CastFrame _f;
+    int _seed, _runeSpawns;
+    float _hushEvery, _nextRune;
+    float _deniedAt = NeverDenied;
+    bool _stamped;
 
-    private readonly ParticleSystem _miasma = new(12, 0x51A3C3);
-    private readonly Func<int, Vector2> _miasmaPos, _miasmaVel;
+    readonly ParticleSystem _miasma = new(12, 0x51A3C3);
+    readonly Func<int, Vector2> _miasmaPos, _miasmaVel;
 
     public SilenceEffect() : base(DebuffKind.Silence, "Silence",
         "A curse seal slams down around the screen, then burns on: rings turning at different depths, drifting runes, violet light.",
         6, "Silence",
         keywords: ["silence", "silenced", "mute", "muted", "gagged", "voiceless"], envelope: true)
     {
-        for (int i = 0; i < NodeCount; i++) _nodes[i] = new StrandPath(NodeSegments + 1);
+        for (int i = 0; i < NodeCount; i++) _nodes[i] = new(NodeSegments + 1);
 
         // Wisps leave the binding ring and drift off it, inward or out.
         _miasmaPos = seed =>
@@ -125,7 +111,7 @@ public sealed class SilenceEffect : SceneEffect, IHasSwappableSlots, IReactsToBl
         };
     }
 
-    /// <summary>The chat blocker swallowed a message: the seal rejects it.</summary>
+    /// The chat blocker swallowed a message: the seal rejects it.
     public void OnChatBlocked(float time) => _deniedAt = time;
 
     protected override void Emit(EffectScene scene, in CastFrame f)
@@ -136,8 +122,8 @@ public sealed class SilenceEffect : SceneEffect, IHasSwappableSlots, IReactsToBl
         // A swallowed message: damped-sine shake, decaying flare. Not while the curse is lifting.
         float sinceDenied = f.Time - _deniedAt;
         bool denied = !f.Leaving && sinceDenied >= 0f && sinceDenied < DenySeconds;
-        float denyFlare = denied ? MathF.Exp(-sinceDenied / DenyFlareDecay) : 0f;
-        float shake = denied ? MathF.Sin(sinceDenied * DenyShakeRate) * MathF.Exp(-sinceDenied / DenyShakeDecay) * DenyShake * f.Px : 0f;
+        float denyFlare = denied ? Exp(-sinceDenied / DenyFlareDecay) : 0f;
+        float shake = denied ? Sin(sinceDenied * DenyShakeRate) * Exp(-sinceDenied / DenyShakeDecay) * DenyShake * f.Px : 0f;
 
         _view.Update(in f, extraTilt: DenyTilt * denyFlare, shift: new Vector2(shake, 0f));
         _frontCount = BuildFronts(_fronts, f.Age, denied ? sinceDenied : -1f, f.Short);
@@ -152,7 +138,7 @@ public sealed class SilenceEffect : SceneEffect, IHasSwappableSlots, IReactsToBl
                     blurDim: 0.45f, twinkle: 0f, f.Color);
     }
 
-    private void BeginCast(int seed)
+    void BeginCast(int seed)
     {
         _seed = seed;
         _deniedAt = NeverDenied;
@@ -166,24 +152,24 @@ public sealed class SilenceEffect : SceneEffect, IHasSwappableSlots, IReactsToBl
     }
 
     // The shocks: sound drawn in, the seal locking, a bounced message, and the occasional settled hush.
-    private int BuildFronts(Span<ShockFront> into, float age, float sinceDenied, float shortSide)
+    int BuildFronts(Span<ShockFront> into, float age, float sinceDenied, float shortSide)
     {
         int n = 0;
 
         if (age < 0.60f)
         {
             float p = age / 0.60f;
-            into[n++] = new ShockFront(shortSide * (1.15f * (1f - p * p) + 0.04f), shortSide * 0.07f, 0.9f * MathF.Sin(MathF.PI * MathF.Min(1f, p * 1.15f)));
+            into[n++] = new(shortSide * (1.15f * (1f - p * p) + 0.04f), shortSide * 0.07f, 0.9f * Sin(PI * Min(1f, p * 1.15f)));
         }
 
         float tl = age - LockSeconds;
         if (tl > 0f && tl < 1.1f)
-            into[n++] = new ShockFront(shortSide * (0.05f + 1.45f * tl), shortSide * 0.06f, 1.2f * MathF.Pow(1f - tl / 1.1f, 1.4f));
+            into[n++] = new(shortSide * (0.05f + 1.45f * tl), shortSide * 0.06f, 1.2f * Pow(1f - tl / 1.1f, 1.4f));
 
         if (sinceDenied >= 0f && n < into.Length)
         {
             float u = sinceDenied / DenySeconds;
-            into[n++] = new ShockFront(shortSide * (0.16f + 0.95f * EaseOutCubic(u)), shortSide * 0.055f, DenyGain * (1f - Smooth(u)));
+            into[n++] = new(shortSide * (0.16f + 0.95f * EaseOutCubic(u)), shortSide * 0.055f, DenyGain * (1f - Smooth(u)));
         }
 
         float th = age - FirstHush;
@@ -193,32 +179,32 @@ public sealed class SilenceEffect : SceneEffect, IHasSwappableSlots, IReactsToBl
             if (tp < HushSecondsLong)
             {
                 float u = tp / HushSecondsLong;
-                into[n++] = new ShockFront(shortSide * (0.20f + 0.90f * EaseOutCubic(u)), shortSide * 0.07f, HushGain * (1f - Smooth(u)));
+                into[n++] = new(shortSide * (0.20f + 0.90f * EaseOutCubic(u)), shortSide * 0.07f, HushGain * (1f - Smooth(u)));
             }
         }
         return n;
     }
 
-    private float Excite(float screenRadius) => ShockFront.Excite(_fronts.AsSpan(0, _frontCount), screenRadius);
+    float Excite(float screenRadius) => ShockFront.Excite(_fronts.AsSpan(0, _frontCount), screenRadius);
 
-    private static float TurnIn(float landed) => SpinIn * (1f - landed) * (1f - landed);
+    static float TurnIn(float landed) => SpinIn * (1f - landed) * (1f - landed);
 
     // How far a layer has landed (0..1), how far it still has to fall, and how solid it is.
-    private static void Arrive(float age, Layer layer, float leave, out float lift, out float appear, out float landed)
+    static void Arrive(float age, Layer layer, float leave, out float lift, out float appear, out float landed)
     {
         landed = Saturate((age - ArriveAt[(int)layer]) / ArriveSeconds);
         lift = (1f - EaseOutBack(landed)) * ArriveLift + leave * LeaveLift;
         appear = Smooth(landed / 0.40f) * (1f - Smooth(leave));
     }
 
-    private static float EaseOutBack(float t)
+    static float EaseOutBack(float t)
     {
         const float c1 = 1.35f;
         float u = t - 1f;
         return 1f + (c1 + 1f) * u * u * u + c1 * u * u;
     }
 
-    private void EmitAtmosphere(EffectScene scene, float castGate, float denyFlare)
+    void EmitAtmosphere(EffectScene scene, float castGate, float denyFlare)
     {
         ref readonly CastFrame f = ref _f;
         float castIn = Smooth(f.Age / 0.45f);
@@ -227,16 +213,16 @@ public sealed class SilenceEffect : SceneEffect, IHasSwappableSlots, IReactsToBl
         scene.EdgeSpill(f.Size, f.Short * 0.13f, Veil, 0.20f * f.Alpha * castIn * _view.Breath * (1f + 1.2f * denyFlare), f.Color);
 
         // The cast's own flash and hush use the gate, so the manager's fade-in can't swallow them.
-        float flash = f.Age < 0.45f ? MathF.Exp(-f.Age / 0.10f) : 0f;
+        float flash = f.Age < 0.45f ? Exp(-f.Age / 0.10f) : 0f;
         scene.Wash(f.Size, Flash, 0.42f * flash * castGate, f.Color);
         float hush = Smooth(f.Age / 0.25f) * (1f - Smooth((f.Age - 0.35f) / 1.3f));
         scene.Wash(f.Size, Hush, 0.34f * hush * castGate, f.Color);
     }
 
-    private void Inscribe(EffectScene scene, StrandPath path, int salt, float width, float bright, float depth, float excite, float landed, float dash)
+    void Inscribe(EffectScene scene, StrandPath path, int salt, float width, float bright, float depth, float excite, float landed, float dash)
         => scene.Ring(path, PrimitiveRole.Inscription, _seed, salt, width, bright, depth, excite, Saturate(landed * 1.35f), dash, _f.Color);
 
-    private void EmitRings(EffectScene scene)
+    void EmitRings(EffectScene scene)
     {
         ref readonly CastFrame f = ref _f;
         ref readonly LayerCamera cam = ref _view.Cam;
@@ -278,7 +264,7 @@ public sealed class SilenceEffect : SceneEffect, IHasSwappableSlots, IReactsToBl
                 _stamped = true;
                 for (int k = 0; k < 9; k++)
                 {
-                    float a = ang + MathF.Tau * (k + Hash01(_seed + k * 3) * 0.6f) / 9f;
+                    float a = ang + Tau * (k + Hash01(_seed + k * 3) * 0.6f) / 9f;
                     Vector2 at = SigilGeometry.PointOn(in cam, SigilGeometry.PlaneRadius(eff, h, dist), h, a, out _, out Vector2 outward);
                     if (at.X < 0f || at.Y < 0f || at.X > f.Size.X || at.Y > f.Size.Y) continue;
 
@@ -315,7 +301,7 @@ public sealed class SilenceEffect : SceneEffect, IHasSwappableSlots, IReactsToBl
 
             float hA = TriHeightA * px + lift * px, hB = TriHeightB * px + lift * px;
             SigilGeometry.Polygon(_triA, in cam, 3, SigilGeometry.PlaneRadius(er, hA, dist), hA, TriSpinA * age - turnIn + _seed * 0.0003f);
-            SigilGeometry.Polygon(_triB, in cam, 3, SigilGeometry.PlaneRadius(er, hB, dist), hB, TriSpinB * age + turnIn + MathF.PI / 3f + _seed * 0.0003f);
+            SigilGeometry.Polygon(_triB, in cam, 3, SigilGeometry.PlaneRadius(er, hB, dist), hB, TriSpinB * age + turnIn + PI / 3f + _seed * 0.0003f);
             Inscribe(scene, _triA, 5, TriWidth * px * cam.ScaleAt(hA), bright, 0f, excite, landed, 0f);
             Inscribe(scene, _triB, 7, TriWidth * px * cam.ScaleAt(hB), bright * 0.92f, 0f, excite, landed, 0f);
         }
@@ -337,8 +323,8 @@ public sealed class SilenceEffect : SceneEffect, IHasSwappableSlots, IReactsToBl
             float beadR = SigilGeometry.PlaneRadius(NodeRadius * shortSide, h, dist);
             for (int i = 0; i < NodeCount; i++)
             {
-                float a = ang + MathF.Tau * i / NodeCount;
-                SigilGeometry.Ring(_nodes[i], NodeSegments, in cam, beadR, h, 0f, RingWobble.None, planeR * MathF.Cos(a), planeR * MathF.Sin(a));
+                float a = ang + Tau * i / NodeCount;
+                SigilGeometry.Ring(_nodes[i], NodeSegments, in cam, beadR, h, 0f, RingWobble.None, planeR * Cos(a), planeR * Sin(a));
                 Inscribe(scene, _nodes[i], 10 + i, NodeCircleWidth * px * scale, bright * 0.95f, 0f, excite, 1f, 0f);
             }
         }
@@ -350,15 +336,15 @@ public sealed class SilenceEffect : SceneEffect, IHasSwappableSlots, IReactsToBl
         if (strongest >= 0)
         {
             var r = _fronts[strongest];
-            SigilGeometry.Ring(_shock, ShockSegments, in cam, MathF.Max(8f * px, r.Front), 0f, 0f, RingWobble.None);
+            SigilGeometry.Ring(_shock, ShockSegments, in cam, Max(8f * px, r.Front), 0f, 0f, RingWobble.None);
 
             // Dark at screen centre (a bright ring there reads as a crosshair), brighter as it reaches the rings.
             float reachIn = Smooth((r.Front - 0.08f * shortSide) / (0.22f * shortSide));
-            Inscribe(scene, _shock, 30, ShockWidth * px, alpha * MathF.Min(1.4f, r.Gain * 1.2f) * reachIn, 0f, r.Gain, 1f, 0f);
+            Inscribe(scene, _shock, 30, ShockWidth * px, alpha * Min(1.4f, r.Gain * 1.2f) * reachIn, 0f, r.Gain, 1f, 0f);
         }
     }
 
-    private void EmitFarRunes(EffectScene scene)
+    void EmitFarRunes(EffectScene scene)
     {
         ref readonly CastFrame f = ref _f;
         Arrive(f.Age, Layer.Far, f.Leave, out float lift, out float appear, out float landed);
@@ -373,14 +359,14 @@ public sealed class SilenceEffect : SceneEffect, IHasSwappableSlots, IReactsToBl
         for (int i = 0; i < FarRuneCount; i++)
         {
             float u = i / (float)FarRuneCount;
-            float a = ang + MathF.Tau * u;
+            float a = ang + Tau * u;
 
             // They light in order round the ring as the seal lands.
             float ignite = Saturate((f.Age - 0.70f - 0.9f * u) / 0.22f);
-            float flare = ignite > 0f && ignite < 1f ? 1f + 1.4f * MathF.Sin(MathF.PI * ignite) : 1f;
+            float flare = ignite > 0f && ignite < 1f ? 1f + 1.4f * Sin(PI * ignite) : 1f;
 
-            float d = MathF.Abs(MathF.IEEERemainder(a - scan, MathF.Tau)) / 0.30f;
-            float sweep = MathF.Exp(-d * d);
+            float d = Abs(IEEERemainder(a - scan, Tau)) / 0.30f;
+            float sweep = Exp(-d * d);
 
             float k = f.Alpha * appear * ignite * (0.70f + 0.95f * sweep + 0.5f * excite) * flare * (0.80f + 0.20f * _view.Breath);
             if (k <= 0.01f) continue;
@@ -396,13 +382,13 @@ public sealed class SilenceEffect : SceneEffect, IHasSwappableSlots, IReactsToBl
             {
                 Position = at, Size = RuneSize * px * scale, AgeRatio = 0.5f, Brightness = k * 0.70f,
                 Seed = _seed + i * 977, Role = PrimitiveRole.Rune, Variant = variant,
-                Rotation = MathF.Atan2(outward.X, -outward.Y), ColorOverride = f.Color,
+                Rotation = Atan2(outward.X, -outward.Y), ColorOverride = f.Color,
             });
         }
     }
 
     // Runes peel off the seal and drift toward the lens, turning and growing as they come.
-    private void EmitFloatingRunes(EffectScene scene)
+    void EmitFloatingRunes(EffectScene scene)
     {
         ref readonly CastFrame f = ref _f;
         float px = _f.Px, dist = CameraDistance * px, age = f.Age;
@@ -410,9 +396,9 @@ public sealed class SilenceEffect : SceneEffect, IHasSwappableSlots, IReactsToBl
         if (age >= _nextRune && _floatingCount < MaxFloating && !f.Leaving)
         {
             int s = _seed + _runeSpawns * 4099 + 5;
-            _floating[_floatingCount++] = new Floating
+            _floating[_floatingCount++] = new()
             {
-                Angle = Hash01(s + 1) * MathF.Tau,
+                Angle = Hash01(s + 1) * Tau,
                 Radius = HashRange(s + 2, 0.40f, 0.70f),
                 Height = HashRange(s + 3, -120f, 60f),
                 Lift = HashRange(s + 4, 55f, 120f),
@@ -445,13 +431,13 @@ public sealed class SilenceEffect : SceneEffect, IHasSwappableSlots, IReactsToBl
             {
                 Position = at, Size = RuneSize * 1.15f * fl.Size * px * scale, AgeRatio = 0.5f,
                 Brightness = f.Alpha * fade * 0.85f, Seed = fl.Seed, Role = PrimitiveRole.Rune, Variant = 0,
-                Rotation = fl.Tilt + 0.20f * MathF.Sin(t * 0.9f + fl.Seed), ColorOverride = f.Color,
+                Rotation = fl.Tilt + 0.20f * Sin(t * 0.9f + fl.Seed), ColorOverride = f.Color,
             });
         }
         _floatingCount = w;
     }
 
-    private void EmitMiasma(EffectScene scene, float time, float dt)
+    void EmitMiasma(EffectScene scene, float time, float dt)
     {
         ref readonly CastFrame f = ref _f;
         if (f.Age > 0.9f && _hero.Count > 4 && !f.Leaving)

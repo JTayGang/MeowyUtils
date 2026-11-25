@@ -1,29 +1,22 @@
-using System.Numerics;
-using Dalamud.Bindings.ImGui;
-
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>Iron chain: oval links rolled about the strand, matcap-shaded, far halves first so edge-on links interlock.</summary>
+/// Iron chain: oval links rolled about the strand, matcap-shaded, far halves first so edge-on links interlock.
 public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfaceProvider
 {
     public string Name => "stroke.chain";
     public string[] NaturalLanguageWords { get; } = { "chain", "chains", "links" };
 
-    private const float MinLinkFrac = 0.030f;
-    private const float MaxLinkFrac = 0.085f;
-    private const int MaxLinks = 200;
+    const float MinLinkFrac = 0.030f, MaxLinkFrac = 0.085f;
+    const int MaxLinks = 200;
 
     // Link proportions as fractions of outer length L: 5 bar-diameters long, 3.4 wide
-    private const float BarDiameter = 0.200f;
-    private const float Pitch       = 0.600f;
-    private const float HalfAxis    = 0.400f;
-    private const float HalfLateral = 0.240f;
-    private const float CapCentre   = HalfAxis - HalfLateral;
+    const float BarDiameter = 0.200f, Pitch       = 0.600f, HalfAxis    = 0.400f, HalfLateral = 0.240f;
+    const float CapCentre   = HalfAxis - HalfLateral;
 
-    private static readonly Matcap Iron  = new(SurfacePresets.BlackIron);
-    private static readonly Matcap Steel = new(SurfacePresets.WornSteel);
-    private static readonly Matcap Aged  = new(SurfacePresets.AgedIron);
-    private static readonly Matcap Rust  = new(SurfacePresets.Rust);
+    static readonly Matcap Iron  = new(SurfacePresets.BlackIron);
+    static readonly Matcap Steel = new(SurfacePresets.WornSteel);
+    static readonly Matcap Aged  = new(SurfacePresets.AgedIron);
+    static readonly Matcap Rust  = new(SurfacePresets.Rust);
 
     internal sealed class RingTable
     {
@@ -34,7 +27,7 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
 
     internal static readonly RingTable[] Rings = { null!, null!, BuildRing(2), BuildRing(3), BuildRing(4) };
 
-    private static RingTable BuildRing(int k)
+    static RingTable BuildRing(int k)
     {
         int m = 2 * (k + 1);
         var t = new RingTable
@@ -44,40 +37,40 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
 
         for (int q = 0; q <= k; q++)
         {
-            float phi = q / (float)k * (MathF.PI * 0.5f);
-            t.X[q] = CapCentre + HalfLateral * MathF.Cos(phi);
-            t.Y[q] = HalfLateral * MathF.Sin(phi);
-            t.NX[q] = MathF.Cos(phi); t.NY[q] = MathF.Sin(phi);
+            float phi = q / (float)k * (PI * 0.5f);
+            t.X[q] = CapCentre + HalfLateral * Cos(phi);
+            t.Y[q] = HalfLateral * Sin(phi);
+            t.NX[q] = Cos(phi); t.NY[q] = Sin(phi);
 
             int j = k + 1 + q;
-            float phi2 = MathF.PI * 0.5f + q / (float)k * (MathF.PI * 0.5f);
-            t.X[j] = -CapCentre + HalfLateral * MathF.Cos(phi2);
-            t.Y[j] = HalfLateral * MathF.Sin(phi2);
-            t.NX[j] = MathF.Cos(phi2); t.NY[j] = MathF.Sin(phi2);
+            float phi2 = PI * 0.5f + q / (float)k * (PI * 0.5f);
+            t.X[j] = -CapCentre + HalfLateral * Cos(phi2);
+            t.Y[j] = HalfLateral * Sin(phi2);
+            t.NX[j] = Cos(phi2); t.NY[j] = Sin(phi2);
         }
 
         for (int i = 0; i < m; i++)
         {
-            float q = MathF.Abs(t.X[i]) / HalfAxis;
+            float q = Abs(t.X[i]) / HalfAxis;
             t.Cap[i] = Smooth((q - 0.55f) / 0.45f);
         }
         t.Arc = new float[m]; t.Frac = new float[m];
-        for (int i = 1; i < m; i++) t.Arc[i] = t.Arc[i - 1] + MathF.Sqrt((t.X[i] - t.X[i - 1]) * (t.X[i] - t.X[i - 1]) + (t.Y[i] - t.Y[i - 1]) * (t.Y[i] - t.Y[i - 1]));
+        for (int i = 1; i < m; i++) t.Arc[i] = t.Arc[i - 1] + Sqrt((t.X[i] - t.X[i - 1]) * (t.X[i] - t.X[i - 1]) + (t.Y[i] - t.Y[i - 1]) * (t.Y[i] - t.Y[i - 1]));
         for (int i = 0; i < m; i++) t.Frac[i] = t.Arc[i] / t.Arc[m - 1];
         return t;
     }
 
     // Column offsets across the bar (-1..1; first/last are the AA fringe)
-    private static readonly float[] Cols7   = { -1f, -1f, -0.62f, 0f, 0.62f, 1f, 1f };
-    private static readonly float[] Cols5   = { -1f, -1f, 0f, 1f, 1f };
-    private static readonly float[] Cols7Sq = BuildSq(Cols7);
-    private static readonly float[] Cols5Sq = BuildSq(Cols5);
+    static readonly float[] Cols7   = { -1f, -1f, -0.62f, 0f, 0.62f, 1f, 1f };
+    static readonly float[] Cols5   = { -1f, -1f, 0f, 1f, 1f };
+    static readonly float[] Cols7Sq = BuildSq(Cols7);
+    static readonly float[] Cols5Sq = BuildSq(Cols5);
 
-    private static float[] BuildSq(float[] us)
+    static float[] BuildSq(float[] us)
     {
         var r = new float[us.Length];
         for (int i = 0; i < us.Length; i++)
-            r[i] = MathF.Sqrt(MathF.Max(0f, 1f - us[i] * us[i]));
+            r[i] = Sqrt(Max(0f, 1f - us[i] * us[i]));
         return r;
     }
 
@@ -85,19 +78,18 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
     {
         public Vector2 C, T, N;
         public float Cos, Sin, Tone, Rust, Alpha;
-        public int   Index;
-        public int   BucketPlus, BucketMinus;
+        public int   Index, BucketPlus, BucketMinus;
         public float Arc, Span;  // where along the strand this link sits and how much of it it covers
     }
 
-    /// <summary>One chain stroke's geometry at one moment (links, pose, roll, depth buckets, LOD), built once a frame; drawing and charts both read it.</summary>
+    /// One chain stroke's geometry at one moment (links, pose, roll, depth buckets, LOD), built once a frame; drawing and charts both read it.
     internal sealed class Snapshot
     {
         public readonly Link[] Links = new Link[MaxLinks];
         public StrandPath? Path; public float Time, Reveal, Width;  // what it was built from: a memo, rebuilt if any of these differ
         public bool Built, Valid;
         public int Count, LinkCount, RingK, Tier, Seed;  // Count: links laid; LinkCount: links the strand has, laid or not
-        public float[]?[] Adh = Array.Empty<float[]?>();  // each link half's adhesion by chart cell (rule 9), kept while the chart's tier and ring stay
+        public float[]?[] Adh = [];  // each link half's adhesion by chart cell (rule 9), kept while the chart's tier and ring stay
         public int AdhKey = -1;
         public float L, Total, Pitch, VisibleLen, Bar, Feather, Depth, Agit;
         public bool Closed, FullyRevealed;
@@ -105,17 +97,17 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
         public Matcap Body = Iron;
     }
 
-    private readonly record struct SnapKey(DebuffKind Owner, int Seed, PrimitiveRole Role);
-    private readonly Dictionary<SnapKey, Snapshot> _snaps = new();
-    private readonly List<SnapKey> _dead = new();
+    readonly record struct SnapKey(DebuffKind Owner, int Seed, PrimitiveRole Role);
+    readonly Dictionary<SnapKey, Snapshot> _snaps = new();
+    readonly List<SnapKey> _dead = new();
 
-    private Snapshot? Acquire(in StrokePrimitive s, float shortSide, float px, float time, float screenW, float screenH)
+    Snapshot? Acquire(in StrokePrimitive s, float shortSide, float px, float time, float screenW, float screenH)
     {
         var key = new SnapKey(s.Owner, s.Seed, s.Role);
         if (!_snaps.TryGetValue(key, out var sn))
         {
             if (_snaps.Count >= 32) Prune(time);
-            _snaps[key] = sn = new Snapshot();
+            _snaps[key] = sn = new();
         }
         if (!(sn.Built && sn.Time == time && ReferenceEquals(sn.Path, s.Path) && sn.Reveal == s.Reveal && sn.Width == s.WidthHint))
         {
@@ -125,28 +117,28 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
         return sn.Valid ? sn : null;
     }
 
-    private void Prune(float time)
+    void Prune(float time)
     {
         _dead.Clear();
         foreach (var kv in _snaps) if (time - kv.Value.Time > 2f) _dead.Add(kv.Key);
         foreach (var k in _dead) _snaps.Remove(k);
     }
 
-    /// <summary>Lays out a strand's links: placement, roll and the depth buckets of each half; false if there is nothing to draw.</summary>
-    private bool Build(in StrokePrimitive s, float shortSide, float px, float time, float screenW, float screenH, Snapshot sn)
+    /// Lays out a strand's links: placement, roll and the depth buckets of each half; false if there is nothing to draw.
+    bool Build(in StrokePrimitive s, float shortSide, float px, float time, float screenW, float screenH, Snapshot sn)
     {
         var path = s.Path;
         if (path.Count < 2) return false;
 
-        float reveal = Math.Clamp(s.Reveal, 0f, 1f);
+        float reveal = Saturate(s.Reveal);
         if (reveal <= 0.001f) return false;
 
         float total = path.Length;
         float L = Math.Clamp(s.WidthHint, shortSide * MinLinkFrac, shortSide * MaxLinkFrac);
         if (total < L) return false;
 
-        float depth = Math.Clamp(s.Depth, 0f, 1f);
-        float agit = Math.Clamp(s.Agitation, 0f, 1f);
+        float depth = Saturate(s.Depth);
+        float agit = Saturate(s.Agitation);
         int seed = s.Seed;
 
         // Bar width is fixed per chain; the LOD tier and far-half cull both key off it.
@@ -155,7 +147,7 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
 
         float pick = Hash01(seed + 41);
         Matcap body = pick < 0.44f ? Iron : (pick < 0.76f ? Steel : Aged);
-        float rustLevel = MathF.Pow(Hash01(seed + 42), 1.7f) * 0.85f;
+        float rustLevel = Pow(Hash01(seed + 42), 1.7f) * 0.85f;
         float twistBase = HashRange(seed + 43, -0.75f, 0.75f);
         float twistAmp  = HashRange(seed + 44, 0.30f, 1.05f);
         float twistFreq = HashRange(seed + 45, 0.55f, 1.15f);
@@ -167,7 +159,7 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
         if (closed)
         {
             // Even link count so alternation and seam both close.
-            int n = Math.Max(4, 2 * (int)MathF.Round(total / (2f * pitch)));
+            int n = Math.Max(4, 2 * (int)Round(total / (2f * pitch)));
             pitch = total / n;
             count = Math.Min(n, MaxLinks);
             firstCentre = 0f;
@@ -193,7 +185,7 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
             {
                 tipFrac = (visibleLen - (sc - L * 0.5f)) / L;
                 if (tipFrac <= 0f) break;
-                tipFrac = Math.Min(1f, tipFrac);
+                tipFrac = Min(1f, tipFrac);
             }
 
             Vector2 a = SampleWrapped(path, sc - pitch * 0.5f, total, closed);
@@ -211,28 +203,28 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
             // Twist along the strand + sway + agitation + the quarter-turn interlocking forces.
             float twist = twistBase
                         + twistAmp * Noise.Value(sc / (L * 5.5f) * twistFreq + seed * 0.00137f, 7.3f + time * 0.045f)
-                        + 0.16f * MathF.Sin(time * 0.55f + s.Phase + sc * 0.0031f)
-                        + agit * 0.30f * MathF.Sin(time * 21f + idx * 1.9f);
-            float roll = twist + ((idx & 1) == 0 ? 0f : MathF.PI * 0.5f);
+                        + 0.16f * Sin(time * 0.55f + s.Phase + sc * 0.0031f)
+                        + agit * 0.30f * Sin(time * 21f + idx * 1.9f);
+            float roll = twist + ((idx & 1) == 0 ? 0f : PI * 0.5f);
 
-            float cs = MathF.Cos(roll), sn2 = MathF.Sin(roll);
+            float cs = Cos(roll), sn2 = Sin(roll);
             int ls = unchecked(seed + idx * 7919);
 
             ref Link lk = ref sn.Links[linkCount++];
-            lk.C = c; lk.T = T; lk.N = new Vector2(-T.Y, T.X);
+            lk.C = c; lk.T = T; lk.N = new(-T.Y, T.X);
             lk.Cos = cs; lk.Sin = sn2;
             lk.Tone = HashRange(ls + 3, 0.86f, 1.10f);
-            lk.Rust = Math.Clamp(rustLevel * HashRange(ls + 5, 0.25f, 1.45f), 0f, 1f);
+            lk.Rust = Saturate(rustLevel * HashRange(ls + 5, 0.25f, 1.45f));
             lk.Alpha = tipFrac;
             lk.Index = idx;
             lk.Arc = sc; lk.Span = pitch;
 
             float zPlus = sn2;
-            lk.BucketPlus = (int)MathF.Round(zPlus * 2f) + 2;
-            lk.BucketMinus = (int)MathF.Round(-zPlus * 2f) + 2;
+            lk.BucketPlus = (int)Round(zPlus * 2f) + 2;
+            lk.BucketMinus = (int)Round(-zPlus * 2f) + 2;
 
             // Hide the far half entirely when it's too thin to read.
-            if (MathF.Abs(cs) < 0.06f || (smallBar && MathF.Abs(cs) < 0.55f))
+            if (Abs(cs) < 0.06f || (smallBar && Abs(cs) < 0.55f))
             {
                 if (zPlus >= 0f) lk.BucketMinus = -1; else lk.BucketPlus = -1;
             }
@@ -283,11 +275,11 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
         {
             float tipS = sn.FullyRevealed ? sn.Total : sn.VisibleLen;
             path.SampleAtArc(tipS, out Vector2 tip, out _);
-            StrandShading.DrawFlare(dl, tip, sn.Bar, Math.Clamp(s.TipFlare, 0f, 1f) * alpha, ctx);
+            StrandShading.DrawFlare(dl, tip, sn.Bar, Saturate(s.TipFlare) * alpha, ctx);
         }
     }
 
-    /// <summary>One station of a link half's ring: bar centre on screen, outward direction, cross-section frame; body, charts and film all read it.</summary>
+    /// One station of a link half's ring: bar centre on screen, outward direction, cross-section frame; body, charts and film all read it.
     internal static void Station(in Link lk, int h, RingTable ring, int j, float L, ref Vector3 prevN, ref Vector3 prevT,
                                 out Vector2 pos2, out Vector3 o, out Vector3 nStar, out Vector3 tStar)
     {
@@ -303,7 +295,7 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
         Vector3 m = new(-lk.N.X * sin, -lk.N.Y * sin, cos);
 
         float oz = o.Z, mz = m.Z;
-        float r = MathF.Sqrt(oz * oz + mz * mz);
+        float r = Sqrt(oz * oz + mz * mz);
         if (r > 1e-3f)
         {
             nStar = (o * oz + m * mz) / r;
@@ -316,13 +308,13 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
     // ---- the coat: one chart per drawn link half, cut from the same stations the half is drawn from
 
     // rows x sectors a half's chart may have, finest first; a crowded frame takes a coarser one before it skips any link
-    private static readonly (int rows, int sectors)[] Ladder = { (6, 5), (5, 5), (5, 3), (4, 3), (3, 3), (3, 2), (2, 2) };
+    static readonly (int rows, int sectors)[] Ladder = { (6, 5), (5, 5), (5, 3), (4, 3), (3, 3), (3, 2), (2, 2) };
 
     public bool Charts(CoatMatter matter) => matter is LiquidMatter;
 
     // which stations / columns of the ring a chart of r rows / v sectors sits on: always both ends
-    private static void PickRows(int stations, int rows, Span<int> st) { for (int r = 0; r < rows; r++) st[r] = (int)MathF.Round(r * (stations - 1f) / (rows - 1f)); }
-    private static void PickCols(int columns, int sectors, Span<int> ct) { for (int s = 0; s < sectors; s++) ct[s] = (int)MathF.Round(s * (columns - 1f) / (sectors - 1f)); }
+    static void PickRows(int stations, int rows, Span<int> st) { for (int r = 0; r < rows; r++) st[r] = (int)Round(r * (stations - 1f) / (rows - 1f)); }
+    static void PickCols(int columns, int sectors, Span<int> ct) { for (int s = 0; s < sectors; s++) ct[s] = (int)Round(s * (columns - 1f) / (sectors - 1f)); }
 
     public void BuildCoatSurfaces(in StrokePrimitive s, in CoatBuildContext ctx, CoatCharts charts)
     {
@@ -378,14 +370,14 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
                     len += ch.UStep[r];
                 }
                 ch.Ds = len / R;
-                ch.SupplyScale = sn.Pitch * 0.5f / MathF.Max(len, 1e-3f);  // both halves together carry what the strand would along one pitch
+                ch.SupplyScale = sn.Pitch * 0.5f / Max(len, 1e-3f);  // both halves together carry what the strand would along one pitch
                 for (int v = 0; v < Vn; v++)
                 {
-                    float th = MathF.Asin(sn.Cols[1 + ct[v]]);
-                    float lo = v > 0 ? 0.5f * (th + MathF.Asin(sn.Cols[ct[v - 1] + 1])) : -MathF.PI * 0.5f;
-                    float hi = v < Vn - 1 ? 0.5f * (th + MathF.Asin(sn.Cols[ct[v + 1] + 1])) : MathF.PI * 0.5f;
-                    ch.VAngle[v] = th; ch.VStep[v] = MathF.Max(0.25f, (hi - lo) * half);
-                    across[v] = (th + MathF.PI * 0.5f) / (MathF.PI * 0.5f);  // two lattice cells across the half of the bar the camera sees
+                    float th = Asin(sn.Cols[1 + ct[v]]);
+                    float lo = v > 0 ? 0.5f * (th + Asin(sn.Cols[ct[v - 1] + 1])) : -PI * 0.5f;
+                    float hi = v < Vn - 1 ? 0.5f * (th + Asin(sn.Cols[ct[v + 1] + 1])) : PI * 0.5f;
+                    ch.VAngle[v] = th; ch.VStep[v] = Max(0.25f, (hi - lo) * half);
+                    across[v] = (th + PI * 0.5f) / (PI * 0.5f);  // two lattice cells across the half of the bar the camera sees
                 }
                 // rule 9: patches of the bar that hold liquid badly, fixed to this link half, two bar diameters long; made once, then kept
                 int slot = lk.Index * 2 + (h > 0 ? 0 : 1);
@@ -451,13 +443,13 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
     internal static long FilmVerts, FilmBare;  // film mesh vertices drawn, and those under 5% opaque (harness builds only)
 #endif
 
-    private readonly CoatChart?[] _laid = new CoatChart?[2 * MaxLinks];  // this frame's charts by link slot and half
-    private readonly Coat?[] _byId = new Coat?[2 * MaxLinks + 2];
-    private List<Coat>? _sib;
-    private float _coatAlpha;
-    private bool _coatOn;
+    readonly CoatChart?[] _laid = new CoatChart?[2 * MaxLinks];  // this frame's charts by link slot and half
+    readonly Coat?[] _byId = new Coat?[2 * MaxLinks + 2];
+    List<Coat>? _sib;
+    float _coatAlpha;
+    bool _coatOn;
 
-    /// <summary>Liquid only: it is drawn as a film on each link's own bar, in that link half's depth order; other matters keep the generic band.</summary>
+    /// Liquid only: it is drawn as a film on each link's own bar, in that link half's depth order; other matters keep the generic band.
     public bool Layers(Coat coat) => coat.Matter is LiquidMatter && coat.Siblings != null;
 
     public void DrawWithCoat(ImDrawListPtr dl, in StrokePrimitive s, in MaterialContext ctx, Coat coat, float alpha)
@@ -474,8 +466,8 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
         }
     }
 
-    /// <summary>The film on one link half: a mesh on its own stations and columns (holes and gaps stay empty), in its depth bucket, from the chart.</summary>
-    private void DrawCoatHalf(ImDrawListPtr dl, in Link lk, int h, Snapshot sn, int ringK, float[] cols, float[] colsSq, in MaterialContext ctx)
+    /// The film on one link half: a mesh on its own stations and columns (holes and gaps stay empty), in its depth bucket, from the chart.
+    void DrawCoatHalf(ImDrawListPtr dl, in Link lk, int h, Snapshot sn, int ringK, float[] cols, float[] colsSq, in MaterialContext ctx)
     {
         var coat = _byId[1 + lk.Index * 2 + (h > 0 ? 0 : 1)];
         if (coat == null || coat.Matter is not LiquidMatter lm) return;
@@ -486,7 +478,7 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
 
         Span<float> thick = stackalloc float[R * Vn];
         float maxTh = 0f;
-        for (int c = 0; c < R * Vn; c++) { thick[c] = coat.M[c] / coat.A[c]; maxTh = MathF.Max(maxTh, thick[c]); }
+        for (int c = 0; c < R * Vn; c++) { thick[c] = coat.M[c] / coat.A[c]; maxTh = Max(maxTh, thick[c]); }
         if (maxTh < 0.25f * lm.Physics.Hold * px) return;
 
         float L = sn.L, zHalf = h > 0 ? lk.Sin : -lk.Sin;
@@ -509,7 +501,7 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
         Vector3 prevN = Vector3.UnitZ, prevT = Vector3.UnitX;
         for (int j = 0; j < M; j++) Station(in lk, h, ring, j, L, ref prevN, ref prevT, out p2[j], out _, out ns[j], out ts[j]);
 
-        float half = L * BarDiameter * 0.5f, a = MathF.Min(1f, _coatAlpha * ctx.Alpha) * lk.Alpha;
+        float half = L * BarDiameter * 0.5f, a = Min(1f, _coatAlpha * ctx.Alpha) * lk.Alpha;
         var mb = CoatDraw.Mb;
         mb.Reserve(M * nc, M * nc * 6);
         int first = mb.Vertices;
@@ -520,12 +512,12 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
             {
                 float fj = ring.Frac[j];
                 int r0 = 0; while (r0 < R - 2 && fj > fr[r0 + 1]) r0++;
-                float tr = fr[r0 + 1] > fr[r0] ? Math.Clamp((fj - fr[r0]) / (fr[r0 + 1] - fr[r0]), 0f, 1f) : 0f;
+                float tr = fr[r0 + 1] > fr[r0] ? Saturate((fj - fr[r0]) / (fr[r0 + 1] - fr[r0])) : 0f;
                 for (int c = 1; c <= nc; c++)
                 {
                     float u = cols[c], sq = colsSq[c];
                     int v0 = 0; while (v0 < Vn - 2 && u > uc[v0 + 1]) v0++;
-                    float tv = uc[v0 + 1] > uc[v0] ? Math.Clamp((u - uc[v0]) / (uc[v0 + 1] - uc[v0]), 0f, 1f) : 0f;
+                    float tv = uc[v0 + 1] > uc[v0] ? Saturate((u - uc[v0]) / (uc[v0 + 1] - uc[v0])) : 0f;
                     float th = Lerp(Lerp(thick[r0 * Vn + v0], thick[r0 * Vn + v0 + 1], tv), Lerp(thick[(r0 + 1) * Vn + v0], thick[(r0 + 1) * Vn + v0 + 1], tv), tr);
                     Vector3 n = ts[j] * u + ns[j] * sq;
                     uint shade = lm.FilmShade(n, th, px, a, CoatDraw.Soft(u, 0.3f), dry);
@@ -541,16 +533,16 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
         mb.Flush(dl, MeshDraw.WhiteUv(ctx.Time));
     }
 
-    private static void DrawHalf(ImDrawListPtr dl, in Link lk, int h, float L, int ringK,
+    static void DrawHalf(ImDrawListPtr dl, in Link lk, int h, float L, int ringK,
                                  float[] cols, float[] colsSq,
                                  Matcap body, int seed, float depth, float agit, float feather,
                                  float alpha, in MaterialContext ctx)
     {
         float half = L * BarDiameter * 0.5f;
-        float cos = lk.Cos, sin = lk.Sin;
+        float sin = lk.Sin;
 
         float zHalf = h > 0 ? sin : -sin;
-        float far = Math.Clamp(-zHalf * 1.6f, 0f, 1f);
+        float far = Saturate(-zHalf * 1.6f);
 
         // Behind-the-plane half is mostly hidden: spend fewer verts on it.
         if (zHalf < -0.35f) { ringK = Math.Max(2, ringK - 1); cols = Cols5; colsSq = Cols5Sq; }
@@ -607,15 +599,15 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
                 float rustMask = 0f;
                 if (rusty)
                 {
-                    float rm = rustA + (rustB - rustA) * (u * 0.5f + 0.5f) + (lk.Rust - 0.5f) * 0.95f;
+                    float rm = Lerp(rustA, rustB, (u * 0.5f + 0.5f)) + (lk.Rust - 0.5f) * 0.95f;
                     rustMask = Smooth((rm - 0.56f) / 0.24f) * (1f - 0.85f * cap) * 0.85f;
                 }
                 if (rustMask > 0.01f) col = Vector3.Lerp(col, Rust.Sample(n.X, n.Y), rustMask);
 
                 // AO inside the tips (where the neighbour bears) / brighten the rubbed outside.
                 float outer = n.X * o.X + n.Y * o.Y + n.Z * o.Z;
-                float ao = (1f - 0.50f * cap * MathF.Max(0f, -outer)) * (1f - 0.20f * far);
-                float wear = 1f + 0.10f * cap * MathF.Max(0f, outer) * (1f - rustMask);
+                float ao = (1f - 0.50f * cap * Max(0f, -outer)) * (1f - 0.20f * far);
+                float wear = 1f + 0.10f * cap * Max(0f, outer) * (1f - rustMask);
                 col *= ao * wear * lk.Tone;
 
                 if (agit > 0.01f) col += col * (col * (0.55f * agit));
@@ -636,21 +628,21 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
         MeshDraw.Grid(dl, nc - 1, M - 1, MeshDraw.WhiteUv(ctx.Time));
     }
 
-    private static Vector2 SampleWrapped(StrandPath path, float s, float total, bool closed)
+    static Vector2 SampleWrapped(StrandPath path, float s, float total, bool closed)
     {
         if (closed && total > 1e-3f) { s %= total; if (s < 0f) s += total; }
         path.SampleAtArc(s, out Vector2 p, out _);
         return p;
     }
 
-    /// <summary>A link's lateral half-extent: ellipse half-width plus half the bar, so flowing particles ride the surface.</summary>
+    /// A link's lateral half-extent: ellipse half-width plus half the bar, so flowing particles ride the surface.
     public float RadiusAt(in StrokePrimitive s, float arc, float shortSide)
         => (HalfLateral + BarDiameter * 0.5f) * Math.Clamp(s.WidthHint, shortSide * MinLinkFrac, shortSide * MaxLinkFrac);
 
     public ReadOnlySpan<StrokeEmission> Emissions => Shed;
 
-    /// <summary>Rust flakes dropping; dust sifting more slowly. Sparse on purpose.</summary>
-    private static readonly StrokeEmission[] Shed =
+    /// Rust flakes dropping; dust sifting more slowly. Sparse on purpose.
+    static readonly StrokeEmission[] Shed =
     {
         new(Role: PrimitiveRole.Flake,
             DensityPer100px: 0.30f,
@@ -674,8 +666,8 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
 
     public ReadOnlySpan<ImpactEmission> ImpactEmissions => Hit;
 
-    /// <summary>Sparks, scale, and a puff of dust on impact.</summary>
-    private static readonly ImpactEmission[] Hit =
+    /// Sparks, scale, and a puff of dust on impact.
+    static readonly ImpactEmission[] Hit =
     {
         new(Role: PrimitiveRole.Spark, CountMin: 16, CountMax: 28,
             SpeedMin: 420f, SpeedMax: 1400f, LifespanMin: 0.30f, LifespanMax: 0.78f,

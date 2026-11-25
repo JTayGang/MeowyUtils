@@ -1,12 +1,9 @@
-using System.Numerics;
-using RealDebuffs.Effects.Framework.Materials;
-
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Haunting: ashen pallor, cold slate through bone to a faintly warm white.</summary>
+/// Haunting: ashen pallor, cold slate through bone to a faintly warm white.
 internal static class HauntColor
 {
-    /// <summary>Light, dim to hot: 0 = cold slate, 0.3 = grey teal, 0.55 = verdigris, 0.78 = bone, 1 = pale warm white.</summary>
+    /// Light, dim to hot: 0 = cold slate, 0.3 = grey teal, 0.55 = verdigris, 0.78 = bone, 1 = pale warm white.
     public static readonly Palette Glow = new(
         (0.00f, 0.060f, 0.085f, 0.115f),
         (0.30f, 0.200f, 0.290f, 0.340f),
@@ -14,10 +11,10 @@ internal static class HauntColor
         (0.78f, 0.840f, 0.900f, 0.840f),
         (1.00f, 0.985f, 0.990f, 0.940f));
 
-    /// <summary>Edge tint for the screen's vignette: ink with a cold cast.</summary>
+    /// Edge tint for the screen's vignette: ink with a cold cast.
     public static readonly uint Vignette = Pack(0.010f, 0.014f, 0.020f);
 
-    /// <summary>The cold flash a haunting lands with (pale cyan-bone, so it stays chromatic under a colour override).</summary>
+    /// The cold flash a haunting lands with (pale cyan-bone, so it stays chromatic under a colour override).
     public static readonly uint Flash = Pack(0.78f, 0.96f, 0.90f);
 }
 

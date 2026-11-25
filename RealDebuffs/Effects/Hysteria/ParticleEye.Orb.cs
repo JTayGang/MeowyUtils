@@ -1,24 +1,21 @@
-using System.Numerics;
-using Dalamud.Bindings.ImGui;
-
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>The lidless eye: a shaded sphere, iris turned toward screen centre, veins over it, its nerve trailing behind.</summary>
+/// The lidless eye: a shaded sphere, iris turned toward screen centre, veins over it, its nerve trailing behind.
 public sealed partial class ParticleEye
 {
-    private const int OrbRows = 7, MaxOrbSegs = 28, TailPts = 12;
+    const int OrbRows = 7, MaxOrbSegs = 28, TailPts = 12;
 
-    private static readonly Vector2[] OrbPos = new Vector2[OrbRows * (MaxOrbSegs + 1)];
-    private static readonly uint[] OrbCol = new uint[OrbRows * (MaxOrbSegs + 1)];
-    private static readonly Vector2[] Tail = new Vector2[TailPts];
-    private static readonly Vector2[] TailN = new Vector2[TailPts];
-    private static readonly float[] TailHalf = new float[TailPts];
-    private static readonly uint[] TailCol = new uint[TailPts];
+    static readonly Vector2[] OrbPos = new Vector2[OrbRows * (MaxOrbSegs + 1)];
+    static readonly uint[] OrbCol = new uint[OrbRows * (MaxOrbSegs + 1)];
+    static readonly Vector2[] Tail = new Vector2[TailPts];
+    static readonly Vector2[] TailN = new Vector2[TailPts];
+    static readonly float[] TailHalf = new float[TailPts];
+    static readonly uint[] TailCol = new uint[TailPts];
 
-    /// <summary>The orb's light direction: from screen centre (the tunnel's lit end), a little toward you.</summary>
-    private static Vector3 OrbLight(Vector2 toLight) => Vector3.Normalize(new Vector3(toLight.X, toLight.Y, 0.45f));
+    /// The orb's light direction: from screen centre (the tunnel's lit end), a little toward you.
+    static Vector3 OrbLight(Vector2 toLight) => Vector3.Normalize(new(toLight.X, toLight.Y, 0.45f));
 
-    private void DrawOrb(ImDrawListPtr dl, in ParticlePrimitive p, in Pose e, Vector2 uv, float time, int screenW, int screenH, float forward)
+    void DrawOrb(ImDrawListPtr dl, in ParticlePrimitive p, in Pose e, Vector2 uv, float time, int screenW, int screenH, float forward)
     {
         float w = e.W;
         Vector2 toMid = new Vector2(screenW * 0.5f, screenH * 0.5f) - e.Pos;
@@ -40,7 +37,7 @@ public sealed partial class ParticleEye
         BuildNerve(in e, toward, time, p.Seed);
         BuildSphere(in e);
         if (e.Detailed) BuildOrbVeins(in e, ic, p.Seed);
-        BuildIris(in e, ic, p.Seed, time, flat: MathF.Sqrt(MathF.Max(0.2f, 1f - (ic.LengthSquared() / (w * w)))));
+        BuildIris(in e, ic, p.Seed, time, flat: Sqrt(Max(0.2f, 1f - (ic.LengthSquared() / (w * w)))));
         Mb.Flush(dl, uv);
 
         // Wet glint where the surface faces halfway between you and the light, a faint answer opposite, a thin rim.
@@ -55,12 +52,12 @@ public sealed partial class ParticleEye
             float size = (g == 0 ? 0.20f : 0.08f) * w, gain = (g == 0 ? 1f : 0.28f) * (1f - 0.5f * e.Haze);
             hr[0] = size * 0.62f; hr[1] = size * 0.86f; hr[2] = size * 1.12f;
             hc[0] = e.Tint(white, gain); hc[1] = e.Tint(white, 0.55f * gain); hc[2] = e.Tint(white, 0f);
-            MeshDraw.Radial(dl, at, uv, e.Tint(white, gain), 8, hr, hc, MathF.PI * 0.125f, g == 0 ? 0.86f : 1f, 0, 0f);
+            MeshDraw.Radial(dl, at, uv, e.Tint(white, gain), 8, hr, hc, PI * 0.125f, g == 0 ? 0.86f : 1f, 0, 0f);
         }
     }
 
-    /// <summary>The ball, shaded as a sphere lit from the tunnel's far end, with a warm edge flush, pale rim and haze.</summary>
-    private void BuildSphere(in Pose e)
+    /// The ball, shaded as a sphere lit from the tunnel's far end, with a warm edge flush, pale rim and haze.
+    void BuildSphere(in Pose e)
     {
         float w = e.W;
         int segs = e.Cols >= 16 ? MaxOrbSegs : e.Cols >= 12 ? 20 : 14;
@@ -68,22 +65,22 @@ public sealed partial class ParticleEye
         ReadOnlySpan<float> radii = stackalloc float[OrbRows] { 0f, 0.38f, 0.62f, 0.80f, 0.92f, 1.00f, 1.05f };
         for (int j = 0; j <= segs; j++)
         {
-            float a = MathF.Tau * j / segs;
-            Vector2 dir = new(MathF.Cos(a), MathF.Sin(a));
+            float a = Tau * j / segs;
+            Vector2 dir = Dir(a);
             for (int r = 0; r < OrbRows; r++)
             {
-                float f = MathF.Min(radii[r], 1f);
+                float f = Min(radii[r], 1f);
                 // Surface normal of a sphere at this distance from its middle.
-                float nz = MathF.Sqrt(MathF.Max(0f, 1f - f * f));
-                float ndl = MathF.Max(0f, dir.X * f * L.X + dir.Y * f * L.Y + nz * L.Z);
+                float nz = Sqrt(Max(0f, 1f - f * f));
+                float ndl = Max(0f, dir.X * f * L.X + dir.Y * f * L.Y + nz * L.Z);
 
-                float tone = 0.14f + 0.72f * MathF.Pow(ndl, 0.85f) + 0.10f * nz;
-                float rim = MathF.Pow(1f - nz, 3f) * Saturate(Vector2.Dot(dir, e.Light) * 1.4f);
+                float tone = 0.14f + 0.72f * Pow(ndl, 0.85f) + 0.10f * nz;
+                float rim = Pow(1f - nz, 3f) * Saturate(Vector2.Dot(dir, e.Light) * 1.4f);
                 tone += 0.30f * rim;
                 // Light bleeds red through the thin edge just past the terminator.
-                float flush = Smooth(ndl * 5f) * (1f - Smooth(ndl * 1.6f)) * MathF.Pow(f, 1.5f);
+                float flush = Smooth(ndl * 5f) * (1f - Smooth(ndl * 1.6f)) * Pow(f, 1.5f);
 
-                uint c = LerpColor(_palette.Sample(Saturate(tone)), Flesh, Saturate(0.20f * MathF.Pow(f, 3f) + 0.42f * flush));
+                uint c = LerpColor(_palette.Sample(Saturate(tone)), Flesh, Saturate(0.20f * Pow(f, 3f) + 0.42f * flush));
                 float alpha = r == OrbRows - 1 ? 0f : 0.97f;
                 int at = r * (segs + 1) + j;
                 OrbPos[at] = e.Pos + dir * (f * w) * (r == OrbRows - 1 ? 1.05f : 1f);
@@ -96,27 +93,27 @@ public sealed partial class ParticleEye
         Mb.StitchGrid(first, OrbRows, segs + 1);
     }
 
-    /// <summary>Veins crawling in from the rim toward the iris, the larger ones forking.</summary>
-    private void BuildOrbVeins(in Pose e, Vector2 ic, int seed)
+    /// Veins crawling in from the rim toward the iris, the larger ones forking.
+    void BuildOrbVeins(in Pose e, Vector2 ic, int seed)
     {
         float w = e.W, R = e.IrisRadius;
         int count = Math.Min(14, e.Look.VeinCount * 2 + 2);
         int pts = e.Huge ? FinePts : e.Large ? 7 : 5;
         float huge = e.Grow(60f, 80f);
-        float reachIn = MathF.Max(0.30f * w, ic.Length() + R * 1.12f);
+        float reachIn = Max(0.30f * w, ic.Length() + R * 1.12f);
         for (int v = 0; v < count; v++)
         {
             int h = seed * 7 + v * 13;
-            float a = MathF.Tau * (v + Hash01(h)) / count;
-            float bend = (Hash01(h + 1) - 0.5f) * 1.1f, ph = Hash01(h + 2) * MathF.Tau;
-            float lit = 0.55f + 0.45f * MathF.Cos(a - MathF.Atan2(e.Light.Y, e.Light.X));
+            float a = Tau * (v + Hash01(h)) / count;
+            float bend = (Hash01(h + 1) - 0.5f) * 1.1f, ph = Hash01(h + 2) * Tau;
+            float lit = 0.55f + 0.45f * Cos(a - Atan2(e.Light.Y, e.Light.X));
             for (int i = 0; i < pts; i++)
             {
                 float u = i / (float)(pts - 1);
-                float ang = a + bend * u * (1f - u) * 2.2f + 0.05f * MathF.Sin(u * 8f + ph);
-                float rad = Lerp(0.985f * w, reachIn, MathF.Pow(u, 0.9f));
-                FineP[i] = e.ToScreen(new Vector2(MathF.Cos(ang), MathF.Sin(ang)) * rad);
-                FineHalf[i] = MathF.Max(0.12f * e.Px, (0.62f * e.Px + 0.008f * w) * (1f - 0.75f * u));
+                float ang = a + bend * u * (1f - u) * 2.2f + 0.05f * Sin(u * 8f + ph);
+                float rad = Lerp(0.985f * w, reachIn, Pow(u, 0.9f));
+                FineP[i] = e.ToScreen(Dir(ang) * rad);
+                FineHalf[i] = Max(0.12f * e.Px, (0.62f * e.Px + 0.008f * w) * (1f - 0.75f * u));
                 FineCol[i] = e.Tint(VeinCol, e.Look.VeinAlpha * lit * (1f - 0.6f * u * u));
             }
             MeshBuilder.MiterNormals(FineP.AsSpan(0, pts), FineN.AsSpan(0, pts));
@@ -125,15 +122,15 @@ public sealed partial class ParticleEye
             if (huge < 0.02f || Hash01(h + 3) < 0.4f) continue;
             // A fork part of the way in.
             float u0 = 0.25f + 0.30f * Hash01(h + 4);
-            float a0 = a + bend * u0 * (1f - u0) * 2.2f, r0 = Lerp(0.985f * w, reachIn, MathF.Pow(u0, 0.9f));
+            float a0 = a + bend * u0 * (1f - u0) * 2.2f, r0 = Lerp(0.985f * w, reachIn, Pow(u0, 0.9f));
             float side = Sign(h + 5);
             for (int i = 0; i < 5; i++)
             {
                 float u = i / 4f;
-                float ang = a0 + side * (0.02f + 0.20f * u) / MathF.Max(0.35f, r0 / w);
+                float ang = a0 + side * (0.02f + 0.20f * u) / Max(0.35f, r0 / w);
                 float rad = r0 - u * 0.22f * w;
-                FineP[i] = e.ToScreen(new Vector2(MathF.Cos(ang), MathF.Sin(ang)) * rad);
-                FineHalf[i] = MathF.Max(0.10f * e.Px, 0.34f * e.Px * (1f - 0.8f * u));
+                FineP[i] = e.ToScreen(Dir(ang) * rad);
+                FineHalf[i] = Max(0.10f * e.Px, 0.34f * e.Px * (1f - 0.8f * u));
                 FineCol[i] = e.Tint(VeinCol, e.Look.VeinAlpha * 0.8f * lit * huge * (1f - 0.85f * u));
             }
             MeshBuilder.MiterNormals(FineP.AsSpan(0, 5), FineN.AsSpan(0, 5));
@@ -141,12 +138,12 @@ public sealed partial class ParticleEye
         }
     }
 
-    /// <summary>The nerve it hangs from: a fleshy cord trailing toward screen centre, shaded as a tube.</summary>
-    private void BuildNerve(in Pose e, Vector2 toward, float time, int seed)
+    /// The nerve it hangs from: a fleshy cord trailing toward screen centre, shaded as a tube.
+    void BuildNerve(in Pose e, Vector2 toward, float time, int seed)
     {
         float w = e.W;
         Vector2 across = new(-toward.Y, toward.X);
-        float phase = Hash01(seed + 3) * MathF.Tau;
+        float phase = Hash01(seed + 3) * Tau;
         Vector2 root = e.Pos + toward * (0.82f * w);
         uint flesh = LerpColor(_palette.Sample(0.34f), Flesh, 0.5f);
         uint shadow = LerpColor(flesh, Ink, 0.62f);
@@ -155,7 +152,7 @@ public sealed partial class ParticleEye
         for (int i = 0; i < TailPts; i++)
         {
             float s = i / (float)(TailPts - 1);
-            float wiggle = MathF.Sin(s * 6f - time * 3f + phase) * 0.30f * w * MathF.Pow(s, 0.8f);
+            float wiggle = Sin(s * 6f - time * 3f + phase) * 0.30f * w * Pow(s, 0.8f);
             Tail[i] = root + toward * (s * 4.5f * w) + across * wiggle;
         }
         MeshBuilder.MiterNormals(Tail, TailN);
@@ -169,10 +166,10 @@ public sealed partial class ParticleEye
             for (int i = 0; i < TailPts; i++)
             {
                 float s = i / (float)(TailPts - 1);
-                TailHalf[i] = w * (0.20f * MathF.Pow(1f - s, 0.9f) + 0.02f) * widthK;
-                TailCol[i] = e.Tint(c, alphaK * MathF.Pow(1f - s, 1.1f));
+                TailHalf[i] = w * (0.20f * Pow(1f - s, 0.9f) + 0.02f) * widthK;
+                TailCol[i] = e.Tint(c, alphaK * Pow(1f - s, 1.1f));
             }
-            Mb.Ribbon(Tail, TailN, TailHalf, TailCol, MathF.Max(0.8f * e.Px, 0.04f * w) * (layer == 0 ? 1f : 0.7f));
+            Mb.Ribbon(Tail, TailN, TailHalf, TailCol, Max(0.8f * e.Px, 0.04f * w) * (layer == 0 ? 1f : 0.7f));
         }
 
         // A thin wet streak of light down it, off to the side the light falls from.
@@ -181,8 +178,8 @@ public sealed partial class ParticleEye
             for (int i = 0; i < TailPts; i++)
             {
                 float s = i / (float)(TailPts - 1);
-                float half = w * (0.20f * MathF.Pow(1f - s, 0.9f) + 0.02f);
-                TailHalf[i] = MathF.Max(0.3f * e.Px, half * 0.10f);
+                float half = w * (0.20f * Pow(1f - s, 0.9f) + 0.02f);
+                TailHalf[i] = Max(0.3f * e.Px, half * 0.10f);
                 TailCol[i] = e.Tint(_palette.Sample(0.95f), 0.42f * (1f - s));
             }
             // shift the streak sideways within the cord
@@ -190,7 +187,7 @@ public sealed partial class ParticleEye
             for (int i = 0; i < TailPts; i++)
             {
                 float s = i / (float)(TailPts - 1);
-                float half = w * (0.20f * MathF.Pow(1f - s, 0.9f) + 0.02f);
+                float half = w * (0.20f * Pow(1f - s, 0.9f) + 0.02f);
                 shifted[i] = Tail[i] + TailN[i] * (0.38f * half);
             }
             Mb.Ribbon(shifted, TailN, TailHalf, TailCol, 0.5f * e.Px);

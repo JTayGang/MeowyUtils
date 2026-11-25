@@ -1,11 +1,9 @@
-using System.Numerics;
-
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>The shape language of electricity, shared by stroke.lightning and particle.arc.</summary>
+/// The shape language of electricity, shared by stroke.lightning and particle.arc.
 internal static class Bolt
 {
-    /// <summary>One random lattice value in -1..1, fixed for a given (seed, cell, tick).</summary>
+    /// One random lattice value in -1..1, fixed for a given (seed, cell, tick).
     public static float Lattice(int seed, int cell, int tick)
     {
         unchecked
@@ -14,12 +12,12 @@ internal static class Bolt
         }
     }
 
-    /// <summary>Linear-interpolated lattice noise at sample index k</summary>
+    /// Linear-interpolated lattice noise at sample index k
     public static float Level(int seed, int k, int m, float tt, bool smooth)
     {
         int cell = k / m;
         float f = (k - cell * m) / (float)m;
-        int t0 = (int)MathF.Floor(tt);
+        int t0 = (int)Floor(tt);
 
         float v0 = Lerp(Lattice(seed, cell, t0), Lattice(seed, cell + 1, t0), f);
         if (!smooth) return v0;
@@ -28,7 +26,7 @@ internal static class Bolt
         return Lerp(v0, v1, Smooth(tt - t0));
     }
 
-    /// <summary>Lateral kink in px along each sample's normal: a slow meander plus a drifting wander.</summary>
+    /// Lateral kink in px along each sample's normal: a slow meander plus a drifting wander.
     public static void Crackle(Span<float> hard, Span<float> soft, int n, float stepPx, int seed, float time, float violence)
     {
         float a_1 = 2.0f * stepPx * (0.7f + 0.3f * violence);
@@ -41,7 +39,7 @@ internal static class Bolt
         float tm = time * 0.7f + ph * 0.6f;
         float t0 = time * 2.2f + ph;
         float t1 = time * 7.0f + ph * 1.7f;
-        float t2 = time * (17f + 9f * MathF.Max(0f, violence - 1f)) + ph * 2.3f;
+        float t2 = time * (17f + 9f * Max(0f, violence - 1f)) + ph * 2.3f;
 
         for (int k = 0; k < n; k++)
         {
@@ -51,17 +49,17 @@ internal static class Bolt
         }
     }
 
-    /// <summary>Fills a bent twig of out.Length points leaving root along dir (unit)</summary>
+    /// Fills a bent twig of out.Length points leaving root along dir (unit)
     public static void Twig(Span<Vector2> outPts, Vector2 root, Vector2 dir, float length, int seed, int tick, float bend)
     {
         int n = outPts.Length;
         outPts[0] = root;
-        float seg = length / MathF.Max(1, n - 1);
+        float seg = length / Max(1, n - 1);
         float ang = 0f;
         for (int j = 1; j < n; j++)
         {
             ang += Lattice(seed, j, tick) * bend;
-            float c = MathF.Cos(ang), s = MathF.Sin(ang);
+            float c = Cos(ang), s = Sin(ang);
             Vector2 d = new(dir.X * c - dir.Y * s, dir.X * s + dir.Y * c);
             outPts[j] = outPts[j - 1] + d * (seg * (0.75f + 0.5f * Hash01(seed + j * 53 + tick)));
         }

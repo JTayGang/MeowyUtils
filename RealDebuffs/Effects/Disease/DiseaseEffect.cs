@@ -1,9 +1,6 @@
-using System.Numerics;
-using RealDebuffs.Effects.Framework;
-
 namespace RealDebuffs.Effects;
 
-/// <summary>Disease: parasitic tentacles feel across the frame and drip slime; one may grip a border point.</summary>
+/// Disease: parasitic tentacles feel across the frame and drip slime; one may grip a border point.
 public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
 {
     public IReadOnlyList<SwappableSlot> Slots { get; } = new SwappableSlot[]
@@ -13,42 +10,40 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
     };
 
     // Each tentacle is meshed every frame, so a cast skips one of the seven side tentacles.
-    private const int MaxTentacles = 6;
-    private const int StrandNodes = 18;
-    private const int PathSamples = 64;
-    private const int GuideSamples = 64;  // density of the target curve before it is cut into nodes
+    const int MaxTentacles = 6, StrandNodes = 18, PathSamples = 64;
+    const int GuideSamples = 64;  // density of the target curve before it is cut into nodes
 
 
-    private const float ShapeSpring = 70f;  // 1/s^2: stiffness toward the target curve
-    private const float StrandDrag = 8.5f;  // 1/s: underdamped enough to swing, damped enough to settle
-    private const float StrandGravity = 700f;  // px/s^2 at 1080p: the slime-laden weight, a droop and no more
+    const float ShapeSpring = 70f;  // 1/s^2: stiffness toward the target curve
+    const float StrandDrag = 8.5f;  // 1/s: underdamped enough to swing, damped enough to settle
+    const float StrandGravity = 700f;  // px/s^2 at 1080p: the slime-laden weight, a droop and no more
 
-    private const float HomeReach = 0.80f;  // home point, as a fraction of the tentacle's length from its root
-    private const float WanderLateral = 0.20f;  // sweep either side of home, as a fraction of length
-    private const float WanderAxial = 0.07f;
+    const float HomeReach = 0.80f;  // home point, as a fraction of the tentacle's length from its root
+    const float WanderLateral = 0.20f;  // sweep either side of home, as a fraction of length
+    const float WanderAxial = 0.07f;
 
     // gripping
-    private const float GripMinReach = 0.52f;  // min grip distance from the root, as a fraction of length
-    private const float GripMaxReach = 0.84f;  // ...and no further than this
-    private const float GripInsetFrac = 0.005f;  // how far inside the border the tip lands, as a fraction of the short side
-    private const float GripSpacing = 240f;  // two tentacles never grip closer than this (px at 1080p)
-    private const float PinSeconds = 0.45f;  // how long the tip takes to settle onto the point it has reached
-    private const int   MaxGrippers = 3;
+    const float GripMinReach = 0.52f;  // min grip distance from the root, as a fraction of length
+    const float GripMaxReach = 0.84f;  // ...and no further than this
+    const float GripInsetFrac = 0.005f;  // how far inside the border the tip lands, as a fraction of the short side
+    const float GripSpacing = 240f;  // two tentacles never grip closer than this (px at 1080p)
+    const float PinSeconds = 0.45f;  // how long the tip takes to settle onto the point it has reached
+    const int   MaxGrippers = 3;
 
     // intro
-    private const float UnfurlCurl = 1.9f;  // radians of curl in the tip as it emerges
-    private const float UnfurlRate = 2.1f;  // 1/s: how quickly it uncurls
-    private const float AgitationAttack = 0.12f;  // s: time constant for Agitation to catch up with a new target
+    const float UnfurlCurl = 1.9f;  // radians of curl in the tip as it emerges
+    const float UnfurlRate = 2.1f;  // 1/s: how quickly it uncurls
+    const float AgitationAttack = 0.12f;  // s: time constant for Agitation to catch up with a new target
 
-    private static readonly MurkStyle Mood = new(Pack(0.012f, 0.022f, 0.012f), 0.16f, Pack(0.010f, 0.020f, 0.012f), 0.34f, 0.15f, 0.9f, 0.18f, 5.3f);
+    static readonly MurkStyle Mood = new(Pack(0.012f, 0.022f, 0.012f), 0.16f, Pack(0.010f, 0.020f, 0.012f), 0.34f, 0.15f, 0.9f, 0.18f, 5.3f);
 
-    private enum Mode : byte { Wander, Reach, Grip, Release }
+    enum Mode : byte { Wander, Reach, Grip, Release }
 
-    /// <summary>Where each tentacle comes from and how big it is. The set is fixed so the frame is always covered evenly.</summary>
-    private readonly record struct Archetype(ScreenEdge Edge, float AlongLo, float AlongHi,
+    /// Where each tentacle comes from and how big it is. The set is fixed so the frame is always covered evenly.
+    readonly record struct Archetype(ScreenEdge Edge, float AlongLo, float AlongHi,
                                              float LengthLo, float LengthHi, float DiameterLo, float DiameterHi);
 
-    private static readonly Archetype[] Archetypes =
+    static readonly Archetype[] Archetypes =
     {
         new(ScreenEdge.Bottom, 0.08f, 0.30f, 0.80f, 0.94f, 0.130f, 0.152f),  // three big near ones rising from below
         new(ScreenEdge.Bottom, 0.40f, 0.62f, 0.76f, 0.90f, 0.130f, 0.152f),
@@ -59,7 +54,7 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
         new(ScreenEdge.Top,    0.62f, 0.92f, 0.56f, 0.70f, 0.092f, 0.110f),
     };
 
-    private sealed class Rig
+    sealed class Rig
     {
         public readonly VerletStrand Strand = new(StrandNodes);
         public readonly StrandPath Path = new(PathSamples);
@@ -69,35 +64,31 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
         public float Overhang;  // how far behind the edge the root sits
         public float Length, DiameterFrac, Depth, Delay, Grow;
         public int Seed;
-        public float Phase;
-        public float LatAmp, AxAmp, W1, W2, P1, P2;
-        public float ShapeAngle0, ShapeRate;
-        public float CurlAmp, CurlPhase, UnfurlSign, TwistAmp, TwistPhase, BreathPhase, WavePhase;
-        public float FirstGripDelay;
+        public float Phase, LatAmp, AxAmp, W1, W2, P1, P2, ShapeAngle0, ShapeRate;
+        public float CurlAmp, CurlPhase, UnfurlSign, TwistAmp, TwistPhase, BreathPhase, WavePhase, FirstGripDelay;
 
         // state
         public bool Started, Entered;
         public Mode Mode;
         public float ModeTime, NextGripAt, GripHold, GripStart;
         public Vector2 Goal, GoalVel, GripPoint, PinFrom, PinVel, LastTip, TipVelocity;
-        public float HeadAngle, HeadVel, Curl, CurlVel, Tension, TensionVel;
-        public float Agitation, Reveal;
+        public float HeadAngle, HeadVel, Curl, CurlVel, Tension, TensionVel, Agitation, Reveal;
         public float AgitTarget;  // what events and mode floors ask for; Agitation chases it
         public float Age;  // seconds since this tentacle started
         public float GripSide;  // which way the tip hooks round the border
     }
 
-    private readonly Rig[] _rigs = new Rig[MaxTentacles];
-    private readonly int[] _drawOrder = new int[MaxTentacles];
-    private readonly int[] _active = new int[MaxTentacles];  // the archetype each rig is built from, this cast
-    private int _count;
+    readonly Rig[] _rigs = new Rig[MaxTentacles];
+    readonly int[] _drawOrder = new int[MaxTentacles];
+    readonly int[] _active = new int[MaxTentacles];  // the archetype each rig is built from, this cast
+    int _count;
 
     public DiseaseEffect() : base(DebuffKind.Disease, "Disease",
         "Slimy parasite tentacles unfurl from the edges and reach for something to grip.",
         4, "Disease",
         keywords: ["parasite", "parasites", "infest", "infested", "tentacle", "tentacles"])
     {
-        for (int i = 0; i < MaxTentacles; i++) _rigs[i] = new Rig();
+        for (int i = 0; i < MaxTentacles; i++) _rigs[i] = new();
     }
 
     protected override float MaxStep => 0.05f;
@@ -125,12 +116,12 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
                 FlushStart = true,  // its root is behind the edge; no cap to show
                 WidthHint = f.Short * rig.DiameterFrac,
                 Brightness = f.Alpha,
-                TipFlare = growing > 0.02f ? MathF.Min(1f, growing * 1.6f) : 0f,
+                TipFlare = growing > 0.02f ? Min(1f, growing * 1.6f) : 0f,
                 Seed = rig.Seed,
                 Phase = rig.Phase,
                 Depth = rig.Depth,
                 Agitation = rig.Agitation,
-                Twist = rig.TwistAmp * MathF.Sin(0.27f * f.Time + rig.TwistPhase) + 0.5f * rig.Tension * Smooth((rig.Tension - 0.6f) / 0.4f),
+                Twist = rig.TwistAmp * Sin(0.27f * f.Time + rig.TwistPhase) + 0.5f * rig.Tension * Smooth((rig.Tension - 0.6f) / 0.4f),
                 ColorOverride = f.Color,
             });
         }
@@ -139,13 +130,13 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
 
     // One tentacle, one frame
 
-    private void Step(EffectScene scene, Rig r, in CastFrame f)
+    void Step(EffectScene scene, Rig r, in CastFrame f)
     {
         r.Age = f.Age - r.Delay;
         float t = r.Age;
         var strand = r.Strand;
 
-        if (!r.Started) Start(r, f.Px, f.Time);
+        if (!r.Started) Start(r, f.Time);
 
         // what it wants this frame
         Vector2 goalWant;
@@ -159,9 +150,9 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
         Spring(ref r.Tension, ref r.TensionVel, tensionWant, 3f, f.Dt);
 
         // the target curve, and a strand that chases it
-        float length = BuildTarget(r, f.Px, f.Time, t);
-        strand.Length = MathF.Max(8f, length);
-        strand.Gravity = new Vector2(0f, StrandGravity * f.Px);
+        float length = BuildTarget(r, f.Time);
+        strand.Length = Max(8f, length);
+        strand.Gravity = new(0f, StrandGravity * f.Px);
         strand.Drag = StrandDrag;
         strand.Iterations = 8;
         strand.BendStiffness = 0.6f;
@@ -187,7 +178,7 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
 
         // reveal: it surges out of the edge, fast at first and settling
         float grow = Saturate(t / r.Grow);
-        r.Reveal = 1f - MathF.Pow(1f - grow, 2.6f);
+        r.Reveal = 1f - Pow(1f - grow, 2.6f);
 
         // events
         if (!r.Entered && r.Reveal * r.Length > r.Overhang + 14f)
@@ -198,13 +189,13 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
                 Splat(scene, at, inward, 1f - 0.4f * r.Depth, f.Alpha, f.Time, r.Seed, f.Color);
         }
 
-        float floor = r.Mode switch { Mode.Reach => 0.30f, Mode.Grip => 0.22f + 0.14f * MathF.Sin(f.Time * 2.6f + r.Phase), _ => 0.04f };
-        r.AgitTarget = MathF.Max(r.AgitTarget * MathF.Exp(-f.Dt / 0.9f), floor);
-        r.Agitation += (r.AgitTarget - r.Agitation) * (1f - MathF.Exp(-f.Dt / AgitationAttack));
+        float floor = r.Mode switch { Mode.Reach => 0.30f, Mode.Grip => 0.22f + 0.14f * Sin(f.Time * 2.6f + r.Phase), _ => 0.04f };
+        r.AgitTarget = Max(r.AgitTarget * Exp(-f.Dt / 0.9f), floor);
+        r.Agitation += (r.AgitTarget - r.Agitation) * (1f - Exp(-f.Dt / AgitationAttack));
     }
 
-    /// <summary>Places a tentacle that just began: its strand lies on its first target, so nothing has to settle.</summary>
-    private void Start(Rig r, float px, float time)
+    /// Places a tentacle that just began: its strand lies on its first target, so nothing has to settle.
+    void Start(Rig r, float time)
     {
         r.Started = true;
         r.Entered = false;
@@ -213,7 +204,7 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
         r.NextGripAt = time + r.Grow + r.FirstGripDelay;
         r.Goal = r.Home;
         r.GoalVel = default;
-        r.HeadAngle = MathF.Atan2(r.Inward.Y, r.Inward.X);
+        r.HeadAngle = Atan2(r.Inward.Y, r.Inward.X);
         r.HeadVel = 0f;
         r.Curl = UnfurlCurl * r.UnfurlSign;
         r.CurlVel = 0f;
@@ -225,24 +216,24 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
 
         var s = r.Strand;
         s.Reset(r.Root);
-        float length = BuildTarget(r, px, time, 0f);
-        s.Length = MathF.Max(8f, length);
+        float length = BuildTarget(r, time);
+        s.Length = Max(8f, length);
         s.Place(s.Target);  // at rest: Drive would launch each node from the root
     }
 
     // Behaviour
 
-    private void Decide(Rig r, Vector2 size, float px, float time, float t,
+    void Decide(Rig r, Vector2 size, float px, float time, float t,
                         out Vector2 goal, out float head, out float curl, out float tension, out float goalOmega)
     {
         Vector2 perp = new(-r.Inward.Y, r.Inward.X);
 
         // Where it searches when it is not holding on: a slow Lissajous round its home point.
-        float lat = r.LatAmp * (0.80f * MathF.Sin(r.W1 * t + r.P1) + 0.35f * MathF.Sin(r.W1 * 2.3f * t + r.P2));
-        float ax = r.AxAmp * MathF.Sin(r.W2 * t + r.P2);
+        float lat = r.LatAmp * (0.80f * Sin(r.W1 * t + r.P1) + 0.35f * Sin(r.W1 * 2.3f * t + r.P2));
+        float ax = r.AxAmp * Sin(r.W2 * t + r.P2);
         Vector2 wander = r.Home + perp * lat + r.Inward * ax;
-        float wanderHead = MathF.Atan2(r.Inward.Y, r.Inward.X) + 0.8f * MathF.Sin(r.W1 * 0.7f * t + r.P2);
-        float wanderCurl = r.CurlAmp * (0.75f * MathF.Sin(r.W1 * 0.55f * t + r.CurlPhase) + 0.30f * MathF.Sin(r.W2 * 1.4f * t));
+        float wanderHead = Atan2(r.Inward.Y, r.Inward.X) + 0.8f * Sin(r.W1 * 0.7f * t + r.P2);
+        float wanderCurl = r.CurlAmp * (0.75f * Sin(r.W1 * 0.55f * t + r.CurlPhase) + 0.30f * Sin(r.W2 * 1.4f * t));
 
         goal = wander; head = wanderHead; curl = wanderCurl; tension = 0f; goalOmega = 3.0f;
 
@@ -269,7 +260,7 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
                     float reachDist = Vector2.Distance(tipNow, r.GripPoint);
                     float cap = 3f * reachDist / PinSeconds;
                     r.PinVel = r.TipVelocity.LengthSquared() > cap * cap ? Vector2.Normalize(r.TipVelocity) * cap : r.TipVelocity;
-                    r.AgitTarget = MathF.Max(r.AgitTarget, 0.9f);
+                    r.AgitTarget = Max(r.AgitTarget, 0.9f);
                 }
                 else if (time - r.ModeTime > 3.2f) { r.Mode = Mode.Release; r.ModeTime = time; }  // it could not get there; let go
                 break;
@@ -290,24 +281,24 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
         }
     }
 
-    private int CountGrippers()
+    int CountGrippers()
     {
         int n = 0;
         for (int i = 0; i < _count; i++) if (_rigs[i].Mode == Mode.Reach || _rigs[i].Mode == Mode.Grip) n++;
         return n;
     }
 
-    /// <summary>The tip arrives heading out through the border it is about to hold, hooked a little to one side.</summary>
-    private static float GripHeading(Rig r, Vector2 size)
+    /// The tip arrives heading out through the border it is about to hold, hooked a little to one side.
+    static float GripHeading(Rig r, Vector2 size)
     {
         Vector2 outward = -ScreenEdges.Inward(ScreenEdges.Nearest(size, r.GripPoint));
-        return MathF.Atan2(outward.Y, outward.X) + 0.55f * r.GripSide;
+        return Atan2(outward.Y, outward.X) + 0.55f * r.GripSide;
     }
 
-    /// <summary>Picks a border point to grip: in reach but a real stretch away, clear of corners and other grips.</summary>
-    private bool PickGrip(Rig r, Vector2 size, float px, float time)
+    /// Picks a border point to grip: in reach but a real stretch away, clear of corners and other grips.
+    bool PickGrip(Rig r, Vector2 size, float px, float time)
     {
-        float shortSide = MathF.Min(size.X, size.Y);
+        float shortSide = Min(size.X, size.Y);
         float inset = shortSide * GripInsetFrac;
         Vector2 centre = size * 0.5f;
         int salt = unchecked(r.Seed + (int)(time * 100f));
@@ -346,29 +337,29 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
         return true;
     }
 
-    private static float DistanceToSegment(Vector2 p, Vector2 a, Vector2 b)
+    static float DistanceToSegment(Vector2 p, Vector2 a, Vector2 b)
     {
         Vector2 ab = b - a;
-        float t = Vector2.Dot(p - a, ab) / MathF.Max(1e-4f, ab.LengthSquared());
-        return Vector2.Distance(p, a + ab * Math.Clamp(t, 0f, 1f));
+        float t = Vector2.Dot(p - a, ab) / Max(1e-4f, ab.LengthSquared());
+        return Vector2.Distance(p, a + ab * Saturate(t));
     }
 
     // The target curve
 
-    /// <summary>Fills the strand's target with this frame's shape and returns its length; spare length becomes bulge.</summary>
-    private float BuildTarget(Rig r, float px, float time, float t)
+    /// Fills the strand's target with this frame's shape and returns its length; spare length becomes bulge.
+    float BuildTarget(Rig r, float time)
     {
         // The arm contracts and relaxes a little; gripping tugs it harder.
-        float breath = 1f + 0.035f * MathF.Sin(0.7f * time + r.BreathPhase);
+        float breath = 1f + 0.035f * Sin(0.7f * time + r.BreathPhase);
         // Weighted smoothly by grip, so the arm's length doesn't step when tension crosses a threshold.
         float holding = Smooth((r.Tension - 0.6f) / 0.4f);
-        float tug = holding * (0.5f + 0.5f * MathF.Sin(MathF.Tau * (time - r.GripStart) / 2.5f));
+        float tug = holding * (0.5f + 0.5f * Sin(Tau * (time - r.GripStart) / 2.5f));
         float lenWant = r.Length * breath * (1f - 0.09f * tug);
 
         // Holding on, the arm can't contract below the distance to its grip point (that would stretch it).
         Vector2 root = r.Root;
         if (r.Mode == Mode.Reach || r.Mode == Mode.Grip)
-            lenWant = MathF.Max(lenWant, Vector2.Distance(root, r.GripPoint) * 1.04f);
+            lenWant = Max(lenWant, Vector2.Distance(root, r.GripPoint) * 1.04f);
 
         // The goal may not be further than the arm can reach.
         Vector2 toGoal = r.Goal - root;
@@ -377,17 +368,17 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
         if (c > maxReach) { toGoal *= maxReach / c; c = maxReach; }
         if (c < 1f) { toGoal = r.Inward; c = 1f; }
         Vector2 goal = root + toGoal;
-        lenWant = MathF.Max(lenWant, c * 1.012f);
+        lenWant = Max(lenWant, c * 1.012f);
 
         Vector2 dirChord = toGoal / c;
         Vector2 perp = new(-dirChord.Y, dirChord.X);
-        Vector2 d1 = new(MathF.Cos(r.HeadAngle), MathF.Sin(r.HeadAngle));
+        Vector2 d1 = Dir(r.HeadAngle);
 
         Vector2 p0 = root, p1 = root + r.Inward * (0.34f * c), p2 = goal - d1 * (0.30f * c), p3 = goal;
 
         // The bulge's profile: a blend of one arch and one S, rotating slowly through every combination.
         float ang = r.ShapeAngle0 + r.ShapeRate * time;
-        float fa = MathF.Cos(ang), fb = MathF.Sin(ang);
+        float fa = Cos(ang), fb = Sin(ang);
         // Gripping calms only the S term, so the hook reads as an arch.
         fb *= 1f - 0.65f * r.Tension;
 
@@ -399,7 +390,7 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
             float u = k / (float)GuideSamples;
             float v = 1f - u;
             bez[k] = v * v * v * p0 + 3f * v * v * u * p1 + 3f * v * u * u * p2 + u * u * u * p3;
-            prof[k] = fa * MathF.Sin(MathF.PI * u) + fb * MathF.Sin(MathF.Tau * u);
+            prof[k] = fa * Sin(PI * u) + fb * Sin(Tau * u);
         }
 
         // Spend spare length: choose the bulge amplitude that makes the curve as long as the tentacle.
@@ -408,7 +399,7 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
 
         // The tip's curl: re-integrates the last quarter with a progressively turned heading, keeping its length.
         float curl = r.Curl;
-        if (MathF.Abs(curl) > 0.002f)
+        if (Abs(curl) > 0.002f)
         {
             int hinge = (int)(GuideSamples * 0.74f);
             Vector2 prev = pts[hinge];
@@ -416,8 +407,8 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
             {
                 Vector2 seg = pts[k] - pts[k - 1];
                 float segLen = seg.Length();
-                float a = MathF.Atan2(seg.Y, seg.X) + curl * Smooth((k - hinge) / (float)(GuideSamples - hinge));
-                Vector2 next = prev + new Vector2(MathF.Cos(a), MathF.Sin(a)) * segLen;
+                float a = Atan2(seg.Y, seg.X) + curl * Smooth((k - hinge) / (float)(GuideSamples - hinge));
+                Vector2 next = prev + Dir(a) * segLen;
                 pts[k] = next;
                 prev = next;
             }
@@ -437,8 +428,8 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
                 float tl = tan.Length();
                 Vector2 n = tl > 1e-4f ? new Vector2(-tan.Y, tan.X) / tl : perp;
                 float u = arcTotal > 1f ? cum[k] / arcTotal : 0f;
-                float amp = waveAmp * MathF.Pow(u, 1.3f);
-                shifted[k] = pts[k] + n * (amp * MathF.Sin(MathF.Tau * 1.15f * u - 1.7f * time + r.WavePhase));
+                float amp = waveAmp * Pow(u, 1.3f);
+                shifted[k] = pts[k] + n * (amp * Sin(Tau * 1.15f * u - 1.7f * time + r.WavePhase));
             }
             for (int k = 0; k <= GuideSamples; k++) pts[k] = shifted[k];
             arcTotal = 0f;
@@ -459,10 +450,10 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
         return arcTotal;
     }
 
-    private static float SolveBulge(ReadOnlySpan<Vector2> bez, ReadOnlySpan<float> prof, Vector2 perp, float want, float chord)
+    static float SolveBulge(ReadOnlySpan<Vector2> bez, ReadOnlySpan<float> prof, Vector2 perp, float want, float chord)
     {
         // Bracket: an amplitude long enough that the curve is at least as long as wanted.
-        float hi = MathF.Max(4f, chord * 0.03f);
+        float hi = Max(4f, chord * 0.03f);
         for (int i = 0; i < 12 && ArcLength(bez, prof, perp, hi) < want; i++) hi *= 2f;
 
         // Least length, by ternary search (valid because the length is convex in the amplitude).
@@ -484,7 +475,7 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
         return 0.5f * (lo + hi);
     }
 
-    private static float ArcLength(ReadOnlySpan<Vector2> bez, ReadOnlySpan<float> prof, Vector2 perp, float scale)
+    static float ArcLength(ReadOnlySpan<Vector2> bez, ReadOnlySpan<float> prof, Vector2 perp, float scale)
     {
         float len = 0f;
         Vector2 prev = bez[0] + perp * (scale * prof[0]);
@@ -497,8 +488,8 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
         return len;
     }
 
-    /// <summary>Builds the Bezier offset by scale times the bulge profile into outPts, and returns its length.</summary>
-    private static float Arc(ReadOnlySpan<Vector2> bez, ReadOnlySpan<float> prof, Vector2 perp, float scale, Span<Vector2> outPts)
+    /// Builds the Bezier offset by scale times the bulge profile into outPts, and returns its length.
+    static float Arc(ReadOnlySpan<Vector2> bez, ReadOnlySpan<float> prof, Vector2 perp, float scale, Span<Vector2> outPts)
     {
         float len = 0f;
         for (int k = 0; k < bez.Length; k++)
@@ -511,33 +502,33 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
 
     // Springs
 
-    /// <summary>Critically damped spring: reaches the target with no overshoot, at a rate set by omega.</summary>
-    private static void Spring(ref Vector2 x, ref Vector2 v, Vector2 target, float omega, float dt)
+    /// Critically damped spring: reaches the target with no overshoot, at a rate set by omega.
+    static void Spring(ref Vector2 x, ref Vector2 v, Vector2 target, float omega, float dt)
     {
         Vector2 a = (target - x) * (omega * omega) - v * (2f * omega);
         v += a * dt;
         x += v * dt;
     }
 
-    private static void Spring(ref float x, ref float v, float target, float omega, float dt)
+    static void Spring(ref float x, ref float v, float target, float omega, float dt)
     {
         float a = (target - x) * (omega * omega) - v * (2f * omega);
         v += a * dt;
         x += v * dt;
     }
 
-    /// <summary>The same for an angle, taking the short way round.</summary>
-    private static void SpringAngle(ref float x, ref float v, float target, float omega, float dt)
+    /// The same for an angle, taking the short way round.
+    static void SpringAngle(ref float x, ref float v, float target, float omega, float dt)
     {
         float diff = target - x;
-        diff -= MathF.Tau * MathF.Round(diff / MathF.Tau);
+        diff -= Tau * Round(diff / Tau);
         float a = diff * (omega * omega) - v * (2f * omega);
         v += a * dt;
         x += v * dt;
     }
 
-    /// <summary>Cubic Hermite from p0 (leaving with tangent m0) to p1 (arriving at rest).</summary>
-    private static Vector2 Hermite(Vector2 p0, Vector2 m0, Vector2 p1, float t)
+    /// Cubic Hermite from p0 (leaving with tangent m0) to p1 (arriving at rest).
+    static Vector2 Hermite(Vector2 p0, Vector2 m0, Vector2 p1, float t)
     {
         float t2 = t * t, t3 = t2 * t;
         return (2f * t3 - 3f * t2 + 1f) * p0 + (t3 - 2f * t2 + t) * m0 + (-2f * t3 + 3f * t2) * p1;
@@ -545,8 +536,8 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
 
     // Impacts
 
-    /// <summary>Slime thrown off where a tentacle breaks through an edge or lands on one.</summary>
-    private static void Splat(EffectScene scene, Vector2 at, Vector2 direction, float strength,
+    /// Slime thrown off where a tentacle breaks through an edge or lands on one.
+    static void Splat(EffectScene scene, Vector2 at, Vector2 direction, float strength,
                               float alpha, float time, int seed, Vector4? colorOverride)
     {
         scene.AddImpact(new ImpactPrimitive
@@ -554,7 +545,7 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
             StrokeRole = PrimitiveRole.MainStroke,
             Position = at,
             Direction = direction,
-            Strength = Math.Clamp(strength, 0f, 1f),
+            Strength = Saturate(strength),
             Brightness = alpha,
             Seed = unchecked(seed + (int)(time * 1000f)),
             ColorOverride = colorOverride,
@@ -563,9 +554,9 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
 
     // Layout
 
-    private void BuildLayout(int castSeed, Vector2 size)
+    void BuildLayout(int castSeed, Vector2 size)
     {
-        float shortSide = MathF.Min(size.X, size.Y);
+        float shortSide = Min(size.X, size.Y);
         float overhang = shortSide * 0.12f;  // keep a thick root behind the edge: its flat cut must not show
 
         // Which archetypes this cast uses.
@@ -585,7 +576,7 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
         Array.Sort(_drawOrder, 0, _count, Comparer<int>.Create((a, b) => _rigs[b].Depth.CompareTo(_rigs[a].Depth)));
     }
 
-    private static void BuildRig(Rig r, int index, int castSeed, Vector2 size, float overhang, float shortSide)
+    static void BuildRig(Rig r, int index, int castSeed, Vector2 size, float overhang, float shortSide)
     {
         var a = Archetypes[index];
         int s = unchecked(castSeed + index * 977 + 29);
@@ -600,13 +591,13 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
         r.DiameterFrac = H(3, a.DiameterLo, a.DiameterHi);
         r.Depth = H(4, 0f, 0.14f);
         r.Seed = s;
-        r.Phase = H(5, 0f, MathF.Tau);
+        r.Phase = H(5, 0f, Tau);
 
         // Home: a point out along its inward direction, off to one side a little, kept clear of the border.
         Vector2 perp = new(-r.Inward.Y, r.Inward.X);
         Vector2 home = r.Root + r.Inward * (r.Length * HomeReach) + perp * (r.Length * H(6, -0.07f, 0.07f));
         float m = shortSide * 0.04f;
-        r.Home = new Vector2(Math.Clamp(home.X, m, size.X - m), Math.Clamp(home.Y, m, size.Y - m));
+        r.Home = new(Math.Clamp(home.X, m, size.X - m), Math.Clamp(home.Y, m, size.Y - m));
 
         r.Delay = H(7, 0f, 0.55f);
         r.Grow = H(8, 1.1f, 1.6f);
@@ -616,17 +607,17 @@ public sealed class DiseaseEffect : SceneEffect, IHasSwappableSlots
         r.AxAmp = r.Length * WanderAxial * H(11, 0.7f, 1.1f);
         r.W1 = H(12, 0.45f, 0.72f);
         r.W2 = H(13, 0.55f, 0.95f);
-        r.P1 = H(14, 0f, MathF.Tau);
-        r.P2 = H(15, 0f, MathF.Tau);
-        r.ShapeAngle0 = H(16, 0f, MathF.Tau);
+        r.P1 = H(14, 0f, Tau);
+        r.P2 = H(15, 0f, Tau);
+        r.ShapeAngle0 = H(16, 0f, Tau);
         r.ShapeRate = H(17, 0.14f, 0.28f) * Sign(s + 18);
         r.CurlAmp = H(19, 0.6f, 1.3f);
-        r.CurlPhase = H(20, 0f, MathF.Tau);
+        r.CurlPhase = H(20, 0f, Tau);
         r.UnfurlSign = Sign(s + 21);
         r.TwistAmp = H(22, 0.5f, 1.2f);
-        r.TwistPhase = H(23, 0f, MathF.Tau);
-        r.BreathPhase = H(24, 0f, MathF.Tau);
-        r.WavePhase = H(25, 0f, MathF.Tau);
+        r.TwistPhase = H(23, 0f, Tau);
+        r.BreathPhase = H(24, 0f, Tau);
+        r.WavePhase = H(25, 0f, Tau);
 
         r.Started = false;
         r.Entered = false;

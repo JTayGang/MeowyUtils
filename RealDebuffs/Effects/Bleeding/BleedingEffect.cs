@@ -1,9 +1,6 @@
-using System.Numerics;
-using RealDebuffs.Effects.Framework;
-
 namespace RealDebuffs.Effects;
 
-/// <summary>Bleeding: a claw rake of blood across the lens, pulsing with a heartbeat, spurting and dripping beads down the glass.</summary>
+/// Bleeding: a claw rake of blood across the lens, pulsing with a heartbeat, spurting and dripping beads down the glass.
 public sealed class BleedingEffect : SceneEffect, IHasSwappableSlots
 {
     // The cuts are what a "made of X" phrase replaces; a particle in that phrase swaps the blood itself.
@@ -14,32 +11,32 @@ public sealed class BleedingEffect : SceneEffect, IHasSwappableSlots
         Slot.Region(RegionKind.EdgeGlow, "Spatter and runs", "region.liquid"),
     };
 
-    private const int MaxCuts = 4, CutPoints = 30;
-    private static readonly uint Gloom = Pack(0.12f, 0.000f, 0.008f);
+    const int MaxCuts = 4, CutPoints = 30;
+    static readonly uint Gloom = Pack(0.12f, 0.000f, 0.008f);
 
     // the pen: when the first cut starts, and the gap before the next
-    private const float PenStart = 0.10f, PenGap = 0.10f;
+    const float PenStart = 0.10f, PenGap = 0.10f;
 
     // the pulse: the first beat lands after the cuts, and the bleed eases to this share of its strength
-    private const float FirstBeat = 1.0f, DrainFloor = 0.38f, DrainSecs = 12f;
+    const float FirstBeat = 1.0f, DrainFloor = 0.38f, DrainSecs = 12f;
 
-    private readonly StrandPath[] _cut = new StrandPath[MaxCuts];
-    private readonly float[] _width = new float[MaxCuts], _start = new float[MaxCuts], _secs = new float[MaxCuts];
-    private readonly bool[] _struck = new bool[MaxCuts];
-    private int _cuts;
+    readonly StrandPath[] _cut = new StrandPath[MaxCuts];
+    readonly float[] _width = new float[MaxCuts], _start = new float[MaxCuts], _secs = new float[MaxCuts];
+    readonly bool[] _struck = new bool[MaxCuts];
+    int _cuts;
 
-    private readonly LiquidField _field = new();
-    private readonly Heartbeat _heart = new();
-    private bool _high;
-    private int _beats;
-    private float _nextSplat;
+    readonly LiquidField _field = new();
+    readonly Heartbeat _heart = new();
+    bool _high;
+    int _beats;
+    float _nextSplat;
 
     public BleedingEffect() : base(DebuffKind.Bleeding, "Bleeding",
         "Claw cuts of blood open across the screen and pulse with a heartbeat: blood spurts, drips and spatters, and beads of it run down the glass.",
         6, "Bleeding",
         keywords: ["bleed", "bleeding", "hemorrhage"], envelope: true)
     {
-        for (int i = 0; i < MaxCuts; i++) _cut[i] = new StrandPath(CutPoints);
+        for (int i = 0; i < MaxCuts; i++) _cut[i] = new(CutPoints);
     }
 
     protected override void Emit(EffectScene scene, in CastFrame f)
@@ -56,7 +53,7 @@ public sealed class BleedingEffect : SceneEffect, IHasSwappableSlots
         _field.Color = f.Color;
 
         float beat = _heart.Level(f.Age, 0f);
-        float drain = DrainFloor + (1f - DrainFloor) * MathF.Exp(-f.Age / DrainSecs);
+        float drain = Lerp(DrainFloor, 1f, Exp(-f.Age / DrainSecs));
 
         EmitCuts(scene, in f, beat, drain);
         Pulse(in f, beat, drain);
@@ -64,19 +61,19 @@ public sealed class BleedingEffect : SceneEffect, IHasSwappableSlots
 
         for (float left = f.Dt; left > 1e-4f;)
         {
-            float h = MathF.Min(left, 1f / 30f);
+            float h = Min(left, 1f / 30f);
             _field.Step(h);
             left -= h;
         }
 
         // The vignette eases in and swells a little on each beat.
         float castIn = Smooth(f.Age / 0.9f);
-        scene.RequestVignette(Gloom, 0.15f + 0.03f * beat, MathF.Min(1f, f.Alpha * castIn * (0.55f + 0.30f * beat * drain)), priority: 14, f.Color);
+        scene.RequestVignette(Gloom, 0.15f + 0.03f * beat, Min(1f, f.Alpha * castIn * (0.55f + 0.30f * beat * drain)), priority: 14, f.Color);
 
         _field.Emit(scene, f.Alpha);
     }
 
-    private void Begin(in CastFrame f)
+    void Begin(in CastFrame f)
     {
         Array.Clear(_struck);
         _heart.Begin(f.Seed, FirstBeat);
@@ -85,8 +82,8 @@ public sealed class BleedingEffect : SceneEffect, IHasSwappableSlots
         _nextSplat = 3.5f + 3f * Hash01(f.Seed + 9);
     }
 
-    /// <summary>Lays the rake from the top corner on one side: a few near-parallel cuts, bowed alike, ending short of the middle.</summary>
-    private void Layout(in CastFrame f)
+    /// Lays the rake from the top corner on one side: a few near-parallel cuts, bowed alike, ending short of the middle.
+    void Layout(in CastFrame f)
     {
         int seed = f.Seed;
         float W = f.Size.X, H = f.Size.Y, px = f.Px;
@@ -122,16 +119,16 @@ public sealed class BleedingEffect : SceneEffect, IHasSwappableSlots
             path.Count = CutPoints;
             path.BuildArc();
 
-            float deep = 1f - MathF.Abs(centre) / (0.5f * _cuts);  // the middle cuts are the widest
+            float deep = 1f - Abs(centre) / (0.5f * _cuts);  // the middle cuts are the widest
             _width[k] = px * (20f + 22f * deep) * HashRange(s + 5, 0.85f, 1.15f);
             _start[k] = PenStart + PenGap * k;
             _secs[k] = HashRange(s + 6, 0.30f, 0.42f);
         }
     }
 
-    private float Drawn(float age, int k) => Smooth(Saturate((age - _start[k]) / _secs[k]));
+    float Drawn(float age, int k) => Smooth(Saturate((age - _start[k]) / _secs[k]));
 
-    private void EmitCuts(EffectScene scene, in CastFrame f, float beat, float drain)
+    void EmitCuts(EffectScene scene, in CastFrame f, float beat, float drain)
     {
         for (int k = 0; k < _cuts; k++)
         {
@@ -154,7 +151,7 @@ public sealed class BleedingEffect : SceneEffect, IHasSwappableSlots
         }
     }
 
-    private void Strike(EffectScene scene, in CastFrame f, int k)
+    void Strike(EffectScene scene, in CastFrame f, int k)
     {
         var path = _cut[k];
         path.SampleAtArc(path.Length * 0.12f, out Vector2 at, out Vector2 tan);
@@ -168,18 +165,18 @@ public sealed class BleedingEffect : SceneEffect, IHasSwappableSlots
         _field.Splat(at + down * (_field.Rand(20f, 46f) * f.Px), Bead(), (int)_field.Rand(6f, 10f));
     }
 
-    /// <summary>A bead big enough to run down the glass: a thicker liquid clings until it is larger.</summary>
-    private float Bead() => (2.8f + 6f * _field.Liquid.Phys.Viscosity) * _field.Rand(1.15f, 1.7f);
+    /// A bead big enough to run down the glass: a thicker liquid clings until it is larger.
+    float Bead() => (2.8f + 6f * _field.Liquid.Phys.Viscosity) * _field.Rand(1.15f, 1.7f);
 
-    /// <summary>The side of a cut that faces down, as a unit vector.</summary>
-    private static Vector2 Downhill(Vector2 tan)
+    /// The side of a cut that faces down, as a unit vector.
+    static Vector2 Downhill(Vector2 tan)
     {
         Vector2 d = new(tan.Y, -tan.X);
         return d.Y < 0f ? -d : d;
     }
 
-    /// <summary>On each lub a cut that is fully open spurts: a puff of droplets and now and then a fat gout, weaker as the bleed goes on.</summary>
-    private void Pulse(in CastFrame f, float beat, float drain)
+    /// On each lub a cut that is fully open spurts: a puff of droplets and now and then a fat gout, weaker as the bleed goes on.
+    void Pulse(in CastFrame f, float beat, float drain)
     {
         bool high = beat > 0.5f;
         bool lub = high && !_high;
@@ -195,18 +192,18 @@ public sealed class BleedingEffect : SceneEffect, IHasSwappableSlots
         Vector2 down = Downhill(tan);
 
         // Droplets stay above the size the liquid draws as a bare glint, so each one reads as blood.
-        float angle = MathF.Atan2(down.X, down.Y) + _field.Rand(-0.35f, 0.35f);
+        float angle = Atan2(down.X, down.Y) + _field.Rand(-0.35f, 0.35f);
         for (int i = 0, n = 5 + (int)(9f * power); i < n; i++)
         {
             float a = angle + _field.Rand(-0.22f, 0.22f), v = (620f + 620f * power) * _field.Rand(0.35f, 1f);
-            _field.Fling(at, new Vector2(MathF.Sin(a), MathF.Cos(a)) * v, 1.8f + 3.4f * MathF.Pow(_field.Rand(), 1.8f));
+            _field.Fling(at, new Vector2(Sin(a), Cos(a)) * v, 1.8f + 3.4f * Pow(_field.Rand(), 1.8f));
         }
         if (_field.Rand() < 0.45f)
             _field.Fling(at, down * (_field.Rand(160f, 380f) * power), _field.Rand(4.5f, 7f) * (0.6f + 0.4f * power));
     }
 
-    /// <summary>Every few seconds a spurt lands on the lens beside a cut.</summary>
-    private void Spatter(in CastFrame f)
+    /// Every few seconds a spurt lands on the lens beside a cut.
+    void Spatter(in CastFrame f)
     {
         if (f.Age < _nextSplat || f.Leave >= 0.01f) return;
         _nextSplat = f.Age + _field.Rand(3.5f, 8f);

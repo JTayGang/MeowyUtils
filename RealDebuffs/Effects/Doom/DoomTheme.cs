@@ -1,12 +1,9 @@
-using System.Numerics;
-using RealDebuffs.Effects.Framework.Materials;
-
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Hellfire and blood: dried-blood black through crimson and arterial red to ember orange and a pale gold core.</summary>
+/// Hellfire and blood: dried-blood black through crimson and arterial red to ember orange and a pale gold core.
 internal static class HellColor
 {
-    /// <summary>Dim to hot: 0 dried-blood black, 0.25 crimson, 0.5 blood red, 0.72 red-orange, 0.88 orange, 1 pale gold.</summary>
+    /// Dim to hot: 0 dried-blood black, 0.25 crimson, 0.5 blood red, 0.72 red-orange, 0.88 orange, 1 pale gold.
     public static readonly Palette Glow = new(
         (0.00f, 0.170f, 0.008f, 0.010f),
         (0.25f, 0.520f, 0.024f, 0.020f),
@@ -15,7 +12,7 @@ internal static class HellColor
         (0.88f, 1.000f, 0.560f, 0.130f),
         (1.00f, 1.000f, 0.900f, 0.600f));
 
-    /// <summary>A flame's temperature ramp: smouldering maroon at the cool edge to pale gold-white at the heart.</summary>
+    /// A flame's temperature ramp: smouldering maroon at the cool edge to pale gold-white at the heart.
     public static readonly Palette Flame = new(
         (0.00f, 0.140f, 0.006f, 0.008f),
         (0.16f, 0.440f, 0.020f, 0.014f),
@@ -24,10 +21,10 @@ internal static class HellColor
         (0.80f, 1.000f, 0.560f, 0.120f),
         (1.00f, 1.000f, 0.880f, 0.520f));
 
-    /// <summary>Edge tint for the screen's vignette: near-black blood.</summary>
+    /// Edge tint for the screen's vignette: near-black blood.
     public static readonly uint Vignette = Pack(0.022f, 0.003f, 0.004f);
 
-    /// <summary>The flash an infernal cast lands with (orange-red, so it stays chromatic under a colour override).</summary>
+    /// The flash an infernal cast lands with (orange-red, so it stays chromatic under a colour override).
     public static readonly uint Flash = Pack(1.00f, 0.36f, 0.12f);
 }
 

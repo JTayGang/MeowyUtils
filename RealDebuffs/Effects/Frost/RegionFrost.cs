@@ -1,18 +1,15 @@
-using System.Numerics;
-using Dalamud.Bindings.ImGui;
-
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>The frost: a milky coating creeping in from the edges, one sparse vertex mesh over a FrostField.</summary>
+/// The frost: a milky coating creeping in from the edges, one sparse vertex mesh over a FrostField.
 internal sealed class RegionFrost : RegionMaterial<FrostField>
 {
     public override string Name => "region.frost-cover";
 
     // look
-    private const float FilmAlpha = 0.05f;  // the thin film that coats even the middle of the glass
-    private const float IceAlpha  = 0.80f;  // extra opacity of thick ice
-    private const float SettleAge = 8f;  // front has all but stopped; haze rebuilds only occasionally
-    private const float HazeRefresh = 0.12f;  // seconds between rebuilds once settled (also the colour-override lag)
+    const float FilmAlpha = 0.05f;  // the thin film that coats even the middle of the glass
+    const float IceAlpha  = 0.80f;  // extra opacity of thick ice
+    const float SettleAge = 8f;  // front has all but stopped; haze rebuilds only occasionally
+    const float HazeRefresh = 0.12f;  // seconds between rebuilds once settled (also the colour-override lag)
 
     protected override void Draw(ImDrawListPtr dl, FrostField f, in RegionPrimitive r, in MaterialContext ctx)
     {
@@ -20,9 +17,9 @@ internal sealed class RegionFrost : RegionMaterial<FrostField>
         if (a <= 0.002f) return;
 
         // Everything looks colder as the glass freezes: one very faint blue wash across the screen.
-        float wash = a * 0.07f * Math.Clamp(f.Progress, 0f, 1f);
+        float wash = a * 0.07f * Saturate(f.Progress);
         if (wash > 0.003f)
-            dl.AddRectFilled(Vector2.Zero, new Vector2(ctx.ScreenW, ctx.ScreenH), WithAlpha(DrawHelpers.Pack(0.45f, 0.65f, 0.95f), wash));
+            dl.AddRectFilled(Vector2.Zero, new(ctx.ScreenW, ctx.ScreenH), WithAlpha(DrawHelpers.Pack(0.45f, 0.65f, 0.95f), wash));
 
         DrawHaze(dl, f, a, ctx);
 
@@ -36,12 +33,12 @@ internal sealed class RegionFrost : RegionMaterial<FrostField>
         f.Ferns.Draw(dl, MeshDraw.WhiteUv(ctx.Time), f.Age, style);
     }
 
-    private static void DrawHaze(ImDrawListPtr dl, FrostField f, float a, in MaterialContext ctx)
+    static void DrawHaze(ImDrawListPtr dl, FrostField f, float a, in MaterialContext ctx)
     {
         var g = f.Growth;
 
         // Once settled the haze barely moves, so it rebuilds a few times a second (or at once on an opacity change).
-        bool fresh = f.Age <= SettleAge || a != f.HazeAlpha || MathF.Abs(ctx.Time - f.HazeTime) >= HazeRefresh;
+        bool fresh = f.Age <= SettleAge || a != f.HazeAlpha || Abs(ctx.Time - f.HazeTime) >= HazeRefresh;
         if (fresh)
         {
             BuildHaze(f, a);
@@ -52,13 +49,13 @@ internal sealed class RegionFrost : RegionMaterial<FrostField>
         MeshDraw.SparseGrid(dl, g.Cols, g.Rows, g.Positions, f.Haze, MeshDraw.WhiteUv(ctx.Time));
     }
 
-    private static void BuildHaze(FrostField f, float a)
+    static void BuildHaze(FrostField f, float a)
     {
         var g = f.Growth;
         int nv = (g.Cols + 1) * (g.Rows + 1);
         float ice = f.Progress, fog = f.Fog;
 
-        float slam = MathF.Exp(-f.Age / 0.45f);  // the border darkens hard at first, then settles
+        float slam = Exp(-f.Age / 0.45f);  // the border darkens hard at first, then settles
         float rimAlpha = a * (0.30f + 0.45f * slam);
         bool overridden = ColorOverrideActive;  // no override: skip the per-vertex remap entirely
 
@@ -77,7 +74,7 @@ internal sealed class RegionFrost : RegionMaterial<FrostField>
             // Condensation: a thin cool film that is already on the glass before the ice arrives.
             float fogLead = fog - arrival;
             if (fogLead > 0f)
-                Over(ref cr, ref cg, ref cb, ref ca, 0.55f, 0.72f, 0.95f, a * 0.12f * Math.Clamp(fogLead * 1.8f, 0f, 1f) * (0.7f + 0.3f * mott));
+                Over(ref cr, ref cg, ref cb, ref ca, 0.55f, 0.72f, 0.95f, a * 0.12f * Saturate(fogLead * 1.8f) * (0.7f + 0.3f * mott));
 
             // Ice: a fairly crisp front, then thickening and whitening behind it.
             float lead = ice - arrival;
@@ -85,9 +82,9 @@ internal sealed class RegionFrost : RegionMaterial<FrostField>
             {
                 // A front soft enough for the grid to show cleanly (a sharper one aliases into steps).
                 float edge = Smooth(lead / 0.26f);
-                float thick = Math.Clamp(lead / 0.75f, 0f, 1f);
+                float thick = Saturate(lead / 0.75f);
                 // Frost is thickest at the border and thins toward the clear middle: the ferns reach in, the coat doesn't.
-                float dens = Math.Clamp(thick * cap[i] * (0.60f + 0.40f * mott) + 0.55f * rim * thick, 0f, 1f);
+                float dens = Saturate(thick * cap[i] * (0.60f + 0.40f * mott) + 0.55f * rim * thick);
                 uint c = IceColor.Frost.Sample(0.15f + 0.85f * dens);
                 Over(ref cr, ref cg, ref cb, ref ca,
                      (c & 255) / 255f, ((c >> 8) & 255) / 255f, ((c >> 16) & 255) / 255f,
@@ -96,7 +93,7 @@ internal sealed class RegionFrost : RegionMaterial<FrostField>
                 // A faint bright band just behind the front, where the ice is still forming.
                 float d = (lead - 0.14f) / 0.12f;
                 if (d * d < 6f)
-                    Over(ref cr, ref cg, ref cb, ref ca, 0.96f, 0.99f, 1f, a * 0.14f * MathF.Exp(-d * d));
+                    Over(ref cr, ref cg, ref cb, ref ca, 0.96f, 0.99f, 1f, a * 0.14f * Exp(-d * d));
             }
 
             // Vertex colours aren't premultiplied: a transparent vertex must still carry frost-coloured RGB
@@ -105,18 +102,18 @@ internal sealed class RegionFrost : RegionMaterial<FrostField>
         }
     }
 
-    /// <summary>Opaque colour plus alpha: WithAlpha(Pack(rgb), alpha) minus the override lookup</summary>
-    private static uint Pack(float r, float g, float b, float alpha, bool overridden)
+    /// Opaque colour plus alpha: WithAlpha(Pack(rgb), alpha) minus the override lookup
+    static uint Pack(float r, float g, float b, float alpha, bool overridden)
     {
         uint rgb = DrawHelpers.Pack(r, g, b);
         if (overridden) return WithAlpha(IceColor.Tintable(rgb), alpha);
         return (rgb & 0x00FFFFFFu) | AlphaBits(alpha);
     }
 
-    /// <summary>Straight-alpha "over": layer (r, g, b, a) on top of the accumulated color.</summary>
-    private static void Over(ref float r, ref float g, ref float b, ref float a, float r2, float g2, float b2, float a2)
+    /// Straight-alpha "over": layer (r, g, b, a) on top of the accumulated color.
+    static void Over(ref float r, ref float g, ref float b, ref float a, float r2, float g2, float b2, float a2)
     {
-        float outA = a2 + a * (1f - a2);
+        float outA = Lerp(a2, 1f, a);
         if (outA <= 1e-5f) return;
         float k1 = a2 / outA, k0 = 1f - k1;
         r = r2 * k1 + r * k0;

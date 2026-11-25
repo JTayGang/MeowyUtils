@@ -1,9 +1,6 @@
-using System.Numerics;
-using RealDebuffs.Effects.Framework;
-
 namespace RealDebuffs.Effects;
 
-/// <summary>Frost: condensation, then creeping ice (ferns, glints, mist from one growth field) and wind-blown snow.</summary>
+/// Frost: condensation, then creeping ice (ferns, glints, mist from one growth field) and wind-blown snow.
 public sealed class FrostEffect : SceneEffect, IHasSwappableSlots
 {
     public IReadOnlyList<SwappableSlot> Slots { get; } = new SwappableSlot[]
@@ -17,22 +14,22 @@ public sealed class FrostEffect : SceneEffect, IHasSwappableSlots
     };
 
     // palette
-    private static readonly uint Flash = Pack(0.70f, 0.86f, 1.00f);
+    static readonly uint Flash = Pack(0.70f, 0.86f, 1.00f);
 
     // state
-    private readonly FrostField _field = new();
+    readonly FrostField _field = new();
 
     // Mist is the only emitter-driven particle; spawn callbacks are built once, so nothing allocates per frame.
-    private readonly ParticleSystem _mist = new(18, 0xF05701);
-    private readonly Func<int, Vector2> _mistPos, _mistVel;
+    readonly ParticleSystem _mist = new(18, 0xF05701);
+    readonly Func<int, Vector2> _mistPos, _mistVel;
 
     // The wind: a fixed direction per cast (either way), a gusting strength, and the snow it carries.
-    private readonly WindField _snow = new();
-    private Vector2 _windDir = new(1f, 0.18f);
-    private float _gustSeed;
-    private const float WindSpeed = 560f;  // px/s at 1080p in a full gust (near flakes go ~1.4x, far ~0.4x)
+    readonly WindField _snow = new();
+    Vector2 _windDir = new(1f, 0.18f);
+    float _gustSeed;
+    const float WindSpeed = 560f;  // px/s at 1080p in a full gust (near flakes go ~1.4x, far ~0.4x)
 
-    private CastFrame _f;
+    CastFrame _f;
 
     public FrostEffect() : base(DebuffKind.Frost, "Frostbite / Deep Freeze",
         "Icy blue creeps in from the edges.",
@@ -62,14 +59,14 @@ public sealed class FrostEffect : SceneEffect, IHasSwappableSlots
             _mist.Clear();
 
             int seed = f.Seed;
-            _windDir = Vector2.Normalize(new Vector2(Sign(seed + 21), 0.18f));
-            _gustSeed = Hash01(seed + 22) * MathF.Tau;
-            int flakes = Math.Clamp((int)(380f * MathF.Sqrt(f.Size.X * f.Size.Y / (1920f * 1080f))), 200, 560);
+            _windDir = Vector2.Normalize(new(Sign(seed + 21), 0.18f));
+            _gustSeed = Hash01(seed + 22) * Tau;
+            int flakes = Math.Clamp((int)(380f * Sqrt(f.Size.X * f.Size.Y / (1920f * 1080f))), 200, 560);
             _snow.Build(flakes, seed + 23, f.Size);
         }
 
-        float thaw = MathF.Min(1f, f.Alpha);  // the front retreats as the effect fades out
-        float prog = FrostField.ProgressAt(f.Age) * MathF.Pow(thaw, 0.6f);
+        float thaw = Min(1f, f.Alpha);  // the front retreats as the effect fades out
+        float prog = FrostField.ProgressAt(f.Age) * Pow(thaw, 0.6f);
 
         _field.Age = f.Age;
         _field.Progress = prog;
@@ -86,7 +83,7 @@ public sealed class FrostEffect : SceneEffect, IHasSwappableSlots
             State = _field,
         });
 
-        float introFlash = f.Age < 0.30f ? MathF.Exp(-f.Age / 0.07f) : 0f;
+        float introFlash = f.Age < 0.30f ? Exp(-f.Age / 0.07f) : 0f;
         if (introFlash > 0.01f)
         {
             scene.AddRegion(new RegionPrimitive
@@ -101,7 +98,7 @@ public sealed class FrostEffect : SceneEffect, IHasSwappableSlots
         // crystals on the glass (the hero slot)
         foreach (var fl in _field.Flowers)
         {
-            float growth = Math.Clamp((f.Age - fl.Start) / 0.9f, 0f, 1f);
+            float growth = Saturate((f.Age - fl.Start) / 0.9f);
             if (growth <= 0f) continue;
             scene.AddParticle(new ParticlePrimitive
             {
@@ -117,7 +114,7 @@ public sealed class FrostEffect : SceneEffect, IHasSwappableSlots
         {
             _mist.Stream(f.Time, f.Dt, (0.30f, 0.75f), new ParticleSpawn(_mistPos, _mistVel, (3.5f, 5.5f), (70f * f.Px, 140f * f.Px)));
         }
-        _mist.Emit(scene, f.Time, new ParticleStyle(PrimitiveRole.Mist, f.Alpha * Math.Clamp(f.Age * 0.6f, 0f, 1f), f.Color));
+        _mist.Emit(scene, f.Time, new ParticleStyle(PrimitiveRole.Mist, f.Alpha * Saturate(f.Age * 0.6f), f.Color));
 
         // glints: nucleation flashes first, then the steady twinkle
         foreach (var site in _field.Growth.Sites)
@@ -127,7 +124,7 @@ public sealed class FrostEffect : SceneEffect, IHasSwappableSlots
             scene.AddParticle(new ParticlePrimitive
             {
                 Position = site.Pos + site.Inward * (14f * f.Px), Size = 78f * f.Px,
-                Brightness = f.Alpha * MathF.Exp(-t / 0.20f),
+                Brightness = f.Alpha * Exp(-t / 0.20f),
                 Seed = (int)(site.Pos.X * 7f + site.Pos.Y), Role = PrimitiveRole.Glint, ColorOverride = f.Color,
             });
         }
@@ -135,9 +132,9 @@ public sealed class FrostEffect : SceneEffect, IHasSwappableSlots
         {
             float since = f.Age - g.Start;
             if (since < 0f) continue;
-            float twinkle = MathF.Pow(MathF.Max(0f, MathF.Sin(f.Age * g.Rate * 6.2832f + g.Phase)), g.Sharp);
+            float twinkle = Pow(Max(0f, Sin(f.Age * g.Rate * 6.2832f + g.Phase)), g.Sharp);
             float born = since < 0.3f ? 0.9f * (1f - since / 0.3f) : 0f;  // a flash as the ice forms under it
-            float inten = MathF.Max(twinkle, born);
+            float inten = Max(twinkle, born);
             if (inten < 0.06f) continue;
             scene.AddParticle(new ParticlePrimitive
             {
@@ -148,8 +145,8 @@ public sealed class FrostEffect : SceneEffect, IHasSwappableSlots
 
         // wind and snow: builds as the glass freezes, drops away as it thaws; gusts streak the flakes
         float gust = WindField.Gust(f.Age, _gustSeed);
-        float build = Math.Clamp((f.Age - 0.4f) / 3.5f, 0f, 1f);
-        float density = build * MathF.Pow(thaw, 0.6f) * (0.70f + 0.30f * gust);
+        float build = Saturate((f.Age - 0.4f) / 3.5f);
+        float density = build * Pow(thaw, 0.6f) * (0.70f + 0.30f * gust);
         _snow.Update(f.Time, f.Dt, f.Size, f.Px, _windDir * (WindSpeed * f.Px), gust);
         // Snow is white by nature, so it takes the override's hue but stays pale (see IceColor.Pastel).
         _snow.Emit(scene, f.Size, f.Px, PrimitiveRole.Snow, density, brightness: f.Alpha * (0.80f + 0.20f * gust), IceColor.Pastel(f.Color));

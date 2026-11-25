@@ -1,43 +1,36 @@
-using System.Numerics;
-using Dalamud.Bindings.ImGui;
-
 namespace RealDebuffs.Effects.Framework.Materials;
 
-/// <summary>A living tentacle as lit 3D geometry: tapered tube, pale belly, dark back, mottled skin, flowing slime</summary>
+/// A living tentacle as lit 3D geometry: tapered tube, pale belly, dark back, mottled skin, flowing slime
 public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
 {
     public string Name => "stroke.parasite";
     public string[] NaturalLanguageWords { get; } = { "tentacle", "tentacles", "tendril", "tendrils", "parasite", "parasites" };
 
     // size ---- wide enough for a limb a sixth of the screen thick, narrow enough to be a thread
-    private const float MinDiameterFrac = 0.012f;
-    private const float MaxDiameterFrac = 0.180f;
-    private const float TipFrac = 0.075f;  // diameter at the very tip, as a fraction of the base's
-    private const int   MaxRows = 1000;
-    private const int   MaxPathPoints = 512;
+    const float MinDiameterFrac = 0.012f, MaxDiameterFrac = 0.180f;
+    const float TipFrac = 0.075f;  // diameter at the very tip, as a fraction of the base's
+    const int   MaxRows = 1000, MaxPathPoints = 512;
 
-    private static readonly Matcap Flesh = new(SurfacePresets.ParasiteFlesh);
-    private static readonly Matcap Coat  = new(SurfacePresets.WetCoat);
+    static readonly Matcap Flesh = new(SurfacePresets.ParasiteFlesh);
+    static readonly Matcap Coat  = new(SurfacePresets.WetCoat);
 
     // Back and belly: multipliers on the flesh matcap; the belly paler and yellower, the back darker and greener.
-    private static readonly Vector3 DorsalTint  = new(0.72f, 0.80f, 0.70f);
-    private static readonly Vector3 VentralTint = new(1.22f, 1.14f, 0.92f);
+    static readonly Vector3 DorsalTint  = new(0.72f, 0.80f, 0.70f);
+    static readonly Vector3 VentralTint = new(1.22f, 1.14f, 0.92f);
 
-    /// <summary>The half vector between the key light and the viewer: where a highlight sits on a surface.</summary>
-    private static readonly Vector3 KeyHalf = Vector3.Normalize(StudioLighting.Key + Vector3.UnitZ);
-    private static readonly Vector3 FillHalf = Vector3.Normalize(StudioLighting.Fill + Vector3.UnitZ);
+    /// The half vector between the key light and the viewer: where a highlight sits on a surface.
+    static readonly Vector3 KeyHalf = Vector3.Normalize(StudioLighting.Key + Vector3.UnitZ);
+    static readonly Vector3 FillHalf = Vector3.Normalize(StudioLighting.Fill + Vector3.UnitZ);
 
     // Skin relief: warts (height as a fraction of the arm's radius, shading tilt) and folds.
-    private const float CupSegPerPx   = 0.90f;
-    private const float BumpHeightFrac = 0.16f;
-    private const float BumpTilt       = 1.00f;
-    private const float FoldDepth      = 0.02f;  // radius modulation of the folds
-    private const float FoldTilt       = 0.17f;  // and the tilt they give the shading
-    private const float CavityDark     = 0.26f;  // how dark the hollows between warts go
-    private const float CrestLift      = 0.11f;  // and how much the crests brighten
+    const float CupSegPerPx   = 0.90f, BumpHeightFrac = 0.16f, BumpTilt       = 1.00f;
+    const float FoldDepth      = 0.02f;  // radius modulation of the folds
+    const float FoldTilt       = 0.17f;  // and the tilt they give the shading
+    const float CavityDark     = 0.26f;  // how dark the hollows between warts go
+    const float CrestLift      = 0.11f;  // and how much the crests brighten
 
-    /// <summary>Level of detail: columns across the visible half (even in ANGLE), rows along the length.</summary>
-    private sealed class Tier
+    /// Level of detail: columns across the visible half (even in ANGLE), rows along the length.
+    sealed class Tier
     {
         public readonly int Cols;
         public readonly float StepFrac;  // row spacing, in diameters
@@ -51,25 +44,23 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
             Sin = new float[cols]; Cos = new float[cols]; Theta = new float[cols];
             for (int c = 0; c < cols; c++)
             {
-                float th = MathF.PI * (c / (cols - 1f) - 0.5f);
+                float th = PI * (c / (cols - 1f) - 0.5f);
                 Theta[c] = th; Sin[c] = MathF.Sin(th); Cos[c] = MathF.Cos(th);
             }
             Sin[0] = -1f; Sin[cols - 1] = 1f; Cos[0] = 0f; Cos[cols - 1] = 0f;
         }
     }
 
-    private static readonly Tier Thick  = new(17, 0.20f, 24);  // a limb thick enough that 11 columns would show as blocks
-    private static readonly Tier Full   = new(11, 0.20f, 16);
-    private static readonly Tier Fine   = new(9,  0.24f, 12);
-    private static readonly Tier Medium = new(7,  0.32f, 0);
-    private static readonly Tier Coarse = new(5,  0.46f, 0);
+    static readonly Tier Thick  = new(17, 0.20f, 24);  // a limb thick enough that 11 columns would show as blocks
+    static readonly Tier Full   = new(11, 0.20f, 16);
+    static readonly Tier Fine   = new(9,  0.24f, 12);
+    static readonly Tier Medium = new(7,  0.32f, 0);
+    static readonly Tier Coarse = new(5,  0.46f, 0);
 
-    /// <summary>Everything about how this particular tentacle looks, resolved once per Draw.</summary>
-    private struct Look
+    /// Everything about how this particular tentacle looks, resolved once per Draw.
+    struct Look
     {
-        public float Diameter, Radius;
-        public float Fog, Agit;
-        public float Alpha;
+        public float Diameter, Radius, Fog, Agit, Alpha;
         public uint  AlphaBits;
         public bool  Overridden;
         public float Dye;
@@ -78,8 +69,8 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         public float MottleOffset;  // per tentacle, so no two share a pattern
     }
 
-    /// <summary>One cross-section of the tentacle: everything a vertex needs that does not depend on which column it is.</summary>
-    private struct Row
+    /// One cross-section of the tentacle: everything a vertex needs that does not depend on which column it is.
+    struct Row
     {
         public Vector2 P, T;
         public float Arc;
@@ -98,72 +89,71 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         public bool  On;  // on screen: only these rows are shaded
     }
 
-    /// <summary>Per-tentacle, per-frame constants a cross-section needs.</summary>
-    private struct RowParams
+    /// Per-tentacle, per-frame constants a cross-section needs.
+    struct RowParams
     {
         public float Total, VisibleLen, Reveal, Growing;
         public bool Closed;
         public float Diameter, Radius, Px, Depth, Time, Twist, Margin, ScreenW, ScreenH;
         public float FieldScale;  // size of the slime patches and highlight breakup, capped in pixels
-        public float Ph1, Ph2, Ph3, Psi0, OffA, OffB, OffC, Scroll;
-        public float WobbleRate, ToneRateA, ToneRateB, PitchRate, TwistRate;
+        public float Ph1, Ph2, Ph3, Psi0, OffA, OffB, OffC, Scroll, WobbleRate, ToneRateA, ToneRateB, PitchRate, TwistRate;
         public float BumpWave, BumpOff, FoldWave;  // wart wavelength/offset; fold wavelength (px); BumpWave 0 = smooth
     }
 
-    private RowParams _rp;
-    private readonly Row[] _rows = new Row[MaxRows];
-    private readonly float[] _hgt = new float[MaxRows * 17];  // wart height (noise, ~[-1,1]) per row and column
-    private readonly PathRows _path = new(MaxPathPoints);
-    private float _screenW, _screenH;
+    RowParams _rp;
+    readonly Row[] _rows = new Row[MaxRows];
+    readonly float[] _hgt = new float[MaxRows * 17];  // wart height (noise, ~[-1,1]) per row and column
+    readonly PathRows _path = new(MaxPathPoints);
+    float _screenW, _screenH;
 
     // The strand's profile: shared by the drawing and by RadiusAt
 
-    private static float BaseDiameter(float widthHint, float depth, float shortSide) =>
+    static float BaseDiameter(float widthHint, float depth, float shortSide) =>
         Math.Clamp(widthHint, shortSide * MinDiameterFrac, shortSide * MaxDiameterFrac) * (1f - 0.18f * depth);
 
-    /// <summary>Radius multiplier at fraction u of the strand's full length: thick at the root, drawn out to a fine tip.</summary>
-    private static float Taper(float u, bool closed) =>
-        closed ? 0.92f : TipFrac + (1f - TipFrac) * MathF.Pow(Math.Clamp(1f - u, 0f, 1f), 0.78f);
+    /// Radius multiplier at fraction u of the strand's full length: thick at the root, drawn out to a fine tip.
+    static float Taper(float u, bool closed) =>
+        closed ? 0.92f : Lerp(TipFrac, 1f, Pow(Saturate(1f - u), 0.78f));
 
     /// <inheritdoc/>
     public float RadiusAt(in StrokePrimitive s, float arc, float shortSide)
     {
-        float total = MathF.Max(1f, s.Path.Length);
-        float diameter = BaseDiameter(s.WidthHint, Math.Clamp(s.Depth, 0f, 1f), shortSide);
-        return MathF.Max(0.5f, 0.5f * diameter * Taper(arc / total, s.Closed));
+        float total = Max(1f, s.Path.Length);
+        float diameter = BaseDiameter(s.WidthHint, Saturate(s.Depth), shortSide);
+        return Max(0.5f, 0.5f * diameter * Taper(arc / total, s.Closed));
     }
 
     // Draw
 
     // Frame budget: Building a tentacle's mesh is the whole cost of drawing it, and a tentacle moves slowly.
 
-    /// <summary>Milliseconds per frame this material may spend building tentacles; 0 = build all every frame.</summary>
+    /// Milliseconds per frame this material may spend building tentacles; 0 = build all every frame.
     public static float BudgetMs = 1.5f;
 
-    /// <summary>The longest a tentacle's picture may be left as it was, in seconds.</summary>
+    /// The longest a tentacle's picture may be left as it was, in seconds.
     public static float MaxStaleSeconds = 0.034f;
 
-    private const int MaxInterval = 3, MaxStaleFrames = 3;
+    const int MaxInterval = 3, MaxStaleFrames = 3;
 
-    private sealed class Cached
+    sealed class Cached
     {
         public readonly MeshDraw.MeshCache Mesh = new();
         public float Seen, CostMs = 0.2f;  // CostMs: what building this tentacle takes, smoothed
         public int BuiltFrame, Phase;  // Phase: which of the _interval frames this one is rebuilt on
     }
 
-    private readonly Dictionary<int, Cached> _cache = new();
-    private readonly List<int> _cacheStale = new();
-    private readonly List<Cached> _planned = new();
-    private float _frameTime = float.NaN, _cacheSweep;
-    private int _frameNo, _slot, _slotsLastFrame, _interval = 1;
-    private double _buildMsEma = 0.2;  // per tentacle, smoothed
-    private float _frameDt = 1f / 60f;  // smoothed time between frames
+    readonly Dictionary<int, Cached> _cache = new();
+    readonly List<int> _cacheStale = new();
+    readonly List<Cached> _planned = new();
+    float _frameTime = float.NaN, _cacheSweep;
+    int _frameNo, _slot, _slotsLastFrame, _interval = 1;
+    double _buildMsEma = 0.2;  // per tentacle, smoothed
+    float _frameDt = 1f / 60f;  // smoothed time between frames
 
-    private Coat? _layerCoat;
-    private float _layerAlpha;
+    Coat? _layerCoat;
+    float _layerAlpha;
 
-    /// <summary>Any matter: the coat lies on the body, behind the near-side suckers and in front of the far-side ones.</summary>
+    /// Any matter: the coat lies on the body, behind the near-side suckers and in front of the far-side ones.
     public bool Layers(Coat coat) => true;
 
     public void DrawWithCoat(ImDrawListPtr dl, in StrokePrimitive s, in MaterialContext ctx, Coat coat, float alpha)
@@ -182,7 +172,7 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         _slot++;
 
         int key = unchecked(s.Seed * 31 + (int)s.Owner);
-        if (!_cache.TryGetValue(key, out Cached? c)) { c = new Cached(); _cache[key] = c; }
+        if (!_cache.TryGetValue(key, out Cached? c)) { c = new(); _cache[key] = c; }
         c.Seen = ctx.Time;
 
         bool due = !c.Mesh.Valid || _interval <= 1 || (_frameNo + c.Phase) % _interval == 0 || _frameNo - c.BuiltFrame >= MaxStaleFrames;
@@ -202,7 +192,7 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         c.CostMs += ((float)ms - c.CostMs) * 0.15f;
     }
 
-    private void NewFrame(float time, float budget)
+    void NewFrame(float time, float budget)
     {
         float step = time - _frameTime;  // NaN on the first frame
         if (step > 0f && step < 0.25f) _frameDt += (step - _frameDt) * 0.1f;
@@ -214,7 +204,7 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         if (_slotsLastFrame > 0)
         {
             double full = _buildMsEma * _slotsLastFrame;  // what building every tentacle this frame would cost
-            int cap = Math.Clamp((int)(MaxStaleSeconds / MathF.Max(_frameDt, 1e-3f)), 1, MaxInterval);  // fps-aware: a picture held for N frames must not be held too long
+            int cap = Math.Clamp((int)(MaxStaleSeconds / Max(_frameDt, 1e-3f)), 1, MaxInterval);  // fps-aware: a picture held for N frames must not be held too long
             int want = Math.Clamp((int)Math.Ceiling(full / budget), 1, cap);
             if (want > _interval) _interval = want;
             else if (want < _interval && (_interval > cap || full / (_interval - 1) < budget * 0.85)) _interval--;  // relax once the cheaper plan still sits comfortably under budget
@@ -231,10 +221,10 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         }
     }
 
-    private int _planInterval;
+    int _planInterval;
 
-    /// <summary>Gives each live tentacle a rebuild phase so the cost is level from frame to frame: the dearest first</summary>
-    private void Plan()
+    /// Gives each live tentacle a rebuild phase so the cost is level from frame to frame: the dearest first
+    void Plan()
     {
         _planInterval = _interval;
         _planned.Clear();
@@ -251,18 +241,18 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         }
     }
 
-    private void DrawBuild(ImDrawListPtr dl, in StrokePrimitive s, in MaterialContext ctx)
+    void DrawBuild(ImDrawListPtr dl, in StrokePrimitive s, in MaterialContext ctx)
     {
         var path = s.Path;
         float alpha = s.Brightness * ctx.Alpha;
         if (path.Count < 2 || alpha <= 0.004f) return;
 
-        float reveal = Math.Clamp(s.Reveal, 0f, 1f);
+        float reveal = Saturate(s.Reveal);
         if (reveal <= 0.001f) return;
 
         float px = ctx.ScreenScale;
-        float depth = Math.Clamp(s.Depth, 0f, 1f);
-        float agit = Math.Clamp(s.Agitation, 0f, 1f);
+        float depth = Saturate(s.Depth);
+        float agit = Saturate(s.Agitation);
         bool closed = s.Closed;
         int seed = s.Seed;
 
@@ -285,7 +275,7 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
             Overridden = ColorOverrideActive,
             Dye = ColorOverrideChroma,
             Detail = Math.Clamp(diameter / (22f * px), 0.4f, 1f),
-            MottleFreq = 1f / MathF.Min(diameter * 2.3f, 100f * px),  // skin detail is in px, not a fraction of the limb
+            MottleFreq = 1f / Min(diameter * 2.3f, 100f * px),  // skin detail is in px, not a fraction of the limb
             MottleOffset = HashRange(seed + 71, 0f, 300f),
         };
 
@@ -310,13 +300,13 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         if (s.TipFlare > 0.001f && !closed)
         {
             path.SampleAtArc(visibleLen, out Vector2 tip, out _);
-            DrawTip(dl, tip, MathF.Max(radius * Taper(reveal, false), 1.6f * px), Math.Clamp(s.TipFlare, 0f, 1f), in look, in ctx);
+            DrawTip(dl, tip, Max(radius * Taper(reveal, false), 1.6f * px), Saturate(s.TipFlare), in look, in ctx);
         }
     }
 
     // Cross-sections
 
-    private int BuildRows(StrandPath path, float total, float visibleLen, bool closed, bool flushStart, float reveal,
+    int BuildRows(StrandPath path, float total, float visibleLen, bool closed, bool flushStart, float reveal,
                           Tier tier, int seed, float phase, float twist, float time, float px, float depth, in Look look)
     {
         int pn = Math.Min(path.Count, MaxPathPoints);
@@ -332,19 +322,19 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         float flowSign = closed || tipPos.Y >= basePos.Y ? 1f : -1f;  // slime runs down the screen: toward whichever end is lower
 
         // Closed loops keep every periodic term to a whole number of cycles, so the seam cannot be found.
-        float Rate(float wavelength) => closed ? MathF.Max(1f, MathF.Round(total / wavelength)) / total : 1f / wavelength;
+        float Rate(float wavelength) => closed ? Max(1f, Round(total / wavelength)) / total : 1f / wavelength;
 
-        _rp = new RowParams
+        _rp = new()
         {
             Total = total, VisibleLen = visibleLen, Reveal = reveal, Closed = closed,
             Growing = 1f - Smooth((reveal - 0.90f) / 0.10f),  // the front of a growing tentacle is drawn out to a point
             Diameter = diameter, Radius = radius, Px = px, Depth = depth, Time = time, Twist = twist,
             Margin = diameter * 1.6f, ScreenW = _screenW, ScreenH = _screenH,
-            FieldScale = MathF.Min(diameter, 70f * px),
-            Ph1 = HashRange(seed + 81, 0f, MathF.Tau),
-            Ph2 = HashRange(seed + 82, 0f, MathF.Tau),
-            Ph3 = HashRange(seed + 83, 0f, MathF.Tau),
-            Psi0 = HashRange(seed + 84, 0f, MathF.Tau),
+            FieldScale = Min(diameter, 70f * px),
+            Ph1 = HashRange(seed + 81, 0f, Tau),
+            Ph2 = HashRange(seed + 82, 0f, Tau),
+            Ph3 = HashRange(seed + 83, 0f, Tau),
+            Psi0 = HashRange(seed + 84, 0f, Tau),
             OffA = HashRange(seed + 85, 0f, 400f),
             OffB = HashRange(seed + 86, 0f, 400f),
             OffC = HashRange(seed + 87, 0f, 400f),
@@ -352,7 +342,7 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
             WobbleRate = Rate(diameter * 6.4f), ToneRateA = Rate(diameter * 4.3f), ToneRateB = Rate(diameter * 9.1f),
             PitchRate = Rate(diameter * 13f), TwistRate = Rate(diameter * 40f),
             // Skin relief.
-            BumpWave = (!closed && tier.Cols >= 11) ? MathF.Max(3.9f * step, 0.25f * diameter) : 0f,
+            BumpWave = (!closed && tier.Cols >= 11) ? Max(3.9f * step, 0.25f * diameter) : 0f,
             BumpOff = HashRange(seed + 91, 0f, 200f),
             FoldWave = diameter * 0.30f,
         };
@@ -365,14 +355,14 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
 
         float bodyStart = domeStart ? capStart : 0f;
         float bodyEnd = domeEnd ? visibleLen - capEnd : visibleLen;
-        step = MathF.Max(step, (bodyEnd - bodyStart) / (MaxRows - 16));
+        step = Max(step, (bodyEnd - bodyStart) / (MaxRows - 16));
 
         int count = 0, seg = 0;
         if (domeStart)
             for (int i = 0; i < PathRows.DomeT.Length - 1; i++)
                 AddRow(path, pn, ref seg, ref count, capStart * (1f - PathRows.DomeT[i]), -1f, PathRows.DomeT[i]);
 
-        int bodyRows = Math.Max(1, (int)MathF.Ceiling((bodyEnd - bodyStart) / step));
+        int bodyRows = Math.Max(1, (int)Ceiling((bodyEnd - bodyStart) / step));
         for (int i = 0; i <= bodyRows; i++)
             AddRow(path, pn, ref seg, ref count, bodyStart + (bodyEnd - bodyStart) * i / bodyRows, 0f, 0f);
 
@@ -384,8 +374,8 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         return count;
     }
 
-    /// <summary>Per cross-section state: width, belly line, wetness, highlights, skin coordinates.</summary>
-    private static void FillRow(ref Row r, in RowParams p, in Look look)
+    /// Per cross-section state: width, belly line, wetness, highlights, skin coordinates.
+    static void FillRow(ref Row r, in RowParams p, in Look look)
     {
         float sArc = r.Arc;
         bool closed = p.Closed;
@@ -406,22 +396,22 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         }
 
         // width: taper, a slow muscular swell, slime lumps and perspective; Agitation adds a faster wave.
-        float swellPhase = MathF.Tau * sArc * p.WobbleRate + p.Ph1;
-        float swell = 1f + 0.045f * MathF.Sin(swellPhase - time * 1.7f)
-                         + 0.030f * look.Agit * MathF.Sin(swellPhase - time * 4.7f);
+        float swellPhase = Tau * sArc * p.WobbleRate + p.Ph1;
+        float swell = 1f + 0.045f * Sin(swellPhase - time * 1.7f)
+                         + 0.030f * look.Agit * Sin(swellPhase - time * 4.7f);
 
         float lumpField = Smooth((Field(sArc, total, closed, fs * 2.4f, p.OffA, p.Scroll * 0.8f) - 0.46f) / 0.28f);
         float wetField  = 0.55f + 0.45f * Smooth((Field(sArc, total, closed, fs * 3.3f, p.OffB, p.Scroll) - 0.34f) / 0.34f);
         float lump = lumpField * wetField;
 
-        float pitch = (0.40f + 0.22f * look.Agit) * MathF.Sin(MathF.Tau * sArc * p.PitchRate + p.Ph2 + 0.55f * time);
-        r.SinA = MathF.Sin(pitch); r.CosA = MathF.Cos(pitch);
+        float pitch = (0.40f + 0.22f * look.Agit) * Sin(Tau * sArc * p.PitchRate + p.Ph2 + 0.55f * time);
+        r.SinA = Sin(pitch); r.CosA = Cos(pitch);
         float perspective = 1f + 0.18f * r.SinA;
 
         float tipThin = 1f;
         if (p.Growing > 0.001f && !closed)
         {
-            float fromTip = (p.VisibleLen - sArc) / MathF.Max(1f, p.Radius * 4.5f);
+            float fromTip = (p.VisibleLen - sArc) / Max(1f, p.Radius * 4.5f);
             tipThin = 1f - 0.5f * p.Growing * (1f - Smooth(fromTip));
         }
 
@@ -435,13 +425,13 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         r.LumpTilt = -(lumpAhead - lumpBehind) * 0.85f * wetField;
 
         // the belly line: turns slowly down the strand, drifts with time, and follows Twist
-        float psi = p.Psi0 + MathF.Tau * sArc * p.TwistRate + 0.45f * MathF.Sin(0.31f * time + p.Ph3);
-        if (p.Twist != 0f) psi += p.Twist * (closed ? 1f : MathF.Sin(MathF.PI * u));
-        if (look.Agit > 0.01f) psi += look.Agit * 0.05f * MathF.Sin(time * 17f + MathF.Tau * sArc * p.ToneRateA * 0.5f);
+        float psi = p.Psi0 + Tau * sArc * p.TwistRate + 0.45f * Sin(0.31f * time + p.Ph3);
+        if (p.Twist != 0f) psi += p.Twist * (closed ? 1f : Sin(PI * u));
+        if (look.Agit > 0.01f) psi += look.Agit * 0.05f * Sin(time * 17f + Tau * sArc * p.ToneRateA * 0.5f);
         r.Psi = psi;
 
-        r.Tone = 1f + 0.07f * MathF.Sin(MathF.Tau * sArc * p.ToneRateA + p.Ph3) + 0.04f * MathF.Sin(MathF.Tau * sArc * p.ToneRateB + p.Ph1);
-        r.Feather = (1.0f + 2.2f * p.Depth) * p.Px * (1f + 0.4f * MathF.Sin(MathF.Tau * sArc * p.ToneRateB + p.Ph2));
+        r.Tone = 1f + 0.07f * Sin(Tau * sArc * p.ToneRateA + p.Ph3) + 0.04f * Sin(Tau * sArc * p.ToneRateB + p.Ph1);
+        r.Feather = (1.0f + 2.2f * p.Depth) * p.Px * (1f + 0.4f * Sin(Tau * sArc * p.ToneRateB + p.Ph2));
 
         // highlight strips: where each light's reflection falls on this stretch of tube
         float breakup = Smooth((Field(sArc, total, closed, fs * 1.7f, p.OffC, p.Scroll * 1.2f) - 0.30f) / 0.30f);
@@ -454,8 +444,8 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         {
             float gate = r.CapW * r.CapW;
             // Transverse folds: irregular rings round the arm, as a contracting limb's skin gathers.
-            float fph = MathF.Tau * sArc / p.FoldWave + 1.6f * Noise.Value(sArc / (p.FoldWave * 2.7f) + p.BumpOff, 3.1f);
-            (float fs0, float fc0) = MathF.SinCos(fph);
+            float fph = Tau * sArc / p.FoldWave + 1.6f * Noise.Value(sArc / (p.FoldWave * 2.7f) + p.BumpOff, 3.1f);
+            (float fs0, float fc0) = SinCos(fph);
             float fold = FoldDepth * gate;
             r.Radius *= 1f + fold * fs0;
             r.LumpTilt -= fold * FoldTilt * fc0;
@@ -469,10 +459,10 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         // skin pattern coordinates (periodic on a closed loop)
         if (closed)
         {
-            float a = MathF.Tau * sArc / total;
-            float rr = total * look.MottleFreq / MathF.Tau;
-            r.MX = rr * MathF.Cos(a) + look.MottleOffset;
-            r.MY = rr * MathF.Sin(a);
+            float a = Tau * sArc / total;
+            float rr = total * look.MottleFreq / Tau;
+            r.MX = rr * Cos(a) + look.MottleOffset;
+            r.MY = rr * Sin(a);
         }
         else
         {
@@ -481,32 +471,32 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         }
     }
 
-    /// <summary>Where a light's reflection falls on a tube</summary>
-    private static void Glint(Vector3 half, Vector2 t, float sinA, float cosA, float radius, float breakup, float wet,
+    /// Where a light's reflection falls on a tube
+    static void Glint(Vector3 half, Vector2 t, float sinA, float cosA, float radius, float breakup, float wet,
                               float sharpness, out float strength, out float across)
     {
         float along = half.X * t.X + half.Y * t.Y;
         float hT3 = along * cosA + half.Z * sinA;
-        float hPerp = MathF.Sqrt(MathF.Max(0f, 1f - hT3 * hT3));
+        float hPerp = Sqrt(Max(0f, 1f - hT3 * hT3));
         if (hPerp <= 0.05f) { strength = 0f; across = 0f; return; }
 
         float hAcross = half.X * -t.Y + half.Y * t.X;
         across = Math.Clamp(hAcross / hPerp, -0.95f, 0.95f) * radius;
-        strength = MathF.Pow(hPerp, sharpness) * (0.25f + 0.75f * breakup) * wet;
+        strength = Pow(hPerp, sharpness) * (0.25f + 0.75f * breakup) * wet;
     }
 
-    /// <summary>A slow 0..1 field along the strand scrolling at scroll px (slime creeping downhill).</summary>
-    private static float Field(float sArc, float total, bool closed, float scale, float offset, float scroll)
+    /// A slow 0..1 field along the strand scrolling at scroll px (slime creeping downhill).
+    static float Field(float sArc, float total, bool closed, float scale, float offset, float scroll)
     {
         float s = sArc - scroll;
         if (!closed) return Noise.Value(s / scale + offset, offset * 0.37f);
-        float a = MathF.Tau * s / total;
-        float rr = total / (MathF.Tau * scale);
-        return Noise.Value(rr * MathF.Cos(a) + offset, rr * MathF.Sin(a) + offset * 0.37f);
+        float a = Tau * s / total;
+        float rr = total / (Tau * scale);
+        return Noise.Value(rr * Cos(a) + offset, rr * Sin(a) + offset * 0.37f);
     }
 
 
-    private void AddRow(StrandPath path, int pn, ref int seg, ref int count, float s, float endSign, float domeT)
+    void AddRow(StrandPath path, int pn, ref int seg, ref int count, float s, float endSign, float domeT)
     {
         if (count >= MaxRows) return;
         _path.SampleAt(path, pn, ref seg, s, out Vector2 p, out Vector2 t);
@@ -518,8 +508,8 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         count++;
     }
 
-    /// <summary>Samples the strand at any arc length by search, so a sucker is evaluated exactly where it belongs.</summary>
-    private void SampleAtFree(StrandPath path, int pn, float s, out Vector2 p, out Vector2 t)
+    /// Samples the strand at any arc length by search, so a sucker is evaluated exactly where it belongs.
+    void SampleAtFree(StrandPath path, int pn, float s, out Vector2 p, out Vector2 t)
     {
         var arc = path.Arc;
         int lo = 0, hi = pn - 2;
@@ -534,10 +524,10 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
 
     // Shadow: a soft band under the tentacle, narrowing with it
 
-    private static readonly float[] ShadowAcross = { -1f, -0.55f, 0f, 0.55f, 1f };
-    private static readonly float[] ShadowProfile = { 0f, 0.62f, 1f, 0.62f, 0f };
+    static readonly float[] ShadowAcross = { -1f, -0.55f, 0f, 0.55f, 1f };
+    static readonly float[] ShadowProfile = { 0f, 0.62f, 1f, 0.62f, 0f };
 
-    private void DrawShadow(ImDrawListPtr dl, int rowCount, float depth, float alpha, in MaterialContext ctx)
+    void DrawShadow(ImDrawListPtr dl, int rowCount, float depth, float alpha, in MaterialContext ctx)
     {
         float a = alpha * 0.42f * (1f - 0.45f * depth);
         if (a <= 0.004f) return;
@@ -564,12 +554,12 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
                     float reach = row.Radius * 1.25f * (1f - 0.55f * depth);
                     float hw = row.Radius * 0.95f;
                     float soft = hw * (0.9f + 1.1f * depth);
-                    float edge = MathF.Min(1f, MathF.Min(i, rowCount - 1 - i) / 1.5f);
+                    float edge = Min(1f, Min(i, rowCount - 1 - i) / 1.5f);
 
                     for (int c = 0; c < stride; c++)
                     {
                         float w = ShadowAcross[c];
-                        MeshDraw.P[v] = row.P + offsetDir * reach + nrm * (w * (hw + soft * 0.5f * MathF.Abs(w)));
+                        MeshDraw.P[v] = row.P + offsetDir * reach + nrm * (w * (hw + soft * 0.5f * Abs(w)));
                         MeshDraw.C[v] = WithAlpha(StrandShading.ShadowTint, a * ShadowProfile[c] * edge);
                         v++;
                     }
@@ -584,7 +574,7 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
 
     // Body
 
-    private void DrawBody(ImDrawListPtr dl, int rowCount, Tier tier, in Look look, in MaterialContext ctx)
+    void DrawBody(ImDrawListPtr dl, int rowCount, Tier tier, in Look look, in MaterialContext ctx)
     {
         int stride = tier.Cols + 2;  // plus the two soft-edge columns
         int chunkRows = MeshDraw.MaxVerts / stride;
@@ -619,8 +609,8 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         }
     }
 
-    /// <summary>The wart field at every vertex of the body: one noise sample each.</summary>
-    private bool BuildBumps(int rowCount, Tier tier, in Look look)
+    /// The wart field at every vertex of the body: one noise sample each.
+    bool BuildBumps(int rowCount, Tier tier, in Look look)
     {
         if (_rp.BumpWave <= 0f || look.Detail <= 0.45f) return false;
         int nc = tier.Cols;
@@ -631,7 +621,7 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
             ref readonly Row r = ref _rows[i];
             int o = i * nc;
             if (!r.On || r.BumpAmp <= 0f) { Array.Clear(hgt, o, nc); continue; }
-            (float sPsi, float cPsi) = MathF.SinCos(r.Psi);
+            (float sPsi, float cPsi) = SinCos(r.Psi);
             for (int c = 0; c < nc; c++)
             {
                 float u = sinT[c], co = cosT[c];
@@ -642,7 +632,7 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         return true;
     }
 
-    private static void ShadeRow(in Row row, Tier tier, in Look look, int vb, float[]? hgt, int ho, int hp, int hn, float invDs)
+    static void ShadeRow(in Row row, Tier tier, in Look look, int vb, float[]? hgt, int ho, int hp, int hn, float invDs)
     {
         Vector2[] outP = MeshDraw.P;
         uint[] outC = MeshDraw.C;
@@ -655,7 +645,7 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         float sa = row.SinA, ca = row.CosA;
         float[] sinT = tier.Sin, cosT = tier.Cos;
         float detail = look.Detail;
-        (float sPsi, float cPsi) = MathF.SinCos(row.Psi);
+        (float sPsi, float cPsi) = SinCos(row.Psi);
 
         // The mottling is smooth (blotches a hundred pixels across; a column is ~14 px)
         Span<float> mott = stackalloc float[nc];
@@ -682,7 +672,7 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
                 float amp = row.BumpAmp;
                 tiltS = Math.Clamp(amp * (hgt[hn + c] - hgt[hp + c]) * invDs, -0.6f, 0.6f) * BumpTilt;
                 int cl = c > 0 ? c - 1 : 0, cr = c < nc - 1 ? c + 1 : nc - 1;
-                float dTheta = (cr - cl) * (MathF.PI / (nc - 1f)) * rad;
+                float dTheta = (cr - cl) * (PI / (nc - 1f)) * rad;
                 tiltT = dTheta > 1e-3f ? Math.Clamp(amp * (hgt[ho + cr] - hgt[ho + cl]) / dTheta, -0.6f, 0.6f) * BumpTilt : 0f;
                 hw = hw * amp;  // now in px
             }
@@ -701,7 +691,7 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
                 ny -= tiltS * (T.Y * ca) + tiltT * (perp.Y * co + T.Y * sa * u);
                 nz -= tiltS * sa - tiltT * (ca * u);
             }
-            float inv = 1f / MathF.Sqrt(nx * nx + ny * ny + nz * nz + 1e-6f);
+            float inv = 1f / Sqrt(nx * nx + ny * ny + nz * nz + 1e-6f);
             nx *= inv; ny *= inv;
 
             Matcap.SamplePair(Flesh, Coat, nx, ny, out Vector3 col, out Vector3 gloss);
@@ -755,39 +745,39 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
     // Suckers: real geometry, placed in material coordinates
 
     // Spacing and size go together: pitch 4% wider than the original 0.85 and cups 2% bigger than the original 0.50
-    private const float SuckerRadiusFrac = 0.51f;  // cup radius, in tube radii (of the static profile)
-    private const float SuckerRowAngle   = 0.72f;  // each row sits this far (rad) either side of the belly line
-    private const float SuckerPitch      = 0.884f;  // spacing along a row, in tube diameters
+    const float SuckerRadiusFrac = 0.51f;  // cup radius, in tube radii (of the static profile)
+    const float SuckerRowAngle   = 0.72f;  // each row sits this far (rad) either side of the belly line
+    const float SuckerPitch      = 0.884f;  // spacing along a row, in tube diameters
 
     // Toward the tip the cups are tiny and a tentacle's point reads as a point whatever is on it
-    private const float TipThinStart = 0.50f;  // fraction of the arm at which cups start to thin out
-    private const float TipThinExtra = 1.00f;  // extra tip spacing: 1.0 = twice the spacing there, 0 = off
-    private const float SuckerFirst      = 1.35f;  // the first cup, in pitches from the root
-    private const float SuckerLift       = 1.20f;  // how tall a cup stands, in cup radii
-    private const int   MaxCups          = 96;
-    private const int   ProfileSteps     = 96;  // resolution of the table that places cups along the taper
+    const float TipThinStart = 0.50f;  // fraction of the arm at which cups start to thin out
+    const float TipThinExtra = 1.00f;  // extra tip spacing: 1.0 = twice the spacing there, 0 = off
+    const float SuckerFirst      = 1.35f;  // the first cup, in pitches from the root
+    const float SuckerLift       = 1.20f;  // how tall a cup stands, in cup radii
+    const int   MaxCups          = 96;
+    const int   ProfileSteps     = 96;  // resolution of the table that places cups along the taper
 
     // The cup is a surface of revolution about the skin's normal.
-    private static readonly float[] CupRhoFull    = { 1.64f, 1.40f, 1.20f, 1.10f, 1.00f, 0.94f, 0.88f, 0.80f, 0.72f, 0.65f, 0.60f, 0.52f, 0.40f, 0.24f, 0.00f };
-    private static readonly float[] CupZFull      = { 0.00f, 0.00f, 0.02f, 0.14f, 0.34f, 0.54f, 0.70f, 0.80f, 0.78f, 0.66f, 0.48f, 0.30f, 0.19f, 0.15f, 0.20f };
-    private static readonly float[] CupAlphaFull  = { 0.00f, 0.42f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f };
+    static readonly float[] CupRhoFull    = { 1.64f, 1.40f, 1.20f, 1.10f, 1.00f, 0.94f, 0.88f, 0.80f, 0.72f, 0.65f, 0.60f, 0.52f, 0.40f, 0.24f, 0.00f };
+    static readonly float[] CupZFull      = { 0.00f, 0.00f, 0.02f, 0.14f, 0.34f, 0.54f, 0.70f, 0.80f, 0.78f, 0.66f, 0.48f, 0.30f, 0.19f, 0.15f, 0.20f };
+    static readonly float[] CupAlphaFull  = { 0.00f, 0.42f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f };
     // Sky openness per ring: the skirt sits in its own contact shadow, the cavity deep in the cup.
-    private static readonly float[] CupOpenFull   = { 1.00f, 1.00f, 0.90f, 0.95f, 0.98f, 1.00f, 1.00f, 1.06f, 1.00f, 0.92f, 0.76f, 0.58f, 0.46f, 0.42f, 0.50f };
-    private const int FirstFleshRing = 2;  // rings before this (in the FULL profile) are the contact shadow
+    static readonly float[] CupOpenFull   = { 1.00f, 1.00f, 0.90f, 0.95f, 0.98f, 1.00f, 1.00f, 1.06f, 1.00f, 0.92f, 0.76f, 0.58f, 0.46f, 0.42f, 0.50f };
+    const int FirstFleshRing = 2;  // rings before this (in the FULL profile) are the contact shadow
 
-    /// <summary>Which of the full profile's rings are built.</summary>
-    private static readonly int[] CupRings = { 0, 1, 2, 4, 5, 7, 8, 10, 11, 14 };
-    private static readonly int FirstFlesh = Array.IndexOf(CupRings, FirstFleshRing);  // the same boundary, as an index into the rings actually built
+    /// Which of the full profile's rings are built.
+    static readonly int[] CupRings = { 0, 1, 2, 4, 5, 7, 8, 10, 11, 14 };
+    static readonly int FirstFlesh = Array.IndexOf(CupRings, FirstFleshRing);  // the same boundary, as an index into the rings actually built
 
-    private static float[] PickRings(float[] full) { var t = new float[CupRings.Length]; for (int i = 0; i < t.Length; i++) t[i] = full[CupRings[i]]; return t; }
-    private static readonly float[] CupRho = PickRings(CupRhoFull), CupZ = PickRings(CupZFull), CupAlpha = PickRings(CupAlphaFull), CupOpen = PickRings(CupOpenFull);
-    private static readonly int FirstCavity = Array.IndexOf(CupRings, 10);  // rings from here on are inside the cup (ring 10 of the full profile on)
-    private static readonly Vector3 CupTint = new(1.00f, 0.78f, 0.84f);  // inside a cup the flesh is pinker and softer
+    static float[] PickRings(float[] full) { var t = new float[CupRings.Length]; for (int i = 0; i < t.Length; i++) t[i] = full[CupRings[i]]; return t; }
+    static readonly float[] CupRho = PickRings(CupRhoFull), CupZ = PickRings(CupZFull), CupAlpha = PickRings(CupAlphaFull), CupOpen = PickRings(CupOpenFull);
+    static readonly int FirstCavity = Array.IndexOf(CupRings, 10);  // rings from here on are inside the cup (ring 10 of the full profile on)
+    static readonly Vector3 CupTint = new(1.00f, 0.78f, 0.84f);  // inside a cup the flesh is pinker and softer
 
-    /// <summary>The profile's outward normal at each ring, as (along rho, along z).</summary>
-    private static readonly (float Rho, float Z)[] CupNormal = ProfileNormals();
+    /// The profile's outward normal at each ring, as (along rho, along z).
+    static readonly (float Rho, float Z)[] CupNormal = ProfileNormals();
 
-    private static (float, float)[] NormalsOf(float[] rho, float[] z)
+    static (float, float)[] NormalsOf(float[] rho, float[] z)
     {
         int n = rho.Length;
         var normals = new (float, float)[n];
@@ -795,7 +785,7 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         {
             int a = Math.Max(0, j - 1), b = Math.Min(n - 1, j + 1);
             float dRho = rho[b] - rho[a], dZ = z[b] - z[a];
-            float len = MathF.Sqrt(dRho * dRho + dZ * dZ);
+            float len = Sqrt(dRho * dRho + dZ * dZ);
             // The profile runs inward over the top of the solid, so its outward normal is (dz, -drho).
             normals[j] = len > 1e-6f ? (dZ / len, -dRho / len) : (0f, 1f);
         }
@@ -803,7 +793,7 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         return normals;
     }
 
-    private static (float, float)[] ProfileNormals()
+    static (float, float)[] ProfileNormals()
     {
         var normals = NormalsOf(CupRhoFull, CupZFull);
         var picked = new (float, float)[CupRings.Length];
@@ -812,42 +802,42 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
     }
 
     // A cup's segment count follows its screen size: a 6 px cup doesn't need 24 segments.
-    private static readonly float[][] CupSinBy = CircleTables(false), CupCosBy = CircleTables(true);
-    private static readonly int[] StrideOf = { 9, 11, 13, 15, 17, 19, 21, 23, 25 };  // segments 8, 10, ... 24, plus one
-    private const int StrideShift = 20;  // quad = (stride code << 20) | first vertex
+    static readonly float[][] CupSinBy = CircleTables(false), CupCosBy = CircleTables(true);
+    static readonly int[] StrideOf = { 9, 11, 13, 15, 17, 19, 21, 23, 25 };  // segments 8, 10, ... 24, plus one
+    const int StrideShift = 20;  // quad = (stride code << 20) | first vertex
 
-    private static float[][] CircleTables(bool cos)
+    static float[][] CircleTables(bool cos)
     {
         var tables = new float[25][];
         for (int segs = 8; segs <= 24; segs += 2)
         {
             tables[segs] = new float[segs + 1];
-            for (int i = 0; i <= segs; i++) { float a = MathF.Tau * i / segs; tables[segs][i] = cos ? MathF.Cos(a) : MathF.Sin(a); }
+            for (int i = 0; i <= segs; i++) { float a = Tau * i / segs; tables[segs][i] = cos ? Cos(a) : Sin(a); }
         }
         return tables;
     }
 
-    private const int MaxCupVerts = MaxCups * 15 * 25;  // cups share one vertex pool and one painter's pool
-    private const int MaxCupQuads = MaxCups * 14 * 24;
+    const int MaxCupVerts = MaxCups * 15 * 25;  // cups share one vertex pool and one painter's pool
+    const int MaxCupQuads = MaxCups * 14 * 24;
 
-    private readonly Vector2[] _cupPos = new Vector2[MaxCupVerts];
-    private readonly uint[]    _cupCol = new uint[MaxCupVerts];
-    private readonly float[]   _cupZ   = new float[MaxCupVerts];  // depth toward the viewer
-    private readonly float[]   _cupNz  = new float[MaxCupVerts];  // the normal's component toward the viewer
-    private readonly float[]   _cupSide = new float[MaxCupVerts];  // cos of the angle round the tube: > 0 facing the viewer
-    private int _cupVerts;
-    private int[] _remap = new int[MaxCupVerts];
+    readonly Vector2[] _cupPos = new Vector2[MaxCupVerts];
+    readonly uint[]    _cupCol = new uint[MaxCupVerts];
+    readonly float[]   _cupZ   = new float[MaxCupVerts];  // depth toward the viewer
+    readonly float[]   _cupNz  = new float[MaxCupVerts];  // the normal's component toward the viewer
+    readonly float[]   _cupSide = new float[MaxCupVerts];  // cos of the angle round the tube: > 0 facing the viewer
+    int _cupVerts;
+    int[] _remap = new int[MaxCupVerts];
 
     // Viewer-facing quads, split by whether they lie behind the tube's silhouette plane (drawn before the body).
-    private readonly float[] _keyBack = new float[MaxCupQuads], _keyFront = new float[MaxCupQuads];
-    private readonly int[]   _quadBack = new int[MaxCupQuads],  _quadFront = new int[MaxCupQuads];
-    private int _nBack, _nFront;
+    readonly float[] _keyBack = new float[MaxCupQuads], _keyFront = new float[MaxCupQuads];
+    readonly int[]   _quadBack = new int[MaxCupQuads],  _quadFront = new int[MaxCupQuads];
+    int _nBack, _nFront;
 
-    private readonly float[] _profileN = new float[ProfileSteps + 1];
-    private readonly MeshBuilder _cupMeshBack = new(), _cupMeshFront = new();
+    readonly float[] _profileN = new float[ProfileSteps + 1];
+    readonly MeshBuilder _cupMeshBack = new(), _cupMeshFront = new();
 
-    /// <summary>Builds every sucker.</summary>
-    private int BuildSuckers(StrandPath path, Tier tier, in Look look, float px)
+    /// Builds every sucker.
+    int BuildSuckers(StrandPath path, Tier tier, in Look look, float px)
     {
         _cupVerts = 0; _nBack = 0; _nFront = 0;
         ref readonly RowParams p = ref _rp;
@@ -860,7 +850,7 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         if (closed)
         {
             // A whole number of cups round the loop, so the pattern closes on itself.
-            int n = Math.Max(6, (int)MathF.Round(scaleN / Taper(0f, true)));
+            int n = Math.Max(6, (int)Round(scaleN / Taper(0f, true)));
             for (int m = 0; m < n && cups < MaxCups; m++)
                 for (int r = 0; r < 2 && cups < MaxCups; r++)
                     cups += AddSucker((m + 0.5f * r) / n, r, path, pn, tier, in look, px) ? 1 : 0;
@@ -891,7 +881,7 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         return cups;
     }
 
-    private float UFromN(float n)
+    float UFromN(float n)
     {
         int lo = 0, hi = ProfileSteps;
         while (hi - lo > 1)
@@ -904,8 +894,8 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         return (lo + f) / ProfileSteps;
     }
 
-    /// <summary>Builds one cup at fraction u of the way along the arm, in belt rowIndex (0 or 1).</summary>
-    private bool AddSucker(float u, int rowIndex, StrandPath path, int pn, Tier tier, in Look look, float px)
+    /// Builds one cup at fraction u of the way along the arm, in belt rowIndex (0 or 1).
+    bool AddSucker(float u, int rowIndex, StrandPath path, int pn, Tier tier, in Look look, float px)
     {
         ref readonly RowParams p = ref _rp;
         float sArc = u * p.Total;
@@ -929,13 +919,13 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         // Where round the tube it sits, as an angle from the view axis; well behind the silhouette it can't be seen.
         float belt = rowIndex == 0 ? +SuckerRowAngle : -SuckerRowAngle;
         float theta = WrapAngle(belt - row.Psi);
-        if (MathF.Cos(theta) < -0.72f) return false;
+        if (Cos(theta) < -0.72f) return false;
 
         BuildCup(in row, theta, rc, k, tier, in look);
         return true;
     }
 
-    private void BuildCup(in Row row, float theta, float rc, float visible, Tier tier, in Look look)
+    void BuildCup(in Row row, float theta, float rc, float visible, Tier tier, in Look look)
     {
         int segs = Math.Clamp((int)(rc * CupSegPerPx) & ~1, 8, tier.SuckerSegs), rings = CupRho.Length, stride = segs + 1;
         float[] cupSin = CupSinBy[segs], cupCos = CupCosBy[segs];
@@ -950,12 +940,12 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         float lift = SuckerLift * rc;
         Vector3 axial = new(T.X * ca, T.Y * ca, sa);  // the tube's axis direction in view space
         float alphaK = visible * look.Alpha;
-        float wet = MathF.Max(0.65f, row.Wet);
+        float wet = Max(0.65f, row.Wet);
         Vector2 shadowShift = StudioLighting.ShadowDirection * (rc * 0.30f);
 
         // Every vertex of the cup sits at the cup's own angle plus a small offset d = y / skin
-        (float sTh, float cTh) = MathF.SinCos(theta);
-        (float sTp, float cTp) = MathF.SinCos(theta + row.Psi);
+        (float sTh, float cTh) = SinCos(theta);
+        (float sTp, float cTp) = SinCos(theta + row.Psi);
         float invSkin = 1f / skin;
 
         for (int j = 0; j < rings; j++)
@@ -974,14 +964,14 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
 
                 // The cup lies on the tube's surface, not a flat plane: moving round it by y turns the radial direction by y/R.
                 float d = y * invSkin, sD, cD;
-                if (MathF.Abs(d) <= 1.2f)
+                if (Abs(d) <= 1.2f)
                 {
                     // Taylor series to d^9 and d^10: good to ~2e-7 over |d| <= 1.2, which every cup on a tube stays inside.
                     float d2 = d * d;
                     sD = d * (1f + d2 * (-1f / 6f + d2 * (1f / 120f + d2 * (-1f / 5040f + d2 * (1f / 362880f)))));
                     cD = 1f + d2 * (-0.5f + d2 * (1f / 24f + d2 * (-1f / 720f + d2 * (1f / 40320f + d2 * (-1f / 3628800f)))));
                 }
-                else (sD, cD) = MathF.SinCos(d);
+                else (sD, cD) = SinCos(d);
                 float sT = sTh * cD + cTh * sD, cT = cTh * cD - sTh * sD;
                 Vector3 ncyl = new(perp.X * sT - T.X * sa * cT, perp.Y * sT - T.Y * sa * cT, ca * cT);
                 Vector3 round = new(perp.X * cT + T.X * sa * sT, perp.Y * cT + T.Y * sa * sT, -ca * sT);
@@ -1011,11 +1001,11 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         PushQuads(vb, rings, segs, stride, strideCode, CupZ, lift, theta, FirstFlesh);
     }
 
-    /// <summary>Sorts the quads of one just-built surface blob (cup or bead) into the painter's pools; zTab is height per ring.</summary>
-    private void PushQuads(int vb, int rings, int segs, int stride, int strideCode, float[] zTab, float lift, float theta, int firstFlesh)
+    /// Sorts the quads of one just-built surface blob (cup or bead) into the painter's pools; zTab is height per ring.
+    void PushQuads(int vb, int rings, int segs, int stride, int strideCode, float[] zTab, float lift, float theta, int firstFlesh)
     {
         // Quads that can be seen.
-        float near = Smooth((MathF.Cos(theta) + 0.72f) / 0.87f);  // 0: cup well behind the arm; 1: at or in front of its edge
+        float near = Smooth((Cos(theta) + 0.72f) / 0.87f);  // 0: cup well behind the arm; 1: at or in front of its edge
         float frontFrom = -0.55f * near;
 
         for (int j = 0; j < rings - 1; j++)
@@ -1040,8 +1030,8 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         }
     }
 
-    /// <summary>What one ring of a cup needs that doesn't change vertex to vertex round it, worked out once per ring.</summary>
-    private readonly struct RingShade
+    /// What one ring of a cup needs that doesn't change vertex to vertex round it, worked out once per ring.
+    readonly struct RingShade
     {
         public readonly bool Shadow, Cavity, Fixed;
         public readonly float Alpha, Blend, ToneOpen, Wet, Keep;
@@ -1061,7 +1051,7 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         }
     }
 
-    private static uint CupColour(in RingShade r, Vector3 n, float belly, in Look look)
+    static uint CupColour(in RingShade r, Vector3 n, float belly, in Look look)
     {
         if (r.Shadow)
         {
@@ -1088,11 +1078,11 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         if (look.Agit > 0.01f) col += col * (col * (0.45f * look.Agit));
         if (look.Fog > 0f) col = Vector3.Lerp(col, StrandShading.DepthFog, look.Fog);
 
-        return Tint(Pack(col.X, col.Y, col.Z), r.Alpha, look.Overridden);
+        return Tint(Pack(col), r.Alpha, look.Overridden);
     }
 
-    /// <summary>Draws the cup quads behind the tube's silhouette plane (before the body) or in front of it (after), far to near.</summary>
-    private void FlushCups(ImDrawListPtr dl, bool behind, Vector2 uv)
+    /// Draws the cup quads behind the tube's silhouette plane (before the body) or in front of it (after), far to near.
+    void FlushCups(ImDrawListPtr dl, bool behind, Vector2 uv)
     {
         int n = behind ? _nBack : _nFront;
         if (n == 0) return;
@@ -1130,12 +1120,12 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         mesh.Flush(dl, uv);
     }
 
-    private readonly uint[] _sortKeyA = new uint[MaxCupQuads], _sortKeyB = new uint[MaxCupQuads];
-    private readonly int[]  _sortValB = new int[MaxCupQuads];
-    private readonly int[]  _sortHist = new int[3 * 2048];
+    readonly uint[] _sortKeyA = new uint[MaxCupQuads], _sortKeyB = new uint[MaxCupQuads];
+    readonly int[]  _sortValB = new int[MaxCupQuads];
+    readonly int[]  _sortHist = new int[3 * 2048];
 
-    /// <summary>Sorts quads[0..n) by keys[0..n), ascending.</summary>
-    private void SortByKey(float[] keys, int[] quads, int n)
+    /// Sorts quads[0..n) by keys[0..n), ascending.
+    void SortByKey(float[] keys, int[] quads, int n)
     {
         uint[] ka = _sortKeyA, kb = _sortKeyB;
         int[] vb = _sortValB, h = _sortHist;
@@ -1158,29 +1148,29 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         Array.Copy(vb, quads, n);
     }
 
-    private int Use(MeshBuilder mesh, int v)
+    int Use(MeshBuilder mesh, int v)
     {
         int m = _remap[v];
         if (m < 0) _remap[v] = m = mesh.VertexReserved(_cupPos[v], _cupCol[v]);
         return m;
     }
 
-    private static float WrapAngle(float a)
+    static float WrapAngle(float a)
     {
-        a %= MathF.Tau;
-        if (a > MathF.PI) a -= MathF.Tau;
-        else if (a < -MathF.PI) a += MathF.Tau;
+        a %= Tau;
+        if (a > PI) a -= Tau;
+        else if (a < -PI) a += Tau;
         return a;
     }
 
     // Sparkles: the wet skin's speculars: The mesh cannot carry detail finer than its vertex spacing, and a wet
 
-    private const int   SparkleBins  = 360;  // along the arm; each bin holds at most one candidate
-    private const float SparkleShare = 0.90f;  // how many bins do
-    private static readonly float[] SparkJit = new float[SparkleBins], SparkSinB = new float[SparkleBins], SparkCosB = new float[SparkleBins],
+    const int   SparkleBins  = 360;  // along the arm; each bin holds at most one candidate
+    const float SparkleShare = 0.90f;  // how many bins do
+    static readonly float[] SparkJit = new float[SparkleBins], SparkSinB = new float[SparkleBins], SparkCosB = new float[SparkleBins],
                                     SparkTx = new float[SparkleBins], SparkTy = new float[SparkleBins], SparkSize = new float[SparkleBins];
-    private static readonly bool[] SparkOn = new bool[SparkleBins];
-    private readonly MeshBuilder _sparkMesh = new();
+    static readonly bool[] SparkOn = new bool[SparkleBins];
+    readonly MeshBuilder _sparkMesh = new();
 
     static StrokeParasite()
     {
@@ -1188,15 +1178,15 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         {
             SparkOn[j]   = Hash01(j * 13 + 5) < SparkleShare;
             SparkJit[j]  = Hash01(j * 13 + 6);
-            float beta   = HashRange(j * 13 + 7, -MathF.PI, MathF.PI);
-            SparkSinB[j] = MathF.Sin(beta); SparkCosB[j] = MathF.Cos(beta);
+            float beta   = HashRange(j * 13 + 7, -PI, PI);
+            SparkSinB[j] = Sin(beta); SparkCosB[j] = Cos(beta);
             SparkTx[j]   = HashRange(j * 13 + 8, -0.55f, 0.55f);
             SparkTy[j]   = HashRange(j * 13 + 9, -0.55f, 0.55f);
             SparkSize[j] = HashRange(j * 13 + 10, 0.8f, 1.35f);
         }
     }
 
-    private void DrawSparkles(ImDrawListPtr dl, int rowCount, Vector2 uv, in Look look)
+    void DrawSparkles(ImDrawListPtr dl, int rowCount, Vector2 uv, in Look look)
     {
         ref readonly RowParams p = ref _rp;
         float px = p.Px, total = p.Total, binsPerPx = SparkleBins / total;
@@ -1222,7 +1212,7 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
             {
                 int j = b + shift; if (j >= SparkleBins) j -= SparkleBins;
                 if (!SparkOn[j]) continue;
-                if (!haveTrig) { (sPsi, cPsi) = MathF.SinCos(r.Psi); haveTrig = true; }
+                if (!haveTrig) { (sPsi, cPsi) = SinCos(r.Psi); haveTrig = true; }
 
                 // theta = beta - Psi, by angle subtraction.
                 float cT = SparkCosB[j] * cPsi + SparkSinB[j] * sPsi;
@@ -1244,7 +1234,7 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
                 if (a < 0.04f) continue;
 
                 float along = Math.Clamp((b + SparkJit[j]) / binsPerPx - r.Arc, 0f, r2.Arc - r.Arc);
-                Vector2 c = r.P + T * along + new Vector2(ncyl.X, ncyl.Y) * MathF.Max(2f, r.Radius);
+                Vector2 c = r.P + T * along + new Vector2(ncyl.X, ncyl.Y) * Max(2f, r.Radius);
                 float rad = (1.0f + 1.5f * spec) * px * SparkSize[j] * 1.6f;
                 float foreshorten = 0.55f + 0.45f * cT;  // a facet on a turned-away patch is a narrower sliver
 
@@ -1264,20 +1254,20 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         _sparkMesh.Flush(dl, uv);
     }
 
-    private static readonly float[] SparkHexCos = { MathF.Cos(0.5f), MathF.Cos(0.5f + MathF.Tau / 6f), MathF.Cos(0.5f + 2 * MathF.Tau / 6f), MathF.Cos(0.5f + 3 * MathF.Tau / 6f), MathF.Cos(0.5f + 4 * MathF.Tau / 6f), MathF.Cos(0.5f + 5 * MathF.Tau / 6f) };
-    private static readonly float[] SparkHexSin = { MathF.Sin(0.5f), MathF.Sin(0.5f + MathF.Tau / 6f), MathF.Sin(0.5f + 2 * MathF.Tau / 6f), MathF.Sin(0.5f + 3 * MathF.Tau / 6f), MathF.Sin(0.5f + 4 * MathF.Tau / 6f), MathF.Sin(0.5f + 5 * MathF.Tau / 6f) };
+    static readonly float[] SparkHexCos = { Cos(0.5f), Cos(0.5f + Tau / 6f), Cos(0.5f + 2 * Tau / 6f), Cos(0.5f + 3 * Tau / 6f), Cos(0.5f + 4 * Tau / 6f), Cos(0.5f + 5 * Tau / 6f) };
+    static readonly float[] SparkHexSin = { Sin(0.5f), Sin(0.5f + Tau / 6f), Sin(0.5f + 2 * Tau / 6f), Sin(0.5f + 3 * Tau / 6f), Sin(0.5f + 4 * Tau / 6f), Sin(0.5f + 5 * Tau / 6f) };
 
     // Glints
 
-    /// <summary>A thin hard highlight where the key light reflects, its own ribbon over the body.</summary>
-    private void DrawGlints(ImDrawListPtr dl, int rowCount, in Look look, in MaterialContext ctx)
+    /// A thin hard highlight where the key light reflects, its own ribbon over the body.
+    void DrawGlints(ImDrawListPtr dl, int rowCount, in Look look, in MaterialContext ctx)
     {
         // The key light's reflection is the hard warm one; the fill's is dimmer, cooler and broader.
         DrawGlintStrip(dl, rowCount, in look, in ctx, fill: false, Pack(1.00f, 0.97f, 0.86f));
         DrawGlintStrip(dl, rowCount, in look, in ctx, fill: true,  Pack(0.82f, 0.93f, 1.00f));
     }
 
-    private void DrawGlintStrip(ImDrawListPtr dl, int rowCount, in Look look, in MaterialContext ctx, bool fill, uint tint)
+    void DrawGlintStrip(ImDrawListPtr dl, int rowCount, in Look look, in MaterialContext ctx, bool fill, uint tint)
     {
         const int stride = 5;
         int chunkRows = MeshDraw.MaxVerts / stride;
@@ -1303,13 +1293,13 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
                     Vector2 perp = new(-row.T.Y, row.T.X);
                     float g = row.On ? (fill ? row.Glint2 : row.Glint) * row.CapW * fogK : 0f;
                     float x = fill ? row.GlintX2 : row.GlintX;
-                    float core = MathF.Max(0.75f * px, row.Radius * (fill ? 0.14f : 0.10f));
+                    float core = Max(0.75f * px, row.Radius * (fill ? 0.14f : 0.10f));
                     float broad = row.Radius * (fill ? 0.66f : 0.55f);
                     Vector2 mid = row.P + perp * x;
 
                     // Across: nothing, a faint sheen, the hard core, the sheen again, nothing.
-                    float aSheen = Math.Clamp(0.32f * g * power, 0f, 1f) * look.Alpha;
-                    float aCore = Math.Clamp((1.10f * g * g + 0.30f * g) * power, 0f, 1f) * look.Alpha;
+                    float aSheen = Saturate(0.32f * g * power) * look.Alpha;
+                    float aCore = Saturate((1.10f * g * g + 0.30f * g) * power) * look.Alpha;
                     MeshDraw.P[v] = mid - perp * broad;         MeshDraw.C[v] = GlintColour(tint, 0f, in look); v++;
                     MeshDraw.P[v] = mid - perp * (core * 1.3f); MeshDraw.C[v] = GlintColour(tint, aSheen, in look); v++;
                     MeshDraw.P[v] = mid;                        MeshDraw.C[v] = GlintColour(tint, aCore, in look); v++;
@@ -1324,11 +1314,11 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         }
     }
 
-    private static uint GlintColour(uint rgb, float alpha, in Look look) => Tint(rgb, alpha, look.Overridden);
+    static uint GlintColour(uint rgb, float alpha, in Look look) => Tint(rgb, alpha, look.Overridden);
 
     // Tip
 
-    private static void DrawTip(ImDrawListPtr dl, Vector2 tip, float bar, float k, in Look look, in MaterialContext ctx)
+    static void DrawTip(ImDrawListPtr dl, Vector2 tip, float bar, float k, in Look look, in MaterialContext ctx)
     {
         if (k <= 0.004f) return;
         // A slime bead on a still-reaching tentacle tip: a hard pinprick glint and the faintest sheen.
@@ -1344,16 +1334,16 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
 
     public ReadOnlySpan<StrokeEmission> Emissions => Shed;
 
-    /// <summary>Thick slime that runs, pools and hangs in long strings; the matter is whatever the Goop slot holds.</summary>
-    private static readonly StrokeEmission[] Shed =
+    /// Thick slime that runs, pools and hangs in long strings; the matter is whatever the Goop slot holds.
+    static readonly StrokeEmission[] Shed =
     {
         StrokeEmission.Coated(PrimitiveRole.Goop, supply: 1.3f, clump: 0.7f),
     };
 
     public ReadOnlySpan<ImpactEmission> ImpactEmissions => Hit;
 
-    /// <summary>A splatter of slime flung off the point of impact.</summary>
-    private static readonly ImpactEmission[] Hit =
+    /// A splatter of slime flung off the point of impact.
+    static readonly ImpactEmission[] Hit =
     {
         new(Role: PrimitiveRole.Goop, CountMin: 4, CountMax: 7,
             SpeedMin: 150f, SpeedMax: 470f, LifespanMin: 1.3f, LifespanMax: 2.0f,

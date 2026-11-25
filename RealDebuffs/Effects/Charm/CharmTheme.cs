@@ -1,12 +1,9 @@
-using System.Numerics;
-using RealDebuffs.Effects.Framework.Materials;
-
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Charm: rose and blush light, a pearl core, and pink-lit fog from plum shadow to peach highlight.</summary>
+/// Charm: rose and blush light, a pearl core, and pink-lit fog from plum shadow to peach highlight.
 internal static class CharmColor
 {
-    /// <summary>Light, dim to hot: 0 = deep plum, 0.3 = raspberry, 0.55 = rose, 0.78 = blush, 1 = pearl.</summary>
+    /// Light, dim to hot: 0 = deep plum, 0.3 = raspberry, 0.55 = rose, 0.78 = blush, 1 = pearl.
     public static readonly Palette Glow = new(
         (0.00f, 0.300f, 0.050f, 0.240f),
         (0.30f, 0.740f, 0.200f, 0.500f),
@@ -14,17 +11,17 @@ internal static class CharmColor
         (0.78f, 1.000f, 0.700f, 0.800f),
         (1.00f, 1.000f, 0.940f, 0.950f));
 
-    /// <summary>Fog lit by that light: 0 = shadowed mauve, 0.4 = rose, 0.75 = lit pink, 1 = peach-pearl.</summary>
+    /// Fog lit by that light: 0 = shadowed mauve, 0.4 = rose, 0.75 = lit pink, 1 = peach-pearl.
     public static readonly Palette Fog = new(
         (0.00f, 0.380f, 0.090f, 0.340f),
         (0.40f, 0.920f, 0.380f, 0.620f),
         (0.75f, 1.000f, 0.640f, 0.790f),
         (1.00f, 1.000f, 0.800f, 0.850f));
 
-    /// <summary>Edge tint for the screen's vignette: deep rose-plum.</summary>
+    /// Edge tint for the screen's vignette: deep rose-plum.
     public static readonly uint Vignette = Pack(0.360f, 0.050f, 0.240f);
 
-    /// <summary>The flush a charm lands with (rose-white, so it stays chromatic under a colour override).</summary>
+    /// The flush a charm lands with (rose-white, so it stays chromatic under a colour override).
     public static readonly uint Flash = Pack(1.000f, 0.700f, 0.860f);
 }
 

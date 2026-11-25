@@ -1,9 +1,6 @@
-using System.Numerics;
-using RealDebuffs.Effects.Framework;
-
 namespace RealDebuffs.Effects;
 
-/// <summary>Everything the fog whispers. Edit freely: lowercase letters, spaces and ' , . ! ? - ♥ only (anything else is left blank).</summary>
+/// Everything the fog whispers. Edit freely: lowercase letters, spaces and ' , . ! ? - ♥ only (anything else is left blank).
 public static class CharmWhispers
 {
     public static readonly string[] Phrases =
@@ -17,7 +14,7 @@ public static class CharmWhispers
     };
 }
 
-/// <summary>Charm: a rose-scented fog closes in and whispers sweet nothings from every direction.</summary>
+/// Charm: a rose-scented fog closes in and whispers sweet nothings from every direction.
 public sealed class CharmEffect : SceneEffect, IHasSwappableSlots
 {
     // The fog is what a "made of X" phrase replaces.
@@ -30,32 +27,32 @@ public sealed class CharmEffect : SceneEffect, IHasSwappableSlots
     };
 
     // the cast
-    private const float IntroSecs = 1.8f;  // the fog arrives and the vignette closes
-    private const float FirstWhisper = 0.55f, FirstBeat = 1.6f;
+    const float IntroSecs = 1.8f;  // the fog arrives and the vignette closes
+    const float FirstWhisper = 0.55f, FirstBeat = 1.6f;
 
     // fog: billows in three depths; each slot lives one cycle, then comes back somewhere else
-    private readonly record struct Tier(int Count, float SizeMin, float SizeMax, float Speed, float Alpha, float EdgeBias, float PeriodMin, float PeriodMax, float Arrive, int Squash);
-    private static readonly Tier[] Tiers =
+    readonly record struct Tier(int Count, float SizeMin, float SizeMax, float Speed, float Alpha, float EdgeBias, float PeriodMin, float PeriodMax, float Arrive, int Squash);
+    static readonly Tier[] Tiers =
     {
         new(12, 330f, 560f,  7f, 0.60f, 0.45f, 22f, 34f, 1.00f, 0),  // far: broad, slow, everywhere
         new(14, 250f, 440f, 15f, 0.85f, 0.80f, 17f, 27f, 0.80f, 0),  // mid: banked toward the edges
         new( 8, 320f, 540f, 38f, 0.42f, 1.00f, 11f, 18f, 0.65f, 56),  // near: wisps that sweep past the lens
     };
-    private const int TierStride = 64;
+    const int TierStride = 64;
 
     // sparkles: stars that flare and fade where they are, each slot coming back somewhere else
-    private const int Sparkles = 22;
+    const int Sparkles = 22;
 
-    private static readonly uint Haze = Pack(0.95f, 0.42f, 0.66f);
+    static readonly uint Haze = Pack(0.95f, 0.42f, 0.66f);
 
-    private CastFrame _f;
-    private readonly MoteField _motes = new(40, 650f, -420f, (8f, 26f), (10f, 40f), (1.6f, 4.2f));
+    CastFrame _f;
+    readonly MoteField _motes = new(40, 650f, -420f, (8f, 26f), (10f, 40f), (1.6f, 4.2f));
 
-    private readonly WhisperField _whispers = new(CharmWhispers.Phrases);
+    readonly WhisperField _whispers = new(CharmWhispers.Phrases);
 
     // per-cast layout
-    private int _seed;
-    private float _density, _beatEvery;
+    int _seed;
+    float _density, _beatEvery;
 
     public CharmEffect() : base(DebuffKind.Charm, "Charm",
         "A rose-scented fog closes in and whispers sweet nothings from every direction, in slow script that comes into focus and fades back into the haze.",
@@ -89,7 +86,7 @@ public sealed class CharmEffect : SceneEffect, IHasSwappableSlots
         EmitFog(scene, 2, beat);
     }
 
-    private void BeginCast(int seed)
+    void BeginCast(int seed)
     {
         _seed = seed;
         _whispers.Begin(seed, FirstWhisper);
@@ -100,28 +97,28 @@ public sealed class CharmEffect : SceneEffect, IHasSwappableSlots
 
     // atmosphere
 
-    /// <summary>Slow heartbeat 0..1: seconds since a beat began, two soft swells (second half as strong), no sharp edges.</summary>
+    /// Slow heartbeat 0..1: seconds since a beat began, two soft swells (second half as strong), no sharp edges.
     internal static float Pulse(float since)
-        => MathF.Max(Swell(since, 0.45f, 1.1f), 0.55f * Swell(since - 0.65f, 0.40f, 1.0f));
+        => Max(Swell(since, 0.45f, 1.1f), 0.55f * Swell(since - 0.65f, 0.40f, 1.0f));
 
-    private static float Swell(float t, float rise, float fall)
+    static float Swell(float t, float rise, float fall)
         => t <= 0f || t >= rise + fall ? 0f : t < rise ? Smooth(t / rise) : 1f - Smooth((t - rise) / fall);
 
-    private void EmitAtmosphere(EffectScene scene, float intro, float beat)
+    void EmitAtmosphere(EffectScene scene, float intro, float beat)
     {
         ref readonly CastFrame f = ref _f;
 
         // The vignette closes in as the fog arrives and swells a little on every beat.
-        scene.RequestVignette(CharmColor.Vignette, 0.16f + 0.22f * intro, MathF.Min(1f, f.Alpha * 0.72f * intro * (0.88f + 0.22f * beat)), priority: 22, f.Color);
+        scene.RequestVignette(CharmColor.Vignette, 0.16f + 0.22f * intro, Min(1f, f.Alpha * 0.72f * intro * (0.88f + 0.22f * beat)), priority: 22, f.Color);
         scene.Wash(f.Size, Haze, 0.12f * f.Alpha * intro * (1f + 0.40f * beat), f.Color);
 
         // The cast flash uses f.Gate so the fade-in can't swallow it.
-        float flash = f.Age < 0.8f ? MathF.Exp(-f.Age / 0.17f) : 0f;
+        float flash = f.Age < 0.8f ? Exp(-f.Age / 0.17f) : 0f;
         scene.Wash(f.Size, CharmColor.Flash, 0.50f * flash * f.Gate, f.Color);
     }
 
-    /// <summary>The cast: one great breath of haze that opens at the middle of the screen and thins as the fog takes over.</summary>
-    private void EmitBloom(EffectScene scene)
+    /// The cast: one great breath of haze that opens at the middle of the screen and thins as the fog takes over.
+    void EmitBloom(EffectScene scene)
     {
         ref readonly CastFrame f = ref _f;
         float life = f.Age / 2.4f;
@@ -135,7 +132,7 @@ public sealed class CharmEffect : SceneEffect, IHasSwappableSlots
 
     // fog
 
-    private void EmitFog(EffectScene scene, int tier, float beat)
+    void EmitFog(EffectScene scene, int tier, float beat)
     {
         ref readonly CastFrame f = ref _f;
         ref readonly Tier T = ref Tiers[tier];
@@ -149,20 +146,20 @@ public sealed class CharmEffect : SceneEffect, IHasSwappableSlots
             int slot = _seed + (tier * TierStride + i) * 977;
             float period = HashRange(slot + 1, T.PeriodMin, T.PeriodMax);
             float u = f.Age / period + Hash01(slot + 2);
-            int cycle = (int)MathF.Floor(u);
+            int cycle = (int)Floor(u);
             float life = u - cycle;
             int cs = slot + cycle * 7919;
 
             // Where this cycle's billow forms: banked toward the edges, so the middle stays thinnest.
             float ux = Hash01(cs + 3) * 2f - 1f, uy = Hash01(cs + 4) * 2f - 1f;
-            Vector2 home = f.Center + new Vector2(MathF.Sign(ux) * MathF.Pow(MathF.Abs(ux), edgeExp) * halfW * 1.05f,
-                                                  MathF.Sign(uy) * MathF.Pow(MathF.Abs(uy), edgeExp) * halfH * 1.05f);
+            Vector2 home = f.Center + new Vector2(MathF.Sign(ux) * Pow(Abs(ux), edgeExp) * halfW * 1.05f,
+                                                  MathF.Sign(uy) * Pow(Abs(uy), edgeExp) * halfH * 1.05f);
 
             // It drifts with the wind from the moment it formed.
             float bearing = _whispers.WindAngle + HashRange(cs + 6, -0.35f, 0.35f);
             float born = (cycle - Hash01(slot + 2)) * period;
             float run = (_whispers.Wind(f.Age) - _whispers.Wind(born)) * T.Speed * px;
-            Vector2 at = home + new Vector2(MathF.Cos(bearing), MathF.Sin(bearing)) * run;
+            Vector2 at = home + Dir(bearing) * run;
 
             // On arrival it comes in from beyond the edge; as the status lifts it is blown back out.
             Vector2 away = at - f.Center;
@@ -180,7 +177,7 @@ public sealed class CharmEffect : SceneEffect, IHasSwappableSlots
 
     // sparkles
 
-    private void EmitSparkles(EffectScene scene, bool near, float intro)
+    void EmitSparkles(EffectScene scene, bool near, float intro)
     {
         ref readonly CastFrame f = ref _f;
         float level = f.Alpha * intro * (1f - f.Leave);
@@ -191,14 +188,14 @@ public sealed class CharmEffect : SceneEffect, IHasSwappableSlots
 
             float period = HashRange(slot + 2, 2.6f, 5.2f);
             float u = f.Age / period + Hash01(slot + 3);
-            int cycle = (int)MathF.Floor(u);
+            int cycle = (int)Floor(u);
             int cs = slot + cycle * 7919;
 
             // A quick flare and a slow fade.
-            float flare = MathF.Sin(MathF.PI * MathF.Pow(u - cycle, 0.55f));
+            float flare = Sin(PI * Pow(u - cycle, 0.55f));
             scene.AddParticle(new ParticlePrimitive
             {
-                Position = new Vector2(Hash01(cs + 4) * f.Size.X, Hash01(cs + 5) * f.Size.Y),
+                Position = new(Hash01(cs + 4) * f.Size.X, Hash01(cs + 5) * f.Size.Y),
                 Size = (near ? HashRange(cs + 6, 15f, 27f) : HashRange(cs + 6, 7f, 14f)) * f.Px,
                 Brightness = flare * flare * level * (near ? 1f : 0.7f), Seed = cs, Role = PrimitiveRole.Glint, ColorOverride = f.Color,
             });

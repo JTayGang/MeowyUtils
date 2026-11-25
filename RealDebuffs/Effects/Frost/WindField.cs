@@ -1,11 +1,9 @@
-using System.Numerics;
-
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>A fixed pool of wrapping flakes blown by gusting wind: steady density, constant cost, no allocation after Build.</summary>
+/// A fixed pool of wrapping flakes blown by gusting wind: steady density, constant cost, no allocation after Build.
 internal sealed class WindField
 {
-    private struct Flake
+    struct Flake
     {
         public Vector2 Pos, Vel;
         public float Depth;  // 0 far .. 1 near
@@ -13,9 +11,9 @@ internal sealed class WindField
         public int Seed;
     }
 
-    private Flake[] _flakes = Array.Empty<Flake>();
+    Flake[] _flakes = [];
 
-    /// <summary>Lays out count flakes across the screen. Reuses the array when the count is unchanged.</summary>
+    /// Lays out count flakes across the screen. Reuses the array when the count is unchanged.
     public void Build(int count, int seed, Vector2 size)
     {
         count = Math.Max(0, count);
@@ -24,27 +22,27 @@ internal sealed class WindField
         for (int i = 0; i < count; i++)
         {
             int s = seed + i * 7919;
-            _flakes[i] = new Flake
+            _flakes[i] = new()
             {
-                Pos = new Vector2(Hash01(s + 2) * size.X, Hash01(s + 3) * size.Y),
-                Depth = MathF.Pow(Hash01(s + 1), 1.7f),  // far flakes outnumber near ones
-                Phase = Hash01(s + 4) * MathF.Tau,
+                Pos = new(Hash01(s + 2) * size.X, Hash01(s + 3) * size.Y),
+                Depth = Pow(Hash01(s + 1), 1.7f),  // far flakes outnumber near ones
+                Phase = Hash01(s + 4) * Tau,
                 Seed = s,
             };
         }
     }
 
-    /// <summary>Gust strength 0..1 (three incommensurate waves, squashed into lulls and gales).</summary>
+    /// Gust strength 0..1 (three incommensurate waves, squashed into lulls and gales).
     public static float Gust(float time, float seed)
     {
         float g = 0.62f
-                + 0.26f * MathF.Sin(time * 0.29f + seed)
-                + 0.17f * MathF.Sin(time * 0.71f + seed * 1.9f)
-                + 0.09f * MathF.Sin(time * 1.70f + seed * 3.7f);
+                + 0.26f * Sin(time * 0.29f + seed)
+                + 0.17f * Sin(time * 0.71f + seed * 1.9f)
+                + 0.09f * Sin(time * 1.70f + seed * 3.7f);
         return Smooth(g);
     }
 
-    /// <summary>Advances every flake; wind is px/s at full gust (screen-scaled), gust 0..1, px scales settling and eddy motion.</summary>
+    /// Advances every flake; wind is px/s at full gust (screen-scaled), gust 0..1, px scales settling and eddy motion.
     public void Update(float time, float dt, Vector2 size, float px, Vector2 wind, float gust)
     {
         if (_flakes.Length == 0 || dt <= 0f) return;
@@ -57,11 +55,11 @@ internal sealed class WindField
         {
             ref Flake f = ref _flakes[i];
             float d = f.Depth;
-            float flutter = MathF.Sin(time * (1.3f + 1.4f * d) + f.Phase);
+            float flutter = Sin(time * (1.3f + 1.4f * d) + f.Phase);
 
             Vector2 v = drive * (0.40f + 1.00f * d) * (1f + 0.10f * flutter);  // parallax: near is fast
             v.Y += (18f + 46f * d) * px * (1f + 0.5f * flutter);  // settling, with a flutter
-            v.Y += MathF.Sin(time * 2.1f + f.Phase * 3.1f) * (26f + 70f * d) * px * gust;  // eddies in a gust
+            v.Y += Sin(time * 2.1f + f.Phase * 3.1f) * (26f + 70f * d) * px * gust;  // eddies in a gust
 
             f.Vel = v;
             f.Pos += v * dt;
@@ -70,12 +68,12 @@ internal sealed class WindField
         }
     }
 
-    /// <summary>Pushes flakes into the scene; density (0..1) is the fraction out, the last fading in.</summary>
+    /// Pushes flakes into the scene; density (0..1) is the fraction out, the last fading in.
     public void Emit(EffectScene scene, Vector2 size, float px, PrimitiveRole role, float density,
                      float brightness, Vector4? colorOverride)
     {
-        float active = Math.Clamp(density, 0f, 1f) * _flakes.Length;
-        int n = Math.Min(_flakes.Length, (int)MathF.Ceiling(active));
+        float active = Saturate(density) * _flakes.Length;
+        int n = Math.Min(_flakes.Length, (int)Ceiling(active));
         float cull = 40f * px;
 
         for (int i = 0; i < n; i++)
@@ -84,7 +82,7 @@ internal sealed class WindField
             if (f.Pos.X < -cull || f.Pos.X > size.X + cull || f.Pos.Y < -cull || f.Pos.Y > size.Y + cull) continue;
 
             float d = f.Depth;
-            float on = Math.Clamp(active - i, 0f, 1f);
+            float on = Saturate(active - i);
             float flakeSize = (1.3f + 5.2f * d) * (0.85f + 0.30f * Hash01(f.Seed + 5)) * px;
 
             scene.AddParticle(new ParticlePrimitive

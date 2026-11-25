@@ -1,9 +1,6 @@
-using System.Numerics;
-using RealDebuffs.Effects.Framework;
-
 namespace RealDebuffs.Effects;
 
-/// <summary>Dropsy: water leaking, spraying and pouring in from the top of the screen into a shallow pool.</summary>
+/// Dropsy: water leaking, spraying and pouring in from the top of the screen into a shallow pool.
 public sealed class DropsyEffect : SceneEffect, IHasSwappableSlots
 {
     // One liquid for everything: swap it ("made of blood") and the streams, pool, splashes and drips all change with it.
@@ -14,15 +11,15 @@ public sealed class DropsyEffect : SceneEffect, IHasSwappableSlots
         Slot.Region(RegionKind.FlatFill, "Flash", "region.flat-fill"),
     };
 
-    private const float PoolDepth = 0.135f;  // of the screen height
-    private const float SideZone = 0.20f;  // leaks may also start this far down the side edges
-    private const int Leaks = 9, Drips = 12;
-    private const float FluxRef = 215000f;  // typical inflow at 1080p (px²/s, measured: stream width x speed plus drops); the pool holds full depth against it
+    const float PoolDepth = 0.135f;  // of the screen height
+    const float SideZone = 0.20f;  // leaks may also start this far down the side edges
+    const int Leaks = 9, Drips = 12;
+    const float FluxRef = 215000f;  // typical inflow at 1080p (px²/s, measured: stream width x speed plus drops); the pool holds full depth against it
 
-    private enum Size { Gusher, Medium, Pinhole }
+    enum Size { Gusher, Medium, Pinhole }
 
-    /// <summary>One leak: where it starts, how hard it is pushed, and how it opens, runs and sputters out.</summary>
-    private sealed class Leak
+    /// One leak: where it starts, how hard it is pushed, and how it opens, runs and sputters out.
+    sealed class Leak
     {
         public LiquidJet Jet = null!;
         public bool Live;
@@ -34,22 +31,22 @@ public sealed class DropsyEffect : SceneEffect, IHasSwappableSlots
         public float Dribble;  // seconds of drip it leaves behind
     }
 
-    private struct Burst { public Vector2 At; public float Angle, Spread, Speed, Radius, Left, Owed, Rate; }
+    struct Burst { public Vector2 At; public float Angle, Spread, Speed, Radius, Left, Owed, Rate; }
 
-    private readonly LiquidField _field = new();
+    readonly LiquidField _field = new();
     internal LiquidField Field => _field;
-    private readonly Leak[] _leaks = new Leak[Leaks];
-    private readonly float[] _dripEnd = new float[Drips];
-    private Burst _burst;
-    private float _nextLeak, _nextEvent, _nextDrip, _fill;
-    private int _target, _spawned;
+    readonly Leak[] _leaks = new Leak[Leaks];
+    readonly float[] _dripEnd = new float[Drips];
+    Burst _burst;
+    float _nextLeak, _nextEvent, _nextDrip, _fill;
+    int _target, _spawned;
 
     public DropsyEffect() : base(DebuffKind.Dropsy, "Dropsy",
         "Water leaks, sprays and pours in from the top of the screen, running and dripping into a shallow pool that splashes, foams and ripples.",
         9, "Dropsy",
         keywords: ["dropsy", "drowning", "drenched", "waterlogged", "flooded"], envelope: true)
     {
-        for (int i = 0; i < Leaks; i++) _leaks[i] = new Leak();
+        for (int i = 0; i < Leaks; i++) _leaks[i] = new();
     }
 
     protected override void Emit(EffectScene scene, in CastFrame f)
@@ -63,7 +60,7 @@ public sealed class DropsyEffect : SceneEffect, IHasSwappableSlots
         Drive(in f);
         for (float left = f.Dt; left > 1e-4f;)
         {
-            float h = MathF.Min(left, 1f / 30f);
+            float h = Min(left, 1f / 30f);
             _field.Step(h);
             left -= h;
         }
@@ -72,8 +69,8 @@ public sealed class DropsyEffect : SceneEffect, IHasSwappableSlots
         _field.Emit(scene, f.Alpha);
     }
 
-    /// <summary>Starts a cast: how busy it is, and the pool's depth.</summary>
-    private void Lay(EffectScene scene, in CastFrame f, Liquid liquid)
+    /// Starts a cast: how busy it is, and the pool's depth.
+    void Lay(EffectScene scene, in CastFrame f, Liquid liquid)
     {
         _field.Begin(scene.CurrentOwner, f.Size, liquid, f.Seed, Leaks, Drips);
         for (int i = 0; i < Leaks; i++) { _leaks[i].Jet = _field.Jets[i]; _leaks[i].Live = false; }
@@ -88,8 +85,8 @@ public sealed class DropsyEffect : SceneEffect, IHasSwappableSlots
         _nextDrip = 0f;
     }
 
-    /// <summary>Runs the cast: opens and closes leaks, sets each one's flow and aim, fires the odd spray, and sets the pool's depth.</summary>
-    private void Drive(in CastFrame f)
+    /// Runs the cast: opens and closes leaks, sets each one's flow and aim, fires the odd spray, and sets the pool's depth.
+    void Drive(in CastFrame f)
     {
         float t = f.Age, dt = f.Dt, keep = 1f - f.Leave;
         bool open = f.Leave < 0.01f;
@@ -112,26 +109,26 @@ public sealed class DropsyEffect : SceneEffect, IHasSwappableSlots
         _field.PoolDepthRef = f.Size.Y * PoolDepth * _fill;
         _field.PoolFluxRef = FluxRef * f.Px * f.Px;
         _field.Leaving = f.Leave;
-        _field.Chop = 0.35f + 1.2f * MathF.Exp(-t / 1.8f);
+        _field.Chop = 0.35f + 1.2f * Exp(-t / 1.8f);
     }
 
-    /// <summary>Where a leak can start: along the top (favouring corners) or the top fifth of a side edge; down is +1 if the water heads right.</summary>
-    private Vector2 Origin(in CastFrame f, bool corner, out bool side, out float toward)
+    /// Where a leak can start: along the top (favouring corners) or the top fifth of a side edge; down is +1 if the water heads right.
+    Vector2 Origin(in CastFrame f, bool corner, out bool side, out float toward)
     {
         float W = f.Size.X, H = f.Size.Y, px = f.Px;
         if (!corner && _field.Rand() < 0.26f)
         {
             bool left = _field.Rand() < 0.5f;
             side = true; toward = left ? 1f : -1f;
-            return new Vector2(left ? -24f * px : W + 24f * px, H * _field.Rand(0.02f, SideZone));
+            return new(left ? -24f * px : W + 24f * px, H * _field.Rand(0.02f, SideZone));
         }
         side = false;
         float x = W * (corner || _field.Rand() < 0.62f ? (_field.Rand() < 0.5f ? _field.Rand(0.01f, 0.28f) : _field.Rand(0.72f, 0.99f)) : _field.Rand(0.02f, 0.98f));
         toward = x < W * 0.5f ? 1f : -1f;
-        return new Vector2(x, -24f * px);
+        return new(x, -24f * px);
     }
 
-    private bool Open(in CastFrame f)
+    bool Open(in CastFrame f)
     {
         Leak? l = null;
         foreach (var c in _leaks) if (!c.Live && c.Jet.Idle) { l = c; break; }
@@ -152,14 +149,14 @@ public sealed class DropsyEffect : SceneEffect, IHasSwappableSlots
         }
 
         // pressure: the smaller the hole, the harder it is pushed, so thin leaks shoot further than fat ones
-        l.Speed = Math.Clamp(1150f * MathF.Pow(6f / radius, 0.7f) * _field.Rand(0.85f, 1.15f), size == Size.Gusher ? 460f : 240f, 1900f);
-        l.Angle = l.Side ? toward * (MathF.PI * 0.5f + _field.Rand(-0.45f, 0.35f)) : toward * _field.Rand(-0.2f, 1f) * limit;
+        l.Speed = Math.Clamp(1150f * Pow(6f / radius, 0.7f) * _field.Rand(0.85f, 1.15f), size == Size.Gusher ? 460f : 240f, 1900f);
+        l.Angle = l.Side ? toward * (PI * 0.5f + _field.Rand(-0.45f, 0.35f)) : toward * _field.Rand(-0.2f, 1f) * limit;
 
         l.Born = f.Age; l.Live = true; _spawned++;
         l.Base = _field.Rand(0.65f, 1f);
         l.GushSecs = _field.Rand(0.5f, 0.9f);
         l.WanderW = _field.Rand(0.8f, 2.2f);
-        l.W1 = _field.Rand(0.45f, 0.9f); l.P1 = _field.Rand(0f, MathF.Tau); l.W2 = _field.Rand(1.4f, 2.6f); l.P2 = _field.Rand(0f, MathF.Tau);
+        l.W1 = _field.Rand(0.45f, 0.9f); l.P1 = _field.Rand(0f, Tau); l.W2 = _field.Rand(1.4f, 2.6f); l.P2 = _field.Rand(0f, Tau);
         l.FlutterW = _field.Rand(5f, 9f);
         l.GlugEvery = _field.Rand(2.2f, 4.5f); l.GlugAt = _field.Rand(0f, 3f); l.GlugLen = _field.Rand(0.30f, 0.55f);
         l.Dribble = _field.Rand() < 0.7f ? _field.Rand(3f, 6.5f) : 0f;
@@ -170,8 +167,8 @@ public sealed class DropsyEffect : SceneEffect, IHasSwappableSlots
         return true;
     }
 
-    /// <summary>One leak's flow and aim this frame; it sputters out at the end and may leave a dribble.</summary>
-    private void Run(Leak l, in CastFrame f, float keep)
+    /// One leak's flow and aim this frame; it sputters out at the end and may leave a dribble.
+    void Run(Leak l, in CastFrame f, float keep)
     {
         float age = f.Age - l.Born, rem = l.Life - age;
         if (rem < -0.15f || keep < 0.02f)
@@ -181,21 +178,21 @@ public sealed class DropsyEffect : SceneEffect, IHasSwappableSlots
             return;
         }
 
-        float swell = 1f + 0.13f * MathF.Sin(l.W1 * age + l.P1) + 0.07f * MathF.Sin(l.W2 * age + l.P2);
+        float swell = 1f + 0.13f * Sin(l.W1 * age + l.P1) + 0.07f * Sin(l.W2 * age + l.P2);
         float flutter = 1f + 0.20f * l.Jet.Churn * Noise.Value(age * l.FlutterW + l.P1, l.Jet.Seed * 0.1f);  // the quick lumpiness of a ragged flow
         float glug = 1f - 0.34f * Bump(Cycle(age - l.GlugAt, l.GlugEvery) / l.GlugLen);  // air gulped in the pipe
-        float gush = 1f + l.Gush * MathF.Exp(-age / l.GushSecs);
+        float gush = 1f + l.Gush * Exp(-age / l.GushSecs);
         float taper = Smooth(rem / 1.6f);
-        float sputter = rem < 1.8f ? 0.30f + 0.70f * Smooth(0f, 0.55f, 0.5f + 0.5f * MathF.Sin(age * (12f + 8f * (1.8f - rem)) + l.P2)) : 1f;
+        float sputter = rem < 1.8f ? 0.30f + 0.70f * Smooth(0f, 0.55f, 0.5f + 0.5f * Sin(age * (12f + 8f * (1.8f - rem)) + l.P2)) : 1f;
         float flow = l.Base * Smooth(age / 0.012f) * gush * swell * flutter * glug * taper * sputter * keep * keep;
 
-        l.Jet.Flow = MathF.Max(flow, 0.003f);
+        l.Jet.Flow = Max(flow, 0.003f);
         l.Jet.Speed = l.Speed * f.Px * (0.97f + 0.03f * swell);  // pressure holds steady, so parcels launched together fly together
-        l.Jet.Angle = l.Angle + l.Wander * (Noise.Value(age * l.WanderW + l.P1, 5.5f) + 0.5f * MathF.Sin(age * l.WanderW * 2.3f + l.P2));
+        l.Jet.Angle = l.Angle + l.Wander * (Noise.Value(age * l.WanderW + l.P1, 5.5f) + 0.5f * Sin(age * l.WanderW * 2.3f + l.P2));
     }
 
-    /// <summary>When a leak stops, what is left in the pipe drips from its mouth for a while.</summary>
-    private void Dribble(Leak l, in CastFrame f)
+    /// When a leak stops, what is left in the pipe drips from its mouth for a while.
+    void Dribble(Leak l, in CastFrame f)
     {
         for (int i = 0; i < Drips; i++)
         {
@@ -208,11 +205,11 @@ public sealed class DropsyEffect : SceneEffect, IHasSwappableSlots
         }
     }
 
-    /// <summary>Ceiling drips come and go: each runs for a while, then another starts somewhere else.</summary>
-    private void Drip(int i, in CastFrame f, bool open)
+    /// Ceiling drips come and go: each runs for a while, then another starts somewhere else.
+    void Drip(int i, in CastFrame f, bool open)
     {
         var s = _field.Seeps[i];
-        s.Boost = 1f + 1.2f * MathF.Exp(-f.Age / 2.5f);
+        s.Boost = 1f + 1.2f * Exp(-f.Age / 2.5f);
         if (s.Live)
         {
             if (f.Age > _dripEnd[i] || !open) s.Live = false;
@@ -231,8 +228,8 @@ public sealed class DropsyEffect : SceneEffect, IHasSwappableSlots
         _nextDrip = f.Age + _field.Rand(0.3f, 1.4f);
     }
 
-    /// <summary>Now and then: a spritz from a crack, a fat gout falling, or a splat thrown at the lens.</summary>
-    private void Events(in CastFrame f)
+    /// Now and then: a spritz from a crack, a fat gout falling, or a splat thrown at the lens.
+    void Events(in CastFrame f)
     {
         if (f.Age < _nextEvent) return;
         _nextEvent = f.Age + _field.Rand(2.2f, 5.5f);
@@ -241,10 +238,10 @@ public sealed class DropsyEffect : SceneEffect, IHasSwappableSlots
         if (roll < 0.45f)
         {
             var at = Origin(in f, false, out bool side, out float toward);
-            _burst = new Burst
+            _burst = new()
             {
                 At = at, Spread = _field.Rand(0.15f, 0.4f), Speed = _field.Rand(800f, 1700f), Radius = _field.Rand(2f, 4.2f),
-                Angle = side ? toward * (MathF.PI * 0.5f + _field.Rand(-0.45f, 0.35f)) : toward * _field.Rand(-0.2f, 1.1f),
+                Angle = side ? toward * (PI * 0.5f + _field.Rand(-0.45f, 0.35f)) : toward * _field.Rand(-0.2f, 1.1f),
                 Left = _field.Rand(0.18f, 0.45f), Rate = _field.Rand(45f, 110f),
             };
             _burst.Rate /= _burst.Left;
@@ -254,18 +251,18 @@ public sealed class DropsyEffect : SceneEffect, IHasSwappableSlots
             // a fat gout falls, with a few small ones in its wake
             var at = Origin(in f, false, out _, out float toward);
             float vx = toward * _field.Rand(40f, 260f), vy = _field.Rand(150f, 500f);
-            _field.Fling(at, new Vector2(vx, vy), _field.Rand(5.5f, 11f));
+            _field.Fling(at, new(vx, vy), _field.Rand(5.5f, 11f));
             for (int k = 0, n = (int)_field.Rand(2f, 6f); k < n; k++)
-                _field.Fling(at + new Vector2(_field.Rand(-12f, 12f) * px, -_field.Rand(20f, 90f) * px), new Vector2(vx * _field.Rand(0.8f, 1.1f), vy * _field.Rand(0.8f, 1.05f)), _field.Rand(1.5f, 3.2f));
+                _field.Fling(at + new Vector2(_field.Rand(-12f, 12f) * px, -_field.Rand(20f, 90f) * px), new(vx * _field.Rand(0.8f, 1.1f), vy * _field.Rand(0.8f, 1.05f)), _field.Rand(1.5f, 3.2f));
         }
         else
-            _field.Splat(new Vector2(f.Size.X * _field.Rand(0.05f, 0.95f), f.Size.Y * _field.Rand(0.05f, 0.6f)), _field.Rand(3.5f, 6.5f), (int)_field.Rand(6f, 13f));
+            _field.Splat(new(f.Size.X * _field.Rand(0.05f, 0.95f), f.Size.Y * _field.Rand(0.05f, 0.6f)), _field.Rand(3.5f, 6.5f), (int)_field.Rand(6f, 13f));
     }
 
-    private void Spritz(float dt)
+    void Spritz(float dt)
     {
         if (_burst.Left <= 0f) return;
-        float step = MathF.Min(dt, _burst.Left);
+        float step = Min(dt, _burst.Left);
         _burst.Left -= step;
         _burst.Owed += _burst.Rate * step;
         int n = (int)_burst.Owed;
@@ -273,16 +270,16 @@ public sealed class DropsyEffect : SceneEffect, IHasSwappableSlots
         if (n > 0) _field.Spray(_burst.At, _burst.Angle, _burst.Spread, _burst.Speed, n, _burst.Radius);
     }
 
-    private static float Cycle(float t, float period) => t - period * MathF.Floor(t / period);
-    private static float Bump(float u) => u is > 0f and < 1f ? MathF.Sin(MathF.PI * u) : 0f;
+    static float Cycle(float t, float period) => t - period * Floor(t / period);
+    static float Bump(float u) => u is > 0f and < 1f ? Sin(PI * u) : 0f;
 
-    /// <summary>A dark vignette, and a flash as the water arrives, in the liquid's own colour.</summary>
-    private void Mood(EffectScene scene, in CastFrame f, Liquid liquid)
+    /// A dark vignette, and a flash as the water arrives, in the liquid's own colour.
+    void Mood(EffectScene scene, in CastFrame f, Liquid liquid)
     {
         var look = liquid.Look;
         Vector3 deep = Matcap.ToDisplay(look.Deep * 0.55f), pale = Matcap.ToDisplay(look.Thin * 1.5f);
         float ramp = Saturate(f.Age / 2.4f);
         scene.RequestVignette(Pack(deep.X * 0.15f, deep.Y * 0.15f, deep.Z * 0.15f), 0.14f, f.Alpha * 0.85f * ramp, priority: 20, f.Color);
-        scene.Wash(f.Size, Pack(pale.X, pale.Y, pale.Z), 0.30f * f.Gate * MathF.Exp(-f.Age / 0.22f), f.Color);
+        scene.Wash(f.Size, Pack(pale), 0.30f * f.Gate * Exp(-f.Age / 0.22f), f.Color);
     }
 }

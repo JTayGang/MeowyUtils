@@ -1,12 +1,9 @@
-using System.Numerics;
-using Dalamud.Bindings.ImGui;
-
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Branching growing lines (frost fern, lightning, roots): built once, Draw(age) shows what has grown.</summary>
+/// Branching growing lines (frost fern, lightning, roots): built once, Draw(age) shows what has grown.
 internal sealed class Dendrite
 {
-    /// <summary>Shape and pace of one fern.</summary>
+    /// Shape and pace of one fern.
     public readonly record struct FernStyle(
         int StemPieces,  // line pieces the stem is split into (more = smoother curve)
         int Pairs,  // side-branch pairs along the stem
@@ -17,33 +14,33 @@ internal sealed class Dendrite
         float Curl,  // random bend per stem piece, radians
         float Duration);  // seconds for the stem to reach full length
 
-    private const int MaxChainPoints = 8;
+    const int MaxChainPoints = 8;
 
-    /// <summary>Number of chains (polylines).</summary>
+    /// Number of chains (polylines).
     public int Count { get; private set; }
 
-    /// <summary>Total line segments across all chains: the number that drives draw cost.</summary>
+    /// Total line segments across all chains: the number that drives draw cost.
 
     // Flat arrays: points (x, y, arrival time, strip normal) and per-chain metadata
-    private float[] _px = new float[4096], _py = new float[4096], _pt = new float[4096];
-    private Vector2[] _nm = new Vector2[4096];
-    private int _pn;
-    private int[] _start = new int[1024];
-    private byte[] _len = new byte[1024], _gen = new byte[1024];
-    private float[] _width = new float[1024], _sinP = new float[1024], _cosP = new float[1024];
-    private Vector2 _min, _max;
+    float[] _px = new float[4096], _py = new float[4096], _pt = new float[4096];
+    Vector2[] _nm = new Vector2[4096];
+    int _pn;
+    int[] _start = new int[1024];
+    byte[] _len = new byte[1024], _gen = new byte[1024];
+    float[] _width = new float[1024], _sinP = new float[1024], _cosP = new float[1024];
+    Vector2 _min, _max;
 
     public void Clear(Vector2 bounds)
     {
         Count = 0;
         _pn = 0;
-        _min = new Vector2(-48f, -48f);
+        _min = new(-48f, -48f);
         _max = bounds + new Vector2(48f, 48f);
     }
 
-    private static Vector2 Dir(float a) => new(MathF.Cos(a), MathF.Sin(a));
+    static Vector2 Dir(float a) => new(Cos(a), Sin(a));
 
-    /// <summary>Adds a polyline that starts growing at t0 and extends at speed px/s.</summary>
+    /// Adds a polyline that starts growing at t0 and extends at speed px/s.
     public void AddChain(ReadOnlySpan<Vector2> pts, float t0, float speed, float width, byte gen, float phase)
     {
         int n = Math.Min(pts.Length, MaxChainPoints);
@@ -72,10 +69,10 @@ internal sealed class Dendrite
 
         int k = Count++;
         _start[k] = _pn; _len[k] = (byte)n; _gen[k] = gen; _width[k] = width;
-        _sinP[k] = MathF.Sin(phase); _cosP[k] = MathF.Cos(phase);
+        _sinP[k] = Sin(phase); _cosP[k] = Cos(phase);
         Span<Vector2> nrm = stackalloc Vector2[MaxChainPoints];
         MeshBuilder.MiterNormals(pts[..n], nrm);
-        float t = t0, invSpeed = 1f / MathF.Max(1f, speed);
+        float t = t0, invSpeed = 1f / Max(1f, speed);
         for (int i = 0; i < n; i++)
         {
             if (i > 0) t += Vector2.Distance(pts[i], pts[i - 1]) * invSpeed;
@@ -84,7 +81,7 @@ internal sealed class Dendrite
         }
     }
 
-    /// <summary>A single short hair at at; cheap texture for the area between the ferns.</summary>
+    /// A single short hair at at; cheap texture for the area between the ferns.
     public void AddNeedle(Vector2 at, float angle, float length, float t0, float width, float phase)
     {
         Span<Vector2> p = stackalloc Vector2[2];
@@ -93,7 +90,7 @@ internal sealed class Dendrite
         AddChain(p, t0, length / 0.25f, width, 3, phase);
     }
 
-    /// <summary>Grows a fern from root heading along angle for length pixels, starting at t0 seconds.</summary>
+    /// Grows a fern from root heading along angle for length pixels, starting at t0 seconds.
     public void AddFern(Vector2 root, float angle, float length, float t0, float width, int seed, in FernStyle st)
     {
         int pieces = Math.Clamp(st.StemPieces, 2, MaxChainPoints - 1);
@@ -101,7 +98,7 @@ internal sealed class Dendrite
         Span<float> tt = stackalloc float[pieces + 1];
         Span<float> ang = stackalloc float[pieces];
 
-        float speed = length / MathF.Max(0.1f, st.Duration);
+        float speed = length / Max(0.1f, st.Duration);
         float pieceLen = length / pieces;
         p[0] = root;
         tt[0] = t0;
@@ -124,10 +121,10 @@ internal sealed class Dendrite
             int pi = Math.Min(pieces - 1, (int)f);
             float u = f - pi;
             Vector2 pos = p[pi] + (p[pi + 1] - p[pi]) * u;
-            float tAttach = tt[pi] + (tt[pi + 1] - tt[pi]) * u;
+            float tAttach = Lerp(tt[pi], tt[pi + 1], u);
             float stemAng = ang[pi];
 
-            float profile = MathF.Pow(1f - s, 0.85f) * (0.55f + 0.45f * MathF.Sin(MathF.Min(1f, s * 2.4f) * 1.5708f));
+            float profile = Pow(1f - s, 0.85f) * (0.55f + 0.45f * Sin(Min(1f, s * 2.4f) * 1.5708f));
             for (int side = -1; side <= 1; side += 2)
             {
                 int bs = seed + 1000 + k * 17 + (side + 1) * 5;
@@ -139,7 +136,7 @@ internal sealed class Dendrite
         }
     }
 
-    private void AddBranch(Vector2 start, float angle, float length, float t0, float width, int side, int seed, in FernStyle st, float speed)
+    void AddBranch(Vector2 start, float angle, float length, float t0, float width, int side, int seed, in FernStyle st, float speed)
     {
         const int Pieces = 2;
         Span<Vector2> p = stackalloc Vector2[Pieces + 1];
@@ -175,26 +172,26 @@ internal sealed class Dendrite
             float tang = ang[pi] + tdir * (0.85f + 0.3f * Hash01(ts)) - side * 0.12f;
             tw[0] = tp;
             tw[1] = tp + Dir(tang) * tlen;
-            AddChain(tw, tt[pi] + (tt[pi + 1] - tt[pi]) * u + 0.02f, speed * 0.8f, width * 0.6f, 2, Hash01(ts + 2) * 6.28f);
+            AddChain(tw, Lerp(tt[pi], tt[pi + 1], u) + 0.02f, speed * 0.8f, width * 0.6f, 2, Hash01(ts + 2) * 6.28f);
         }
     }
 
-    /// <summary>Chain drawing: shifted shadow, wide faint Body, bright core (colours via WithAlpha, so overrides apply).</summary>
+    /// Chain drawing: shifted shadow, wide faint Body, bright core (colours via WithAlpha, so overrides apply).
     public readonly record struct DrawStyle(
         Palette Core, uint Shadow, Vector2 ShadowOffset, float ShadowAlpha,
         uint Body, float BodyAlpha, float WidthScale, float Alpha, float Time);
 
-    /// <summary>Static scratch (single-threaded UI draw), so a Dendrite allocates nothing per frame.</summary>
-    private static readonly MeshBuilder Mesh = new();
+    /// Static scratch (single-threaded UI draw), so a Dendrite allocates nothing per frame.
+    static readonly MeshBuilder Mesh = new();
 
     // Crystal colours per frame by [generation][shimmer step]: 4 x 17 lookups instead of one per chain.
-    /// <summary>Deepest generation that gets a shadow underlay (0 = stems, 1 = branches); 0 saves about a fifth of the geometry.</summary>
-    private const int ShadowMaxGen = 1;
+    /// Deepest generation that gets a shadow underlay (0 = stems, 1 = branches); 0 saves about a fifth of the geometry.
+    const int ShadowMaxGen = 1;
 
-    private const int ShimmerSteps = 16;
-    private static readonly uint[] CoreLut = new uint[4 * (ShimmerSteps + 1)];
+    const int ShimmerSteps = 16;
+    static readonly uint[] CoreLut = new uint[4 * (ShimmerSteps + 1)];
 
-    /// <summary>Draws everything grown by age seconds, batched into a few meshes.</summary>
+    /// Draws everything grown by age seconds, batched into a few meshes.
     public void Draw(ImDrawListPtr dl, Vector2 uv, float age, in DrawStyle st)
     {
         if (st.Alpha <= 0.002f) return;
@@ -235,7 +232,7 @@ internal sealed class Dendrite
                 int n = Visible(c, age, buf, nrm, out _);
                 if (n < 2) continue;
                 float w = _width[c] * px;
-                Taper(hw, n, MathF.Max(1.1f * px, w * 1.5f) + (1.4f + w * 0.8f) * px, 0.45f);
+                Taper(hw, n, Max(1.1f * px, w * 1.5f) + (1.4f + w * 0.8f) * px, 0.45f);
                 mesh.Tent(buf[..n], nrm[..n], hw[..n], _gen[c] == 0 ? body0 : body1);
                 if (mesh.Full) mesh.Flush(dl, uv);
             }
@@ -252,7 +249,7 @@ internal sealed class Dendrite
             }
         }
         // sin(t*1.3 + phase) from the chain's stored sin/cos: two multiplies instead of a sin per chain.
-        float sinT = MathF.Sin(st.Time * 1.3f), cosT = MathF.Cos(st.Time * 1.3f);
+        float sinT = Sin(st.Time * 1.3f), cosT = Cos(st.Time * 1.3f);
 
         for (int c = 0; c < Count; c++)
         {
@@ -267,7 +264,7 @@ internal sealed class Dendrite
             }
             int gen = _gen[c];
             uint col = CoreLut[gen * (ShimmerSteps + 1) + step];
-            float half = MathF.Max(0.5f, _width[c] * px * 0.5f);
+            float half = Max(0.5f, _width[c] * px * 0.5f);
 
             if (n == 2 && gen >= 2)
             {
@@ -291,15 +288,15 @@ internal sealed class Dendrite
         mesh.Flush(dl, uv);
     }
 
-    /// <summary>Half-widths easing from root at the first point to root * tipFraction at the last.</summary>
-    private static void Taper(Span<float> hw, int n, float root, float tipFraction)
+    /// Half-widths easing from root at the first point to root * tipFraction at the last.
+    static void Taper(Span<float> hw, int n, float root, float tipFraction)
     {
         float inv = n > 1 ? 1f / (n - 1) : 0f;
         for (int i = 0; i < n; i++) hw[i] = root * (1f - (1f - tipFraction) * (i * inv));
     }
 
-    /// <summary>Copies the grown part of chain c (positions and strip normals) into the buffers; returns the point count.</summary>
-    private int Visible(int c, float age, Span<Vector2> buf, Span<Vector2> nrm, out bool growing)
+    /// Copies the grown part of chain c (positions and strip normals) into the buffers; returns the point count.
+    int Visible(int c, float age, Span<Vector2> buf, Span<Vector2> nrm, out bool growing)
     {
         growing = false;
         int off = _start[c], n = _len[c];
@@ -308,7 +305,7 @@ internal sealed class Dendrite
         int k = 0;
         while (k < n && age >= _pt[off + k])
         {
-            buf[k] = new Vector2(_px[off + k], _py[off + k]);
+            buf[k] = new(_px[off + k], _py[off + k]);
             nrm[k] = _nm[off + k];
             k++;
         }

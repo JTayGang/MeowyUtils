@@ -1,8 +1,6 @@
-using System.Numerics;
-
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Bleeding's palette: a near-black opening, torn flesh lips, and wet blood with a pale sheen.</summary>
+/// Bleeding's palette: a near-black opening, torn flesh lips, and wet blood with a pale sheen.
 internal static class BleedColor
 {
     public static readonly Vector3 Void = new(0.035f, 0.000f, 0.008f), WallDark = new(0.15f, 0.010f, 0.020f), WallLit = new(0.46f, 0.070f, 0.070f);

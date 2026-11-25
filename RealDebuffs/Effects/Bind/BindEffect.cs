@@ -1,9 +1,6 @@
-using System.Numerics;
-using RealDebuffs.Effects.Framework;
-
 namespace RealDebuffs.Effects;
 
-/// <summary>Bind: ropes thrown across the screen, hauled taut around you (Heavy's inverse): throw, haul, snap, hang.</summary>
+/// Bind: ropes thrown across the screen, hauled taut around you (Heavy's inverse): throw, haul, snap, hang.
 public sealed class BindEffect : SceneEffect, IHasSwappableSlots
 {
     public IReadOnlyList<SwappableSlot> Slots { get; } = new SwappableSlot[]
@@ -13,81 +10,58 @@ public sealed class BindEffect : SceneEffect, IHasSwappableSlots
         Slot.Particle(PrimitiveRole.Dust, "Dust", "particle.dust"),
     };
 
-    private const int MaxRopes = 6;
-    private const int StrandNodes = 14;
-    private const int PathSamples = 56;
+    const int MaxRopes = 6, StrandNodes = 14, PathSamples = 56;
 
-    private const float VignetteAlpha = 0.12f;
-    private const float VignetteDepth = 0.11f;
-    private const float VignetteTighten = 0.05f;
+    const float VignetteAlpha = 0.12f, VignetteDepth = 0.11f, VignetteTighten = 0.05f;
 
     // Rope diameter as a fraction of the short side.
-    private const float NearDiameterMin = 0.019f, NearDiameterMax = 0.026f;
-    private const float FarDiameterMin  = 0.013f, FarDiameterMax  = 0.017f;
+    const float NearDiameterMin = 0.019f, NearDiameterMax = 0.026f, FarDiameterMin  = 0.013f, FarDiameterMax  = 0.017f;
 
     // The throw.
-    private const float MaxThrowDelay = 0.40f;
-    private const float ThrowSpeedMin = 2300f, ThrowSpeedMax = 3100f;
-    private const float MinFlight = 0.40f, MaxFlight = 0.85f;
-    private const float ThrowArc = 0.10f;
-    private const float SlackMin = 0.20f, SlackMax = 0.32f;
-    private const float SlackSkew = 0.30f;
-    private const float RippleAmp = 0.028f;
+    const float MaxThrowDelay = 0.40f, ThrowSpeedMin = 2300f, ThrowSpeedMax = 3100f, MinFlight = 0.40f, MaxFlight = 0.85f;
+    const float ThrowArc = 0.10f, SlackMin = 0.20f, SlackMax = 0.32f, SlackSkew = 0.30f, RippleAmp = 0.028f;
 
     // The settle.
-    private const float Gravity = 2200f;
-    private const float HangDrag = 1.5f;
-    private const float TautDrag = 24f;
+    const float Gravity = 2200f, HangDrag = 1.5f, TautDrag = 24f;
 
     // The haul.
-    private const float HoldMin = 0.60f, HoldMax = 1.00f;
-    private const float HaulMin = 0.38f, HaulMax = 0.58f;
-    private const float HaulEase = 2.0f;
-    private const float TautExtraMin = -0.0004f, TautExtraMax = -0.0002f;  // a taut rope is a hair shorter than its span
-    private const float TautGravityMin = 0.10f, TautGravityMax = 0.40f;  // tension swamps gravity once hauled
+    const float HoldMin = 0.60f, HoldMax = 1.00f, HaulMin = 0.38f, HaulMax = 0.58f, HaulEase = 2.0f;
+    const float TautExtraMin = -0.0004f, TautExtraMax = -0.0002f;  // a taut rope is a hair shorter than its span
+    const float TautGravityMin = 0.10f, TautGravityMax = 0.40f;  // tension swamps gravity once hauled
 
     // The snap.
-    private const float RingAmp = 12f;
-    private const float RingHzMin = 3.2f, RingHzMax = 5.0f;
-    private const float RingDecay = 3.2f;
-    private const float FreezeAfterTaut = 0.9f;
+    const float RingAmp = 12f, RingHzMin = 3.2f, RingHzMax = 5.0f, RingDecay = 3.2f, FreezeAfterTaut = 0.9f;
 
     // The hang.
-    private const float SwayAmp = 7f;
-    private const float SwayPeriodMin = 7f, SwayPeriodMax = 10f;
-    private const float TwistAmp = 1.6f;
-    private const float TwistPeriodMin = 7f, TwistPeriodMax = 10f;
-    private const float HangDelay = 0.8f;
-    private const float HangEaseIn = 1.5f;
+    const float SwayAmp = 7f, SwayPeriodMin = 7f, SwayPeriodMax = 10f, TwistAmp = 1.6f, TwistPeriodMin = 7f, TwistPeriodMax = 10f;
+    const float HangDelay = 0.8f, HangEaseIn = 1.5f;
 
-    private static readonly uint Vignette = Pack(0.022f, 0.015f, 0.010f);
+    static readonly uint Vignette = Pack(0.022f, 0.015f, 0.010f);
 
     // Standing-wave shapes per path sample (u is fixed), so Hang needs no per-sample sines.
-    private static readonly float[] RingMode1 = new float[PathSamples];
-    private static readonly float[] RingMode2 = new float[PathSamples];
-    private static readonly float[] RingMode3 = new float[PathSamples];
+    static readonly float[] RingMode1 = new float[PathSamples];
+    static readonly float[] RingMode2 = new float[PathSamples];
+    static readonly float[] RingMode3 = new float[PathSamples];
 
     static BindEffect()
     {
         for (int i = 0; i < PathSamples; i++)
         {
             float u = i / (PathSamples - 1f);
-            RingMode1[i] = MathF.Sin(MathF.PI * u);
-            RingMode2[i] = MathF.Sin(2f * MathF.PI * u);
-            RingMode3[i] = MathF.Sin(3f * MathF.PI * u);
+            RingMode1[i] = Sin(PI * u);
+            RingMode2[i] = Sin(2f * PI * u);
+            RingMode3[i] = Sin(3f * PI * u);
         }
     }
 
-    private enum Corner { TopLeft, TopRight, BottomRight, BottomLeft }
+    enum Corner { TopLeft, TopRight, BottomRight, BottomLeft }
 
-    private sealed class Rig : StrandRig
+    sealed class Rig : StrandRig
     {
         public Vector2 SagDir;
         public float SagSign, DiameterFrac;
 
-        public float Hold, Haul, Slack, TautExtra, TautGravity;
-        public float RippleCycles, RippleHz, RipplePhase;
-        public float RingHz, RingSign;
+        public float Hold, Haul, Slack, TautExtra, TautGravity, RippleCycles, RippleHz, RipplePhase, RingHz, RingSign;
 
         public float SwayOmegaA, SwayOmegaB, SwayPhaseA, SwayPhaseB, SwayScaleA, SwayScaleB;
         public float TwistOmega, TwistPhase, TwistScale, TwistNow;
@@ -105,7 +79,7 @@ public sealed class BindEffect : SceneEffect, IHasSwappableSlots
         }
     }
 
-    private readonly RigSet<Rig> _set = new(MaxRopes);
+    readonly RigSet<Rig> _set = new(MaxRopes);
 
     public BindEffect() : base(DebuffKind.Bind, "Bind",
         "Ropes are thrown across the screen, then hauled taut around you.",
@@ -154,7 +128,7 @@ public sealed class BindEffect : SceneEffect, IHasSwappableSlots
                               f.Alpha * VignetteAlpha * castIn * (0.7f + 0.3f * tension), priority: 20, f.Color);
     }
 
-    private static void Step(EffectScene scene, Rig rig, in CastFrame f, float t)
+    static void Step(EffectScene scene, Rig rig, in CastFrame f, float t)
     {
         var strand = rig.Strand;
 
@@ -165,7 +139,7 @@ public sealed class BindEffect : SceneEffect, IHasSwappableSlots
 
         // Head: constant speed after a short launch ramp, stopped by the far anchor; the loose line keeps going.
         float tau = Saturate(t / rig.Flight);
-        float arc = ThrowArc * rig.ChordLen * MathF.Sin(MathF.PI * tau);
+        float arc = ThrowArc * rig.ChordLen * Sin(PI * tau);
         Vector2 head = rig.Start + (rig.End - rig.Start) * StrandRig.Travel(tau) - rig.SagDir * arc;
 
         bool landedNow = false;
@@ -199,14 +173,14 @@ public sealed class BindEffect : SceneEffect, IHasSwappableSlots
             {
                 haulK = Saturate((t - tHaul) / rig.Haul);
                 float tautLength = rig.ChordLen * (1f + rig.TautExtra);
-                length = slackLength + (tautLength - slackLength) * MathF.Pow(haulK, HaulEase);
+                length = Lerp(slackLength, tautLength, Pow(haulK, HaulEase));
             }
-            strand.Length = MathF.Max(2f, length);
+            strand.Length = Max(2f, length);
 
             // Through the haul: heavier damping, tighter constraints, less visible weight.
             float tighten = Smooth(haulK);
-            strand.Drag = HangDrag + (TautDrag - HangDrag) * tighten;
-            strand.Gravity = new Vector2(0f, Gravity * f.Px * (1f - (1f - rig.TautGravity) * tighten));
+            strand.Drag = Lerp(HangDrag, TautDrag, tighten);
+            strand.Gravity = new(0f, Gravity * f.Px * (1f - (1f - rig.TautGravity) * tighten));
             strand.Iterations = haulK > 0f ? 24 : 8;
 
             if (!rig.Landed)
@@ -230,32 +204,32 @@ public sealed class BindEffect : SceneEffect, IHasSwappableSlots
         if (landedNow) ReportEnd(scene, rig, f.Size, fromStart: false, 0.55f, f.Alpha, f.Color);
         if (snappedNow) Snap(scene, rig, f.Size, f.Alpha, f.Color);
 
-        rig.Agitation *= MathF.Exp(-f.Dt / 0.95f);
+        rig.Agitation *= Exp(-f.Dt / 0.95f);
     }
 
     // The snap ring and anchor sway are laid over the simulated path (zero extra length); twist goes to the material.
-    private static void Hang(Rig rig, float t, float px)
+    static void Hang(Rig rig, float t, float px)
     {
         float since = t - rig.TautAt;
         float ease = Smooth((since - HangDelay) / HangEaseIn);
 
         float amp = ease * SwayAmp * px;
-        float swayA = amp * rig.SwayScaleA * MathF.Sin(rig.SwayOmegaA * since + rig.SwayPhaseA);
-        float swayB = amp * rig.SwayScaleB * MathF.Sin(rig.SwayOmegaB * since + rig.SwayPhaseB);
-        rig.TwistNow = ease * TwistAmp * rig.TwistScale * MathF.Sin(rig.TwistOmega * since + rig.TwistPhase);
+        float swayA = amp * rig.SwayScaleA * Sin(rig.SwayOmegaA * since + rig.SwayPhaseA);
+        float swayB = amp * rig.SwayScaleB * Sin(rig.SwayOmegaB * since + rig.SwayPhaseB);
+        rig.TwistNow = ease * TwistAmp * rig.TwistScale * Sin(rig.TwistOmega * since + rig.TwistPhase);
 
-        float decay = MathF.Exp(-RingDecay * since);
+        float decay = Exp(-RingDecay * since);
         float ring = RingAmp * px * decay;
 
         // A plucked string: modes are integer multiples of the fundamental; higher modes die faster.
         float mul1 = 0f, mul2 = 0f, mul3 = 0f;
         if (ring > 0.05f)
         {
-            float w1 = MathF.Tau * rig.RingHz * since;
+            float w1 = Tau * rig.RingHz * since;
             float sign = ring * rig.RingSign;
-            mul1 = sign * MathF.Sin(w1);
-            mul2 = sign * 0.30f * MathF.Sin(2f * w1) * decay;
-            mul3 = sign * 0.12f * MathF.Sin(3f * w1) * (decay * decay);
+            mul1 = sign * Sin(w1);
+            mul2 = sign * 0.30f * Sin(2f * w1) * decay;
+            mul3 = sign * 0.12f * Sin(3f * w1) * (decay * decay);
         }
 
         var path = rig.Path;
@@ -272,7 +246,7 @@ public sealed class BindEffect : SceneEffect, IHasSwappableSlots
         path.BuildArc();
     }
 
-    private static void Snap(EffectScene scene, Rig rig, Vector2 size, float alpha, Vector4? colorOverride)
+    static void Snap(EffectScene scene, Rig rig, Vector2 size, float alpha, Vector4? colorOverride)
     {
         ReportEnd(scene, rig, size, fromStart: false, 0.40f, alpha, colorOverride);
         ReportEnd(scene, rig, size, fromStart: true, 0.40f, alpha, colorOverride);
@@ -297,15 +271,15 @@ public sealed class BindEffect : SceneEffect, IHasSwappableSlots
         }
     }
 
-    private static void ReportEnd(EffectScene scene, Rig rig, Vector2 size, bool fromStart,
+    static void ReportEnd(EffectScene scene, Rig rig, Vector2 size, bool fromStart,
                                   float strength, float alpha, Vector4? colorOverride) =>
         rig.ReportEnd(scene, size, fromStart, strength, alpha,
                       unchecked(rig.Seed + (fromStart ? 31 : 17) + (int)(rig.TautAt * 1000f)), colorOverride);
 
     // One rope per corner plus one or two crossing partners; all seeded per cast.
-    private void BuildLayout(int castSeed, Vector2 size)
+    void BuildLayout(int castSeed, Vector2 size)
     {
-        float overhang = MathF.Min(size.X, size.Y) * 0.07f;
+        float overhang = Min(size.X, size.Y) * 0.07f;
 
         _set.Count = Math.Min(5 + (int)(Hash01(castSeed + 1) * 2f), MaxRopes);
 
@@ -335,8 +309,8 @@ public sealed class BindEffect : SceneEffect, IHasSwappableSlots
             else
             {
                 // Shorter on the horizontal edge, longer on the vertical than the rope it crosses, so they cross at an angle.
-                a = MathF.Max(0.08f, legA[corner] * H(1, 0.30f, 0.55f));
-                b = MathF.Min(0.66f, MathF.Max(legB[corner] * H(2, 1.50f, 1.90f), legB[corner] + 0.10f));
+                a = Max(0.08f, legA[corner] * H(1, 0.30f, 0.55f));
+                b = Min(0.66f, Max(legB[corner] * H(2, 1.50f, 1.90f), legB[corner] + 0.10f));
             }
 
             // Keep the span out of the middle of the screen.
@@ -350,8 +324,8 @@ public sealed class BindEffect : SceneEffect, IHasSwappableSlots
         _set.Sort();
     }
 
-    /// <summary>The two anchors of a rope cutting corner: one on the horizontal edge (returned), one on the vertical.</summary>
-    private static Vector2 Anchor(Vector2 size, Corner corner, float a, float b, float overhang, out Vector2 vertical)
+    /// The two anchors of a rope cutting corner: one on the horizontal edge (returned), one on the vertical.
+    static Vector2 Anchor(Vector2 size, Corner corner, float a, float b, float overhang, out Vector2 vertical)
     {
         switch (corner)
         {
@@ -370,7 +344,7 @@ public sealed class BindEffect : SceneEffect, IHasSwappableSlots
         }
     }
 
-    private static void BuildRig(Rig r, int s, Vector2 a, Vector2 b, Vector2 size, bool far)
+    static void BuildRig(Rig r, int s, Vector2 a, Vector2 b, Vector2 size, bool far)
     {
         float H(int salt, float lo, float hi) => HashRange(s + salt, lo, hi);
         float px = PixelScale(size);
@@ -399,19 +373,19 @@ public sealed class BindEffect : SceneEffect, IHasSwappableSlots
 
         r.RippleCycles = H(12, 1.3f, 2.0f);
         r.RippleHz = H(13, 0.9f, 1.4f);
-        r.RipplePhase = H(14, 0f, MathF.Tau);
+        r.RipplePhase = H(14, 0f, Tau);
         r.RingHz = H(15, RingHzMin, RingHzMax);
         r.RingSign = -side;  // rises from its hanging side, so it overshoots the other
 
         // The hang: every period, phase and size is this rope's own.
-        r.SwayOmegaA = MathF.Tau / H(20, SwayPeriodMin, SwayPeriodMax);
-        r.SwayOmegaB = MathF.Tau / H(21, SwayPeriodMin, SwayPeriodMax);
-        r.SwayPhaseA = H(22, 0f, MathF.Tau);
-        r.SwayPhaseB = H(23, 0f, MathF.Tau);
+        r.SwayOmegaA = Tau / H(20, SwayPeriodMin, SwayPeriodMax);
+        r.SwayOmegaB = Tau / H(21, SwayPeriodMin, SwayPeriodMax);
+        r.SwayPhaseA = H(22, 0f, Tau);
+        r.SwayPhaseB = H(23, 0f, Tau);
         r.SwayScaleA = H(24, 0.6f, 1f);
         r.SwayScaleB = H(25, 0.6f, 1f);
-        r.TwistOmega = MathF.Tau / H(26, TwistPeriodMin, TwistPeriodMax);
-        r.TwistPhase = H(27, 0f, MathF.Tau);
+        r.TwistOmega = Tau / H(26, TwistPeriodMin, TwistPeriodMax);
+        r.TwistPhase = H(27, 0f, Tau);
         r.TwistScale = H(28, 0.7f, 1f);
     }
 }

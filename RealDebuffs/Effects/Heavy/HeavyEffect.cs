@@ -1,9 +1,6 @@
-using System.Numerics;
-using RealDebuffs.Effects.Framework;
-
 namespace RealDebuffs.Effects;
 
-/// <summary>Heavy: iron chains flung across the screen like arrows, then hanging.</summary>
+/// Heavy: iron chains flung across the screen like arrows, then hanging.
 public sealed class HeavyEffect : SceneEffect, IHasSwappableSlots
 {
     public IReadOnlyList<SwappableSlot> Slots { get; } = new SwappableSlot[]
@@ -13,42 +10,34 @@ public sealed class HeavyEffect : SceneEffect, IHasSwappableSlots
         Slot.Region(RegionKind.EdgeGlow, "Gloom", "region.edge-glow"),
     };
 
-    private const int MaxChains = 5;
-    private const int StrandNodes = 12;
-    private const int PathSamples = 56;
+    const int MaxChains = 5, StrandNodes = 12, PathSamples = 56;
 
 
-    private const float MaxThrowDelay = 0.3f;
-    private const float FlightBow = 0.25f;
-    private const float FlightSag = 0.0012f;
-    private const float ReleaseSeconds = 0.18f;
-    private const float HangDrag = 1.85f;
+    const float MaxThrowDelay = 0.3f, FlightBow = 0.25f, FlightSag = 0.0012f, ReleaseSeconds = 0.18f, HangDrag = 1.85f;
 
     // After this long hanging the sim is frozen and only the sway moves the published path.
-    private const float SettlePhysicsSeconds = 5.0f;
+    const float SettlePhysicsSeconds = 5.0f;
 
     // Debris shows only this close to a screen edge, and within this arc distance of a chain's ends (px at 1080p).
-    private const float EmitEdgeReach = 190f;
-    private const float EmitEndReach = 300f;
+    const float EmitEdgeReach = 190f, EmitEndReach = 300f;
 
     // Wind: a slow swell per chain plus gusts, so no chain is ever still.
-    private const float SwayAmp = 15f;
-    private const float SwayGustHz = 0.30f;
+    const float SwayAmp = 15f, SwayGustHz = 0.30f;
 
-    private static readonly MurkStyle Mood = new(Pack(0.010f, 0.014f, 0.022f), 0.12f, Pack(0.012f, 0.016f, 0.024f), 0.28f, 0.12f, 0.7f, 0.15f, 4.6f);
+    static readonly MurkStyle Mood = new(Pack(0.010f, 0.014f, 0.022f), 0.12f, Pack(0.012f, 0.016f, 0.024f), 0.28f, 0.12f, 0.7f, 0.15f, 4.6f);
 
-    private static readonly float[] SwayShape = BuildSwayShape();
+    static readonly float[] SwayShape = BuildSwayShape();
 
-    private static float[] BuildSwayShape()
+    static float[] BuildSwayShape()
     {
         var t = new float[PathSamples];
         for (int i = 0; i < PathSamples; i++)
-            t[i] = MathF.Sin(MathF.PI * i / (PathSamples - 1f));
+            t[i] = Sin(PI * i / (PathSamples - 1f));
         return t;
     }
 
     // Fixed composition, so the screen is always covered evenly: (origin edge + range, destination edge + range)
-    private static readonly (ScreenEdge From, float FromLo, float FromHi,
+    static readonly (ScreenEdge From, float FromLo, float FromHi,
                              ScreenEdge To,   float ToLo,   float ToHi)[] Archetypes =
     {
         (ScreenEdge.Top,    0.08f, 0.62f, ScreenEdge.Right,  0.20f, 0.85f),
@@ -57,14 +46,14 @@ public sealed class HeavyEffect : SceneEffect, IHasSwappableSlots
         (ScreenEdge.Left,   0.10f, 0.62f, ScreenEdge.Bottom, 0.20f, 0.85f),
     };
 
-    private sealed class Rig : StrandRig
+    sealed class Rig : StrandRig
     {
         public float Slack, ArcSide, LinkFrac, LandTime, SwayPhase, SwayHz;
 
         public Rig() : base(StrandNodes, PathSamples) { }
     }
 
-    private readonly RigSet<Rig> _set = new(MaxChains);
+    readonly RigSet<Rig> _set = new(MaxChains);
 
     public HeavyEffect() : base(DebuffKind.Heavy, "Heavy",
         "Iron chains are flung across the screen and snap taut, then strain under their own weight.",
@@ -105,7 +94,7 @@ public sealed class HeavyEffect : SceneEffect, IHasSwappableSlots
     }
 
 
-    private static void Step(EffectScene scene, Rig rig, in CastFrame f)
+    static void Step(EffectScene scene, Rig rig, in CastFrame f)
     {
         var strand = rig.Strand;
         float t = f.Age - rig.Delay;
@@ -114,7 +103,7 @@ public sealed class HeavyEffect : SceneEffect, IHasSwappableSlots
 
         // Head: an arrow. Constant speed after a short launch ramp, stopped dead by the far anchor.
         float tau = Saturate(t / rig.Flight);
-        float bow = rig.ArcSide * FlightBow * rig.ChordLen * MathF.Sin(MathF.PI * tau);
+        float bow = rig.ArcSide * FlightBow * rig.ChordLen * Sin(PI * tau);
         Vector2 head = rig.Start + (rig.End - rig.Start) * StrandRig.Travel(tau) + rig.ChordPerp * bow;
 
         bool landedNow = false;
@@ -129,7 +118,7 @@ public sealed class HeavyEffect : SceneEffect, IHasSwappableSlots
         if (rig.Landed)
         {
             head = rig.End;
-            head.Y += 5.5f * f.Px * MathF.Sin(f.Time * 0.85f + rig.SwayPhase);  // the load on the far end eases and settles
+            head.Y += 5.5f * f.Px * Sin(f.Time * 0.85f + rig.SwayPhase);  // the load on the far end eases and settles
         }
 
         bool settled = rig.Landed && (f.Time - rig.LandTime) > SettlePhysicsSeconds;
@@ -142,10 +131,10 @@ public sealed class HeavyEffect : SceneEffect, IHasSwappableSlots
             if (rig.Landed)
             {
                 float release = Smooth((f.Time - rig.LandTime) / ReleaseSeconds);
-                extra = flightExtra + (rig.ChordLen * rig.Slack - flightExtra) * release;
+                extra = Lerp(flightExtra, rig.ChordLen * rig.Slack, release);
             }
 
-            strand.Length = MathF.Max(2f, dist + extra);
+            strand.Length = Max(2f, dist + extra);
 
             // In flight the guide is a very slightly sagging taut cable; a near-vertical span bows to the seeded side.
             if (!rig.Landed)
@@ -166,11 +155,11 @@ public sealed class HeavyEffect : SceneEffect, IHasSwappableSlots
             rig.ReportEnd(scene, f.Size, fromStart: false, strength: 1f, f.Alpha, unchecked(rig.Seed + (int)(f.Time * 1000f)), f.Color);
         }
 
-        rig.Agitation *= MathF.Exp(-f.Dt / 0.95f);
+        rig.Agitation *= Exp(-f.Dt / 0.95f);
     }
 
     // Wind displaces the published path sideways, delayed along its length, zero at the anchors; applied after the sim
-    private static void ApplySway(Rig rig, float time, float px)
+    static void ApplySway(Rig rig, float time, float px)
     {
         var path = rig.Path;
         float amp = SwayAmp * px * Saturate((time - rig.LandTime) / 1.2f);
@@ -178,7 +167,7 @@ public sealed class HeavyEffect : SceneEffect, IHasSwappableSlots
 
         const int n = PathSamples;
         float invN = 1f / (n - 1f);
-        float swellPhase0 = MathF.Tau * rig.SwayHz * time + rig.SwayPhase;
+        float swellPhase0 = Tau * rig.SwayHz * time + rig.SwayPhase;
         float gustPhase0 = time * SwayGustHz + rig.SwayPhase;
         float gustSeed = rig.Seed * 0.013f;
 
@@ -190,7 +179,7 @@ public sealed class HeavyEffect : SceneEffect, IHasSwappableSlots
             if (len < 1e-3f) { offset[i] = default; continue; }
 
             float u = i * invN;
-            float swell = MathF.Sin(swellPhase0 - u * 1.6f);
+            float swell = Sin(swellPhase0 - u * 1.6f);
             float gust = Noise.Value(gustPhase0 - u * 1.2f, gustSeed);
             offset[i] = new Vector2(-tan.Y, tan.X) / len * (amp * (0.6f * swell + 0.7f * gust) * SwayShape[i]);
         }
@@ -200,12 +189,12 @@ public sealed class HeavyEffect : SceneEffect, IHasSwappableSlots
     }
 
     // A hard stop sends a TRANSVERSE shock down a taut chain
-    private static void Shock(Rig rig, float px, float strength, float time)
+    static void Shock(Rig rig, float px, float strength, float time)
     {
         var strand = rig.Strand;
 
         Vector2 along = Vector2.Normalize(strand.Pos[StrandNodes - 1] - strand.Pos[StrandNodes - 4]);
-        if (float.IsNaN(along.X)) along = new Vector2(1f, 0f);
+        if (float.IsNaN(along.X)) along = new(1f, 0f);
         Vector2 side = new(-along.Y, along.X);
         float sign = Sign(rig.Seed + 710 + (int)(time * 10f));
         float v = 520f * px * strength * (1f - 0.35f * rig.Depth);
@@ -214,15 +203,15 @@ public sealed class HeavyEffect : SceneEffect, IHasSwappableSlots
         const int Reach = 6;
         for (int k = 1; k <= Reach; k++)
         {
-            float bump = MathF.Sin(MathF.PI * k / (Reach + 1f));
+            float bump = Sin(PI * k / (Reach + 1f));
             strand.Impulse(StrandNodes - 1 - k, side * (v * bump * sign));
         }
     }
 
     // 4 or 5 chains per cast (the fifth is a wildcard); one is the far chain: smaller, hazier, painted first.
-    private void BuildLayout(int castSeed, Vector2 size)
+    void BuildLayout(int castSeed, Vector2 size)
     {
-        float overhang = MathF.Min(size.X, size.Y) * 0.07f;
+        float overhang = Min(size.X, size.Y) * 0.07f;
 
         _set.Count = 4 + (int)(Hash01(castSeed + 1) * 2f);
 
@@ -234,7 +223,7 @@ public sealed class HeavyEffect : SceneEffect, IHasSwappableSlots
         _set.Sort();
     }
 
-    private static void BuildRig(Rig r, int index, int castSeed, Vector2 size, float overhang, bool far)
+    static void BuildRig(Rig r, int index, int castSeed, Vector2 size, float overhang, bool far)
     {
         int s = unchecked(castSeed + index * 977 + 17);
         float H(int salt, float lo, float hi) => HashRange(s + salt, lo, hi);
@@ -261,14 +250,14 @@ public sealed class HeavyEffect : SceneEffect, IHasSwappableSlots
         r.LinkFrac = far ? H(4, 0.034f, 0.044f) : H(4, 0.052f, 0.072f);
         float slack = far ? H(5, 0.04f, 0.09f) : H(5, 0.03f, 0.13f);
         // Spare length becomes sag across a wide span; on a steep one a real chain would just hang straight.
-        float horizontal = (b - a).LengthSquared() > 1f ? MathF.Abs(r.ChordDir.X) : 1f;
+        float horizontal = (b - a).LengthSquared() > 1f ? Abs(r.ChordDir.X) : 1f;
         r.Slack = slack * (0.30f + 0.70f * horizontal);
         r.Delay = H(6, 0f, MaxThrowDelay);
         // Speed is what's chosen, not flight time, so a long span isn't faster than a short one.
         float px = PixelScale(size);
         r.Flight = Math.Clamp(Vector2.Distance(a, b) / (H(7, 4300f, 6200f) * px), 0.20f, 0.50f);
         r.ArcSide = H(8, -0.07f, 0.07f);
-        r.SwayPhase = H(9, 0f, MathF.Tau);
+        r.SwayPhase = H(9, 0f, Tau);
         r.SwayHz = H(10, 0.12f, 0.20f);
     }
 }

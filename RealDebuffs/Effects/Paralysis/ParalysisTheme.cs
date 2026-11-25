@@ -1,12 +1,9 @@
-using System.Numerics;
-using RealDebuffs.Effects.Framework.Materials;
-
 namespace RealDebuffs.Effects.Framework;
 
-/// <summary>Electricity: rust to burnt orange, amber and a pale yellow-white core (the vanilla paralysis spark).</summary>
+/// Electricity: rust to burnt orange, amber and a pale yellow-white core (the vanilla paralysis spark).
 internal static class StormColor
 {
-    /// <summary>Light, dim to hot: 0 = deep rust, 0.3 = burnt orange, 0.55 = vivid orange, 0.78 = amber, 1 = pale yellow-white.</summary>
+    /// Light, dim to hot: 0 = deep rust, 0.3 = burnt orange, 0.55 = vivid orange, 0.78 = amber, 1 = pale yellow-white.
     public static readonly Palette Glow = new(
         (0.00f, 0.34f, 0.080f, 0.010f),
         (0.30f, 0.78f, 0.300f, 0.020f),
@@ -14,10 +11,10 @@ internal static class StormColor
         (0.78f, 1.00f, 0.800f, 0.200f),
         (1.00f, 1.00f, 0.975f, 0.760f));
 
-    /// <summary>Edge tint for the screen's vignette: very dark umber.</summary>
+    /// Edge tint for the screen's vignette: very dark umber.
     public static readonly uint Vignette = Pack(0.030f, 0.014f, 0.002f);
 
-    /// <summary>The white-hot flash a strike lands with (yellow-tinged, so it stays chromatic under a colour override).</summary>
+    /// The white-hot flash a strike lands with (yellow-tinged, so it stays chromatic under a colour override).
     public static readonly uint Flash = Pack(1.00f, 0.96f, 0.80f);
 }
 

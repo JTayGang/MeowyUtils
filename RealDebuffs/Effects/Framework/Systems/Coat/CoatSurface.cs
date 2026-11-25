@@ -10,6 +10,7 @@ public struct CoatSurfaceSample
     public float Side, GravityDown, Radius;  // painter key -1 back..+1 front; how squarely the exposed downhill edge faces down (0 inside); host half-thickness
     public float Z;  // depth of Pos toward the viewer, px (0 on a flat host); with Normal and Radius it fixes the host's axis, which contact is judged on
     public bool Visible, Holds;  // on screen; the host can hold matter here
+    public float Slick;  // 0..1, 0 if the host has none: how badly this surface holds liquid arriving on it (1 = none sticks). Supply here is scaled by 1 - Slick, so the substrate stays bare where it is high.
     public float Pool;  // -1..1, 0 if the host has none: +1 a groove (concave), -1 a ridge (convex); liquid settles thicker where it is higher, by the matter's PoolDepth in hold thicknesses per unit
 }
 

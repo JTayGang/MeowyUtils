@@ -39,6 +39,8 @@ public sealed class Coat
     internal bool[] Holds = Array.Empty<bool>();  // the host can hold matter here (a tapered end, say, can't): no supply, no drops
     internal float[] Pool = Array.Empty<float>();  // per cell, the host's pooling potential (see CoatSurfaceSample)
     internal bool HasPool;  // some cell of this frame's chart has one; if none does, levelling is exactly what it always was
+    internal float[] Slick = Array.Empty<float>();  // per cell, how badly the host holds arriving liquid (see CoatSurfaceSample)
+    internal bool HasSlick;  // some cell has some; if none does, supply is exactly what it always was
     internal readonly float[] VStep = new float[12];  // width of each sector, px
     internal Vector2 TipP, TipT, HeadP, HeadT;  // both ends of a strand: either can be the low one
     internal int Salt => unchecked(Seed + ChartId * 40503);  // the stroke's seed, told apart per chart so every link doesn't repeat the same stamp (a strand is chart 0: unchanged)
@@ -91,7 +93,7 @@ public sealed class Coat
         M = new float[n]; Heat = new float[n]; Char = new float[n]; Patch = new float[n]; R = new float[n]; Face = new float[n]; A = new float[n]; Dc = new float[n];
         P = new Vector2[n]; T = new Vector2[n]; Nm = new Vector2[n]; Sd = new Vector2[n]; Anch = new Vector2[n];
         Ctr = new Vector3[n];
-        Vis = new bool[n]; Holds = new bool[n]; Pool = new float[n]; PendAt = new sbyte[n]; Array.Fill(PendAt, (sbyte)-1);
+        Vis = new bool[n]; Holds = new bool[n]; Pool = new float[n]; Slick = new float[n]; PendAt = new sbyte[n]; Array.Fill(PendAt, (sbyte)-1);
         _v = new float[n]; _w = new float[n]; _dm = new double[n]; Rem = new float[n];
     }
 
@@ -109,16 +111,19 @@ public sealed class Coat
         for (int i = 0; i < n; i++)
             for (int s = 0; s < v; s++) { Dc[i * v + s] = ch.UStep[i]; A[i * v + s] = ch.UStep[i] * (VStep[s] / tot); }
         bool pooled = false;
+        bool slick = false;
         for (int i = 0; i < Live; i++)
             for (int s = 0; s < v; s++)
             {
                 int c = i * v + s;
                 ref readonly var q = ref ch.S[c];
                 Pool[c] = q.Pool; pooled |= q.Pool != 0f;
+                Slick[c] = q.Slick; slick |= q.Slick > 0f;
                 P[c] = q.Pos; T[c] = q.Du; Sd[c] = q.Dv; Nm[c] = new Vector2(q.Normal.X, q.Normal.Y);
                 R[c] = q.Radius; Face[c] = q.GravityDown; Vis[c] = q.Visible; Holds[c] = q.Holds; Anch[c] = q.Anchor;
             }
         HasPool = pooled;
+        HasSlick = slick;
         Vector2 lo = new(float.MaxValue), hi = new(float.MinValue); float rr = 0f;
         for (int c = 0, cells = Live * v; c < cells; c++) { lo = Vector2.Min(lo, P[c]); hi = Vector2.Max(hi, P[c]); rr = MathF.Max(rr, R[c]); }
         BoundsMin = lo; BoundsMax = hi; BoundsR = rr;
@@ -326,7 +331,7 @@ public sealed class Coat
                 float perCell = mt.Supply * Opt.Supply * px * A[i] * 0.01f * h * Bright * SupplyScale;
                 float room = 1f - Saturate((M[i] / A[i] - capTh * 0.7f) / (capTh * 0.3f));
                 float face = mt.Settles ? Saturate(Face[i] * 1.5f) : 1f;
-                float add = Vis[i] && Holds[i] ? perCell * Patch[i] * room * face : 0f, was = M[i];
+                float add = Vis[i] && Holds[i] ? perCell * Patch[i] * room * face * (HasSlick ? 1f - Slick[i] : 1f) : 0f, was = M[i];
                 M[i] += add;
                 double got = (double)M[i] - was;  // book what the float cell took, not what was offered: the ledger then never drifts
                 In += got; Set.Entered += got;
@@ -410,6 +415,7 @@ public sealed class Coat
         {
             float d = M[i] * (Vis[i] ? mt.Dry : 4f) * h, was = M[i];
             M[i] -= d;
+            if (M[i] > 0f && M[i] < 1e-20f) M[i] = 0f;  // a film this thin is nothing, and denormals make the tick slow; the ledger below books it
             double lost = (double)was - M[i];
             Out += lost; Set.Sunk[(int)(Vis[i] ? CoatSet.Sink.Dried : CoatSet.Sink.RanOff)] += lost;
         }

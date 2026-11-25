@@ -32,14 +32,15 @@ public sealed class LiquidMatter : CoatMatter
     private readonly Liquid _liq;
     internal LiquidPhysics Physics => _liq.Phys;
 
-    /// <summary>The colour of this liquid's film where the surface faces n, th px thick: lit by the host's own surface frame, darker where thick.</summary>
-    internal uint FilmShade(Vector3 n, float th, float px, float alpha, float soft)
+    /// <summary>The colour of this liquid's film where the surface faces n, th px thick: lit by the host's own surface frame, darker where thick. dry > 0: below that thickness (px) the surface stays bare, and the film fades in over the next 0.3 hold.</summary>
+    internal uint FilmShade(Vector3 n, float th, float px, float alpha, float soft, float dry = 0f)
     {
         Vector4 lit = _liq.Matcap.Sample(n.X, n.Y);
         float show = Smooth(th / (_liq.Phys.Hold * px * 0.9f));
         float dark = 0.5f + 0.5f * MathF.Exp(-_liq.Phys.Absorb * th / px);
         float spec = MathF.Max(0f, lit.X + lit.Y + lit.Z - 1.9f) * 1.4f;  // the matcap's highlights read as a wet sheen
         float a = Math.Clamp(lit.W * (0.45f + 0.55f * show) * 0.85f + spec * 0.35f, 0f, 1f) * alpha * soft * soft;
+        if (dry > 0f) a *= Smooth((th - dry) / (0.3f * _liq.Phys.Hold * px));
         return CoatDraw.Pack(Vector3.Min(new Vector3(lit.X, lit.Y, lit.Z) * dark + new Vector3(spec * 0.35f), Vector3.One), a);
     }
 

@@ -45,6 +45,7 @@ public readonly struct LiquidPhysics
     public readonly float Level;  // how fast a lump spreads out along a strand (1/s, per cell)
     public readonly float Index;  // power-law index n: 1 flows like water; below 1 it thins under strain (runs only on steep slopes, strings out long)
     public readonly float Absorb;  // how fast light is lost through a film (1/px of thickness): thick blood goes dark
+    public readonly float WetMin;  // the film thickness, in holds, below which it will not wet a surface and leaves it bare: water beads off, slime clings
     public readonly float Bridge;  // chance a lengthening drop that touches another wet host sticks to it instead of falling
 
     public LiquidPhysics(float v)
@@ -87,6 +88,7 @@ public readonly struct LiquidPhysics
         Level = At(v, 3f, 1.5f, 0.6f);
         Index = At(v, 1f, 0.7f, 0.25f);
         Absorb = At(v, 0f, 0.20f, 0.07f);
+        WetMin = At(v, 0.34f, 0.24f, 0.14f);
     }
 
 }

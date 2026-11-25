@@ -262,6 +262,7 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
 
     // Always 12 sectors (multiple of six: three strands, alternating crowns/valleys), so MaxCells gives 48 rows and re-cuts keep the count.
     private const int Sectors = 12, MaxChartRows = Coat.MaxCells / Sectors;
+    private const float AdhesionPool = 1.6f;  // how far a patch's adhesion tips the film's levelling, in groove units (a groove is 1): liquid drains from poor patches into good ones
     private const float RowStep = 0.6f;  // diameters per chart row, at the finest
 
     private readonly Dictionary<int, int> _rowsPrev = new();  // by stroke seed: the row count last frame, so a length that wobbles by a row does not re-cut the film every frame
@@ -322,6 +323,8 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
         ch.Ds = len / R;
         for (int v = 0; v < V; v++) { ch.VAngle[v] = MathF.Tau * v / V; ch.VStep[v] = look.Radius * MathF.Tau / V; }
 
+        Span<float> adh = stackalloc float[R * V];
+        AdhesionField(s.Seed, ch.UPos.AsSpan(0, R), look.Radius * 6f, adh);
         float margin = 20f * ctx.Px;
         for (int r = 0; r < R; r++)
         {
@@ -342,7 +345,10 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
                 q.Visible = ctx.Screen.X <= 0f || (q.Pos.X > -m && q.Pos.X < ctx.Screen.X + m && q.Pos.Y > -m && q.Pos.Y < ctx.Screen.Y + m);
                 q.Holds = true;
                 q.Anchor = q.Pos;
-                q.Pool = 1f - 2f * g;  // the strand's height turned over: a groove (0) pools, a crown (1) sheds
+                // the strand's height turned over: a groove (0) pools, a crown (1) sheds; and patches of fibre that hold liquid badly shed into the ones that hold it well
+                float hold = adh[r * V + v];
+                q.Pool = 1f - 2f * g + AdhesionPool * Math.Clamp((hold - 0.5f) * 2.4f, -1f, 1f);
+                q.Slick = Smooth((0.42f - hold) / 0.22f);  // the worst third of the fibre takes little of what arrives
             }
         }
 
@@ -403,6 +409,7 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
         float a = MathF.Min(1f, coatAlpha * ctx.Alpha);
         Span<float> rowTh = stackalloc float[V];
         float hold = lm.Physics.Hold * px, maxDraw = MathF.Min(lm.Physics.MaxThick, 2.5f * lm.Physics.Hold) * px;
+        float dry = lm.Physics.WetMin * hold;  // where the film is thinner than the liquid wets, the fibre shows
         Vector2[] outP = MeshDraw.P;
         uint[] outC = MeshDraw.C;
 
@@ -455,7 +462,7 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
                             float th = Lerp(rowTh[k0], rowTh[k1], q - k0);
 
                             outP[vb + c] = pos + new Vector2(nx, ny) * (FilmOffset(th, hold, maxDraw) * 0.9f);
-                            outC[vb + c] = lm.FilmShade(new Vector3(nx, ny, nz), th, px, a, CoatDraw.Soft(tier.Sin[c], 0.6f));
+                            outC[vb + c] = lm.FilmShade(new Vector3(nx, ny, nz), th, px, a, CoatDraw.Soft(tier.Sin[c], 0.6f), dry);
                         }
                     }
                     MeshDraw.Grid(dl, nc - 1, j1 - j0, uv);
@@ -633,6 +640,32 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
 
         float wobble = 1f + 0.035f * MathF.Sin(MathF.Tau * sArc * c.WobbleRate + c.Ph2);
         r.Width = wobble * r.CapW;
+    }
+
+    /// <summary>How well each patch of fibre holds liquid, 0..1, for every chart cell: smooth noise on the rope's own coordinates (arc along it, sector round it, wrapping), so it stays with the lay. Rows ascend in arc, so each lattice column is hashed once.</summary>
+    private static void AdhesionField(int seed, ReadOnlySpan<float> arc, float patch, Span<float> field)
+    {
+        Span<float> lat = stackalloc float[8], fv = stackalloc float[Sectors];  // lattice values at column i (0..3) and i + 1 (4..7)
+        for (int k = 0; k < Sectors; k++) { float v = k * (4f / Sectors); fv[k] = Smooth(v - (int)v); }
+        int cached = int.MinValue;
+        for (int r = 0; r < arc.Length; r++)
+        {
+            float u = arc[r] / patch;
+            int i = (int)MathF.Floor(u);
+            if (i != cached)
+            {
+                if (i == cached + 1) for (int j = 0; j < 4; j++) lat[j] = lat[4 + j];
+                else for (int j = 0; j < 4; j++) lat[j] = Hash01(seed * 3 + 211 + i * 73 + j * 1013);
+                for (int j = 0; j < 4; j++) lat[4 + j] = Hash01(seed * 3 + 211 + (i + 1) * 73 + j * 1013);
+                cached = i;
+            }
+            float fu = Smooth(u - i);
+            for (int k = 0; k < Sectors; k++)
+            {
+                int j = (int)(k * (4f / Sectors)), j1 = (j + 1) & 3;
+                field[r * Sectors + k] = Lerp(Lerp(lat[j], lat[4 + j], fu), Lerp(lat[j1], lat[4 + j1], fu), fv[k]);
+            }
+        }
     }
 
     /// <summary>Brightness multiplier from the fibre grain of one strand, along its length; a closed rope (period > 0) blends toward the grain a period back, so it meets itself at the seam.</summary>

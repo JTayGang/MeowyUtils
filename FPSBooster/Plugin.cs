@@ -19,8 +19,14 @@ public sealed class Plugin : IDalamudPlugin
     public NativeTextureHandleProbe NativeTextureHandle { get; }
     public NativeTextureLifecycleProbe NativeTextureLifecycle { get; }
     public NativeProgressiveTexturePreview NativeProgressiveTexturePreview { get; }
+    public FluidSimulationProbe FluidSimulation { get; }
+    public CollisionProbe Collision { get; }
+    public GroundedFluidProbe GroundedFluid { get; }
     public PenumbraTextureSourceProbe PenumbraTextureSource { get; }
+    public PenumbraAvfxReplacementProbe PenumbraAvfxReplacement { get; }
     public PerformanceProfiler PerformanceProfiler { get; }
+    public NativeVfxProbe NativeVfx { get; }
+    public VfxAssetCatalog VfxAssetCatalog { get; }
 
     private readonly ICommandManager _cmd;
     private readonly IChatGui _chat;
@@ -44,8 +50,14 @@ public sealed class Plugin : IDalamudPlugin
         NativeTextureHandle = new NativeTextureHandleProbe();
         NativeTextureLifecycle = new NativeTextureLifecycleProbe(interop, sigScanner);
         NativeProgressiveTexturePreview = new NativeProgressiveTexturePreview(pi);
+        FluidSimulation = new FluidSimulationProbe(pi);
+        Collision = new CollisionProbe(ot);
+        GroundedFluid = new GroundedFluidProbe(FluidSimulation, ot, interop);
         PenumbraTextureSource = new PenumbraTextureSourceProbe(pi);
+        PenumbraAvfxReplacement = new PenumbraAvfxReplacementProbe(pi, data, ot, fw, log);
         PerformanceProfiler = new PerformanceProfiler(fw, Culling, NativeTextureLifecycle);
+        VfxAssetCatalog = new VfxAssetCatalog(data, log);
+        NativeVfx = new NativeVfxProbe(data, ot, fw, interop, sigScanner, log, PenumbraAvfxReplacement);
         _cfgWin = new ConfigWindow(this);
         _ws.AddWindow(_cfgWin);
 
@@ -54,22 +66,34 @@ public sealed class Plugin : IDalamudPlugin
             HelpMessage = "Opens settings. Add 'on' or 'off' to toggle culling.",
         });
 
+        // Scene-depth snapshots run after the 3D scene pass but before FPSBooster emits ImGui
+        // commands, so replacing a captured SRV cannot invalidate an image queued this frame.
+        pi.UiBuilder.Draw += GroundedFluid.ProcessSceneDepthFrame;
         pi.UiBuilder.Draw += _ws.Draw;
+        pi.UiBuilder.Draw += GroundedFluid.DrawOverlay;
         pi.UiBuilder.OpenConfigUi += OpenConfig;
         pi.UiBuilder.OpenMainUi += OpenConfig;
     }
 
     public void Dispose()
     {
+        PluginInterface.UiBuilder.Draw -= GroundedFluid.ProcessSceneDepthFrame;
         PluginInterface.UiBuilder.Draw -= _ws.Draw;
+        PluginInterface.UiBuilder.Draw -= GroundedFluid.DrawOverlay;
         PluginInterface.UiBuilder.OpenConfigUi -= OpenConfig;
         PluginInterface.UiBuilder.OpenMainUi -= OpenConfig;
         _cmd.RemoveHandler(CommandName);
         _cfgWin.Shutdown();
         _ws.RemoveAllWindows();
         PerformanceProfiler.Dispose();
+        VfxAssetCatalog.Dispose();
+        NativeVfx.Dispose();
+        PenumbraAvfxReplacement.Dispose();
         NativeTextureLifecycle.Dispose();
         NativeProgressiveTexturePreview.Dispose();
+        GroundedFluid.Dispose();
+        FluidSimulation.Dispose();
+        Collision.Dispose();
         NativeTextureHandle.Dispose();
         PenumbraTextureSource.Clear();
         Config.Save(PluginInterface);

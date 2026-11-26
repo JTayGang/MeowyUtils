@@ -9,9 +9,10 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 
     <!-- Bump before every release so Dalamud offers the update. -->
-    <Version>0.3.0.19</Version>
+    <Version>0.3.0.62</Version>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Vortice.Direct3D11" Version="3.8.3" />
+    <PackageReference Include="Penumbra.Api" Version="5.19.2" />
   </ItemGroup>
 </Project>

@@ -8,11 +8,17 @@ namespace FPSBooster;
 public readonly struct ViewFrustum
 {
     public readonly Vector3 Pos;
+    public readonly Vector3 Forward;
+    public readonly Vector3 Right;
+    public readonly Vector3 Up;
     private readonly Vector3 _nl, _nr, _nb, _nt;
 
     private ViewFrustum(Vector3 pos, Vector3 fwd, Vector3 r, Vector3 u, float hh, float hv, float marginRad)
     {
         Pos = pos;
+        Forward = fwd;
+        Right = r;
+        Up = u;
         float maxA = 89f * (MathF.PI / 180f);
         float h = MathF.Min(hh + marginRad, maxA), v = MathF.Min(hv + marginRad, maxA);
         float ch = MathF.Cos(h), sh = MathF.Sin(h), cv = MathF.Cos(v), sv = MathF.Sin(v);

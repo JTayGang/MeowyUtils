@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Numerics;
 using System.Text;
 using Dalamud.Bindings.ImGui;
@@ -21,6 +22,41 @@ public sealed class ConfigWindow : Window
     private string? _performanceCopyStatus;
     private string _texturePath = string.Empty;
     private string? _textureInputError;
+    private const string DefaultCameraBinderTemplatePath = "vfx/common/eff/z5r2_fire_stlp_t0v.avfx";
+    private const int DefaultCameraBinderTemplateIndex = 1;
+    private string _vfxPath = string.Empty;
+    private bool _showVfxSelector;
+    private enum VfxSelectorTarget { MainAsset, BinderTemplate, CameraBinderInjectionTarget }
+    private VfxSelectorTarget _vfxSelectorTarget;
+    private string _vfxSelectorSearch = string.Empty;
+    private int _vfxSelectorCategory;
+    // Default to actor attachment because it works for many status/mount effects;
+    // the selector lets users choose a different spawn route for world-only assets.
+    private int _vfxSelectorLoadMode = 1;
+    private bool _vfxSelectorClearPrevious = false;
+    private string? _vfxSelectorFeedback;
+    private string? _vfxTemplateSelectorFeedback;
+    // This is the Camera-binder template successfully used in the automated injection test.
+    private string _vfxCameraTemplatePath = DefaultCameraBinderTemplatePath;
+    private int _vfxCameraTemplateBinderIndex = DefaultCameraBinderTemplateIndex;
+    private string _vfxAutoInjectionTargetPath = string.Empty;
+    private float _vfxAutoTestPhaseSeconds = 8f;
+    private bool _vfxAutoTargetConfirmedFresh;
+    private int _vfxAutoNativeBinderVisualVerdict = -1;
+    private int _vfxAutoInjectedBinderVisualVerdict = -1;
+    private string? _vfxAutoTestCopyStatus;
+    private string? _vfxReplacementCopyStatus;
+    private float _vfxOffsetX;
+    private float _vfxOffsetY;
+    private float _vfxOffsetZ;
+    private float _vfxScale = 1f;
+    private float _vfxRotation;
+    private float _vfxCameraDistance = 8f;
+    private float _vfxCameraHorizontal;
+    private float _vfxCameraVertical;
+    private string? _vfxReportCopyStatus;
+    private readonly HashSet<string> _vfxPathsLoadedThisSession = new(StringComparer.OrdinalIgnoreCase);
+
     private int _resolvedReadMipIndex = -1;
     private bool _gpuSequenceActive;
     private TextureMipPrefetchQueue? _gpuSequencePrefetchQueue;
@@ -80,17 +116,21 @@ public sealed class ConfigWindow : Window
     public ConfigWindow(Plugin plugin) : base("FPSBooster##fpsboosterconfig", ImGuiWindowFlags.AlwaysAutoResize)
     {
         _plugin = plugin;
-        SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(380, 180), MaximumSize = new Vector2(620, 700) };
+        SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(380, 180), MaximumSize = new Vector2(720, 980) };
     }
 
     /// <summary>Stops background sequence work when the plugin is unloaded, even if the window stays open.</summary>
     public void Shutdown()
     {
+        if (_plugin.NativeVfx.CameraTechniqueAutoTestRunning)
+            _plugin.NativeVfx.CancelCameraTechniqueAutoTest();
         StopProgressiveSequence("Stopped because FPSBooster is unloading.", clearResults: true);
     }
 
     public override void OnClose()
     {
+        if (_plugin.NativeVfx.CameraTechniqueAutoTestRunning)
+            _plugin.NativeVfx.CancelCameraTechniqueAutoTest();
         // The furniture test is momentary. Closing the window must always release it.
         _plugin.Culling.ForceHideAll = false;
         _plugin.Culling.ForceHideAllExceptSpotlights = false;
@@ -100,8 +140,12 @@ public sealed class ConfigWindow : Window
         _plugin.NativeTextureLifecycle.StopCapture();
         _plugin.NativeTextureLifecycle.CancelNativeMipPayloadCapture();
         _plugin.NativeProgressiveTexturePreview.Reset();
+        _plugin.FluidSimulation.Reset();
+        _plugin.Collision.StopLiveSampling();
         _plugin.NativeTextureHandle.Release();
         _plugin.PenumbraTextureSource.Clear();
+        _plugin.NativeVfx.ClearAll();
+        _plugin.PenumbraAvfxReplacement.RemoveTemporaryReplacement();
         Flush();
     }
 
@@ -194,6 +238,30 @@ public sealed class ConfigWindow : Window
             if (ImGui.BeginTabItem("Native Textures"))
             {
                 DrawTextures();
+                ImGui.EndTabItem();
+            }
+
+            if (ImGui.BeginTabItem("Fluid Lab"))
+            {
+                _plugin.FluidSimulation.Draw();
+                ImGui.EndTabItem();
+            }
+
+            if (ImGui.BeginTabItem("Grounded Fluid"))
+            {
+                _plugin.GroundedFluid.Draw();
+                ImGui.EndTabItem();
+            }
+
+            if (ImGui.BeginTabItem("Collision Lab"))
+            {
+                _plugin.Collision.Draw();
+                ImGui.EndTabItem();
+            }
+
+            if (ImGui.BeginTabItem("VFX"))
+            {
+                DrawVfx();
                 ImGui.EndTabItem();
             }
 
@@ -292,6 +360,667 @@ public sealed class ConfigWindow : Window
         ImGui.TextDisabled("Capture continues while this window is closed. Reopen it with /fpsbooster to stop and copy the report.");
         ImGui.TextDisabled("Capture limit: 18,000 framework updates (about 5 minutes at 60 FPS). The capture stops automatically at the limit.");
     }
+
+    private void DrawVfx()
+    {
+        var probe = _plugin.NativeVfx;
+
+        ImGui.TextWrapped("Spawn the game's native AVFX effects for research. These are real game-owned particle/VFX objects, not ImGui particles. Native interop is opt-in and uses version-sensitive client signatures.");
+        ImGui.Separator();
+
+        if (ImGui.Button("Initialize / scan native VFX interop", new Vector2(250f, 0f)))
+            probe.Initialize();
+
+        ImGui.TextDisabled("Static VFX: " + probe.StaticStatus);
+        ImGui.TextDisabled("Actor VFX: " + probe.ActorStatus);
+
+        ImGui.Separator();
+        ImGui.Text("AVFX asset");
+        ImGui.SetNextItemWidth(440f);
+        ImGui.InputText("##NativeVfxPath", ref _vfxPath, 260);
+        ImGui.SameLine();
+        if (ImGui.Button("Browse VFX..."))
+            OpenVfxSelector(VfxSelectorTarget.MainAsset);
+        ImGui.TextDisabled("Browse VFX to select, inspect, and optionally spawn an asset in one step. Manual paths are also supported; use Camera follow this path below for a manually entered resource.");
+        if (!string.IsNullOrEmpty(_vfxSelectorFeedback))
+            ImGui.TextDisabled(_vfxSelectorFeedback);
+        ImGui.TextWrapped("Safety: the original game resource paths must be present in the vanilla game index. Modified output files are local loose AVFX copies supplied through Penumbra's temporary redirect; VfxObject.Create still receives the original indexed game path.");
+
+        ImGui.Separator();
+        ImGui.TextDisabled("Experiment 0 · inspect native AVFX binder metadata");
+        ImGui.TextWrapped("Reads the AVFX file through Lumina and parses its Binder blocks without modifying the asset. Camera binder type is BnVr=3. The report also separates AVFX-wide Camera Space (bCmS) and Draw Layer (DwLy) from binder behavior, and decodes the Dst/DstR distance-curve key samples.");
+        ImGui.TextWrapped("Use Browse VFX to search the expanded game-data catalogue: items, accessories, actions, emotes, zones, gimmicks, housing, NPC models/IDs, mounts, and cutscenes. Selecting an asset fills the path and inspects its binder metadata; the selector can also spawn immediately using the selected attachment mode.");
+        if (ImGui.Button("Inspect AVFX binders", new Vector2(185f, 0f)))
+            probe.InspectAvfxBinders(_vfxPath);
+        ImGui.SameLine();
+        bool canSpawnCameraBinder = probe.CanSpawnNativeCameraBinderFor(_vfxPath) && !probe.CameraTechniqueAutoTestRunning;
+        if (!canSpawnCameraBinder) ImGui.BeginDisabled();
+        if (ImGui.Button("Spawn existing Camera-binder (control)", new Vector2(265f, 0f)))
+        {
+            TrackVfxPathForSession(_vfxPath);
+            probe.SpawnNativeCameraBinder(_vfxPath);
+        }
+        if (!canSpawnCameraBinder) ImGui.EndDisabled();
+        ImGui.TextDisabled(probe.BinderInspectionStatus);
+        ImGui.TextWrapped(probe.BinderInspectionReport);
+        if (ImGui.Button("Copy AVFX binder report", new Vector2(190f, 0f)))
+        {
+            try { ImGui.SetClipboardText(new ImU8String(probe.BinderInspectionReport).Span); _vfxReportCopyStatus = "Copied AVFX binder report."; }
+            catch (Exception ex) { _vfxReportCopyStatus = "Binder report copy failed: " + ex.Message; }
+        }
+        if (!string.IsNullOrEmpty(_vfxReportCopyStatus)) ImGui.TextDisabled(_vfxReportCopyStatus);
+
+        if (probe.CameraTechniqueAutoTestRunning) ImGui.BeginDisabled();
+        if (ImGui.Button("Camera follow this path", new Vector2(205f, 0f)))
+        {
+            bool cameraFollowSpawned = SpawnCameraFollow(_vfxPath, alreadyInspected: false, out string cameraFollowDetail);
+            _vfxSelectorFeedback = cameraFollowSpawned
+                ? $"Camera follow loaded: {cameraFollowDetail} · {_vfxPath}"
+                : $"Camera follow failed: {cameraFollowDetail}";
+        }
+        if (probe.CameraTechniqueAutoTestRunning) ImGui.EndDisabled();
+
+        ImGui.Separator();
+        ImGui.TextDisabled("Native Camera-follow setup");
+        ImGui.TextWrapped("Camera follow uses the game's native AVFX Camera binder. If the selected asset already has a Camera binder, FPSBooster spawns it unchanged. Otherwise, only a zero-binder AVFX with at least one TmLn timeline is eligible for automatic Camera-binder injection. Assets with existing non-Camera binders are left unchanged.");
+        ImGui.Text("Camera-binder template");
+        ImGui.SetNextItemWidth(440f);
+        ImGui.InputText("##VfxCameraBinderTemplatePath", ref _vfxCameraTemplatePath, 260);
+        ImGui.SameLine();
+        if (ImGui.Button("Browse template..."))
+            OpenVfxSelector(VfxSelectorTarget.BinderTemplate);
+        ImGui.SetNextItemWidth(100f);
+        ImGui.InputInt("Camera binder index (0-based)", ref _vfxCameraTemplateBinderIndex);
+        if (!string.IsNullOrEmpty(_vfxTemplateSelectorFeedback))
+            ImGui.TextDisabled(_vfxTemplateSelectorFeedback);
+        ImGui.TextDisabled("Each injected asset keeps its own collection-scoped Penumbra replacement for the current plugin session, even after its visible VFX is cleared. This lets you select the same asset again without invalidating its cached AVFX data. Use the explicit removal button below to discard all mappings; closing this window or unloading the plugin also removes them.");
+
+        ImGui.Separator();
+        ImGui.TextDisabled("Native Camera-binder offsets · reserved");
+        ImGui.TextWrapped("These offset values are kept for future tuning, but the current native AVFX Camera binder controls placement itself. Changing these sliders does not move or transform Camera-bound VFX yet.");
+        ImGui.SliderFloat("Camera distance offset", ref _vfxCameraDistance, 1f, 30f, "%.1f yalms");
+        ImGui.SliderFloat("Camera horizontal offset", ref _vfxCameraHorizontal, -10f, 10f, "%.1f yalms");
+        ImGui.SliderFloat("Camera vertical offset", ref _vfxCameraVertical, -10f, 10f, "%.1f yalms");
+
+        var replacement = _plugin.PenumbraAvfxReplacement;
+        ImGui.Separator();
+        ImGui.TextWrapped(replacement.Status);
+        ImGui.TextDisabled($"Active temporary Penumbra path mappings: {replacement.ActiveReplacementCount}");
+        if (replacement.IsRegistered)
+        {
+            if (ImGui.Button("Remove all temporary Penumbra replacements", new Vector2(310f, 0f)))
+            {
+                probe.ClearAll();
+                replacement.RemoveTemporaryReplacement();
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("Re-check redirect"))
+                replacement.RecheckResolution();
+        }
+        if (ImGui.Button("Copy Penumbra replacement report", new Vector2(255f, 0f)))
+        {
+            try { ImGui.SetClipboardText(new ImU8String(replacement.Report).Span); _vfxReplacementCopyStatus = "Copied Penumbra replacement report."; }
+            catch (Exception ex) { _vfxReplacementCopyStatus = "Replacement report copy failed: " + ex.Message; }
+        }
+        if (!string.IsNullOrEmpty(_vfxReplacementCopyStatus)) ImGui.TextDisabled(_vfxReplacementCopyStatus);
+        ImGui.TextWrapped("Camera-binder injection is intentionally limited to zero-binder AVFX files. Assets with existing actor/world binders are not modified; use their original actor-attached or world-space spawn modes, or select an asset that already contains a native Camera binder. Use a path the game has not already loaded this session; the native resource cache may retain earlier bytes even when ResolvePlayerPath verifies the redirect.");
+
+        DrawCameraTechniqueAutoTest(probe);
+
+        ImGui.Separator();
+        ImGui.TextDisabled("Experiment 1 · static/world-space and actor-attached spawn");
+        ImGui.SliderFloat("Player offset X", ref _vfxOffsetX, -5f, 5f, "%.1f yalms");
+        ImGui.SliderFloat("Player offset Y", ref _vfxOffsetY, -5f, 5f, "%.1f yalms");
+        ImGui.SliderFloat("Player offset Z", ref _vfxOffsetZ, -5f, 5f, "%.1f yalms");
+        ImGui.SliderFloat("Uniform scale", ref _vfxScale, 0.1f, 5f, "%.2f×");
+        ImGui.SliderFloat("Yaw adjustment", ref _vfxRotation, -MathF.PI, MathF.PI, "%.2f rad");
+
+        bool staticReady = probe.StaticReady && !probe.CameraTechniqueAutoTestRunning;
+        bool actorReady = probe.ActorReady && !probe.CameraTechniqueAutoTestRunning;
+        if (!staticReady) ImGui.BeginDisabled();
+        if (ImGui.Button("Spawn at player position", new Vector2(185f, 0f)))
+        {
+            TrackVfxPathForSession(_vfxPath);
+            probe.SpawnAtPlayer(_vfxPath,
+                new System.Numerics.Vector3(_vfxOffsetX, _vfxOffsetY, _vfxOffsetZ),
+                new System.Numerics.Vector3(_vfxScale), _vfxRotation);
+        }
+        if (!staticReady) ImGui.EndDisabled();
+
+        ImGui.SameLine();
+        if (!actorReady) ImGui.BeginDisabled();
+        if (ImGui.Button("Attach to player", new Vector2(145f, 0f)))
+        {
+            TrackVfxPathForSession(_vfxPath);
+            probe.SpawnAttachedToPlayer(_vfxPath);
+        }
+        if (!actorReady) ImGui.EndDisabled();
+
+        ImGui.SameLine();
+        if (probe.CameraTechniqueAutoTestRunning) ImGui.BeginDisabled();
+        if (ImGui.Button("Clear spawned VFX", new Vector2(155f, 0f)))
+        {
+            probe.ClearAll();
+            _vfxSelectorFeedback = "Cleared spawned VFX. Temporary Penumbra replacements remain available for reuse until explicitly removed, the window closes, or the plugin unloads.";
+        }
+        if (probe.CameraTechniqueAutoTestRunning) ImGui.EndDisabled();
+
+        ImGui.Separator();
+        ImGui.TextDisabled($"Active tracked instances: {probe.ActiveCount}");
+        ImGui.TextWrapped(probe.LastAction);
+        foreach (string description in probe.GetActiveDescriptions())
+            ImGui.BulletText(description);
+
+        ImGui.Separator();
+        ImGui.TextDisabled("Test notes");
+        ImGui.BulletText("Use a vanilla .avfx path known to exist. Actor-attached and player-position/world-space spawning remain available alongside native Camera-binder follow.");
+        ImGui.BulletText("Camera follow uses the AVFX's native Camera binder. Existing Camera-bound assets spawn unchanged; zero-binder timeline assets can receive a Camera binder through a temporary Penumbra replacement.");
+        ImGui.BulletText("The camera offset sliders are reserved only; they do not currently alter native Camera-binder placement.");
+        ImGui.BulletText("The VFX selector covers common VFX, status effects, direct Action-sheet links, and mount VFX resolved through each mount's IMC. It is not a complete reverse index of every AVFX in SqPack; use the path field for uncatalogued monster, housing, or other assets.");
+        ImGui.BulletText("bCmS Camera Space and DwLy Draw Layer are reported separately from Binder type. Dst/DstR are parsed as 16-byte curve keys and their time/value samples are shown. The original inspector remains read-only; modified copies are generated separately and redirected using Penumbra's temporary-mod API.");
+        ImGui.BulletText("Record whether the effect is clipped by the world, passes behind geometry, appears above/below UI, and changes behavior across camera zoom or resolution changes.");
+
+        DrawVfxSelector();
+    }
+
+    private void DrawCameraTechniqueAutoTest(NativeVfxProbe probe)
+    {
+        ImGui.Separator();
+        ImGui.TextDisabled("Native vs injected Camera-binder comparison · 2 controlled phases");
+        ImGui.TextWrapped("Compares an existing Camera-binder asset against a zero-binder asset modified through Penumbra. Rotate the camera during both phases. The injection target must have been confirmed visible through normal static/world spawning in a previous game session; restart FFXIV and do not load that target path before the test, because the native resource cache may retain the original bytes.");
+        bool running = probe.CameraTechniqueAutoTestRunning;
+        if (running) ImGui.BeginDisabled();
+
+        DrawVfxAssetPicker("Native Camera-binder control / template", "##AutoBinderTemplatePath", ref _vfxCameraTemplatePath,
+            "Browse control...", VfxSelectorTarget.BinderTemplate);
+        DrawVfxAssetPicker("Penumbra injection target (zero binders)", "##AutoInjectionTargetPath", ref _vfxAutoInjectionTargetPath,
+            "Browse target...", VfxSelectorTarget.CameraBinderInjectionTarget);
+
+        ImGui.SetNextItemWidth(100f);
+        ImGui.InputInt("Template Camera binder index (0-based)", ref _vfxCameraTemplateBinderIndex);
+        ImGui.SetNextItemWidth(220f);
+        ImGui.SliderFloat("Seconds per phase", ref _vfxAutoTestPhaseSeconds, 3f, 20f, "%.0f s");
+        ImGui.Checkbox("Injection target was confirmed visible previously and has NOT been loaded this session", ref _vfxAutoTargetConfirmedFresh);
+        ImGui.TextDisabled("The target must contain zero Bind blocks and at least one TmLn timeline. The comparison validates the temporary redirect and generated AVFX before spawning.");
+        if (running) ImGui.EndDisabled();
+
+        bool injectionTargetAlreadySpawned = !string.IsNullOrWhiteSpace(_vfxAutoInjectionTargetPath)
+            && _vfxPathsLoadedThisSession.Contains(_vfxAutoInjectionTargetPath.Trim());
+        if (injectionTargetAlreadySpawned)
+            ImGui.TextColored(new Vector4(1f, .65f, .35f, 1f), "This target was already spawned by FPSBooster this session. Restart FFXIV and use a fresh path for the injected phase.");
+
+        bool canStart = !running && probe.ActiveCount == 0 && !_plugin.PenumbraAvfxReplacement.IsRegistered
+            && _vfxAutoTargetConfirmedFresh && !injectionTargetAlreadySpawned;
+        if (!canStart) ImGui.BeginDisabled();
+        if (ImGui.Button("Run Camera-binder comparison", new Vector2(280f, 0f)))
+        {
+            _vfxAutoNativeBinderVisualVerdict = -1;
+            _vfxAutoInjectedBinderVisualVerdict = -1;
+            bool started = probe.StartCameraTechniqueAutoTest(
+                _vfxAutoInjectionTargetPath,
+                _vfxCameraTemplatePath,
+                _vfxCameraTemplateBinderIndex,
+                _vfxAutoTestPhaseSeconds);
+            if (started)
+                _vfxPathsLoadedThisSession.Add(_vfxAutoInjectionTargetPath.Trim());
+            else
+                _vfxAutoTestCopyStatus = probe.LastAction;
+        }
+        if (!canStart) ImGui.EndDisabled();
+
+        if (running)
+        {
+            ImGui.SameLine();
+            if (ImGui.Button("Cancel test", new Vector2(120f, 0f)))
+                probe.CancelCameraTechniqueAutoTest();
+        }
+        ImGui.TextWrapped(probe.CameraTechniqueAutoTestStatus);
+        if (!string.IsNullOrEmpty(_vfxAutoTestCopyStatus))
+            ImGui.TextDisabled(_vfxAutoTestCopyStatus);
+
+        if (probe.CameraTechniqueAutoTestCompleted || probe.CameraTechniqueAutoTestCurrentStage is NativeVfxProbe.CameraTechniqueTestStage.Failed or NativeVfxProbe.CameraTechniqueTestStage.Cancelled)
+        {
+            ImGui.Separator();
+            ImGui.TextWrapped(probe.CameraTechniqueAutoTestSummaries);
+            DrawCameraVisualVerdict("Native Camera-binder control result", "##NativeBinderVisual", ref _vfxAutoNativeBinderVisualVerdict);
+            DrawCameraVisualVerdict("Injected Camera-binder result", "##InjectedBinderVisual", ref _vfxAutoInjectedBinderVisualVerdict);
+            if (ImGui.Button("Copy Camera-binder comparison report", new Vector2(290f, 0f)))
+            {
+                try
+                {
+                    ImGui.SetClipboardText(new ImU8String(probe.BuildCameraTechniqueAutoTestReport(
+                        _vfxAutoNativeBinderVisualVerdict, _vfxAutoInjectedBinderVisualVerdict)).Span);
+                    _vfxAutoTestCopyStatus = "Copied Camera-binder comparison report.";
+                }
+                catch (Exception ex) { _vfxAutoTestCopyStatus = "Report copy failed: " + ex.Message; }
+            }
+        }
+    }
+
+    private void DrawVfxAssetPicker(string label, string inputId, ref string path, string buttonLabel, VfxSelectorTarget target)
+    {
+        ImGui.Text(label);
+        ImGui.SetNextItemWidth(430f);
+        bool changed = ImGui.InputText(inputId, ref path, 260);
+        if (changed && target == VfxSelectorTarget.CameraBinderInjectionTarget)
+            _vfxAutoTargetConfirmedFresh = false;
+        ImGui.SameLine();
+        if (ImGui.Button(buttonLabel))
+            OpenVfxSelector(target);
+    }
+
+    private static void DrawCameraVisualVerdict(string label, string id, ref int verdict)
+    {
+        ImGui.Text(label);
+        if (ImGui.SmallButton("Followed" + id)) verdict = 1;
+        ImGui.SameLine();
+        if (ImGui.SmallButton("Visible, no follow" + id)) verdict = 0;
+        ImGui.SameLine();
+        if (ImGui.SmallButton("No VFX" + id)) verdict = 3;
+        ImGui.SameLine();
+        if (ImGui.SmallButton("Unclear" + id)) verdict = 2;
+        ImGui.SameLine();
+        ImGui.TextDisabled(verdict switch
+        {
+            1 => "Followed",
+            0 => "Visible, but did not follow",
+            2 => "Unclear",
+            3 => "No VFX appeared",
+            _ => "Not recorded",
+        });
+    }
+
+    private void OpenVfxSelector(VfxSelectorTarget target)
+    {
+        _vfxSelectorTarget = target;
+        _vfxSelectorSearch = string.Empty;
+        _vfxSelectorCategory = 0;
+        _plugin.VfxAssetCatalog.EnsureLoaded();
+        _showVfxSelector = true;
+    }
+
+    private void DrawVfxSelector()
+    {
+        if (!_showVfxSelector)
+            return;
+
+        ImGui.SetNextWindowSize(new Vector2(900f, 590f), ImGuiCond.FirstUseEver);
+        // Keep this as a modeless window: modal popups dim the entire game view and
+        // force the browse/close cycle after every selection. A normal window stays
+        // open while assets are selected and does not draw a full-screen dim backdrop.
+        if (!ImGui.Begin("VFX Asset Selector", ref _showVfxSelector, ImGuiWindowFlags.NoSavedSettings))
+        {
+            ImGui.End();
+            return;
+        }
+
+        var catalog = _plugin.VfxAssetCatalog;
+        ImGui.Text(_vfxSelectorTarget switch
+        {
+            VfxSelectorTarget.BinderTemplate => "Choose a native Camera-binder template",
+            VfxSelectorTarget.CameraBinderInjectionTarget => "Choose a non-Camera-bound injection target",
+            _ => "Choose an AVFX asset",
+        });
+        ImGui.TextDisabled(_vfxSelectorTarget switch
+        {
+            VfxSelectorTarget.BinderTemplate => "Choose an AVFX containing a Camera binder (BnVr=3). The selected binder index is detected automatically.",
+            VfxSelectorTarget.CameraBinderInjectionTarget => "Choose a zero-binder timeline asset confirmed to render when spawned normally.",
+            _ => "Selecting a row fills the path, inspects binder metadata, and can immediately spawn the effect.",
+        });
+
+        if (_vfxSelectorTarget == VfxSelectorTarget.BinderTemplate)
+        {
+            if (ImGui.Button("Back to VFX assets"))
+                OpenVfxSelector(VfxSelectorTarget.MainAsset);
+            ImGui.SameLine();
+            ImGui.TextDisabled("Selecting a template returns to the main asset list.");
+        }
+
+        if (_vfxSelectorTarget == VfxSelectorTarget.MainAsset)
+        {
+            ImGui.SetNextItemWidth(250f);
+            string[] loadModes = ["Inspect only", "Attach to player", "Spawn at player position", "Camera follow (native AVFX binder)"];
+            ImGui.Combo("On selection", ref _vfxSelectorLoadMode, loadModes, loadModes.Length);
+            if (_vfxSelectorLoadMode != 0)
+            {
+                ImGui.Checkbox("Clear previous VFX before auto-spawn", ref _vfxSelectorClearPrevious);
+                ImGui.SameLine();
+                ImGui.TextDisabled(_vfxSelectorClearPrevious
+                    ? "Only spawned VFX are cleared; reusable Penumbra replacements are retained."
+                    : "Keep previous previews active (up to 16); use Clear previews when finished.");
+            }
+
+            if (_vfxSelectorLoadMode == 3)
+            {
+                ImGui.SetNextItemWidth(430f);
+                ImGui.InputText("Camera binder template path", ref _vfxCameraTemplatePath, 260);
+                ImGui.SameLine();
+                if (ImGui.Button("Browse template..."))
+                    OpenVfxSelector(VfxSelectorTarget.BinderTemplate);
+                ImGui.SetNextItemWidth(100f);
+                ImGui.InputInt("Template binder index", ref _vfxCameraTemplateBinderIndex);
+                ImGui.TextDisabled("Already Camera-bound assets spawn unchanged. Zero-binder timeline assets are injected using this template. Prefer paths not yet loaded by the game this session.");
+            }
+        }
+
+        ImGui.Separator();
+        ImGui.SetNextItemWidth(300f);
+        ImGui.InputTextWithHint("##VfxSelectorSearch", "Search names or game paths...", ref _vfxSelectorSearch, 256);
+        ImGui.SameLine();
+        ImGui.SetNextItemWidth(220f);
+        var categoryValues = catalog.Categories;
+        string[] categories = new string[categoryValues.Count + 1];
+        categories[0] = "All categories";
+        for (int i = 0; i < categoryValues.Count; i++)
+        {
+            categories[i + 1] = categoryValues[i] switch
+            {
+                "Furniture" => "Furniture / Housing",
+                "NPC" => "NPC models",
+                "NPC ID" => "NPC IDs",
+                "Non-Player Action" => "Non-player actions",
+                "Journal Cutscene" => "Journal cutscenes",
+                _ => categoryValues[i],
+            };
+        }
+        if (_vfxSelectorCategory < 0 || _vfxSelectorCategory >= categories.Length)
+            _vfxSelectorCategory = 0;
+        ImGui.Combo("##VfxSelectorCategory", ref _vfxSelectorCategory, categories, categories.Length);
+        ImGui.SameLine();
+        ImGui.TextDisabled($"{catalog.Entries.Count:N0} assets · {categoryValues.Count} categories");
+        ImGui.TextDisabled(catalog.Status);
+        ImGui.SameLine();
+        bool hasPreviews = _plugin.NativeVfx.ActiveCount > 0;
+        if (!hasPreviews)
+            ImGui.BeginDisabled();
+        if (ImGui.SmallButton($"Clear previews ({_plugin.NativeVfx.ActiveCount}/16)"))
+        {
+            int clearedCount = _plugin.NativeVfx.ActiveCount;
+            _plugin.NativeVfx.ClearAll();
+            _vfxSelectorFeedback = $"Cleared {clearedCount} spawned VFX preview(s). Penumbra replacements were retained for same-session reuse.";
+        }
+        if (!hasPreviews)
+            ImGui.EndDisabled();
+
+        if (catalog.IsLoading)
+        {
+            ImGui.Spacing();
+            ImGui.Text("Loading the VFX catalogue from game data...");
+        }
+        else if (!catalog.IsLoaded)
+        {
+            ImGui.TextWrapped(catalog.Status);
+            if (ImGui.Button("Retry catalogue load"))
+                catalog.EnsureLoaded();
+        }
+        else
+        {
+            var search = _vfxSelectorSearch.Trim();
+            string? selectedCategory = _vfxSelectorCategory > 0 && _vfxSelectorCategory <= categoryValues.Count
+                ? categoryValues[_vfxSelectorCategory - 1]
+                : null;
+            var filtered = catalog.Entries.Where(entry =>
+                (selectedCategory == null || entry.Category == selectedCategory)
+                && (search.Length == 0
+                    || entry.Name.Contains(search, StringComparison.OrdinalIgnoreCase)
+                    || entry.Path.Contains(search, StringComparison.OrdinalIgnoreCase)));
+            int totalMatches = filtered.Count();
+            var matches = filtered.Take(750).ToList();
+
+            ImGui.TextDisabled(totalMatches > matches.Count
+                ? $"Showing first {matches.Count:N0} of {totalMatches:N0} matches. Search or choose a category to narrow the list."
+                : $"{matches.Count:N0} match(es). Select a row to load it.");
+            bool showResults = ImGui.BeginChild("VfxSelectorResults", new Vector2(0f, 450f), true);
+            if (showResults)
+            {
+                if (ImGui.BeginTable("VfxSelectorTable", 3, ImGuiTableFlags.BordersInnerV | ImGuiTableFlags.RowBg | ImGuiTableFlags.ScrollY))
+                {
+                    ImGui.TableSetupColumn("Category", ImGuiTableColumnFlags.WidthFixed, 125f);
+                    ImGui.TableSetupColumn("Name", ImGuiTableColumnFlags.WidthFixed, 260f);
+                    ImGui.TableSetupColumn("Game path", ImGuiTableColumnFlags.WidthStretch);
+                    ImGui.TableHeadersRow();
+
+                    foreach (var entry in matches)
+                    {
+                        ImGui.TableNextRow();
+                        ImGui.TableNextColumn();
+                        ImGui.TextDisabled(entry.Category);
+                        ImGui.TableNextColumn();
+                        string selectedPath = _vfxSelectorTarget switch
+                        {
+                            VfxSelectorTarget.BinderTemplate => _vfxCameraTemplatePath,
+                            VfxSelectorTarget.CameraBinderInjectionTarget => _vfxAutoInjectionTargetPath,
+                            _ => _vfxPath,
+                        };
+                        bool isSelected = string.Equals(selectedPath, entry.Path, StringComparison.OrdinalIgnoreCase);
+                        if (ImGui.Selectable($"{entry.Name}##{entry.Category}:{entry.Path}", isSelected, ImGuiSelectableFlags.SpanAllColumns))
+                            SelectVfxAsset(entry);
+                        ImGui.TableNextColumn();
+                        ImGui.TextDisabled(entry.Path);
+                    }
+
+                    ImGui.EndTable();
+                }
+            }
+            ImGui.EndChild();
+        }
+
+        if (ImGui.Button("Close"))
+            _showVfxSelector = false;
+
+        ImGui.End();
+    }
+
+    private void SelectVfxAsset(VfxAssetCatalog.Entry entry)
+    {
+        switch (_vfxSelectorTarget)
+        {
+            case VfxSelectorTarget.BinderTemplate:
+                _vfxCameraTemplatePath = entry.Path;
+                if (_plugin.NativeVfx.InspectAvfxBinders(entry.Path)
+                    && _plugin.NativeVfx.TryGetFirstCameraBinderIndex(entry.Path, out int cameraIndex))
+                {
+                    _vfxCameraTemplateBinderIndex = cameraIndex;
+                    _vfxTemplateSelectorFeedback = $"Camera-binder template selected · binder #{cameraIndex} · {entry.Path}";
+                }
+                else
+                {
+                    _vfxTemplateSelectorFeedback = $"Template selected, but no valid Camera binder was found: {_plugin.NativeVfx.BinderInspectionStatus}";
+                }
+                // Template inspection uses the same probe instance as the target inspector.
+                // Restore the selected target's metadata after inspecting the template.
+                if (!string.IsNullOrWhiteSpace(_vfxPath)
+                    && !string.Equals(_vfxPath, entry.Path, StringComparison.OrdinalIgnoreCase))
+                    _plugin.NativeVfx.InspectAvfxBinders(_vfxPath);
+                _vfxSelectorTarget = VfxSelectorTarget.MainAsset;
+                _vfxSelectorSearch = string.Empty;
+                return;
+            case VfxSelectorTarget.CameraBinderInjectionTarget:
+                _vfxAutoInjectionTargetPath = entry.Path;
+                _vfxAutoTargetConfirmedFresh = false;
+                _vfxAutoTestCopyStatus = $"Injection target selected: {entry.Path} · confirm it has not been loaded this session.";
+                return;
+            default:
+                _vfxPath = entry.Path;
+                var probe = _plugin.NativeVfx;
+                bool inspected = probe.InspectAvfxBinders(entry.Path);
+                if (!inspected)
+                {
+                    _vfxSelectorFeedback = $"Selected, but AVFX inspection failed: {probe.BinderInspectionStatus}";
+                }
+                else if (_vfxSelectorLoadMode == 0)
+                {
+                    _vfxSelectorFeedback = $"Selected and inspected (inspect-only mode): {entry.Path}";
+                }
+                else
+                {
+                    if (probe.CameraTechniqueAutoTestRunning)
+                    {
+                        _vfxSelectorFeedback = "The camera-binder comparison is running. Auto-spawn is disabled until it finishes.";
+                        return;
+                    }
+
+                    if (_vfxSelectorLoadMode == 3)
+                    {
+                        bool cameraSpawned = SpawnCameraFollow(entry.Path, alreadyInspected: true, out string cameraDetail);
+                        _vfxSelectorFeedback = cameraSpawned
+                            ? $"Camera follow loaded: {cameraDetail} · {entry.Path}"
+                            : $"Camera follow failed: {cameraDetail}";
+                        return;
+                    }
+
+                    var replacement = _plugin.PenumbraAvfxReplacement;
+                    if (replacement.CanSpawnFor(entry.Path))
+                    {
+                        _vfxSelectorFeedback = "This path still has a reusable Camera-binder replacement. Select Camera follow to spawn it again. To return to the original actor/world AVFX, remove the temporary Penumbra mappings and restart FFXIV before reusing this path, because the native resource cache may retain the modified bytes.";
+                        return;
+                    }
+                    if (_vfxSelectorClearPrevious)
+                    {
+                        // Replacements are session resources, not preview instances.
+                        probe.ClearAll();
+                    }
+
+                    TrackVfxPathForSession(entry.Path);
+                    bool spawned = _vfxSelectorLoadMode switch
+                    {
+                        1 => probe.SpawnAttachedToPlayer(entry.Path),
+                        2 => probe.SpawnAtPlayer(entry.Path,
+                            new Vector3(_vfxOffsetX, _vfxOffsetY, _vfxOffsetZ),
+                            new Vector3(_vfxScale), _vfxRotation),
+                        _ => false,
+                    };
+                    _vfxSelectorFeedback = spawned
+                        ? $"Loaded, inspected, and spawned ({GetVfxSelectorLoadModeName()}): {entry.Path}"
+                        : $"Loaded and inspected, but spawn failed: {probe.LastAction}";
+                }
+                return;
+        }
+    }
+
+    private void TrackVfxPathForSession(string gamePath)
+    {
+        if (_plugin.NativeVfx.ValidateGamePath(gamePath, out string normalized, out _))
+            _vfxPathsLoadedThisSession.Add(normalized);
+    }
+
+    private bool SpawnCameraFollow(string gamePath, bool alreadyInspected, out string detail)
+    {
+        var probe = _plugin.NativeVfx;
+        var replacement = _plugin.PenumbraAvfxReplacement;
+        detail = string.Empty;
+
+        if (!probe.ValidateGamePath(gamePath, out string normalizedGamePath, out string pathError))
+        {
+            detail = pathError;
+            return false;
+        }
+        gamePath = normalizedGamePath;
+
+        if (probe.CameraTechniqueAutoTestRunning)
+        {
+            detail = "The camera-binder comparison is running.";
+            return false;
+        }
+
+        if (!alreadyInspected && !probe.InspectAvfxBinders(gamePath))
+        {
+            detail = "AVFX inspection failed: " + probe.BinderInspectionStatus;
+            return false;
+        }
+
+        bool alreadyPrepared = replacement.CanSpawnFor(gamePath);
+        bool hasNativeCameraBinder = probe.CanSpawnNativeCameraBinderFor(gamePath);
+        if (!hasNativeCameraBinder && !alreadyPrepared)
+        {
+            if (probe.InspectedBinderCount != 0)
+            {
+                detail = "This asset has existing non-Camera binders. Automatic Camera-binder injection is intentionally limited to zero-binder AVFX files; this asset will not be rewritten. Try its original actor/world spawn mode or choose an asset that already has a native Camera binder.";
+                return false;
+            }
+            if (probe.InspectedTimelineCount == 0)
+            {
+                detail = "This asset has no TmLn timeline to reference the injected Camera binder. Choose a zero-binder timeline AVFX.";
+                return false;
+            }
+            if (string.IsNullOrWhiteSpace(_vfxCameraTemplatePath))
+            {
+                detail = "Choose a Camera-binder template first. The default tested template is " + DefaultCameraBinderTemplatePath;
+                return false;
+            }
+
+            if (_vfxPathsLoadedThisSession.Contains(gamePath))
+            {
+                detail = "This game path has already been spawned during this FFXIV session. The native resource cache may retain those original bytes; restart FFXIV and use a fresh path before injecting a Camera binder.";
+                return false;
+            }
+        }
+
+        if (_vfxSelectorClearPrevious)
+        {
+            // Keep any existing Penumbra replacements; they are needed for same-session reuse.
+            probe.ClearAll();
+        }
+
+        if (hasNativeCameraBinder)
+        {
+            TrackVfxPathForSession(gamePath);
+            bool spawnedNative = probe.SpawnNativeCameraBinder(gamePath);
+            detail = spawnedNative
+                ? $"used the asset's existing native Camera binder (no Penumbra rewrite required); {probe.ActiveCount} preview(s) now active"
+                : probe.LastAction;
+            return spawnedNative;
+        }
+
+        if (alreadyPrepared)
+        {
+            if (!replacement.RecheckResolution(gamePath)
+                || !replacement.ValidatePreparedCameraBinder(gamePath, out string existingValidation))
+            {
+                detail = "The existing Camera-binder replacement for this path is no longer valid: " + replacement.Status;
+                return false;
+            }
+
+            bool reusedSpawn = probe.SpawnPenumbraModifiedCameraBinder(gamePath);
+            detail = reusedSpawn
+                ? $"reused the verified Camera-binder replacement; {probe.ActiveCount} preview(s) now active · {existingValidation}"
+                : probe.LastAction;
+            return reusedSpawn;
+        }
+
+        if (!replacement.PrepareAppendCameraBinder(gamePath, _vfxCameraTemplatePath, _vfxCameraTemplateBinderIndex))
+        {
+            detail = replacement.Status;
+            return false;
+        }
+
+        if (!replacement.ValidatePreparedCameraBinder(gamePath, out string validation))
+        {
+            detail = "Generated Camera binder failed validation: " + validation;
+            replacement.RemoveTemporaryReplacement(gamePath);
+            return false;
+        }
+
+        // Record before Create: even a failed spawn can populate the native resource cache.
+        _vfxPathsLoadedThisSession.Add(gamePath);
+
+        if (!probe.SpawnPenumbraModifiedCameraBinder(gamePath))
+        {
+            detail = "Native spawning failed: " + probe.LastAction + " The Penumbra replacement was retained for a safe retry because the native resource may already be cached.";
+            return false;
+        }
+
+        detail = $"injected and spawned a native Camera binder; {probe.ActiveCount} preview(s) now active · {validation}";
+        return true;
+    }
+
+    private string GetVfxSelectorLoadModeName() => _vfxSelectorLoadMode switch
+    {
+        1 => "attach to player",
+        2 => "spawn at player position",
+        3 => "native Camera-binder follow",
+        _ => "inspect only",
+    };
 
     private void DrawTextures()
     {

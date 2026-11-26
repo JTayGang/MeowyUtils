@@ -2,7 +2,7 @@
   "Author": "Meowmeowmeow Cat",
   "Name": "FPSBooster",
   "Punchline": "Reduce unnecessary rendering work for smoother gameplay.",
-  "Description": "Hides housing furniture outside your camera view and includes opt-in frame-pacing profiling, culling CPU timing, and read-only native texture lifecycle diagnostics. Commands: /fpsbooster, /fpsbooster on, /fpsbooster off.",
+  "Description": "Housing furniture culling, performance profiling, native texture diagnostics, AVFX/VFX research, GPU fluid simulation, native world-collision experiments, grounded world-fluid projection with DSV-synchronized reversed-Z scene-depth occlusion, and scene-depth capture with grayscale visualization.",
   "Tags": [
     "performance",
     "fps",
@@ -11,10 +11,17 @@
     "culling",
     "housing",
     "textures",
-    "streaming"
+    "streaming",
+    "vfx",
+    "particles",
+    "simulation",
+    "collision",
+    "physics",
+    "world-space",
+    "fluid"
   ],
   "InternalName": "FPSBooster",
-  "AssemblyVersion": "0.3.0.19",
+  "AssemblyVersion": "0.3.0.62.0",
   "ApplicableVersion": "any",
   "DalamudApiLevel": 15,
   "RepoUrl": "https://github.com/JTayGang/MeowyUtils",

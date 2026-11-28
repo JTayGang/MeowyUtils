@@ -266,9 +266,6 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
     /// Liquid only: it is drawn as a film on the rope's own surface, between the body and the knot; other matters keep the generic band.
     public bool Layers(Coat coat) => coat.Matter is LiquidMatter && coat.Siblings != null && coat.V > 1;
 
-    /// Body row offset for chart row r: ends always, the rest even; a closed rope's seam reuses its first row, so none repeats.
-    static int PickRow(int r, int rows, int bodyRows, bool closed)
-        => closed ? (int)((long)r * bodyRows / rows) : (rows == 1 ? 0 : (int)Round(r * (bodyRows - 1f) / (rows - 1f)));
 
     /// Lay-frame chart: U along the rope, V angle phi, seen at theta = phi + tau * Psi, so cells turn with the strands under twist.
     public void BuildCoatSurfaces(in StrokePrimitive s, in CoatBuildContext ctx, CoatCharts charts)
@@ -296,16 +293,17 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
 
         // only the R body rows the chart sits on, laid exactly as the drawn ones are (same arcs, same path sampler, same Lay)
         Span<Row> rows = stackalloc Row[R];
+        Span<Vector2> axis = stackalloc Vector2[R];
         int seg = 0;
         for (int r = 0; r < R; r++)
         {
             ref Row row = ref rows[r];
             row = default;
-            row.Arc = cut.Arc(PickRow(r, R, nb, closed));
+            row.Arc = cut.Arc(CoatDraw.PickRow(r, R, nb, closed));
             _path.SampleAt(cut.Path, cut.Pn, ref seg, row.Arc, out row.P, out row.T);
             PathRows.Cap(0f, 0f, out row.CapW, out row.CapAxial);
             Lay(ref row, in cut);
-            ch.UPos[r] = row.Arc;
+            ch.UPos[r] = row.Arc; axis[r] = row.T;
         }
         float len = 0f;
         for (int r = 0; r < R; r++)
@@ -347,28 +345,7 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
             }
         }
 
-        // Du, Dv: screen direction of rising U, V scaled by the true 3D step, so flow sees the true slope (0 at the silhouette, eased by the lay).
-        for (int r = 0; r < R; r++)
-            for (int v = 0; v < V; v++)
-            {
-                ref var q = ref ch.S[r * V + v];
-                int rp = r > 0 ? r - 1 : (closed ? R - 1 : r), rn = r < R - 1 ? r + 1 : (closed ? 0 : r);
-                int vp = v > 0 ? v - 1 : V - 1, vn = v < V - 1 ? v + 1 : 0;
-                q.Du = Slope(in ch.S[rp * V + v], in ch.S[rn * V + v], rows[r].T);
-                q.Dv = Slope(in ch.S[r * V + vp], in ch.S[r * V + vn], default);
-
-                // a drop hangs where the surface faces down; an open rope's end that points down is the chart's downhill edge, as for a chain's
-                float best = Max(0f, q.Normal.Y);
-                if (!closed) { if (r == 0 && -q.Du.Y > best) best = -q.Du.Y; if (r == R - 1 && q.Du.Y > best) best = q.Du.Y; }
-                q.GravityDown = best;
-            }
-    }
-
-    static Vector2 Slope(in CoatSurfaceSample a, in CoatSurfaceSample b, Vector2 fallback)
-    {
-        Vector2 d = b.Pos - a.Pos;
-        float dz = b.Z - a.Z, len = Sqrt(d.X * d.X + d.Y * d.Y + dz * dz);
-        return len > 1e-4f ? d / len : fallback;
+        CoatDraw.Slopes(ch, R, V, closed, axis);
     }
 
     /// Mesh standoff of a film: th up to 1.5x hold, then eased to maxDraw (deeper is a drop), so the underside throws no fins; shading keeps th.
@@ -396,7 +373,7 @@ public sealed class StrokeRope : IStrokeMaterial, ICoatLayeredHost, ICoatSurface
         int nb = _bodyEnd - _bodyFirst - (closed ? 1 : 0);
         if (nb < 2) return;
         Span<float> arc = stackalloc float[R];
-        for (int r = 0; r < R; r++) arc[r] = _rows[_bodyFirst + PickRow(r, R, nb, closed)].Arc;
+        for (int r = 0; r < R; r++) arc[r] = _rows[_bodyFirst + CoatDraw.PickRow(r, R, nb, closed)].Arc;
 
         int nc = tier.Cols;
         int chunkRows = MeshDraw.MaxVerts / nc;

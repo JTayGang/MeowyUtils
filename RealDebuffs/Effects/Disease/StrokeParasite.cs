@@ -1,7 +1,7 @@
 namespace RealDebuffs.Effects.Framework.Materials;
 
 /// A living tentacle as lit 3D geometry: tapered tube, pale belly, dark back, mottled skin, flowing slime
-public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
+public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost, ICoatSurfaceProvider
 {
     public string Name => "stroke.parasite";
     public string[] NaturalLanguageWords { get; } = { "tentacle", "tentacles", "tendril", "tendrils", "parasite", "parasites" };
@@ -247,44 +247,16 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         float alpha = s.Brightness * ctx.Alpha;
         if (path.Count < 2 || alpha <= 0.004f) return;
 
-        float reveal = Saturate(s.Reveal);
-        if (reveal <= 0.001f) return;
-
-        float px = ctx.ScreenScale;
-        float depth = Saturate(s.Depth);
-        float agit = Saturate(s.Agitation);
-        bool closed = s.Closed;
-        int seed = s.Seed;
-
-        float diameter = BaseDiameter(s.WidthHint, depth, ctx.ShortSide);
-        float radius = diameter * 0.5f;
-        float total = path.Length;
-        float visibleLen = total * reveal;
-        if (visibleLen < diameter * 0.8f) return;
-
-        Tier tier = diameter >= 70f * px ? Thick : (diameter >= 22f * px ? Full : (diameter >= 15f * px ? Fine : (diameter >= 9f * px ? Medium : Coarse)));
-
-        var look = new Look
-        {
-            Diameter = diameter,
-            Radius = radius,
-            Fog = 0.55f * depth,
-            Agit = agit,
-            Alpha = alpha,
-            AlphaBits = (uint)(int)(255f * (alpha > 0f ? (alpha < 1f ? alpha : 1f) : 0f)) << 24,
-            Overridden = ColorOverrideActive,
-            Dye = ColorOverrideChroma,
-            Detail = Math.Clamp(diameter / (22f * px), 0.4f, 1f),
-            MottleFreq = 1f / Min(diameter * 2.3f, 100f * px),  // skin detail is in px, not a fraction of the limb
-            MottleOffset = HashRange(seed + 71, 0f, 300f),
-        };
-
         _screenW = ctx.ScreenW;
         _screenH = ctx.ScreenH;
-
-        int n = BuildRows(path, total, visibleLen, closed, s.FlushStart, reveal, tier, seed, s.Phase,
-                          s.Twist, ctx.Time, px, depth, in look);
+        if (!Setup(in s, ctx.ScreenScale, ctx.ShortSide, ctx.Time, alpha, ctx.ScreenW, ctx.ScreenH, ColorOverrideActive, ColorOverrideChroma,
+                   out Tier tier, out Look look, out RowParams rp, out Cut cut)) return;
+        _rp = rp;
+        int n = BuildRows(in cut, in look);
         if (n < 2) return;
+
+        float px = ctx.ScreenScale, depth = Saturate(s.Depth), radius = look.Radius, reveal = cut.Reveal, total = cut.Total, visibleLen = cut.VisibleLen;
+        bool closed = cut.Closed;
 
         int cups = tier.SuckerSegs > 0 ? BuildSuckers(path, tier, in look, px) : 0;
         Vector2 cupUv = MeshDraw.WhiteUv(ctx.Time);
@@ -294,7 +266,8 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         DrawBody(dl, n, tier, in look, in ctx);
         DrawGlints(dl, n, in look, in ctx);
         if (!closed && _rp.BumpWave > 0f) DrawSparkles(dl, n, cupUv, in look);
-        _layerCoat?.DrawLayer(dl, _layerAlpha, in ctx);  // over the body, under the near-side suckers
+        if (_layerCoat != null && !DrawFilm(dl, n, tier, in look, in ctx, _layerCoat, _layerAlpha, closed, total))
+            _layerCoat.DrawLayer(dl, _layerAlpha, in ctx);  // over the body, under the near-side suckers
         if (cups > 0) FlushCups(dl, behind: false, cupUv);  // cups on this side, over the body and its highlights
 
         if (s.TipFlare > 0.001f && !closed)
@@ -306,13 +279,58 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
 
     // Cross-sections
 
-    int BuildRows(StrandPath path, float total, float visibleLen, bool closed, bool flushStart, float reveal,
-                          Tier tier, int seed, float phase, float twist, float time, float px, float depth, in Look look)
+    /// How a tentacle is cut into cross-sections: everything drawing and the coat chart share.
+    struct Cut
     {
+        public StrandPath Path;
+        public int Pn, BodyRows;
+        public bool Closed, DomeStart, DomeEnd;
+        public float Total, VisibleLen, Reveal, CapStart, CapEnd, BodyStart, BodyEnd;
+
+        /// Arc of body row i, 0..BodyRows.
+        public readonly float Arc(int i) => BodyStart + (BodyEnd - BodyStart) * i / BodyRows;
+    }
+
+    /// This tentacle's size, level of detail, look, row parameters and cut, for drawing and the coat chart alike (false = nothing to show).
+    bool Setup(in StrokePrimitive s, float px, float shortSide, float time, float alpha, float screenW, float screenH, bool overridden, float dye,
+               out Tier tier, out Look look, out RowParams rp, out Cut cut)
+    {
+        tier = Coarse; look = default; rp = default; cut = default;
+        var path = s.Path;
+        float reveal = Saturate(s.Reveal);
+        if (reveal <= 0.001f) return false;
+
+        float depth = Saturate(s.Depth);
+        float agit = Saturate(s.Agitation);
+        bool closed = s.Closed;
+        int seed = s.Seed;
+
+        float diameter = BaseDiameter(s.WidthHint, depth, shortSide);
+        float radius = diameter * 0.5f;
+        float total = path.Length;
+        float visibleLen = total * reveal;
+        if (visibleLen < diameter * 0.8f) return false;
+
+        tier = diameter >= 70f * px ? Thick : (diameter >= 22f * px ? Full : (diameter >= 15f * px ? Fine : (diameter >= 9f * px ? Medium : Coarse)));
+
+        look = new Look
+        {
+            Diameter = diameter,
+            Radius = radius,
+            Fog = 0.55f * depth,
+            Agit = agit,
+            Alpha = alpha,
+            AlphaBits = (uint)(int)(255f * (alpha > 0f ? (alpha < 1f ? alpha : 1f) : 0f)) << 24,
+            Overridden = overridden,
+            Dye = dye,
+            Detail = Math.Clamp(diameter / (22f * px), 0.4f, 1f),
+            MottleFreq = 1f / Min(diameter * 2.3f, 100f * px),  // skin detail is in px, not a fraction of the limb
+            MottleOffset = HashRange(seed + 71, 0f, 300f),
+        };
+
         int pn = Math.Min(path.Count, MaxPathPoints);
         _path.Prepare(path, pn, closed);
 
-        float diameter = look.Diameter, radius = look.Radius;
         // Rows are cut finely enough to carry the highlight breakup and the skin pattern
         float step = Math.Clamp(diameter * tier.StepFrac, 4.5f * px, 11f * px);
 
@@ -324,12 +342,12 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         // Closed loops keep every periodic term to a whole number of cycles, so the seam cannot be found.
         float Rate(float wavelength) => closed ? Max(1f, Round(total / wavelength)) / total : 1f / wavelength;
 
-        _rp = new()
+        rp = new()
         {
             Total = total, VisibleLen = visibleLen, Reveal = reveal, Closed = closed,
             Growing = 1f - Smooth((reveal - 0.90f) / 0.10f),  // the front of a growing tentacle is drawn out to a point
-            Diameter = diameter, Radius = radius, Px = px, Depth = depth, Time = time, Twist = twist,
-            Margin = diameter * 1.6f, ScreenW = _screenW, ScreenH = _screenH,
+            Diameter = diameter, Radius = radius, Px = px, Depth = depth, Time = time, Twist = s.Twist,
+            Margin = diameter * 1.6f, ScreenW = screenW, ScreenH = screenH,
             FieldScale = Min(diameter, 70f * px),
             Ph1 = HashRange(seed + 81, 0f, Tau),
             Ph2 = HashRange(seed + 82, 0f, Tau),
@@ -338,7 +356,7 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
             OffA = HashRange(seed + 85, 0f, 400f),
             OffB = HashRange(seed + 86, 0f, 400f),
             OffC = HashRange(seed + 87, 0f, 400f),
-            Scroll = flowSign * (time + phase * 3.1f) * 24f * px,
+            Scroll = flowSign * (time + s.Phase * 3.1f) * 24f * px,
             WobbleRate = Rate(diameter * 6.4f), ToneRateA = Rate(diameter * 4.3f), ToneRateB = Rate(diameter * 9.1f),
             PitchRate = Rate(diameter * 13f), TwistRate = Rate(diameter * 40f),
             // Skin relief.
@@ -350,29 +368,256 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         // Open: the far end is always a dome (a growing tip is meant to be seen); the near one is flush if told to be.
         float capEnd = closed ? 0f : radius * Taper(reveal, false);
         float capStart = closed ? 0f : radius;
-        bool domeStart = !closed && !flushStart;
+        bool domeStart = !closed && !s.FlushStart;
         bool domeEnd = !closed;
 
         float bodyStart = domeStart ? capStart : 0f;
         float bodyEnd = domeEnd ? visibleLen - capEnd : visibleLen;
         step = Max(step, (bodyEnd - bodyStart) / (MaxRows - 16));
 
+        cut = new Cut
+        {
+            Path = path, Pn = pn, Closed = closed, DomeStart = domeStart, DomeEnd = domeEnd,
+            Total = total, VisibleLen = visibleLen, Reveal = reveal, CapStart = capStart, CapEnd = capEnd,
+            BodyStart = bodyStart, BodyEnd = bodyEnd,
+            BodyRows = Math.Max(1, (int)Ceiling((bodyEnd - bodyStart) / step)),
+        };
+        return true;
+    }
+
+    int _bodyFirst, _bodyEnd;  // the body's rows in _rows, as BuildRows laid them
+    bool _bumps;  // this build has wart heights in _hgt
+
+    int BuildRows(in Cut c, in Look look)
+    {
+        var path = c.Path;
         int count = 0, seg = 0;
-        if (domeStart)
+        if (c.DomeStart)
             for (int i = 0; i < PathRows.DomeT.Length - 1; i++)
-                AddRow(path, pn, ref seg, ref count, capStart * (1f - PathRows.DomeT[i]), -1f, PathRows.DomeT[i]);
+                AddRow(path, c.Pn, ref seg, ref count, c.CapStart * (1f - PathRows.DomeT[i]), -1f, PathRows.DomeT[i]);
 
-        int bodyRows = Math.Max(1, (int)Ceiling((bodyEnd - bodyStart) / step));
-        for (int i = 0; i <= bodyRows; i++)
-            AddRow(path, pn, ref seg, ref count, bodyStart + (bodyEnd - bodyStart) * i / bodyRows, 0f, 0f);
+        _bodyFirst = count;
+        for (int i = 0; i <= c.BodyRows; i++)
+            AddRow(path, c.Pn, ref seg, ref count, c.Arc(i), 0f, 0f);
+        _bodyEnd = count;
 
-        if (domeEnd)
+        if (c.DomeEnd)
             for (int i = PathRows.DomeT.Length - 2; i >= 0; i--)
-                AddRow(path, pn, ref seg, ref count, visibleLen - capEnd * (1f - PathRows.DomeT[i]), +1f, PathRows.DomeT[i]);
+                AddRow(path, c.Pn, ref seg, ref count, c.VisibleLen - c.CapEnd * (1f - PathRows.DomeT[i]), +1f, PathRows.DomeT[i]);
 
         for (int i = 0; i < count; i++) FillRow(ref _rows[i], in _rp, in look);
         return count;
     }
+
+    // Coat chart
+
+    const int ChartSectors = 12, ChartMaxRows = Framework.Coat.MaxCells / ChartSectors;
+    const float ChartRowStep = 0.6f;  // chart rows are no closer than this many diameters
+    readonly Dictionary<int, int> _chartRows = new();
+
+    /// The height of the skin's warts at a body angle (cos, sin) of a row, 0..1: the one function the body's relief and the coat's pooling share.
+    static float Wart(in Row r, float oy, float cosPhi, float sinPhi) => Noise.Value(r.WX + cosPhi * r.WRing, oy + sinPhi * r.WRing);
+
+    public bool Charts(CoatMatter matter) => matter is LiquidMatter;
+
+    /// Body-frame chart: U along the tentacle, V the body angle phi from its belly line, seen at theta = phi - Psi, so cells turn with the skin under twist.
+    /// Rows are cut by the same Setup and FillRow as the drawn ones, so width, taper, pitch and twist are the renderer's own.
+    public void BuildCoatSurfaces(in StrokePrimitive s, in CoatBuildContext ctx, CoatCharts charts)
+    {
+        if (s.Path.Count < 2) return;
+        if (!Setup(in s, ctx.Px, ctx.ShortSide, ctx.Time, 1f, 1e9f, 1e9f, false, 0f, out _, out Look look, out RowParams rp, out Cut cut)) return;
+        rp.Margin = 1e9f;  // every chart row is cut whole, on screen or not
+
+        bool closed = cut.Closed;
+        float total = cut.Total, diameter = look.Diameter;
+        int nb = cut.BodyRows + (closed ? 0 : 1);  // distinct body rows
+        if (nb < 2) return;
+        float bodyLen = closed ? total : cut.Arc(cut.BodyRows) - cut.Arc(0);
+
+        // rows the stroke's cell share affords, no finer than ChartRowStep; a count within a fifth of last frame's is kept
+        int V = ChartSectors, cap = Math.Min(Math.Min(ChartMaxRows, charts.Share / V), nb);
+        if (cap < 2) return;
+        int want = Math.Clamp((int)Round(bodyLen / (ChartRowStep * diameter)) + (closed ? 0 : 1), 2, cap);
+        _chartRows.TryGetValue(s.Seed, out int last);
+        int R = last >= 2 && last <= cap && want <= last * 5 / 4 && want >= last * 4 / 5 ? last : want;
+        if (_chartRows.Count > 64) _chartRows.Clear();
+        _chartRows[s.Seed] = R;
+        var ch = charts.Add(1, R, V);
+        if (ch == null) return;
+        ch.SeamU = closed; ch.SeamV = true; ch.Live = R; ch.SupplyScale = 1f;
+
+        Span<Row> rows = stackalloc Row[R];
+        Span<Vector2> axis = stackalloc Vector2[R];
+        int seg = 0;
+        for (int r = 0; r < R; r++)
+        {
+            ref Row row = ref rows[r];
+            row = default;
+            row.Arc = cut.Arc(CoatDraw.PickRow(r, R, nb, closed));
+            _path.SampleAt(cut.Path, cut.Pn, ref seg, row.Arc, out row.P, out row.T);
+            PathRows.Cap(0f, 0f, out row.CapW, out row.CapAxial);
+            FillRow(ref row, in rp, in look);
+            ch.UPos[r] = row.Arc; axis[r] = row.T;
+        }
+        float len = 0f;
+        for (int r = 0; r < R; r++)
+        {
+            float prev = r > 0 ? ch.UPos[r - 1] : (closed ? ch.UPos[R - 1] - total : ch.UPos[0]);
+            float next = r < R - 1 ? ch.UPos[r + 1] : (closed ? ch.UPos[0] + total : ch.UPos[r]);
+            ch.UStep[r] = 0.5f * (next - prev); len += ch.UStep[r];
+        }
+        ch.Ds = len / R;
+        for (int v = 0; v < V; v++) { ch.VAngle[v] = Tau * v / V; ch.VStep[v] = look.Radius * Tau / V; }
+
+        Span<float> adh = stackalloc float[R * V], round = stackalloc float[V];
+        for (int k = 0; k < V; k++) round[k] = k * (4f / V);  // four lattice cells round the tentacle, wrapping
+        CoatAdhesion.Field(s.Seed, ch.UPos.AsSpan(0, R), look.Radius * 6f, round, 4, adh);
+        float oy = rp.BumpOff * 0.37f + 5.3f, margin = 20f * ctx.Px;
+        bool warts = rp.BumpWave > 0f && look.Detail > 0.45f;  // BuildBumps' own condition
+        for (int r = 0; r < R; r++)
+        {
+            ref readonly Row row = ref rows[r];
+            Vector2 t = row.T, perp = new(-t.Y, t.X);
+            for (int v = 0; v < V; v++)
+            {
+                float phi = Tau * v / V;  // body angle from the belly line
+                (float sn, float cs) = SinCos(phi - row.Psi);
+                ref var q = ref ch.S[r * V + v];
+                q.Pos = row.P + perp * (sn * row.Radius);
+                float across = sn * row.CapW, along = row.CapAxial + (row.LumpTilt - row.SinA * cs) * row.CapW;
+                float nx = perp.X * across + t.X * along, ny = perp.Y * across + t.Y * along, nz = row.CosA * cs * row.CapW;
+                float inv = 1f / Sqrt(nx * nx + ny * ny + nz * nz + 1e-6f);
+                q.Normal = new(nx * inv, ny * inv, nz * inv);
+                q.Side = Math.Clamp(cs, -1f, 1f);
+                q.Radius = row.Radius;
+                q.Z = cs * row.Radius * row.CosA;
+                float m = row.Radius + margin;
+                q.Visible = ctx.Screen.X <= 0f || (q.Pos.X > -m && q.Pos.X < ctx.Screen.X + m && q.Pos.Y > -m && q.Pos.Y < ctx.Screen.Y + m);
+                q.Holds = true;
+                q.Anchor = q.Pos;
+                // warts turned over (a hollow pools, a crest sheds), and patches of skin that hold liquid badly shed into the ones that hold it well
+                float hold = adh[r * V + v];
+                float relief = warts && row.BumpAmp > 0f ? 1f - 2f * Wart(in row, oy, Cos(phi), Sin(phi)) : 0f;
+                q.Pool = relief + CoatAdhesion.Potential(hold);
+                q.Slick = CoatAdhesion.Slick(hold);
+            }
+        }
+        CoatDraw.Slopes(ch, R, V, closed, axis);
+    }
+
+    /// The coat's film as a mesh over the body's own columns, thickness lerped from the chart by arc and body angle (false = no chart for it: the generic band is drawn instead).
+    bool DrawFilm(ImDrawListPtr dl, int rowCount, Tier tier, in Look look, in MaterialContext ctx, Coat coat, float coatAlpha, bool closed, float total)
+    {
+        if (coat.Matter is not LiquidMatter lm) return false;
+        int R = coat.N, V = coat.V;
+        if (R < 2 || V != ChartSectors || R > ChartMaxRows) return false;
+        float px = coat.Px;
+
+        Span<float> thick = stackalloc float[R * V];
+        float maxTh = 0f;
+        for (int c = 0; c < R * V; c++) { thick[c] = coat.M[c] / coat.A[c]; maxTh = Max(maxTh, thick[c]); }
+        if (maxTh < 0.25f * lm.Physics.Hold * px) return true;  // nothing to see yet
+
+        int nb = _bodyEnd - _bodyFirst - (closed ? 1 : 0);
+        if (nb < 2) return false;
+        Span<float> arc = stackalloc float[R];
+        for (int r = 0; r < R; r++) arc[r] = _rows[_bodyFirst + CoatDraw.PickRow(r, R, nb, closed)].Arc;
+
+        int nc = tier.Cols;
+        int chunkRows = MeshDraw.MaxVerts / nc;
+        Vector2 uv = MeshDraw.WhiteUv(ctx.Time);
+        float a = Min(1f, coatAlpha * ctx.Alpha);
+        Span<float> rowTh = stackalloc float[V], theta = stackalloc float[nc];
+        for (int c = 0; c < nc; c++) theta[c] = Atan2(tier.Sin[c], tier.Cos[c]);
+        float hold = lm.Physics.Hold * px, maxDraw = Min(lm.Physics.MaxThick, 2.5f * lm.Physics.Hold) * px;
+        float dry = lm.Physics.WetMin * hold;  // where the film is thinner than the liquid wets, the skin shows
+        float[]? hgt = _bumps ? _hgt : null;
+        Vector2[] outP = MeshDraw.P;
+        uint[] outC = MeshDraw.C;
+#if REALDEBUFFS_PROFILE
+        long verts = 0, clear = 0;
+#endif
+
+        PushColorOverride(coat.Color);
+        try
+        {
+            // the film varies slowly, so it needs about 0.42 diameters between rows, not the body's finest; the last row is always one
+            int fs = Math.Max(1, (int)Round(0.42f / tier.StepFrac));
+            int m = (rowCount - 1 + fs - 1) / fs + 1;
+            int rr = 0;
+            int j0 = 0;
+            while (j0 < m - 1)
+            {
+                int j1 = Math.Min(j0 + chunkRows - 1, m - 1);
+                bool any = false;
+                for (int j = j0; j <= j1; j++) if (_rows[Math.Min(j * fs, rowCount - 1)].On) { any = true; break; }
+
+                if (any)
+                {
+                    int vb = 0;
+                    for (int j = j0; j <= j1; j++, vb += nc)
+                    {
+                        int ri = Math.Min(j * fs, rowCount - 1);
+                        ref readonly Row row = ref _rows[ri];
+                        if (!row.On)
+                        {
+                            for (int c = 0; c < nc; c++) { outP[vb + c] = row.P; outC[vb + c] = 0u; }
+                            continue;
+                        }
+
+                        // the chart rows either side of this cross-section, by arc
+                        while (rr < R - 2 && row.Arc > arc[rr + 1]) rr++;
+                        int ra = rr, rb = rr + 1;
+                        float span = arc[rb] - arc[ra], t = span > 1e-4f ? Saturate((row.Arc - arc[ra]) / span) : 0f;
+                        if (closed && row.Arc > arc[R - 1])
+                        {
+                            ra = R - 1; rb = 0;
+                            span = arc[0] + total - arc[R - 1];
+                            t = span > 1e-4f ? Saturate((row.Arc - arc[R - 1]) / span) : 0f;
+                        }
+                        for (int k = 0; k < V; k++) rowTh[k] = Lerp(thick[ra * V + k], thick[rb * V + k], t);
+
+                        Vector2 T = row.T, perp = new(-T.Y, T.X);
+                        for (int c = 0; c < nc; c++)
+                        {
+                            float u = tier.Sin[c], co = tier.Cos[c];
+                            float hw = hgt != null && row.BumpAmp > 0f ? hgt[ri * nc + c] * row.BumpAmp : 0f;
+                            Vector2 pos = row.P + perp * (u * (row.Radius + hw * 0.45f));  // the body's own silhouette, warts included
+                            float across = u * row.CapW, along = row.CapAxial + (row.LumpTilt - row.SinA * co) * row.CapW;
+                            float nx = perp.X * across + T.X * along, ny = perp.Y * across + T.Y * along, nz = row.CosA * co * row.CapW;
+                            float inv = 1f / Sqrt(nx * nx + ny * ny + nz * nz + 1e-6f);
+                            nx *= inv; ny *= inv; nz *= inv;
+
+                            float q = (theta[c] + row.Psi) / Tau * V;  // this column's body angle, in sectors
+                            q -= Floor(q / V) * V;
+                            int k0 = Math.Min((int)q, V - 1), k1 = k0 + 1 == V ? 0 : k0 + 1;
+                            float th = Lerp(rowTh[k0], rowTh[k1], q - k0);
+
+                            outP[vb + c] = pos + new Vector2(nx, ny) * (StrokeRope.FilmOffset(th, hold, maxDraw) * 0.9f);
+                            uint shade = lm.FilmShade(new(nx, ny, nz), th, px, a, CoatDraw.Soft(u, 0.6f), dry);
+#if REALDEBUFFS_PROFILE
+                            verts++; if ((shade >> 24) < 13) clear++;
+#endif
+                            outC[vb + c] = shade;
+                        }
+                    }
+                    MeshDraw.Grid(dl, nc - 1, j1 - j0, uv);
+                }
+
+                if (j1 == j0) break;
+                j0 = j1;  // the seam row is shared, so chunks join exactly
+            }
+        }
+        finally { PopColorOverride(); }
+#if REALDEBUFFS_PROFILE
+        FilmVerts += verts; FilmBare += clear;
+#endif
+        return true;
+    }
+
+#if REALDEBUFFS_PROFILE
+    internal static long FilmVerts, FilmBare;  // film mesh vertices drawn, and those under 5% opaque (harness builds only)
+#endif
 
     /// Per cross-section state: width, belly line, wetness, highlights, skin coordinates.
     static void FillRow(ref Row r, in RowParams p, in Look look)
@@ -580,7 +825,7 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
         int chunkRows = MeshDraw.MaxVerts / stride;
         Vector2 uv = MeshDraw.WhiteUv(ctx.Time);
 
-        bool bumps = BuildBumps(rowCount, tier, in look);
+        bool bumps = _bumps = BuildBumps(rowCount, tier, in look);
         int nc = tier.Cols;
         float[]? hgt = bumps ? _hgt : null;
 
@@ -626,7 +871,7 @@ public sealed class StrokeParasite : IStrokeMaterial, ICoatLayeredHost
             {
                 float u = sinT[c], co = cosT[c];
                 float cosPhi = co * cPsi - u * sPsi, sinPhi = u * cPsi + co * sPsi;
-                hgt[o + c] = Noise.Value(r.WX + cosPhi * r.WRing, oy + sinPhi * r.WRing);
+                hgt[o + c] = Wart(in r, oy, cosPhi, sinPhi);
             }
         }
         return true;

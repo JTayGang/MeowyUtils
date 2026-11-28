@@ -337,6 +337,7 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
         if (!fits || want > sn.Tier || Ladder[want].rows * Ladder[want].sectors * halves * 1.3f <= charts.Share) sn.Tier = want;
         var (R, Vn) = Ladder[sn.Tier];
         int adhKey = sn.Tier * 16 + sn.RingK;
+        float clump = Clump(ctx.Viscosity);
         if (sn.AdhKey != adhKey || sn.Adh.Length != sn.LinkCount * 2) { sn.Adh = new float[sn.LinkCount * 2][]; sn.AdhKey = adhKey; }
 
         Span<int> st = stackalloc int[R], ct = stackalloc int[Vn];
@@ -401,7 +402,7 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
                         q.Normal = n; q.Side = Math.Clamp(zHalf, -1f, 1f); q.Radius = half; q.Visible = true; q.Holds = true;
                         q.Z = h * ring.Y[j] * sn.L * lk.Sin + n.Z * half;  // the bar's own depth at that station (its plane is rolled by Sin), then out along the normal
                         float hold = kept[r * Vn + v];
-                        q.Pool = CoatAdhesion.Potential(hold); q.Slick = CoatAdhesion.Slick(hold);
+                        q.Pool = CoatAdhesion.Potential(hold, clump); q.Slick = CoatAdhesion.Slick(hold);
                     }
 
                 for (int r = 0; r < R; r++)
@@ -442,6 +443,9 @@ public sealed class StrokeChain : IStrokeMaterial, ICoatLayeredHost, ICoatSurfac
 #if REALDEBUFFS_PROFILE
     internal static long FilmVerts, FilmBare;  // film mesh vertices drawn, and those under 5% opaque (harness builds only)
 #endif
+
+    /// Steel clumps liquid more than fibre does (rule 9): the swing of a chain film's adhesion potential for water, blood and slime, calibrated so a chain exposes a little more bare steel than a rope shows fibre.
+    static float Clump(float viscosity) => LiquidPhysics.At(viscosity, 1.85f, 1.8f, 2.4f);
 
     readonly CoatChart?[] _laid = new CoatChart?[2 * MaxLinks];  // this frame's charts by link slot and half
     readonly Coat?[] _byId = new Coat?[2 * MaxLinks + 2];

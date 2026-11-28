@@ -514,7 +514,7 @@ internal sealed class CoatSet
         float px = PixelScale(scene.ScreenSize);
         float shortSide = scene.ScreenSize.X > 0f ? Min(scene.ScreenSize.X, scene.ScreenSize.Y) : 1080f;
         if (s.Path.Length < 24f * px) return;
-        var ctx = new CoatBuildContext(scene.ScreenSize, shortSide, px, time);
+        var ctx = new CoatBuildContext(scene.ScreenSize, shortSide, px, time, cm.Matter is LiquidMatter lq ? lq.Physics.Viscosity : 0f);
 
         if (strokeMaterial is ICoatSurfaceProvider prov && prov.Charts(cm.Matter)) TendCharts(prov, in s, in ctx, opt, cm.Matter, e.Role, time, dt);
         else TendTube(in s, in ctx, opt, cm.Matter, e.Role, strokeMaterial, time, dt);

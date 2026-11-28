@@ -94,4 +94,33 @@ internal static class CoatDraw
         float x2 = x * x;
         return Lerp(1f, edge, x2 * x2);
     }
+
+    /// The strand row the chart's r-th of `rows` rows sits on, among `bodyRows` distinct body rows.
+    internal static int PickRow(int r, int rows, int bodyRows, bool closed)
+        => closed ? (int)((long)r * bodyRows / rows) : (rows == 1 ? 0 : (int)Round(r * (bodyRows - 1f) / (rows - 1f)));
+
+    /// Du, Dv and GravityDown of every cell of a tube chart whose positions, normals and depths are set. Du and Dv are the screen direction of rising U and V scaled by the true 3D step, so flow sees the true slope (0 at the silhouette). A drop hangs where the surface faces down; an open strand's end that points down is the chart's downhill edge. axis: each row's screen tangent, for rows whose neighbours coincide.
+    internal static void Slopes(CoatChart ch, int R, int V, bool closed, ReadOnlySpan<Vector2> axis)
+    {
+        for (int r = 0; r < R; r++)
+            for (int v = 0; v < V; v++)
+            {
+                ref var q = ref ch.S[r * V + v];
+                int rp = r > 0 ? r - 1 : (closed ? R - 1 : r), rn = r < R - 1 ? r + 1 : (closed ? 0 : r);
+                int vp = v > 0 ? v - 1 : V - 1, vn = v < V - 1 ? v + 1 : 0;
+                q.Du = Slope(in ch.S[rp * V + v], in ch.S[rn * V + v], axis[r]);
+                q.Dv = Slope(in ch.S[r * V + vp], in ch.S[r * V + vn], default);
+
+                float best = Max(0f, q.Normal.Y);
+                if (!closed) { if (r == 0 && -q.Du.Y > best) best = -q.Du.Y; if (r == R - 1 && q.Du.Y > best) best = q.Du.Y; }
+                q.GravityDown = best;
+            }
+    }
+
+    static Vector2 Slope(in CoatSurfaceSample a, in CoatSurfaceSample b, Vector2 fallback)
+    {
+        Vector2 d = b.Pos - a.Pos;
+        float dz = b.Z - a.Z, len = Sqrt(d.X * d.X + d.Y * d.Y + dz * dz);
+        return len > 1e-4f ? d / len : fallback;
+    }
 }

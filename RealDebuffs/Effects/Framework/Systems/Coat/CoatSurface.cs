@@ -77,7 +77,8 @@ public readonly struct CoatBuildContext
 {
     public readonly Vector2 Screen;
     public readonly float ShortSide, Px, Time;
-    public CoatBuildContext(Vector2 screen, float shortSide, float px, float time) { Screen = screen; ShortSide = shortSide; Px = px; Time = time; }
+    public readonly float Viscosity;  // the liquid's, 0 water to 1 slime; 0 for matter that is not a liquid
+    public CoatBuildContext(Vector2 screen, float shortSide, float px, float time, float viscosity = 0f) { Screen = screen; ShortSide = shortSide; Px = px; Time = time; Viscosity = viscosity; }
 }
 
 /// A stroke material that lays its coat on the geometry it draws. Without it a stroke is coated as a tube along its path.

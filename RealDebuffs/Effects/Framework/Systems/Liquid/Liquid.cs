@@ -6,7 +6,7 @@ public readonly struct LiquidPhysics
     public const float BloodAt = 0.45f;
 
     // Piecewise-linear through the three calibrated liquids; exact at each one.
-    static float At(float v, float water, float blood, float slime)
+    internal static float At(float v, float water, float blood, float slime)
     {
         if (v <= 0f) return water;
         if (v < BloodAt) return Lerp(water, blood, (v / BloodAt));

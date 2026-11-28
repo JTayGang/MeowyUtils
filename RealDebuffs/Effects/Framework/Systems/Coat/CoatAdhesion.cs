@@ -6,8 +6,8 @@ internal static class CoatAdhesion
     /// How far a patch's adhesion tips the film's levelling, in the host's groove units (a rope groove is 1): liquid drains from poor patches into good ones.
     const float PoolSwing = 1.6f;
 
-    /// The levelling potential for adhesion a (0..1): the worst and best patches swing it by +-PoolSwing.
-    internal static float Potential(float a) => PoolSwing * Math.Clamp((a - 0.5f) * 2.4f, -1f, 1f);
+    /// The levelling potential for adhesion a (0..1): the worst and best patches swing it by +-PoolSwing, times scale for a surface that clumps liquid more.
+    internal static float Potential(float a, float scale = 1f) => PoolSwing * scale * Math.Clamp((a - 0.5f) * 2.4f, -1f, 1f);
 
     /// How much of the liquid arriving here the surface refuses, for adhesion a: the worst third takes little.
     internal static float Slick(float a) => Smooth((0.42f - a) / 0.22f);
